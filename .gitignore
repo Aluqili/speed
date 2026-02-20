@@ -12,3 +12,23 @@ Thumbs.db
 .melos_tool/
 .packages
 pubspec.lock
+
+# Secrets and local env
+**/.env
+**/.env.*
+**/*.pem
+**/*.p12
+**/*.jks
+**/*.keystore
+**/key.properties
+**/service-account*.json
+**/secrets*.json
+
+# Firebase config secrets
+**/google-services.json
+**/GoogleService-Info.plist
+
+# Flutter generated/local metadata
+**/.metadata
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
