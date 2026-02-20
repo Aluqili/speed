@@ -1,0 +1,49 @@
+name: speedstar_courier_app
+description: Courier app for SpeedStar
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  speedstar_core:
+    path: ../../packages/speedstar_core
+  firebase_core: ^4.4.0
+  firebase_remote_config: ^6.1.4
+  cloud_firestore: ^6.1.2
+  firebase_auth: ^6.1.4
+  firebase_storage: ^13.0.0
+  firebase_messaging: ^16.0.0
+  flutter_local_notifications: ^19.3.0
+  shared_preferences: ^2.3.2
+  provider: ^6.1.2
+  intl: ^0.19.0
+  url_launcher: ^6.3.2
+  http: ^1.2.2
+  location: ^6.0.2
+  get_storage: ^2.1.1
+  flutter_dotenv: ^5.1.0
+  audioplayers: ^6.5.0
+  geolocator: ^13.0.2
+  google_maps_flutter: ^2.9.0
+  geocoding: ^3.0.0
+  image_picker: ^1.1.2
+  cloudinary_public: ^0.23.1
+  get: ^4.6.6
+  getwidget: ^7.0.0
+  cupertino_icons: ^1.0.8
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.2
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: Cairo
+      fonts:
+        - asset: assets/fonts/Cairo-Regular.ttf
+        - asset: assets/fonts/Cairo-Bold.ttf
+          weight: 700
+  assets:
+    - assets/configs/courier/home.json

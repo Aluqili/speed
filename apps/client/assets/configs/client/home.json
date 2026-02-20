@@ -1,0 +1,9 @@
+{
+  "nodes": [
+    {"type": "text", "text": "لوحة العميل — Fallback"},
+    {"type": "spacer", "height": 12},
+    {"type": "button", "title": "المطاعم القريبة", "route": "restaurants_nearby"},
+    {"type": "button", "title": "طلباتي", "route": "client_orders"},
+    {"type": "button", "title": "الدعم الفني", "route": "chat_support"}
+  ]
+}

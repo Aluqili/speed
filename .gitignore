@@ -1,0 +1,14 @@
+# Monorepo root artifacts
+.history/
+firebase-debug.log
+
+# IDE/system
+.DS_Store
+Thumbs.db
+.idea/
+
+# Dart/Flutter root tools
+.dart_tool/
+.melos_tool/
+.packages
+pubspec.lock

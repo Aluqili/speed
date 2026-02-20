@@ -1,0 +1,4 @@
+name: speedstar-monorepo
+packages:
+  - packages/**
+  - apps/**

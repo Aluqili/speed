@@ -1,0 +1,9 @@
+{
+  "nodes": [
+    {"type": "text", "text": "لوحة المندوب — Fallback"},
+    {"type": "spacer", "height": 12},
+    {"type": "button", "title": "طلبات قريبة", "route": "courier_nearby_orders"},
+    {"type": "button", "title": "طلباتي الحالية", "route": "courier_current_orders"},
+    {"type": "button", "title": "الدعم الفني", "route": "chat_support"}
+  ]
+}

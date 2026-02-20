@@ -1,0 +1,42 @@
+name: speedstar_client_app
+description: Client app for SpeedStar
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  speedstar_core:
+    path: ../../packages/speedstar_core
+  firebase_core: ^4.4.0
+  firebase_remote_config: ^6.1.4
+  cloud_firestore: ^6.1.2
+  firebase_auth: ^6.1.4
+  shared_preferences: ^2.3.2
+  get: ^4.6.6
+  getwidget: ^7.0.0
+  cupertino_icons: ^1.0.8
+  provider: ^6.1.2
+  intl: ^0.19.0
+  geolocator: ^13.0.2
+  google_maps_flutter: ^2.9.0
+  geocoding: ^3.0.0
+  image_picker: ^1.1.2
+  cloudinary_public: ^0.23.1
+  badges: ^3.1.1
+  flutter_local_notifications: ^20.1.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.2
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: Cairo
+      fonts:
+        - asset: assets/fonts/Cairo-Regular.ttf
+        - asset: assets/fonts/Cairo-Bold.ttf
+          weight: 700
+  assets:
+    - assets/configs/client/home.json
