@@ -36,3 +36,11 @@ admin-web/js/firebase-config.js
 **/.metadata
 **/.flutter-plugins
 **/.flutter-plugins-dependencies
+
+# Generated dependencies and build artifacts
+**/node_modules/
+**/build/
+**/.firebase/
+
+# Temporary local preview files
+_live_*.html
