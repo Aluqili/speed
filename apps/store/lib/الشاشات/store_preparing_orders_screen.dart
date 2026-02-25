@@ -1,6 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+const Set<String> _preparingStatuses = {
+  'courier_searching',
+  'courier_offer_pending',
+  'courier_assigned',
+  'قيد التجهيز',
+};
+
+String _getOrderStatus(Map<String, dynamic> data) {
+  return (data['orderStatus'] ?? data['status'] ?? '').toString().trim();
+}
+
 class StorePreparingOrdersScreen extends StatelessWidget {
   final String restaurantId;
 
@@ -17,18 +28,20 @@ class StorePreparingOrdersScreen extends StatelessWidget {
         stream: FirebaseFirestore.instance
             .collection('orders')
             .where('restaurantId', isEqualTo: restaurantId)
-            .where('status', isEqualTo: 'قيد التجهيز')
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          final orders = (snapshot.data?.docs ?? []).where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return _preparingStatuses.contains(_getOrderStatus(data));
+          }).toList();
+
+          if (orders.isEmpty) {
             return const Center(child: Text('لا توجد طلبات قيد التجهيز حالياً'));
           }
-
-          final orders = snapshot.data!.docs;
 
           return ListView.builder(
             padding: const EdgeInsets.all(12),
@@ -56,7 +69,10 @@ class StorePreparingOrdersScreen extends StatelessWidget {
                       ElevatedButton.icon(
                         onPressed: () {
                           FirebaseFirestore.instance.collection('orders').doc(doc.id).update({
-                            'status': 'جاهز للتوصيل',
+                            'readyByRestaurant': true,
+                            'orderStatus': 'pickup_ready',
+                            'status': 'pickup_ready',
+                            'updatedAt': FieldValue.serverTimestamp(),
                           });
                         },
                         icon: const Icon(Icons.check_circle),

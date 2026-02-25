@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class ManualLocationPicker extends StatefulWidget {
   final LatLng initialLocation;
@@ -21,7 +22,17 @@ class _ManualLocationPickerState extends State<ManualLocationPicker> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('تحديد الموقع يدويًا')),
+      backgroundColor: AppThemeArabic.clientBackground,
+      appBar: AppBar(
+        title: const Text('تحديد الموقع يدويًا', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
+      ),
       body: Stack(
         children: [
           GoogleMap(

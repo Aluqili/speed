@@ -3,6 +3,8 @@ import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'client_privacy_policy_screen.dart';
 
 class ClientSettingsScreen extends StatefulWidget {
   const ClientSettingsScreen({Key? key}) : super(key: key);
@@ -16,8 +18,8 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
   String language = 'العربية';
   Map<String, dynamic>? userData;
 
-  static const Color primaryColor = Color(0xFFFE724C);
-  static const Color backgroundColor = Color(0xFFF5F5F5);
+  static const Color primaryColor = AppThemeArabic.clientPrimary;
+  static const Color backgroundColor = AppThemeArabic.clientBackground;
 
   @override
   void initState() {
@@ -31,6 +33,7 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
     language = prefs.getString('language') ?? 'العربية';
     notificationsEnabled = prefs.getBool('notifications') ?? true;
     _updateLocaleFromLanguage(language);
+    if (!mounted) return;
     setState(() {});
   }
 
@@ -45,8 +48,12 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
   Future<void> _fetchUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final doc = await FirebaseFirestore.instance.collection('clients').doc(user.uid).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('clients')
+          .doc(user.uid)
+          .get();
       userData = doc.data();
+      if (!mounted) return;
       setState(() {});
     }
   }
@@ -58,7 +65,12 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
       child: Scaffold(
         backgroundColor: backgroundColor,
         appBar: AppBar(
-          title: Text('settings'.tr, style: const TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+          title: Text('settings'.tr,
+              style: const TextStyle(
+                  color: primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  fontFamily: 'Tajawal')),
           backgroundColor: Colors.white,
           centerTitle: true,
           iconTheme: const IconThemeData(color: primaryColor),
@@ -72,7 +84,8 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
           child: Card(
             color: Colors.white,
             elevation: 3,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Padding(
               padding: const EdgeInsets.all(18),
               child: Column(
@@ -82,16 +95,25 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                     children: [
                       const Icon(Icons.language, color: primaryColor),
                       const SizedBox(width: 10),
-                      Text('language'.tr, style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Tajawal')),
+                      Text('language'.tr,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'Tajawal')),
                       const Spacer(),
                       DropdownButton<String>(
                         value: language,
                         items: [
-                          DropdownMenuItem(value: 'العربية', child: Text('arabic'.tr)),
-                          DropdownMenuItem(value: 'English', child: Text('english'.tr)),
+                          DropdownMenuItem(
+                              value: 'العربية', child: Text('arabic'.tr)),
+                          DropdownMenuItem(
+                              value: 'English', child: Text('english'.tr)),
                         ],
                         onChanged: (val) {
-                          if (val != null) setState(() { language = val; _updateLocaleFromLanguage(val); });
+                          if (val != null)
+                            setState(() {
+                              language = val;
+                              _updateLocaleFromLanguage(val);
+                            });
                         },
                       ),
                     ],
@@ -101,12 +123,16 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                     children: [
                       const Icon(Icons.notifications, color: primaryColor),
                       const SizedBox(width: 10),
-                      Text('notifications'.tr, style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Tajawal')),
+                      Text('notifications'.tr,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'Tajawal')),
                       const Spacer(),
                       Switch(
                         value: notificationsEnabled,
                         activeColor: primaryColor,
-                        onChanged: (val) => setState(() => notificationsEnabled = val),
+                        onChanged: (val) =>
+                            setState(() => notificationsEnabled = val),
                       ),
                     ],
                   ),
@@ -117,32 +143,51 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                         const Icon(Icons.person, color: primaryColor),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: Text('${'name'.tr}: ${userData!['name']?.toString().isNotEmpty == true ? userData!['name'] : 'غير متاح'}', style: const TextStyle(fontFamily: 'Tajawal', fontSize: 15), overflow: TextOverflow.ellipsis),
+                          child: Text(
+                              '${'name'.tr}: ${userData!['name']?.toString().isNotEmpty == true ? userData!['name'] : 'غير متاح'}',
+                              style: const TextStyle(
+                                  fontFamily: 'Tajawal', fontSize: 15),
+                              overflow: TextOverflow.ellipsis),
                         ),
                         IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue),
                           tooltip: 'تعديل الاسم',
                           onPressed: () async {
+                            final messenger = ScaffoldMessenger.of(context);
                             final newName = await showDialog<String>(
                               context: context,
                               builder: (context) {
-                                final controller = TextEditingController(text: userData!['name'] ?? '');
+                                final controller = TextEditingController(
+                                    text: userData!['name'] ?? '');
                                 return AlertDialog(
                                   title: const Text('تعديل الاسم'),
                                   content: SingleChildScrollView(
-                                    child: TextField(controller: controller, decoration: const InputDecoration(labelText: 'الاسم الجديد')),
+                                    child: TextField(
+                                        controller: controller,
+                                        decoration: const InputDecoration(
+                                            labelText: 'الاسم الجديد')),
                                   ),
                                   actions: [
-                                    TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
-                                    ElevatedButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('حفظ')),
+                                    TextButton(
+                                        onPressed: () => Navigator.pop(context),
+                                        child: const Text('إلغاء')),
+                                    ElevatedButton(
+                                        onPressed: () => Navigator.pop(
+                                            context, controller.text),
+                                        child: const Text('حفظ')),
                                   ],
                                 );
                               },
                             );
                             if (newName != null && newName.isNotEmpty) {
-                              await FirebaseFirestore.instance.collection('clients').doc(FirebaseAuth.instance.currentUser!.uid).update({'name': newName});
+                              await FirebaseFirestore.instance
+                                  .collection('clients')
+                                  .doc(FirebaseAuth.instance.currentUser!.uid)
+                                  .update({'name': newName});
+                              if (!mounted) return;
                               setState(() => userData!['name'] = newName);
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تحديث الاسم')));
+                              messenger.showSnackBar(const SnackBar(
+                                  content: Text('تم تحديث الاسم')));
                             }
                           },
                         ),
@@ -154,32 +199,51 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                         const Icon(Icons.email, color: primaryColor),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: Text('${'email'.tr}: ${userData!['email']?.toString().isNotEmpty == true ? userData!['email'] : 'غير متاح'}', style: const TextStyle(fontFamily: 'Tajawal', fontSize: 15), overflow: TextOverflow.ellipsis),
+                          child: Text(
+                              '${'email'.tr}: ${userData!['email']?.toString().isNotEmpty == true ? userData!['email'] : 'غير متاح'}',
+                              style: const TextStyle(
+                                  fontFamily: 'Tajawal', fontSize: 15),
+                              overflow: TextOverflow.ellipsis),
                         ),
                         IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue),
                           tooltip: 'تعديل البريد الإلكتروني',
                           onPressed: () async {
+                            final messenger = ScaffoldMessenger.of(context);
                             final newEmail = await showDialog<String>(
                               context: context,
                               builder: (context) {
-                                final controller = TextEditingController(text: userData!['email'] ?? '');
+                                final controller = TextEditingController(
+                                    text: userData!['email'] ?? '');
                                 return AlertDialog(
                                   title: const Text('تعديل البريد الإلكتروني'),
                                   content: SingleChildScrollView(
-                                    child: TextField(controller: controller, decoration: const InputDecoration(labelText: 'البريد الجديد')),
+                                    child: TextField(
+                                        controller: controller,
+                                        decoration: const InputDecoration(
+                                            labelText: 'البريد الجديد')),
                                   ),
                                   actions: [
-                                    TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
-                                    ElevatedButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('حفظ')),
+                                    TextButton(
+                                        onPressed: () => Navigator.pop(context),
+                                        child: const Text('إلغاء')),
+                                    ElevatedButton(
+                                        onPressed: () => Navigator.pop(
+                                            context, controller.text),
+                                        child: const Text('حفظ')),
                                   ],
                                 );
                               },
                             );
                             if (newEmail != null && newEmail.isNotEmpty) {
-                              await FirebaseFirestore.instance.collection('clients').doc(FirebaseAuth.instance.currentUser!.uid).update({'email': newEmail});
+                              await FirebaseFirestore.instance
+                                  .collection('clients')
+                                  .doc(FirebaseAuth.instance.currentUser!.uid)
+                                  .update({'email': newEmail});
+                              if (!mounted) return;
                               setState(() => userData!['email'] = newEmail);
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تحديث البريد الإلكتروني')));
+                              messenger.showSnackBar(const SnackBar(
+                                  content: Text('تم تحديث البريد الإلكتروني')));
                             }
                           },
                         ),
@@ -190,52 +254,99 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                         const Icon(Icons.phone, color: primaryColor),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: Text('${'phone'.tr}: ${userData!['phone']?.toString().isNotEmpty == true ? userData!['phone'] : 'غير متاح'}', style: const TextStyle(fontFamily: 'Tajawal', fontSize: 15), overflow: TextOverflow.ellipsis),
+                          child: Text(
+                              '${'phone'.tr}: ${userData!['phone']?.toString().isNotEmpty == true ? userData!['phone'] : 'غير متاح'}',
+                              style: const TextStyle(
+                                  fontFamily: 'Tajawal', fontSize: 15),
+                              overflow: TextOverflow.ellipsis),
                         ),
                         IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue),
                           tooltip: 'تعديل رقم الجوال',
                           onPressed: () async {
+                            final messenger = ScaffoldMessenger.of(context);
                             final newPhone = await showDialog<String>(
                               context: context,
                               builder: (context) {
-                                final controller = TextEditingController(text: userData!['phone'] ?? '');
+                                final controller = TextEditingController(
+                                    text: userData!['phone'] ?? '');
                                 return AlertDialog(
                                   title: const Text('تعديل رقم الجوال'),
                                   content: SingleChildScrollView(
-                                    child: TextField(controller: controller, decoration: const InputDecoration(labelText: 'رقم الجوال الجديد'), keyboardType: TextInputType.phone),
+                                    child: TextField(
+                                        controller: controller,
+                                        decoration: const InputDecoration(
+                                            labelText: 'رقم الجوال الجديد'),
+                                        keyboardType: TextInputType.phone),
                                   ),
                                   actions: [
-                                    TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
-                                    ElevatedButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('حفظ')),
+                                    TextButton(
+                                        onPressed: () => Navigator.pop(context),
+                                        child: const Text('إلغاء')),
+                                    ElevatedButton(
+                                        onPressed: () => Navigator.pop(
+                                            context, controller.text),
+                                        child: const Text('حفظ')),
                                   ],
                                 );
                               },
                             );
                             if (newPhone != null && newPhone.isNotEmpty) {
-                              await FirebaseFirestore.instance.collection('clients').doc(FirebaseAuth.instance.currentUser!.uid).update({'phone': newPhone});
+                              await FirebaseFirestore.instance
+                                  .collection('clients')
+                                  .doc(FirebaseAuth.instance.currentUser!.uid)
+                                  .update({'phone': newPhone});
+                              if (!mounted) return;
                               setState(() => userData!['phone'] = newPhone);
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تحديث رقم الجوال')));
+                              messenger.showSnackBar(const SnackBar(
+                                  content: Text('تم تحديث رقم الجوال')));
                             }
                           },
                         ),
                       ],
                     ),
                   ],
+                  const Divider(height: 28),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.privacy_tip, color: primaryColor),
+                    title: const Text(
+                      'سياسة الخصوصية',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'Tajawal',
+                      ),
+                    ),
+                    subtitle: const Text('عرض سياسة الخصوصية داخل التطبيق'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ClientPrivacyPolicyScreen(),
+                        ),
+                      );
+                    },
+                  ),
                   const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       icon: const Icon(Icons.logout, color: Colors.white),
-                      label: Text('logout'.tr, style: const TextStyle(fontSize: 16, fontFamily: 'Tajawal')),
+                      label: Text('logout'.tr,
+                          style: const TextStyle(
+                              fontSize: 16, fontFamily: 'Tajawal')),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: primaryColor,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
                       ),
                       onPressed: () async {
                         await FirebaseAuth.instance.signOut();
-                        Get.offAllNamed('/login');
+                        if (!mounted) return;
+                        Navigator.of(context)
+                            .pushNamedAndRemoveUntil('/login', (_) => false);
                       },
                     ),
                   ),
@@ -247,5 +358,4 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
       ),
     );
   }
-
 }

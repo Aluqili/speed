@@ -8,10 +8,12 @@ import 'package:getwidget/getwidget.dart';
 class ClientTrackDriverScreen extends StatefulWidget {
   final String orderId;
 
-  const ClientTrackDriverScreen({Key? key, required this.orderId}) : super(key: key);
+  const ClientTrackDriverScreen({Key? key, required this.orderId})
+      : super(key: key);
 
   @override
-  State<ClientTrackDriverScreen> createState() => _ClientTrackDriverScreenState();
+  State<ClientTrackDriverScreen> createState() =>
+      _ClientTrackDriverScreenState();
 }
 
 class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
@@ -29,27 +31,53 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
         backgroundColor: GFColors.SUCCESS,
       ),
       body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance.collection('orders').doc(widget.orderId).snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('orders')
+            .doc(widget.orderId)
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: GFLoader(type: GFLoaderType.circle));
           }
 
           if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text('لا توجد بيانات متوفرة لهذا الطلب.'));
+            return const Center(
+                child: Text('لا توجد بيانات متوفرة لهذا الطلب.'));
           }
 
           final data = snapshot.data!.data() as Map<String, dynamic>;
 
           final driverLoc = data['driverLocation'];
-          final clientLat = data['clientLat'];
-          final clientLng = data['clientLng'];
+          final clientLat = (data['clientLat'] as num?)?.toDouble();
+          final clientLng = (data['clientLng'] as num?)?.toDouble();
+          final orderStatus =
+              (data['orderStatus'] ?? data['status'] ?? '').toString();
 
-          if (driverLoc == null || clientLat == null || clientLng == null) {
-            return const Center(child: Text('موقع السائق أو العميل غير متاح بعد.'));
+          if (clientLat == null || clientLng == null) {
+            return const Center(child: Text('موقع العميل غير متاح بعد.'));
           }
 
-          driverLocation = LatLng(driverLoc['latitude'], driverLoc['longitude']);
+          if (driverLoc == null || driverLoc is! Map<String, dynamic>) {
+            return Center(
+              child: Text(
+                orderStatus == 'courier_assigned' ||
+                        orderStatus == 'pickup_ready'
+                    ? 'تم تعيين المندوب، بانتظار بدء التوصيل وتحديث موقعه...'
+                    : 'موقع المندوب غير متاح بعد.',
+              ),
+            );
+          }
+
+          final driverLat = (driverLoc['latitude'] as num?)?.toDouble() ??
+              (driverLoc['lat'] as num?)?.toDouble();
+          final driverLng = (driverLoc['longitude'] as num?)?.toDouble() ??
+              (driverLoc['lng'] as num?)?.toDouble();
+
+          if (driverLat == null || driverLng == null) {
+            return const Center(child: Text('موقع المندوب غير متاح بعد.'));
+          }
+
+          driverLocation = LatLng(driverLat, driverLng);
           clientLocation = LatLng(clientLat, clientLng);
 
           _createPolyline(driverLocation!, clientLocation!);
@@ -119,7 +147,8 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
     });
   }
 
-  Future<void> _moveCamera(GoogleMapController controller, LatLng driver, LatLng client) async {
+  Future<void> _moveCamera(
+      GoogleMapController controller, LatLng driver, LatLng client) async {
     final bounds = LatLngBounds(
       southwest: LatLng(
         min(driver.latitude, client.latitude),
@@ -140,10 +169,11 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
     const double R = 6371000; // Earth radius in meters
     final double dLat = _deg2rad(end.latitude - start.latitude);
     final double dLon = _deg2rad(end.longitude - start.longitude);
-    final double a = 
-      sin(dLat / 2) * sin(dLat / 2) +
-      cos(_deg2rad(start.latitude)) * cos(_deg2rad(end.latitude)) *
-      sin(dLon / 2) * sin(dLon / 2);
+    final double a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_deg2rad(start.latitude)) *
+            cos(_deg2rad(end.latitude)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
     final double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return R * c;
   }

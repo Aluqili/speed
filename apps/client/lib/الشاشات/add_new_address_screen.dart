@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'client_home_tab.dart'; // تأكد من استيراد الشاشة الرئيسية للعميل
 
 class AddNewAddressScreen extends StatefulWidget {
@@ -38,7 +39,7 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
   bool _firstSaveAttempt = true;
   bool _locationSelected = false;
   String? _saveWarning;
-  final Color primaryColor = const Color(0xFFFE724C);
+  final Color primaryColor = AppThemeArabic.clientPrimary;
 
   @override
   void initState() {

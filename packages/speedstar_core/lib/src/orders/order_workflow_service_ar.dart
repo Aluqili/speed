@@ -33,14 +33,28 @@ class OrderWorkflowServiceArabic {
     }
   }
 
+  /// العثور على انتقال بحسب الإجراء + الحالة الحالية.
+  TransitionSpecArabic? findByActionFrom(String action, String from) {
+    try {
+      return _transitions.firstWhere(
+        (t) => t.action == action && t.from == from,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// طلب انتقال (يُسجّل في مجموعة requests ليتعامل معها Cloud Functions).
   Future<void> requestTransition({
     required String orderId,
     required String action,
     required String actorRole,
     required String actorId,
+    String? currentStatus,
   }) async {
-    final spec = findByAction(action);
+    final spec = currentStatus == null
+        ? findByAction(action)
+        : findByActionFrom(action, currentStatus);
     if (spec == null) {
       throw Exception('Transition not found');
     }
@@ -50,8 +64,11 @@ class OrderWorkflowServiceArabic {
     await _db.collection('orderTransitionRequests').add({
       'orderId': orderId,
       'action': action,
+      'from': spec.from,
+      'to': spec.to,
       'actorRole': actorRole,
       'actorId': actorId,
+      if (currentStatus != null) 'currentStatus': currentStatus,
       'timestamp': FieldValue.serverTimestamp(),
     });
   }

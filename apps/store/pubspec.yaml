@@ -10,6 +10,7 @@ dependencies:
   speedstar_core:
     path: ../../packages/speedstar_core
   firebase_core: ^4.4.0
+  cloud_functions: ^6.0.4
   cloud_firestore: ^6.1.2
   firebase_auth: ^6.1.4
   shared_preferences: ^2.3.2
@@ -30,6 +31,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.2
+  flutter_launcher_icons: ^0.14.4
 flutter:
   uses-material-design: true
   fonts:
@@ -38,3 +40,25 @@ flutter:
         - asset: assets/fonts/Cairo-Regular.ttf
         - asset: assets/fonts/Cairo-Bold.ttf
           weight: 700
+  assets:
+    - assets/branding/
+    - assets/sounds/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/branding/app_icon_store.png.jpeg
+  min_sdk_android: 21
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: assets/branding/app_icon_store.png.jpeg
+    background_color: "#FFFFFF"
+    theme_color: "#E85D2A"
+  windows:
+    generate: true
+    image_path: assets/branding/app_icon_store.png.jpeg
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: assets/branding/app_icon_store.png.jpeg

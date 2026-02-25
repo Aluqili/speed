@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:speedstar_core/الخدمات/مزود_السلة.dart';
 import 'package:intl/intl.dart' show NumberFormat;
 import 'package:speedstar_core/الشاشات/سلة_الطلب.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class StoreDetailScreen extends StatefulWidget {
   final String restaurantId;
@@ -27,13 +28,13 @@ class StoreDetailScreen extends StatefulWidget {
 }
 
 class _StoreDetailScreenState extends State<StoreDetailScreen> {
-  static const Color primaryColor = Color(0xFFFE724C);
-  static const Color accentColor = Color(0xFFFFC529);
-  static const Color backgroundColor = Color(0xFFF5F5F5);
+  static const Color primaryColor = AppThemeArabic.clientPrimary;
+  static const Color accentColor = AppThemeArabic.clientAccent;
+  static const Color backgroundColor = AppThemeArabic.clientBackground;
   static const Color cardColor = Colors.white;
-  static const Color textColorPrimary = Color(0xFF1A1D26);
-  static const Color textColorSecondary = Color(0xFF6B7280);
-  static const Color closedColor = Color(0xFFFF3B30);
+  static const Color textColorPrimary = AppThemeArabic.clientTextPrimary;
+  static const Color textColorSecondary = AppThemeArabic.clientTextSecondary;
+  static const Color closedColor = AppThemeArabic.clientError;
 
   String? _selectedCategory;
   bool isClosed = false;

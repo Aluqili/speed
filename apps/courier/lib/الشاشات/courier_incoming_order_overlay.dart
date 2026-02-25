@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
@@ -12,6 +11,7 @@ import 'package:get_storage/get_storage.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart'; // ✅ أُضيفت
 import 'package:audioplayers/audioplayers.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class CourierIncomingOrderOverlay extends StatefulWidget {
   final String driverId;
@@ -40,6 +40,7 @@ class CourierIncomingOrderOverlay extends StatefulWidget {
 class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverlay> {
   int _remainingSeconds = 50;
   Timer? _countdownTimer;
+  StreamSubscription<RemoteMessage>? _messageSub;
   Set<Polyline> _polylines = {};
   double _distanceToRestaurant = 0.0;
   double _distanceToClient = 0.0;
@@ -88,7 +89,7 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
   }
 
   void _setupNotificationListener() {
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    _messageSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       if (message.data['type'] == 'order_offer' && message.data['orderId'] == widget.orderId) {
         if (mounted) setState(() {});
       }
@@ -111,14 +112,20 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
       'driverResponse': 'timeout',
     });
     _audioPlayer.stop();
-    if (mounted) Get.back();
+    if (mounted) {
+      Navigator.of(context).maybePop();
+    }
   }
 
   Future<void> _acceptOrder() async {
     // تم حذف شرط readyByRestaurant، يمكن قبول الطلب مباشرة
     await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
       'driverResponse': 'accepted',
-      'orderStatus': 'قيد التوصيل',
+      'driverResponded': true,
+      'assignedDriverId': widget.driverId,
+      'orderStatus': 'courier_assigned',
+      'status': 'courier_assigned',
+      'updatedAt': FieldValue.serverTimestamp(),
     });
 
     _countdownTimer?.cancel();
@@ -144,10 +151,14 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
       'assignedDriverId': widget.driverId,
     });
 
-    Get.offNamed('/driver_order_process', arguments: {
-      'orderId': widget.orderId,
-      'stage': 'going_to_restaurant',
-    });
+    if (!mounted) return;
+    Navigator.of(context).pushReplacementNamed(
+      '/driver_order_process',
+      arguments: {
+        'orderId': widget.orderId,
+        'stage': 'going_to_restaurant',
+      },
+    );
   }
 
   Future<void> _rejectOrder() async {
@@ -155,7 +166,7 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
       'driverResponse': 'rejected',
     });
     _audioPlayer.stop();
-    if (mounted) Get.back();
+    if (mounted) Navigator.of(context).pop();
   }
 
   Future<void> _drawRoute() async {
@@ -170,6 +181,7 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
     final data = json.decode(response.body);
     if (data['routes'] != null && data['routes'].isNotEmpty) {
       final points = data['routes'][0]['overview_polyline']['points'];
+      if (!mounted) return;
       setState(() {
         _polylines = {
           Polyline(
@@ -245,6 +257,9 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
 
   @override
   void dispose() {
+    _audioPlayer.stop();
+    _audioPlayer.dispose();
+    _messageSub?.cancel();
     _mapController?.dispose();
     _countdownTimer?.cancel();
     super.dispose();
@@ -253,7 +268,7 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFF8F8F8),
+      backgroundColor: AppThemeArabic.clientBackground,
       body: Column(
         children: [
           Expanded(
@@ -437,7 +452,7 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
                     Text('💰 رسوم التوصيل: $_driverFee ج.س', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.orange)),
                     const SizedBox(height: 12),
                     Card(
-                      color: Color(0xFFFFF3E0),
+                      color: AppThemeArabic.clientSurface,
                       elevation: 0,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       child: Padding(
@@ -498,7 +513,7 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
               const SizedBox(height: 16),
               ElevatedButton.icon(
                 onPressed: () {
-                  Get.offAllNamed('/driver_home');
+                  Navigator.of(context).popUntil((route) => route.isFirst);
                 },
                 icon: const Icon(Icons.home),
                 label: const Text('العودة للرئيسية'),

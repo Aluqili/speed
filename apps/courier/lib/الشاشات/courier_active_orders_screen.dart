@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'courier_order_details_screen.dart';
 
 class CourierActiveOrdersScreen extends StatelessWidget {
@@ -10,11 +11,13 @@ class CourierActiveOrdersScreen extends StatelessWidget {
 
   // الحالات المطلوبة للعرض
   static const List<String> validStatuses = [
+    'courier_assigned',
+    'pickup_ready',
+    'picked_up',
+    'arrived_to_client',
     'جاهز للتوصيل',
-    'وصل إلى المطعم',
     'قيد التوصيل',
     'وصل إلى العميل',
-    'طلبك قد وصل',
   ];
 
   @override
@@ -23,7 +26,6 @@ class CourierActiveOrdersScreen extends StatelessWidget {
       stream: FirebaseFirestore.instance
           .collection('orders')
           .where('assignedDriverId', isEqualTo: driverId)
-          .where('status', whereIn: validStatuses)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -34,20 +36,30 @@ class CourierActiveOrdersScreen extends StatelessWidget {
           return const Center(child: Text('لا توجد طلبات نشطة حالياً.'));
         }
 
-        final orders = snapshot.data!.docs;
+        final orders = snapshot.data!.docs.where((d) {
+          final m = d.data() as Map<String, dynamic>;
+          final status = (m['orderStatus'] ?? m['status'] ?? '').toString();
+          return validStatuses.contains(status);
+        }).toList();
+
+        if (orders.isEmpty) {
+          return const Center(child: Text('لا توجد طلبات نشطة حالياً.'));
+        }
 
         return ListView.builder(
+          padding: const EdgeInsets.only(top: 8, bottom: 12),
           itemCount: orders.length,
           itemBuilder: (context, index) {
             final doc = orders[index];
             final data = doc.data() as Map<String, dynamic>;
             final orderId = doc.id;
-            final status = data['status'] ?? '';
+            final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
 
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: GFCard(
                 elevation: 5,
+                color: AppThemeArabic.clientSurface,
                 content: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -76,7 +88,7 @@ class CourierActiveOrdersScreen extends StatelessWidget {
                       },
                       text: 'عرض تفاصيل الطلب',
                       icon: const Icon(Icons.description),
-                      color: GFColors.SECONDARY,
+                      color: AppThemeArabic.clientPrimary,
                       fullWidthButton: true,
                       size: GFSize.MEDIUM,
                     ),
@@ -95,25 +107,21 @@ class CourierActiveOrdersScreen extends StatelessWidget {
     String? newStatus;
 
     switch (status) {
+      case 'courier_assigned':
+      case 'pickup_ready':
       case 'جاهز للتوصيل':
-        buttonText = 'اذهب إلى موقع المطعم';
-        newStatus = 'وصل إلى المطعم';
+        buttonText = 'تم الاستلام من المطعم';
+        newStatus = 'picked_up';
         break;
-      case 'وصل إلى المطعم':
-        buttonText = 'وصلت إلى المطعم';
-        newStatus = 'قيد التوصيل';
-        break;
+      case 'picked_up':
       case 'قيد التوصيل':
-        buttonText = 'اذهب إلى موقع العميل';
-        newStatus = 'وصل إلى العميل';
+        buttonText = 'وصلت إلى العميل';
+        newStatus = 'arrived_to_client';
         break;
+      case 'arrived_to_client':
       case 'وصل إلى العميل':
         buttonText = 'وصلت إلى العميل';
-        newStatus = 'طلبك قد وصل';
-        break;
-      case 'طلبك قد وصل':
-        buttonText = 'تم التوصيل';
-        newStatus = 'تم التوصيل';
+        newStatus = 'delivered';
         break;
     }
 
@@ -122,7 +130,9 @@ class CourierActiveOrdersScreen extends StatelessWidget {
     return GFButton(
       onPressed: () async {
         await FirebaseFirestore.instance.collection('orders').doc(orderId).update({
+          'orderStatus': newStatus,
           'status': newStatus,
+          'updatedAt': FieldValue.serverTimestamp(),
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -131,7 +141,7 @@ class CourierActiveOrdersScreen extends StatelessWidget {
       },
       text: buttonText,
       icon: const Icon(Icons.check_circle),
-      color: GFColors.SUCCESS,
+      color: AppThemeArabic.clientPrimary,
       fullWidthButton: true,
       size: GFSize.LARGE,
       shape: GFButtonShape.pills,

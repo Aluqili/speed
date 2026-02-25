@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import 'chat_screen.dart' show ChatScreen;
 import 'courier_order_map_screen.dart';
-import 'courier_order_actions.dart';
 
 class CourierOrderDetailsScreen extends StatefulWidget {
   final String orderId;
@@ -21,7 +22,8 @@ class CourierOrderDetailsScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<CourierOrderDetailsScreen> createState() => _CourierOrderDetailsScreenState();
+  State<CourierOrderDetailsScreen> createState() =>
+      _CourierOrderDetailsScreenState();
 }
 
 class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
@@ -29,6 +31,23 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   bool _uploading = false;
   Map<String, dynamic>? orderData;
   double deliveryFee = 0;
+
+  String _getOrderStatus(Map<String, dynamic> data) {
+    return (data['orderStatus'] ?? data['status'] ?? '').toString().trim();
+  }
+
+  Future<void> _setOrderStatus(String status,
+      {Map<String, dynamic>? extra}) async {
+    await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.orderId)
+        .update({
+      'orderStatus': status,
+      'status': status,
+      'updatedAt': FieldValue.serverTimestamp(),
+      ...?extra,
+    });
+  }
 
   @override
   void initState() {
@@ -44,21 +63,36 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
 
     if (docSnapshot.exists) {
       final data = docSnapshot.data()!;
-      if (data['assignedDriverId'] != null && data['assignedDriverId'] != widget.driverId) {
+      final assignedDriverId = (data['assignedDriverId'] ?? '').toString();
+      final offeredDriverId = (data['offeredDriverId'] ?? '').toString();
+      final status = _getOrderStatus(data);
+
+      final belongsToAnotherAssigned =
+          assignedDriverId.isNotEmpty && assignedDriverId != widget.driverId;
+      final belongsToAnotherOffer = status == 'courier_offer_pending' &&
+          offeredDriverId.isNotEmpty &&
+          offeredDriverId != widget.driverId;
+
+      if (belongsToAnotherAssigned || belongsToAnotherOffer) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('تم استلام هذا الطلب بواسطة مندوب آخر')),
+            const SnackBar(
+                content: Text('تم استلام هذا الطلب بواسطة مندوب آخر')),
           );
           Navigator.of(context).pop();
         }
         return;
       }
 
-      if (data['restaurantLat'] != null && data['restaurantLng'] != null &&
-          data['clientLat'] != null && data['clientLng'] != null) {
+      if (data['restaurantLat'] != null &&
+          data['restaurantLng'] != null &&
+          data['clientLat'] != null &&
+          data['clientLng'] != null) {
         double distanceInKm = _calculateDistance(
-          data['restaurantLat'], data['restaurantLng'],
-          data['clientLat'], data['clientLng'],
+          data['restaurantLat'],
+          data['restaurantLng'],
+          data['clientLat'],
+          data['clientLng'],
         );
         deliveryFee = 700 + (distanceInKm * 100).roundToDouble();
       }
@@ -69,13 +103,16 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     }
   }
 
-  double _calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+  double _calculateDistance(
+      double lat1, double lng1, double lat2, double lng2) {
     const double R = 6371;
     double dLat = _deg2rad(lat2 - lat1);
     double dLon = _deg2rad(lng2 - lng1);
     double a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(_deg2rad(lat1)) * cos(_deg2rad(lat2)) *
-        sin(dLon / 2) * sin(dLon / 2);
+        cos(_deg2rad(lat1)) *
+            cos(_deg2rad(lat2)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return R * c;
   }
@@ -96,7 +133,8 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     const cloudName = 'dvnzloec6';
     const uploadPreset = 'flutter_unsigned';
 
-    final url = Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/image/upload');
+    final url =
+        Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/image/upload');
     final request = http.MultipartRequest('POST', url)
       ..fields['upload_preset'] = uploadPreset
       ..files.add(await http.MultipartFile.fromPath('file', imageFile.path));
@@ -132,22 +170,36 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     }
 
     // تأكيد وجود deliveryFeeForDriver في الطلب
-    final docSnapshot = await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).get();
-    double? deliveryFeeForDriver = docSnapshot.data()?['deliveryFeeForDriver']?.toDouble();
+    final docSnapshot = await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.orderId)
+        .get();
+    double? deliveryFeeForDriver =
+        docSnapshot.data()?['deliveryFeeForDriver']?.toDouble();
     if (deliveryFeeForDriver == null || deliveryFeeForDriver == 0) {
       // إعادة حسابها إذا لم تكن موجودة
-      if (orderData != null && orderData!['restaurantLat'] != null && orderData!['restaurantLng'] != null && orderData!['clientLat'] != null && orderData!['clientLng'] != null) {
+      if (orderData != null &&
+          orderData!['restaurantLat'] != null &&
+          orderData!['restaurantLng'] != null &&
+          orderData!['clientLat'] != null &&
+          orderData!['clientLng'] != null) {
         double distanceInKm = _calculateDistance(
-          orderData!['restaurantLat'], orderData!['restaurantLng'],
-          orderData!['clientLat'], orderData!['clientLng'],
+          orderData!['restaurantLat'],
+          orderData!['restaurantLng'],
+          orderData!['clientLat'],
+          orderData!['clientLng'],
         );
         deliveryFeeForDriver = 700 + (distanceInKm * 100).roundToDouble();
       } else {
         deliveryFeeForDriver = deliveryFee;
       }
     }
-    await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
-      'status': 'تم التوصيل',
+    await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.orderId)
+        .update({
+      'status': 'delivered',
+      'orderStatus': 'delivered',
       'deliveryImage': imageUrl,
       'deliveredAt': Timestamp.now(),
       'deliveryFeeForDriver': deliveryFeeForDriver,
@@ -163,17 +215,72 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   Future<void> _acceptOrder() async {
     if (orderData == null) return;
 
-    await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
-      'assignedDriverId': widget.driverId,
-      'status': 'بانتظار المطعم',
+    final status = _getOrderStatus(orderData!);
+    final offeredDriverId = (orderData!['offeredDriverId'] ?? '').toString();
+    if (status != 'courier_offer_pending' ||
+        offeredDriverId != widget.driverId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('هذا العرض غير متاح لك الآن')),
+      );
+      return;
+    }
+
+    await FirebaseFunctions.instance
+        .httpsCallable('courierRespondToOffer')
+        .call({
+      'orderId': widget.orderId,
+      'driverId': widget.driverId,
+      'decision': 'accept',
+    });
+
+    await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.orderId)
+        .update({
       'deliveryFeeForDriver': deliveryFee,
       'acceptedAt': Timestamp.now(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم قبول الطلب، بانتظار تجهيز المطعم')),
+      const SnackBar(content: Text('تم قبول الطلب')),
     );
 
+    _loadOrderData();
+  }
+
+  Future<void> _rejectOffer() async {
+    await FirebaseFunctions.instance
+        .httpsCallable('courierRespondToOffer')
+        .call({
+      'orderId': widget.orderId,
+      'driverId': widget.driverId,
+      'decision': 'reject',
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم رفض العرض وسيتم إرساله لمندوب آخر')),
+    );
+    Navigator.pop(context);
+  }
+
+  Future<void> _markPickedUp() async {
+    await _setOrderStatus('picked_up');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم تسجيل استلام الطلب من المطعم')),
+    );
+    _loadOrderData();
+  }
+
+  Future<void> _markArrivedToClient() async {
+    await _setOrderStatus('arrived_to_client', extra: {
+      'arrivedToClientAt': Timestamp.now(),
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم إشعار العميل بوصول المندوب')),
+    );
     _loadOrderData();
   }
 
@@ -186,16 +293,21 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('تفاصيل الطلب', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFE724C), fontFamily: 'Tajawal', fontSize: 20)),
+        title: const Text('تفاصيل الطلب',
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppThemeArabic.clientPrimary,
+                fontFamily: 'Tajawal',
+                fontSize: 20)),
         backgroundColor: Colors.white,
         elevation: 1,
         centerTitle: true,
-        iconTheme: const IconThemeData(color: Color(0xFFFE724C)),
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
         ),
       ),
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: AppThemeArabic.clientBackground,
       body: orderData == null
           ? const Center(child: CircularProgressIndicator())
           : Padding(
@@ -205,64 +317,106 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                   // رقم الطلب بشكل موحد وبارز
                   Row(
                     children: [
-                      const Text('رقم الطلب: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const Text('رقم الطلب: ',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
                       Text(
                         orderData!['orderNumber'] != null
-                          ? '#${orderData!['orderNumber']}'
-                          : '#${widget.orderId.substring(0,8)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange, fontSize: 18),
+                            ? '#${orderData!['orderNumber']}'
+                            : '#${widget.orderId.substring(0, 8)}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepOrange,
+                            fontSize: 18),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
                   Text('العميل: ${orderData!['clientName'] ?? "غير متوفر"}'),
-                  Text('العنوان: ${orderData!['deliveryAddressName'] ?? "غير متوفر"}'),
-                  Text('الحالة الحالية: ${orderData!['status'] ?? "غير متوفر"}'),
+                  Text(
+                      'العنوان: ${orderData!['deliveryAddressName'] ?? "غير متوفر"}'),
+                  Text('الحالة الحالية: ${_getOrderStatus(orderData!)}'),
                   const SizedBox(height: 12),
                   Text('رسوم التوصيل الخاصة بك: $deliveryFee ج.س',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
+                      style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green)),
                   const SizedBox(height: 20),
 
-                  // قسم إجراءات المندوب (اختياري) يوفر أزرار الانتقال والتسليم
-                  CourierOrderActions(orderId: widget.orderId),
-
-                  if (orderData?['assignedDriverId'] == null)
-                    ElevatedButton.icon(
-                      onPressed: _acceptOrder,
-                      icon: const Icon(Icons.check),
-                      label: const Text('قبول الطلب'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        minimumSize: const Size.fromHeight(48),
-                      ),
+                  if (_getOrderStatus(orderData!) == 'courier_offer_pending' &&
+                      (orderData?['offeredDriverId'] ?? '').toString() ==
+                          widget.driverId)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _acceptOrder,
+                          icon: const Icon(Icons.check),
+                          label: const Text('قبول العرض'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            minimumSize: const Size.fromHeight(48),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: _rejectOffer,
+                          icon: const Icon(Icons.close),
+                          label: const Text('رفض العرض'),
+                        ),
+                      ],
                     )
                   else if (orderData?['assignedDriverId'] == widget.driverId)
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text('صورة إثبات التسليم:', style: TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 10),
-                        if (_deliveryImage != null)
-                          Image.file(_deliveryImage!, height: 200)
-                        else if (orderData?['deliveryImage'] != null)
-                          Image.network(orderData!['deliveryImage'], height: 200)
-                        else
-                          const Text('لم يتم التقاط صورة بعد.'),
-                        const SizedBox(height: 20),
-                        ElevatedButton.icon(
-                          onPressed: _pickImage,
-                          icon: const Icon(Icons.camera_alt),
-                          label: const Text('التقاط صورة للتسليم'),
-                        ),
-                        const SizedBox(height: 16),
-                        _uploading
-                            ? const Center(child: CircularProgressIndicator())
-                            : ElevatedButton.icon(
-                                onPressed: _confirmDelivery,
-                                icon: const Icon(Icons.check_circle),
-                                label: const Text('تأكيد التسليم'),
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                              ),
+                        if (_getOrderStatus(orderData!) == 'pickup_ready')
+                          ElevatedButton.icon(
+                            onPressed: _markPickedUp,
+                            icon: const Icon(Icons.inventory_2),
+                            label: const Text('تم الاستلام من المطعم'),
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.teal),
+                          ),
+                        if (_getOrderStatus(orderData!) == 'picked_up')
+                          ElevatedButton.icon(
+                            onPressed: _markArrivedToClient,
+                            icon: const Icon(Icons.location_on),
+                            label: const Text('وصلت للعميل'),
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.deepPurple),
+                          ),
+                        if (_getOrderStatus(orderData!) ==
+                            'arrived_to_client') ...[
+                          const SizedBox(height: 12),
+                          const Text('صورة إثبات التسليم:',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 10),
+                          if (_deliveryImage != null)
+                            Image.file(_deliveryImage!, height: 200)
+                          else if (orderData?['deliveryImage'] != null)
+                            Image.network(orderData!['deliveryImage'],
+                                height: 200)
+                          else
+                            const Text('لم يتم التقاط صورة بعد.'),
+                          const SizedBox(height: 20),
+                          ElevatedButton.icon(
+                            onPressed: _pickImage,
+                            icon: const Icon(Icons.camera_alt),
+                            label: const Text('التقاط صورة للتسليم'),
+                          ),
+                          const SizedBox(height: 16),
+                          _uploading
+                              ? const Center(child: CircularProgressIndicator())
+                              : ElevatedButton.icon(
+                                  onPressed: _confirmDelivery,
+                                  icon: const Icon(Icons.check_circle),
+                                  label: const Text('تأكيد التسليم'),
+                                  style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green),
+                                ),
+                        ],
                         const SizedBox(height: 16),
                         ElevatedButton.icon(
                           onPressed: () {
@@ -283,25 +437,33 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                               );
                             } else {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('لا توجد بيانات موقع المطعم أو العميل')),
+                                const SnackBar(
+                                    content: Text(
+                                        'لا توجد بيانات موقع المطعم أو العميل')),
                               );
                             }
                           },
                           icon: const Icon(Icons.map),
                           label: const Text('عرض الخريطة'),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.deepPurple),
                         ),
                       ],
                     )
                   else
-                    const Center(child: Text('هذا الطلب تم استلامه بواسطة مندوب آخر.')),
+                    const Center(
+                        child: Text('هذا الطلب تم استلامه بواسطة مندوب آخر.')),
 
                   const SizedBox(height: 24),
                   ElevatedButton.icon(
                     onPressed: () async {
-                      final doc = await FirebaseFirestore.instance.collection('drivers').doc(widget.driverId).get();
+                      final doc = await FirebaseFirestore.instance
+                          .collection('drivers')
+                          .doc(widget.driverId)
+                          .get();
                       final driverName = doc.data()?['name'] ?? 'مندوب';
-                      final chatId = _generateChatId(widget.driverId, orderData!['clientId']);
+                      final chatId = _generateChatId(
+                          widget.driverId, orderData!['clientId']);
                       Navigator.push(
                         context,
                         MaterialPageRoute(

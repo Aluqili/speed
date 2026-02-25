@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class ClientSupportScreen extends StatefulWidget {
   const ClientSupportScreen({Key? key}) : super(key: key);
 
-  static const Color primaryColor = Color(0xFFFE724C);
-  static const Color backgroundColor = Color(0xFFF5F5F5);
+  static const Color primaryColor = AppThemeArabic.clientPrimary;
+  static const Color backgroundColor = AppThemeArabic.clientBackground;
 
   @override
   _ClientSupportScreenState createState() => _ClientSupportScreenState();

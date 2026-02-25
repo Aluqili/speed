@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class CourierOrderMapScreen extends StatefulWidget {
   final double restaurantLat;
@@ -142,9 +143,16 @@ class _CourierOrderMapScreenState extends State<CourierOrderMapScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppThemeArabic.clientBackground,
       appBar: AppBar(
-        title: const Text('تتبع التوصيل'),
-        backgroundColor: Colors.green,
+        title: const Text('تتبع التوصيل', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
       ),
       body: GoogleMap(
         initialCameraPosition: CameraPosition(

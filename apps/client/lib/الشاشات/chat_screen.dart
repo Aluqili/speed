@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'dart:io';
 import 'package:intl/intl.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/src/config/ops_runtime_config.dart';
 
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
@@ -30,20 +33,99 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   final cloudinary = CloudinaryPublic('dvnzloec6', 'flutter_unsigned', cache: false);
   String otherUserName = '';
+  bool _chatEnabled = true;
+  String _chatDisabledMessage = 'الدردشة متوقفة مؤقتًا.';
+
+  bool get _isSupportChat =>
+      widget.otherUserId == 'support' || widget.chatId.endsWith('-support');
+
+  String get _chatKind => _isSupportChat ? 'support' : 'direct';
+
+  String get _sourceApp => 'client';
 
   @override
   void initState() {
     super.initState();
+    _loadChatConfig();
     _fetchOtherUserName();
   }
 
-  Future<void> _fetchOtherUserName() async {
-    final doc = await FirebaseFirestore.instance.collection('users').doc(widget.otherUserId).get();
-    if (doc.exists) {
+  Future<void> _loadChatConfig() async {
+    try {
+      final rc = FirebaseRemoteConfig.instance;
+      await rc.fetchAndActivate();
+      final ops = OpsRuntimeConfig.fromRemoteConfig(rc, appKey: 'client');
+      if (!mounted) return;
       setState(() {
-        otherUserName = doc.data()!['name'] ?? 'المستخدم';
+        _chatEnabled = ops.chatEnabled;
+        _chatDisabledMessage = ops.chatDisabledMessage;
       });
+    } catch (_) {
+      // Keep defaults
     }
+  }
+
+  Future<String?> _findUserNameInCollection(
+      String collection, String userId) async {
+    try {
+      final directDoc =
+          await FirebaseFirestore.instance.collection(collection).doc(userId).get();
+      if (directDoc.exists) {
+        final data = directDoc.data() ?? <String, dynamic>{};
+        final name =
+            (data['name'] ?? data['fullName'] ?? data['displayName'] ?? '')
+                .toString()
+                .trim();
+        if (name.isNotEmpty) return name;
+      }
+
+      final candidateFields = ['ownerUid', 'uid', 'userId'];
+      for (final field in candidateFields) {
+        final query = await FirebaseFirestore.instance
+            .collection(collection)
+            .where(field, isEqualTo: userId)
+            .limit(1)
+            .get();
+        if (query.docs.isNotEmpty) {
+          final data = query.docs.first.data();
+          final name =
+              (data['name'] ?? data['fullName'] ?? data['displayName'] ?? '')
+                  .toString()
+                  .trim();
+          if (name.isNotEmpty) return name;
+        }
+      }
+    } catch (_) {
+      // Ignore and continue fallback chain
+    }
+    return null;
+  }
+
+  Future<void> _fetchOtherUserName() async {
+    if (_isSupportChat) {
+      if (!mounted) return;
+      setState(() {
+        otherUserName = 'الدعم الفني';
+      });
+      return;
+    }
+
+    final fallbackCollections = ['clients', 'drivers', 'restaurants'];
+    for (final col in fallbackCollections) {
+      final name = await _findUserNameInCollection(col, widget.otherUserId);
+      if (name != null && name.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          otherUserName = name;
+        });
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      otherUserName = 'المستخدم';
+    });
   }
 
   Future<String> _detectUserType(String userId) async {
@@ -64,10 +146,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final message = {
       'conversationId': widget.chatId,
+      'chatKind': _chatKind,
+      'sourceApp': _sourceApp,
       'senderId': widget.currentUserId,
       'senderType': senderType,
       'senderName': widget.currentUserName,
       'receiverId': widget.otherUserId,
+      'participants': [widget.currentUserId, widget.otherUserId],
+      'participantsKey': [widget.currentUserId, widget.otherUserId]..sort(),
       'timestamp': FieldValue.serverTimestamp(),
       if (text != null) 'message': text.trim(),
       if (imageUrl != null) 'imageUrl': imageUrl,
@@ -134,10 +220,35 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
 
+    if (!_chatEnabled) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('الدردشة')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              _chatDisabledMessage,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(otherUserName.isNotEmpty ? otherUserName : 'تحميل...'),
-        backgroundColor: const Color(0xFFF57C00),
+        backgroundColor: AppThemeArabic.clientPrimary,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(28),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              _isSupportChat ? 'محادثة دعم' : 'محادثة مباشرة',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ),
+        ),
         actions: [
           PopupMenuButton(
             icon: const Icon(Icons.add_photo_alternate, color: Colors.white),
@@ -196,6 +307,18 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            if (!isMe && (data['senderName'] ?? '').toString().isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Text(
+                                  (data['senderName'] ?? '').toString(),
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                              ),
                             if (data['imageUrl'] != null)
                               GestureDetector(
                                 onTap: () => _showImagePreview(data['imageUrl']),

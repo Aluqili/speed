@@ -1,26 +1,86 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
-class ClientNotificationsScreen extends StatelessWidget {
+class ClientNotificationsScreen extends StatefulWidget {
   final String clientId;
 
   const ClientNotificationsScreen({Key? key, required this.clientId}) : super(key: key);
 
-  static const Color primaryColor = Color(0xFFFE724C);
-  static const Color backgroundColor = Color(0xFFF5F5F5);
+  @override
+  State<ClientNotificationsScreen> createState() => _ClientNotificationsScreenState();
+}
+
+class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _markAllAsRead();
+  }
+
+  Future<void> _markAllAsRead() async {
+    try {
+      final unread = await FirebaseFirestore.instance
+          .collection('clients')
+          .doc(widget.clientId)
+          .collection('notifications')
+          .where('isRead', isEqualTo: false)
+          .limit(300)
+          .get();
+
+      if (unread.docs.isEmpty) {
+        final maybeUnread = await FirebaseFirestore.instance
+            .collection('clients')
+            .doc(widget.clientId)
+            .collection('notifications')
+            .orderBy('timestamp', descending: true)
+            .limit(300)
+            .get();
+
+        final batch = FirebaseFirestore.instance.batch();
+        var ops = 0;
+        for (final doc in maybeUnread.docs) {
+          if ((doc.data()['isRead'] ?? false) == true) continue;
+          batch.update(doc.reference, {
+            'isRead': true,
+            'readAt': FieldValue.serverTimestamp(),
+          });
+          ops += 1;
+        }
+        if (ops > 0) {
+          await batch.commit();
+        }
+        return;
+      }
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in unread.docs) {
+        batch.update(doc.reference, {
+          'isRead': true,
+          'readAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    } catch (_) {
+      // keep UI functional even if marking fails
+    }
+  }
+
+  static const Color primaryColor = AppThemeArabic.clientPrimary;
+  static const Color backgroundColor = AppThemeArabic.clientBackground;
 
   @override
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: ClientNotificationsScreen.backgroundColor,
+        backgroundColor: backgroundColor,
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 1,
           centerTitle: true,
-          title: const Text('الإشعارات', style: TextStyle(color: ClientNotificationsScreen.primaryColor, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
-          iconTheme: const IconThemeData(color: ClientNotificationsScreen.primaryColor),
+          title: const Text('الإشعارات', style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+          iconTheme: const IconThemeData(color: primaryColor),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
           ),
@@ -28,13 +88,13 @@ class ClientNotificationsScreen extends StatelessWidget {
         body: StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('clients')
-              .doc(clientId)
+              .doc(widget.clientId)
               .collection('notifications')
               .orderBy('timestamp', descending: true)
               .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator(color: ClientNotificationsScreen.primaryColor));
+              return const Center(child: CircularProgressIndicator(color: primaryColor));
             }
 
             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
@@ -59,7 +119,7 @@ class ClientNotificationsScreen extends StatelessWidget {
                   elevation: 3,
                   margin: const EdgeInsets.only(bottom: 14),
                   child: ListTile(
-                    leading: const Icon(Icons.notifications, color: ClientNotificationsScreen.primaryColor),
+                    leading: const Icon(Icons.notifications, color: primaryColor),
                     title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Tajawal')),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

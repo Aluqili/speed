@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:provider/provider.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'cart_provider.dart';
 import 'package:intl/intl.dart' show NumberFormat;
 import 'client_cart_screen.dart';
@@ -27,9 +28,9 @@ class RestaurantDetailScreen extends StatefulWidget {
 }
 
 class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
-  static const Color primaryColor = Color(0xFFFE724C);
-  static const Color accentColor = Color(0xFFFFC529);
-  static const Color backgroundColor = Color(0xFFF5F5F5);
+  static const Color primaryColor = AppThemeArabic.clientPrimary;
+  static const Color accentColor = AppThemeArabic.clientAccent;
+  static const Color backgroundColor = AppThemeArabic.clientBackground;
   static const Color cardColor = Colors.white;
   static const Color textColorPrimary = Color(0xFF1A1D26);
   static const Color textColorSecondary = Color(0xFF6B7280);
@@ -159,7 +160,11 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                   children: [
                     widget.image.isNotEmpty
                         ? Image.network(widget.image, fit: BoxFit.cover)
-                        : Image.asset('assets/images/default.png', fit: BoxFit.cover),
+                        : Container(
+                            color: Colors.grey[200],
+                            child: Icon(Icons.storefront,
+                                size: 56, color: Colors.grey[500]),
+                          ),
                     Container(
                       color: Colors.black.withOpacity(0.3),
                     ),
@@ -198,14 +203,16 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                   padding: const EdgeInsets.all(12),
                   child: Text(
                     statusText,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold),
                     textAlign: TextAlign.center,
                   ),
                 ),
               ),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -227,14 +234,16 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                           .get(),
                       builder: (context, snapshot) {
                         if (!snapshot.hasData) {
-                          return const Center(child: CircularProgressIndicator());
+                          return const Center(
+                              child: CircularProgressIndicator());
                         }
                         final items = snapshot.data!.docs;
                         // استخراج الفئات
                         final Set<String> categories = {'كل الأصناف'};
                         for (var doc in items) {
                           final data = doc.data() as Map<String, dynamic>;
-                          if (data['category'] != null && data['category'].toString().isNotEmpty) {
+                          if (data['category'] != null &&
+                              data['category'].toString().isNotEmpty) {
                             categories.add(data['category']);
                           }
                         }
@@ -245,24 +254,30 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                             scrollDirection: Axis.horizontal,
                             reverse: true,
                             itemCount: categoryList.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 8),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 8),
                             itemBuilder: (context, index) {
                               final cat = categoryList[index];
                               final selected = _selectedCategory == null
                                   ? cat == 'كل الأصناف'
                                   : _selectedCategory == cat;
                               return ChoiceChip(
-                                label: Text(cat, style: TextStyle(fontWeight: FontWeight.bold)),
+                                label: Text(cat,
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.bold)),
                                 selected: selected,
                                 onSelected: (val) {
                                   setState(() {
-                                    _selectedCategory = cat == 'كل الأصناف' ? null : cat;
+                                    _selectedCategory =
+                                        cat == 'كل الأصناف' ? null : cat;
                                   });
                                 },
                                 selectedColor: primaryColor,
                                 backgroundColor: Colors.grey[200],
                                 labelStyle: TextStyle(
-                                  color: selected ? Colors.white : textColorPrimary,
+                                  color: selected
+                                      ? Colors.white
+                                      : textColorPrimary,
                                 ),
                               );
                             },
@@ -282,8 +297,14 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                     .collection('full_menu')
                     .snapshots(),
                 builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return const Center(
+                      child: Text('تعذر تحميل قائمة المطعم حالياً.'),
+                    );
+                  }
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return const Center(child: Text('لا توجد أصناف متاحة حالياً.'));
+                    return const Center(
+                        child: Text('لا توجد أصناف متاحة حالياً.'));
                   }
                   final items = snapshot.data!.docs;
                   // تصفية حسب الفئة
@@ -300,14 +321,16 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                       final data = doc.data() as Map<String, dynamic>;
                       final itemId = '${widget.restaurantId}_${doc.id}';
                       final itemName = data['name'] ?? '';
-                      final itemPrice = (data['price'] as num?)?.toDouble() ?? 0.0;
+                      final itemPrice =
+                          (data['price'] as num?)?.toDouble() ?? 0.0;
                       final itemImage = data['imageUrl'] ?? '';
                       final quantity = cartProvider.getQuantity(itemId);
                       final imageProvider = (itemImage.isNotEmpty)
                           ? NetworkImage(itemImage)
-                          : const AssetImage('assets/images/default.png') as ImageProvider;
+                          : null;
                       return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 0, vertical: 8),
                         child: Container(
                           width: double.infinity,
                           decoration: BoxDecoration(
@@ -327,32 +350,48 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                             children: [
                               Expanded(
                                 child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 0),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 12, horizontal: 0),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
                                         children: [
                                           // حالة التوفر: تظهر فقط إذا غير متوفر
                                           if (data['available'] == false)
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4),
                                               decoration: BoxDecoration(
                                                 color: closedColor,
-                                                borderRadius: BorderRadius.circular(8),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
                                               ),
                                               child: const Text(
                                                 'غير متوفر',
-                                                style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                                style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 12,
+                                                    fontWeight:
+                                                        FontWeight.bold),
                                               ),
                                             ),
                                           // اسم الصنف
                                           Padding(
-                                            padding: const EdgeInsets.only(right: 12),
+                                            padding: const EdgeInsets.only(
+                                                right: 12),
                                             child: Text(
                                               itemName,
-                                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textColorPrimary, letterSpacing: 0.5, height: 1.2),
+                                              style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 16,
+                                                  color: textColorPrimary,
+                                                  letterSpacing: 0.5,
+                                                  height: 1.2),
                                               textAlign: TextAlign.right,
                                               overflow: TextOverflow.ellipsis,
                                               maxLines: 1,
@@ -361,38 +400,64 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                         ],
                                       ),
                                       const SizedBox(height: 4),
-                                      Text('${NumberFormat.decimalPattern().format(itemPrice)} ج.س',
-                                          style: TextStyle(color: textColorSecondary, fontSize: 14, fontWeight: FontWeight.w500, letterSpacing: 0.2)),
+                                      Text(
+                                          '${NumberFormat.decimalPattern().format(itemPrice)} ج.س',
+                                          style: TextStyle(
+                                              color: textColorSecondary,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                              letterSpacing: 0.2)),
                                       const SizedBox(height: 8),
                                       // الأزرار تحت الاسم والسعر مباشرة
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
                                         children: [
                                           GFIconButton(
-                                            icon: const Icon(Icons.add, size: 18),
-                                            onPressed: (isClosed || data['available'] == false) ? null : () {
-                                              cartProvider.addToCartSimple(itemId, itemName, itemPrice);
-                                            },
+                                            icon:
+                                                const Icon(Icons.add, size: 18),
+                                            onPressed: (isClosed ||
+                                                    data['available'] == false)
+                                                ? null
+                                                : () {
+                                                    cartProvider
+                                                        .addToCartSimple(
+                                                            itemId,
+                                                            itemName,
+                                                            itemPrice);
+                                                  },
                                             color: primaryColor,
                                             type: GFButtonType.outline,
                                             size: GFSize.SMALL,
                                             shape: GFIconButtonShape.circle,
-                                            splashColor: accentColor.withOpacity(0.2),
+                                            splashColor:
+                                                accentColor.withOpacity(0.2),
                                           ),
                                           Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                                            child: Text(quantity.toString(), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black)),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8),
+                                            child: Text(quantity.toString(),
+                                                style: const TextStyle(
+                                                    fontSize: 15,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.black)),
                                           ),
                                           GFIconButton(
-                                            icon: const Icon(Icons.remove, size: 18),
-                                            onPressed: (isClosed || data['available'] == false) ? null : () {
-                                              cartProvider.removeOneItem(itemId);
-                                            },
+                                            icon: const Icon(Icons.remove,
+                                                size: 18),
+                                            onPressed: (isClosed ||
+                                                    data['available'] == false)
+                                                ? null
+                                                : () {
+                                                    cartProvider
+                                                        .removeOneItem(itemId);
+                                                  },
                                             color: primaryColor,
                                             type: GFButtonType.outline,
                                             size: GFSize.SMALL,
                                             shape: GFIconButtonShape.circle,
-                                            splashColor: closedColor.withOpacity(0.15),
+                                            splashColor:
+                                                closedColor.withOpacity(0.15),
                                           ),
                                         ],
                                       ),
@@ -404,18 +469,20 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                 padding: const EdgeInsets.all(10),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
-                                  child: Image(
-                                    image: imageProvider,
-                                    width: 80,
-                                    height: 80,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) => Container(
-                                      width: 80,
-                                      height: 80,
-                                      color: Colors.grey[200],
-                                      child: Icon(Icons.broken_image, color: Colors.grey[400]),
-                                    ),
-                                  ),
+                                  child: imageProvider != null
+                                      ? Image(
+                                          image: imageProvider,
+                                          width: 95,
+                                          height: 95,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Container(
+                                          width: 95,
+                                          height: 95,
+                                          color: Colors.grey[200],
+                                          child: Icon(Icons.fastfood,
+                                              color: Colors.grey[500]),
+                                        ),
                                 ),
                               ),
                             ],

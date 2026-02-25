@@ -4,21 +4,33 @@ import 'package:getwidget/getwidget.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
+import 'package:provider/provider.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import '../الخدمات/promocode_service.dart';
-import 'payment_waiting_screen.dart';
+import 'cart_provider.dart';
+import 'client_order_details_screen.dart';
 
 class PaymentScreen extends StatefulWidget {
-  final String orderId;
-  const PaymentScreen({Key? key, required this.orderId}) : super(key: key);
+  final String? orderId;
+  final Map<String, dynamic>? draftOrderData;
+  final bool clearCartOnSubmit;
+
+  const PaymentScreen({
+    Key? key,
+    this.orderId,
+    this.draftOrderData,
+    this.clearCartOnSubmit = false,
+  })  : assert(orderId != null || draftOrderData != null),
+        super(key: key);
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
 
 class _PaymentScreenState extends State<PaymentScreen> {
-  static const Color primaryColor = Color(0xFFFE724C);
-  static const Color backgroundColor = Color(0xFFF5F5F5);
+  static const Color primaryColor = AppThemeArabic.clientPrimary;
+  static const Color backgroundColor = AppThemeArabic.clientBackground;
   static const Color cardColor = Colors.white;
   final _cloudinary = CloudinaryPublic('dvnzloec6', 'flutter_unsigned');
   String? _selectedMethod;
@@ -29,6 +41,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   // متغيرات الرمز الترويجي
   final _promocodeController = TextEditingController();
+  final _transactionRefController = TextEditingController();
   PromocodeService? _promocodeService;
   Map<String, dynamic>? _promoData;
   String? _promoError;
@@ -42,18 +55,52 @@ class _PaymentScreenState extends State<PaymentScreen> {
     _promocodeService = PromocodeService();
   }
 
+  @override
+  void dispose() {
+    _promocodeController.dispose();
+    _transactionRefController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadSettings() async {
-    final doc = await FirebaseFirestore.instance
-        .collection('paymentSettings')
-        .doc('default')
-        .get();
-    setState(() => _settings = doc.data());
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('paymentSettings')
+          .doc('default')
+          .get();
+      final data = doc.data();
+      if (!mounted) return;
+      setState(() {
+        _settings = data ??
+            {
+              'enabledMethods': ['bankk', 'ocash', 'fawry'],
+              'bankkAccount': '',
+              'ocashAccount': '',
+              'fawryAccount': '',
+            };
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _settings = {
+          'enabledMethods': ['bankk', 'ocash', 'fawry'],
+          'bankkAccount': '',
+          'ocashAccount': '',
+          'fawryAccount': '',
+        };
+      });
+      debugPrint('paymentSettings fallback used: $e');
+    }
   }
 
   Future<Map<String, dynamic>> _loadOrder() async {
+    if (widget.orderId == null) {
+      return Map<String, dynamic>.from(widget.draftOrderData!);
+    }
+
     final doc = await FirebaseFirestore.instance
         .collection('orders')
-        .doc(widget.orderId)
+        .doc(widget.orderId!)
         .get();
     return doc.data()!;
   }
@@ -70,54 +117,99 @@ class _PaymentScreenState extends State<PaymentScreen> {
         resourceType: CloudinaryResourceType.Image,
       ),
     );
+    if (!mounted) return;
     setState(() => _proofUrl = resp.secureUrl);
   }
 
   Future<void> _submitPayment() async {
-    if (_selectedMethod == null || _proofUrl == null) {
-      GFToast.showToast('اختر طريقة الدفع وارفع الإيصال', context);
+    final transactionReference = _transactionRefController.text.trim();
+    if (_selectedMethod == null ||
+        _proofUrl == null ||
+        transactionReference.isEmpty) {
+      GFToast.showToast(
+          'اختر طريقة الدفع وارفع الإيصال وأدخل الرقم المرجعي', context);
       return;
     }
+    if (!mounted) return;
     setState(() => _submitting = true);
 
-    // 1. إنشاء مستند الدفع الفرعي داخل الطلب
-    final paymentRef = FirebaseFirestore.instance
-        .collection('orders')
-        .doc(widget.orderId)
-        .collection('payments')
-        .doc();
-    await paymentRef.set({
-      'method': _selectedMethod,
-      'proofImageUrl': _proofUrl,
-      'submittedAt': FieldValue.serverTimestamp(),
-      'status': 'pending',
-      if (_promoData != null) ...{
-        'promocode': _promoData!['code'],
-        'discount': _discount,
+    try {
+      var targetOrderId = widget.orderId;
+      if (targetOrderId == null) {
+        final draft = Map<String, dynamic>.from(widget.draftOrderData!);
+        draft['status'] = 'store_pending';
+        draft['orderStatus'] = 'store_pending';
+        draft['paymentStatus'] = 'paid';
+        draft['paymentMethod'] = _selectedMethod;
+        draft['proofImageUrl'] = _proofUrl;
+        draft['transactionReference'] = transactionReference;
+        draft['createdAt'] = FieldValue.serverTimestamp();
+        final created =
+            await FirebaseFirestore.instance.collection('orders').add(draft);
+        targetOrderId = created.id;
       }
-    });
 
-    // 2. تحديث حالة الطلب إلى انتظار موافقة الأدمن
-    await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(widget.orderId)
-        .update({'status': 'pending_payment'});
+      final paymentRef = FirebaseFirestore.instance
+          .collection('orders')
+          .doc(targetOrderId)
+          .collection('payments')
+          .doc();
+      await paymentRef.set({
+        'method': _selectedMethod,
+        'proofImageUrl': _proofUrl,
+        'transactionReference': transactionReference,
+        'submittedAt': FieldValue.serverTimestamp(),
+        'status': 'paid',
+        if (_promoData != null) ...{
+          'promocode': _promoData!['code'],
+          'discount': _discount,
+        }
+      });
 
-    // 3. تحديث عدد مرات الاستخدام للرمز
-    if (_promoData != null) {
-      final userId = FirebaseAuth.instance.currentUser?.uid ?? '';
-      await _promocodeService!.incrementUsage(_promoData!['code'], userId);
+      await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(targetOrderId)
+          .update({
+        'status': 'store_pending',
+        'orderStatus': 'store_pending',
+        'paymentStatus': 'paid',
+        'paymentMethod': _selectedMethod,
+        'proofImageUrl': _proofUrl,
+        'transactionReference': transactionReference,
+        'paidAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (_promoData != null) {
+        final userId = FirebaseAuth.instance.currentUser?.uid ?? '';
+        await _promocodeService!.incrementUsage(_promoData!['code'], userId);
+      }
+
+      if (!mounted) return;
+      if (widget.clearCartOnSubmit) {
+        final cart = Provider.of<CartProvider?>(context, listen: false);
+        cart?.clearCart();
+      }
+      setState(() => _submitting = false);
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ClientOrderDetailsScreen(orderId: targetOrderId!),
+        ),
+      );
+    } on FirebaseException catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      GFToast.showToast(
+        'تعذر إرسال الدفع: ${e.message ?? e.code}',
+        context,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      GFToast.showToast('تعذر إرسال الدفع، حاول مرة أخرى', context);
     }
-
-    setState(() => _submitting = false);
-
-    // 4. الانتقال إلى شاشة الانتظار حتى يوافق الأدمن
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PaymentWaitingScreen(orderId: widget.orderId),
-      ),
-    );
   }
 
   @override
@@ -139,6 +231,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         final data = snap.data!;
         final subtotal = (data['total'] as num).toDouble();
         final deliveryFee = (data['deliveryFee'] as num).toDouble();
+        final largeOrderFee = (data['largeOrderFee'] as num?)?.toDouble() ?? 0.0;
         num totalWithDelivery = (data['totalWithDelivery'] as num).toDouble();
         if (_discount > 0) {
           totalWithDelivery -= _discount;
@@ -155,10 +248,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
               backgroundColor: Colors.white,
               elevation: 1,
               centerTitle: true,
-              title: const Text('طريقة الدفع', style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+              title: const Text('طريقة الدفع',
+                  style: TextStyle(
+                      color: primaryColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                      fontFamily: 'Tajawal')),
               iconTheme: const IconThemeData(color: primaryColor),
               shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+                borderRadius:
+                    BorderRadius.vertical(bottom: Radius.circular(18)),
               ),
               automaticallyImplyLeading: true,
             ),
@@ -169,26 +268,42 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 children: [
                   // تفاصيل الطلب بنظام أسدال
                   ExpansionTile(
-                    title: const Text('تفاصيل الطلب', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: primaryColor, fontFamily: 'Tajawal')),
+                    title: const Text('تفاصيل الطلب',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: primaryColor,
+                            fontFamily: 'Tajawal')),
                     backgroundColor: cardColor,
                     collapsedBackgroundColor: cardColor,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                     children: [
                       ...items.map((item) => ListTile(
                             leading: CircleAvatar(
                               backgroundColor: backgroundColor,
                               child: Text(
-                                item['quantity'] != null ? '${item['quantity']}' : '؟',
-                                style: const TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
+                                item['quantity'] != null
+                                    ? '${item['quantity']}'
+                                    : '؟',
+                                style: const TextStyle(
+                                    color: primaryColor,
+                                    fontWeight: FontWeight.bold),
                               ),
                             ),
                             title: Text(
                               item['name'] ?? 'غير متوفر',
-                              style: const TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                  fontFamily: 'Tajawal',
+                                  fontWeight: FontWeight.bold),
                             ),
                             trailing: Text(
-                              item['price'] != null ? '${item['price'].toString()} ج.س' : 'غير متوفر',
-                              style: const TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
+                              item['price'] != null
+                                  ? '${item['price'].toString()} ج.س'
+                                  : 'غير متوفر',
+                              style: const TextStyle(
+                                  color: primaryColor,
+                                  fontWeight: FontWeight.bold),
                             ),
                           )),
                     ],
@@ -196,164 +311,277 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   const SizedBox(height: 12),
 
                   // إدخال الرمز الترويجي
-                  const Text('رمز العرض أو الخصم', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: primaryColor, fontFamily: 'Tajawal')),
+                  const Text('رمز العرض أو الخصم',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: primaryColor,
+                          fontFamily: 'Tajawal')),
                   const SizedBox(height: 8),
-                  Row(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _promocodeController,
-                          decoration: InputDecoration(
-                            hintText: 'ادخل الرمز هنا',
-                            filled: true,
-                            fillColor: cardColor,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
+                      TextField(
+                        controller: _promocodeController,
+                        decoration: InputDecoration(
+                          hintText: 'ادخل الرمز هنا',
+                          filled: true,
+                          fillColor: cardColor,
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () async {
-                          setState(() { _promoError = null; _promoData = null; _discount = 0; });
-                          final code = _promocodeController.text.trim();
-                          if (code.isEmpty) return;
-                          final userId = FirebaseAuth.instance.currentUser?.uid ?? '';
-                          final restaurantId = (data['restaurantId'] ?? '').toString();
-                          final promo = await _promocodeService!.validatePromocode(
-                            code: code,
-                            userId: userId,
-                            orderTotal: subtotal + deliveryFee,
-                            restaurantId: restaurantId,
-                          );
-                          if (promo == null) {
-                              setState(() { _promoError = 'الرمز خاطئ'; _promoData = null; _discount = 0; });
-                              ScaffoldMessenger.of(context).showSnackBar(
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            final messenger = ScaffoldMessenger.of(context);
+                            setState(() {
+                              _promoError = null;
+                              _promoData = null;
+                              _discount = 0;
+                            });
+                            final code = _promocodeController.text.trim();
+                            if (code.isEmpty) return;
+                            final userId =
+                                FirebaseAuth.instance.currentUser?.uid ?? '';
+                            final restaurantId =
+                                (data['restaurantId'] ?? '').toString();
+                            final promo =
+                                await _promocodeService!.validatePromocode(
+                              code: code,
+                              userId: userId,
+                              orderTotal: subtotal + deliveryFee + largeOrderFee,
+                              restaurantId: restaurantId,
+                            );
+                            if (!mounted) {
+                              return;
+                            }
+                            if (promo == null) {
+                              setState(() {
+                                _promoError = 'الرمز خاطئ';
+                                _promoData = null;
+                                _discount = 0;
+                              });
+                              messenger.showSnackBar(
                                 SnackBar(
-                                  content: Text(_promoError!, style: const TextStyle(fontFamily: 'Tajawal')),
+                                  content: Text(_promoError!,
+                                      style: const TextStyle(
+                                          fontFamily: 'Tajawal')),
                                   backgroundColor: Colors.red,
                                 ),
                               );
-                          } else {
-                            // منطق الخيارات المتقدمة
-                            // 1. خصم للطلبات الجديدة فقط
-                            if (promo['onlyForNewOrders'] == true && (data['orderStatus'] != 'انتظار الدفع' && data['paymentStatus'] != 'انتظار الدفع')) {
-                                setState(() { _promoError = 'هذا الرمز متاح للطلبات الجديدة فقط.'; _promoData = null; _discount = 0; });
-                                ScaffoldMessenger.of(context).showSnackBar(
+                            } else {
+                              // منطق الخيارات المتقدمة
+                              // 1. خصم للطلبات الجديدة فقط
+                              if (promo['onlyForNewOrders'] == true &&
+                                  (data['orderStatus'] != 'انتظار الدفع' &&
+                                      data['paymentStatus'] !=
+                                          'انتظار الدفع')) {
+                                setState(() {
+                                  _promoError =
+                                      'هذا الرمز متاح للطلبات الجديدة فقط.';
+                                  _promoData = null;
+                                  _discount = 0;
+                                });
+                                messenger.showSnackBar(
                                   SnackBar(
-                                    content: Text(_promoError!, style: const TextStyle(fontFamily: 'Tajawal')),
+                                    content: Text(_promoError!,
+                                        style: const TextStyle(
+                                            fontFamily: 'Tajawal')),
                                     backgroundColor: Colors.red,
                                   ),
                                 );
                                 return;
-                            }
-                            // 2. خصم على صنف محدد
-                            num discount = 0;
-                            if (promo['itemName'] != null && promo['itemName'].toString().isNotEmpty) {
-                              final item = items.firstWhere(
-                                (i) => i['name'] == promo['itemName'],
-                                orElse: () => <String, dynamic>{},
-                              );
-                              if (item.isEmpty) {
-                                  setState(() { _promoError = 'الرمز يخص صنف محدد غير موجود في الطلب.'; _promoData = null; _discount = 0; });
-                                  ScaffoldMessenger.of(context).showSnackBar(
+                              }
+                              // 2. خصم على صنف محدد
+                              num discount = 0;
+                              if (promo['itemName'] != null &&
+                                  promo['itemName'].toString().isNotEmpty) {
+                                final item = items.firstWhere(
+                                  (i) => i['name'] == promo['itemName'],
+                                  orElse: () => <String, dynamic>{},
+                                );
+                                if (item.isEmpty) {
+                                  setState(() {
+                                    _promoError =
+                                        'الرمز يخص صنف محدد غير موجود في الطلب.';
+                                    _promoData = null;
+                                    _discount = 0;
+                                  });
+                                  messenger.showSnackBar(
                                     SnackBar(
-                                      content: Text(_promoError!, style: const TextStyle(fontFamily: 'Tajawal')),
+                                      content: Text(_promoError!,
+                                          style: const TextStyle(
+                                              fontFamily: 'Tajawal')),
                                       backgroundColor: Colors.red,
                                     ),
                                   );
                                   return;
-                              }
-                              if (promo['discountType'] == 'percent') {
-                                discount = ((item['price'] as num) * (promo['discountValue'] as num) / 100).round();
+                                }
+                                if (promo['discountType'] == 'percent') {
+                                  discount = ((item['price'] as num) *
+                                          (promo['discountValue'] as num) /
+                                          100)
+                                      .round();
+                                } else {
+                                  discount = promo['discountValue'] as num;
+                                }
                               } else {
-                                discount = promo['discountValue'] as num;
+                                // خصم عادي على كامل الطلب
+                                if (promo['discountType'] == 'percent') {
+                                  discount = ((subtotal + deliveryFee + largeOrderFee) *
+                                          (promo['discountValue'] as num) /
+                                          100)
+                                      .round();
+                                } else {
+                                  discount = promo['discountValue'] as num;
+                                }
                               }
-                            } else {
-                              // خصم عادي على كامل الطلب
-                              if (promo['discountType'] == 'percent') {
-                                discount = ((subtotal + deliveryFee) * (promo['discountValue'] as num) / 100).round();
-                              } else {
-                                discount = promo['discountValue'] as num;
-                              }
-                            }
-                            // 3. تحقق من الحد الأدنى للطلب
-                            if (promo['minOrder'] != null && (subtotal + deliveryFee) < promo['minOrder']) {
-                                setState(() { _promoError = 'الطلب أقل من الحد الأدنى للخصم.'; _promoData = null; _discount = 0; });
-                                ScaffoldMessenger.of(context).showSnackBar(
+                              // 3. تحقق من الحد الأدنى للطلب
+                              if (promo['minOrder'] != null &&
+                                  (subtotal + deliveryFee + largeOrderFee) <
+                                      promo['minOrder']) {
+                                setState(() {
+                                  _promoError =
+                                      'الطلب أقل من الحد الأدنى للخصم.';
+                                  _promoData = null;
+                                  _discount = 0;
+                                });
+                                messenger.showSnackBar(
                                   SnackBar(
-                                    content: Text(_promoError!, style: const TextStyle(fontFamily: 'Tajawal')),
+                                    content: Text(_promoError!,
+                                        style: const TextStyle(
+                                            fontFamily: 'Tajawal')),
                                     backgroundColor: Colors.red,
                                   ),
                                 );
                                 return;
+                              }
+                              setState(() {
+                                _promoData = promo;
+                                _discount = discount;
+                                _promoError = null;
+                              });
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                      'تم تطبيق الرمز بنجاح! الخصم: -${discount.toString()} ج.س',
+                                      style: const TextStyle(
+                                          fontFamily: 'Tajawal')),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
                             }
-                            setState(() {
-                              _promoData = promo;
-                              _discount = discount;
-                              _promoError = null;
-                            });
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('تم تطبيق الرمز بنجاح! الخصم: -${discount.toString()} ج.س', style: const TextStyle(fontFamily: 'Tajawal')),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primaryColor,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryColor,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 18, vertical: 12),
+                          ),
+                          child: const Text('تطبيق',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontFamily: 'Tajawal',
+                                  fontWeight: FontWeight.bold)),
                         ),
-                        child: const Text('تطبيق', style: TextStyle(color: Colors.white, fontFamily: 'Tajawal', fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
                   if (_promoError != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
-                      child: Text(_promoError!, style: const TextStyle(color: Colors.red, fontFamily: 'Tajawal')),
+                      child: Text(_promoError!,
+                          style: const TextStyle(
+                              color: Colors.red, fontFamily: 'Tajawal')),
                     ),
                   if (_promoData != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
-                      child: Text('تم تطبيق الخصم: -${_discount.toString()} ج.س', style: const TextStyle(color: Colors.green, fontFamily: 'Tajawal', fontWeight: FontWeight.bold)),
+                      child: Text(
+                          'تم تطبيق الخصم: -${_discount.toString()} ج.س',
+                          style: const TextStyle(
+                              color: Colors.green,
+                              fontFamily: 'Tajawal',
+                              fontWeight: FontWeight.bold)),
                     ),
                   const SizedBox(height: 16),
 
                   // صندوق القيم بشكل احترافي
                   Container(
-                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 14, horizontal: 18),
                     decoration: BoxDecoration(
                       color: cardColor,
                       borderRadius: BorderRadius.circular(16),
-                      boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
+                      boxShadow: [
+                        BoxShadow(color: Colors.black12, blurRadius: 4)
+                      ],
                     ),
                     child: Column(
                       children: [
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('قيمة الأصناف', style: TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold)),
-                            Text('${subtotal.toStringAsFixed(2)} ج.س', style: const TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
+                            const Text('قيمة الأصناف',
+                                style: TextStyle(
+                                    fontFamily: 'Tajawal',
+                                    fontWeight: FontWeight.bold)),
+                            Text('${subtotal.toStringAsFixed(2)} ج.س',
+                                style: const TextStyle(
+                                    color: primaryColor,
+                                    fontWeight: FontWeight.bold)),
                           ],
                         ),
                         const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('رسوم التوصيل', style: TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold)),
-                            Text('${deliveryFee.toStringAsFixed(2)} ج.س', style: const TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
+                            const Text('رسوم التوصيل',
+                                style: TextStyle(
+                                    fontFamily: 'Tajawal',
+                                    fontWeight: FontWeight.bold)),
+                            Text('${deliveryFee.toStringAsFixed(2)} ج.س',
+                                style: const TextStyle(
+                                    color: primaryColor,
+                                    fontWeight: FontWeight.bold)),
                           ],
                         ),
+                        if (largeOrderFee > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('رسوم الطلبات الكبيرة',
+                                    style: TextStyle(
+                                        fontFamily: 'Tajawal',
+                                        fontWeight: FontWeight.bold)),
+                                Text('${largeOrderFee.toStringAsFixed(2)} ج.س',
+                                    style: const TextStyle(
+                                        color: primaryColor,
+                                        fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          ),
                         if (_discount > 0)
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 4),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text('الخصم', style: TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold, color: Colors.green)),
-                                Text('-${_discount.toString()} ج.س', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                                const Text('الخصم',
+                                    style: TextStyle(
+                                        fontFamily: 'Tajawal',
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green)),
+                                Text('-${_discount.toString()} ج.س',
+                                    style: const TextStyle(
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.bold)),
                               ],
                             ),
                           ),
@@ -361,8 +589,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('الإجمالي الكلي', style: TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold, fontSize: 16)),
-                            Text('${totalWithDelivery.toStringAsFixed(2)} ج.س', style: const TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 16)),
+                            const Text('الإجمالي الكلي',
+                                style: TextStyle(
+                                    fontFamily: 'Tajawal',
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16)),
+                            Text('${totalWithDelivery.toStringAsFixed(2)} ج.س',
+                                style: const TextStyle(
+                                    color: primaryColor,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16)),
                           ],
                         ),
                       ],
@@ -370,7 +606,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ),
                   const SizedBox(height: 24),
                   // طرق الدفع أفقي
-                  const Text('اختر طريقة الدفع', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: primaryColor, fontFamily: 'Tajawal')),
+                  const Text('اختر طريقة الدفع',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: primaryColor,
+                          fontFamily: 'Tajawal')),
                   const SizedBox(height: 8),
                   SizedBox(
                     height: 80,
@@ -380,7 +621,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       separatorBuilder: (_, __) => const SizedBox(width: 12),
                       itemBuilder: (context, idx) {
                         final m = methods[idx];
-                        final label = m == 'bankk' ? 'بنكك' : m == 'ocash' ? 'أوكاش' : 'فوري';
+                        final label = m == 'bankk'
+                            ? 'بنكك'
+                            : m == 'ocash'
+                                ? 'أوكاش'
+                                : 'فوري';
                         final icon = m == 'bankk'
                             ? Icons.account_balance
                             : m == 'ocash'
@@ -391,19 +636,37 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           onTap: () => setState(() => _selectedMethod = m),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 18, vertical: 10),
                             decoration: BoxDecoration(
-                              color: selected ? primaryColor.withOpacity(0.12) : cardColor,
+                              color: selected
+                                  ? primaryColor.withValues(alpha: 0.12)
+                                  : cardColor,
                               borderRadius: BorderRadius.circular(18),
-                              border: Border.all(color: selected ? primaryColor : Colors.grey.shade300, width: selected ? 2 : 1),
-                              boxShadow: selected ? [BoxShadow(color: primaryColor.withOpacity(0.08), blurRadius: 4)] : [],
+                              border: Border.all(
+                                  color: selected
+                                      ? primaryColor
+                                      : Colors.grey.shade300,
+                                  width: selected ? 2 : 1),
+                              boxShadow: selected
+                                  ? [
+                                      BoxShadow(
+                                          color: primaryColor.withValues(
+                                              alpha: 0.08),
+                                          blurRadius: 4)
+                                    ]
+                                  : [],
                             ),
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(icon, color: primaryColor, size: 28),
                                 const SizedBox(height: 6),
-                                Text(label, style: const TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold, fontSize: 15)),
+                                Text(label,
+                                    style: const TextStyle(
+                                        fontFamily: 'Tajawal',
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15)),
                               ],
                             ),
                           ),
@@ -417,43 +680,79 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     Container(
                       width: double.infinity,
                       margin: const EdgeInsets.only(bottom: 18),
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 18),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 18),
                       decoration: BoxDecoration(
                         color: cardColor,
                         borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 2)],
+                        boxShadow: [
+                          BoxShadow(color: Colors.black12, blurRadius: 2)
+                        ],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _selectedMethod == 'bankk' ? 'رقم الحساب:' : _selectedMethod == 'ocash' ? 'رقم الحساب:' : 'رقم الحساب:',
-                            style: const TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold, color: primaryColor),
+                            _selectedMethod == 'bankk'
+                                ? 'رقم الحساب:'
+                                : _selectedMethod == 'ocash'
+                                    ? 'رقم الحساب:'
+                                    : 'رقم الحساب:',
+                            style: const TextStyle(
+                                fontFamily: 'Tajawal',
+                                fontWeight: FontWeight.bold,
+                                color: primaryColor),
                           ),
                           const SizedBox(height: 4),
-                          Text(_settings!['${_selectedMethod}Account'] ?? '', style: const TextStyle(fontFamily: 'Tajawal', fontSize: 15)),
+                          Text(_settings!['${_selectedMethod}Account'] ?? '',
+                              style: const TextStyle(
+                                  fontFamily: 'Tajawal', fontSize: 15)),
                         ],
                       ),
                     ),
                   // رفع الإيصال
-                  const Text('رفع صورة الإيصال', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: primaryColor, fontFamily: 'Tajawal')),
+                  const Text('رفع صورة الإيصال',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: primaryColor,
+                          fontFamily: 'Tajawal')),
                   const SizedBox(height: 8),
-                  if (_proofUrl != null) ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(_proofUrl!, height: 120),
-                  ),
+                  if (_proofUrl != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(_proofUrl!, height: 120),
+                    ),
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed: _pickProof,
                       icon: const Icon(Icons.upload, color: Colors.white),
-                      label: const Text('اختر صورة الإيصال', style: TextStyle(color: Colors.white, fontFamily: 'Tajawal', fontWeight: FontWeight.bold)),
+                      label: const Text('اختر صورة الإيصال',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontFamily: 'Tajawal',
+                              fontWeight: FontWeight.bold)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: primaryColor,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30)),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         textStyle: const TextStyle(fontSize: 16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _transactionRefController,
+                    decoration: InputDecoration(
+                      labelText: 'الرقم المرجعي للعملية',
+                      hintText: 'مثال: TXN-123456',
+                      filled: true,
+                      fillColor: cardColor,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                   ),
@@ -465,14 +764,23 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       onPressed: _submitting ? null : _submitPayment,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: primaryColor,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30)),
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                        textStyle: const TextStyle(fontSize: 18, fontFamily: 'Tajawal', fontWeight: FontWeight.bold),
+                        textStyle: const TextStyle(
+                            fontSize: 18,
+                            fontFamily: 'Tajawal',
+                            fontWeight: FontWeight.bold),
                         elevation: 2,
                       ),
                       child: _submitting
-                          ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Text('إرسال الدفع', style: TextStyle(color: Colors.white)),
+                          ? const SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2))
+                          : const Text('إرسال الدفع',
+                              style: TextStyle(color: Colors.white)),
                     ),
                   ),
                 ],

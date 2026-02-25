@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class CourierReadyOrdersScreen extends StatelessWidget {
   final String driverId;
@@ -9,25 +10,35 @@ class CourierReadyOrdersScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppThemeArabic.clientBackground,
       appBar: AppBar(
-        title: const Text('الطلبات الجاهزة للتوصيل'),
-        backgroundColor: Colors.teal,
+        title: const Text('الطلبات الجاهزة للتوصيل', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('orders')
-            .where('status', isEqualTo: 'جاهز للتوصيل')
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          final orders = (snapshot.data?.docs ?? []).where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
+            return status == 'pickup_ready' || status == 'جاهز للتوصيل';
+          }).toList();
+
+          if (orders.isEmpty) {
             return const Center(child: Text('لا توجد طلبات جاهزة حالياً'));
           }
-
-          final orders = snapshot.data!.docs;
 
           return ListView.builder(
             padding: const EdgeInsets.all(12),
@@ -55,14 +66,16 @@ class CourierReadyOrdersScreen extends StatelessWidget {
                       ElevatedButton.icon(
                         onPressed: () {
                           FirebaseFirestore.instance.collection('orders').doc(doc.id).update({
-                            'status': 'تم الاستلام من المطعم',
+                            'orderStatus': 'picked_up',
+                            'status': 'picked_up',
                             'assignedDriverId': driverId,
+                            'updatedAt': FieldValue.serverTimestamp(),
                           });
                         },
                         icon: const Icon(Icons.delivery_dining),
                         label: const Text('تم استلام الطلب'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal,
+                          backgroundColor: AppThemeArabic.clientPrimary,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         ),

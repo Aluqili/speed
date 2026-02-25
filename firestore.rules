@@ -1,0 +1,179 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && (
+          request.auth.token.email == 'admin@speedstar.com'
+          || (
+            exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+            && (
+              get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin'
+              || get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true
+            )
+          )
+        );
+    }
+
+    function isApprovedRestaurantOwner(restaurantId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/restaurants/$(restaurantId))
+        && (
+          request.auth.uid == restaurantId
+          || get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.ownerUid == request.auth.uid
+        )
+        && get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.approvalStatus == 'approved'
+        && get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.isApproved == true;
+    }
+
+    match /admins/{uid} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /supportTickets/{ticketId} {
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.sourceApp in ['client', 'courier', 'store'];
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    match /supportMessages/{messageId} {
+      allow create: if isSignedIn()
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.chatKind in ['support', 'direct']
+        && request.resource.data.sourceApp in ['client', 'courier', 'store']
+        && request.resource.data.participants is list
+        && request.auth.uid in request.resource.data.participants
+        && (
+          (request.resource.data.chatKind == 'support' && 'support' in request.resource.data.participants)
+          || (request.resource.data.chatKind == 'direct' && request.resource.data.receiverId in request.resource.data.participants)
+        )
+        && request.resource.data.conversationId is string;
+
+      allow read: if isAdmin()
+        || (isSignedIn()
+          && (
+            (
+              resource.data.chatKind in ['support', 'direct']
+              && resource.data.participants is list
+              && request.auth.uid in resource.data.participants
+            )
+            || (
+              resource.data.conversationId == (request.auth.uid + '-support')
+            )
+            || (
+              resource.data.chatKind == 'direct'
+              && (
+                resource.data.senderId == request.auth.uid
+                || resource.data.receiverId == request.auth.uid
+              )
+            )
+          ));
+
+      allow update, delete: if isAdmin();
+    }
+
+    match /driverNotifications/{notificationId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.driverId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    match /workflows/{workflowId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /orderTransitionRequests/{requestId} {
+      allow create: if isSignedIn() && request.resource.data.actorId == request.auth.uid;
+      allow read: if isAdmin() || (isSignedIn() && resource.data.actorId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    match /paymentSettings/{settingsId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /restaurantApplications/{applicationId} {
+      allow create: if isSignedIn() && request.auth.uid == applicationId;
+      allow update: if isSignedIn();
+      allow read: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    match /courierApplications/{applicationId} {
+      allow create: if isSignedIn() && request.auth.uid == applicationId;
+      allow update: if isSignedIn();
+      allow read: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    match /storeChangeRequests/{requestId} {
+      allow create, update, delete: if isAdmin();
+      allow read: if isAdmin() || (isSignedIn() && resource.data.restaurantId == request.auth.uid);
+    }
+
+    match /orders/{orderId} {
+      allow read, write: if isSignedIn();
+      match /payments/{paymentId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    match /restaurants/{restaurantId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || isApprovedRestaurantOwner(restaurantId);
+      allow delete: if isAdmin();
+      match /full_menu/{itemId} {
+        allow read: if isSignedIn()
+          && get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.approvalStatus == 'approved'
+          && get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.menuEverApproved == true;
+        allow write: if isAdmin() || isApprovedRestaurantOwner(restaurantId);
+      }
+      match /{document=**} {
+        allow read, write: if isAdmin() || isApprovedRestaurantOwner(restaurantId);
+      }
+    }
+
+    match /drivers/{driverId} {
+      allow read, write: if isSignedIn()
+        && ((resource.data.restaurantId != null
+          && get(/databases/$(database)/documents/restaurants/$(resource.data.restaurantId)).data.approvalStatus == 'approved'
+          && get(/databases/$(database)/documents/restaurants/$(resource.data.restaurantId)).data.menuEverApproved == true)
+        || (request.resource.data.restaurantId != null
+          && get(/databases/$(database)/documents/restaurants/$(request.resource.data.restaurantId)).data.approvalStatus == 'approved'
+          && get(/databases/$(database)/documents/restaurants/$(request.resource.data.restaurantId)).data.menuEverApproved == true));
+      match /{document=**} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    match /clients/{clientId} {
+      allow read, write: if isSignedIn();
+      match /{document=**} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && (
+          resource.data.userId == request.auth.uid
+          || resource.data.driverId == request.auth.uid
+          || resource.data.restaurantId == request.auth.uid
+        ));
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

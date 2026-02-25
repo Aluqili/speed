@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "name": "orders-default-with-courier-timeout",
+  "description": "Client -> Store -> Courier flow without OTP",
+  "maxCourierAssignmentAttempts": 5,
+  "transitions": [
+    {
+      "action": "store_accept",
+      "from": "store_pending",
+      "to": "courier_searching",
+      "allowedRoles": ["store", "admin"]
+    },
+    {
+      "action": "store_reject",
+      "from": "store_pending",
+      "to": "store_rejected",
+      "allowedRoles": ["store", "admin"]
+    },
+    {
+      "action": "courier_offer_start",
+      "from": "courier_searching",
+      "to": "courier_offer_pending",
+      "allowedRoles": ["system", "admin"],
+      "timeoutSeconds": 40,
+      "onTimeoutAction": "courier_offer_timeout"
+    },
+    {
+      "action": "courier_offer_timeout",
+      "from": "courier_offer_pending",
+      "to": "courier_searching",
+      "allowedRoles": ["system", "admin"],
+      "maxRetries": 5
+    },
+    {
+      "action": "courier_reject",
+      "from": "courier_offer_pending",
+      "to": "courier_searching",
+      "allowedRoles": ["courier", "admin"],
+      "maxRetries": 5
+    },
+    {
+      "action": "courier_accept",
+      "from": "courier_offer_pending",
+      "to": "courier_assigned",
+      "allowedRoles": ["courier", "admin"]
+    },
+    {
+      "action": "store_ready",
+      "from": "courier_assigned",
+      "to": "pickup_ready",
+      "allowedRoles": ["store", "admin"]
+    },
+    {
+      "action": "courier_pickup",
+      "from": "pickup_ready",
+      "to": "picked_up",
+      "allowedRoles": ["courier", "admin"]
+    },
+    {
+      "action": "courier_arrived_client",
+      "from": "picked_up",
+      "to": "arrived_to_client",
+      "allowedRoles": ["courier", "admin"]
+    },
+    {
+      "action": "courier_deliver",
+      "from": "arrived_to_client",
+      "to": "delivered",
+      "allowedRoles": ["courier", "admin"]
+    },
+    {
+      "action": "cancel_by_client",
+      "from": "store_pending",
+      "to": "cancelled",
+      "allowedRoles": ["client", "admin"]
+    },
+    {
+      "action": "cancel_by_store",
+      "from": "courier_searching",
+      "to": "cancelled",
+      "allowedRoles": ["store", "admin"]
+    },
+    {
+      "action": "cancel_by_store_assigned",
+      "from": "courier_assigned",
+      "to": "cancelled",
+      "allowedRoles": ["store", "admin"]
+    }
+  ]
+}

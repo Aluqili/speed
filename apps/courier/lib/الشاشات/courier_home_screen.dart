@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:location/location.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import 'courier_active_orders_screen.dart';
 import 'courier_order_history_screen.dart';
@@ -134,7 +135,17 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('الرئيسية - المندوب')),
+      backgroundColor: AppThemeArabic.clientBackground,
+      appBar: AppBar(
+        title: const Text('الرئيسية - المندوب', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: _loadingAvailability

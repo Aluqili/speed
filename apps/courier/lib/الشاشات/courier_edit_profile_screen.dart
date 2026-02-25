@@ -6,6 +6,7 @@ import 'package:getwidget/getwidget.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class CourierEditProfileScreen extends StatefulWidget {
   final String driverId;
@@ -88,7 +89,7 @@ class _CourierEditProfileScreenState extends State<CourierEditProfileScreen> {
       'تم التحديث',
       'تم تحديث بياناتك بنجاح.',
       snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: GFColors.SUCCESS,
+      backgroundColor: AppThemeArabic.clientSuccess,
       colorText: Colors.white,
     );
   }
@@ -137,7 +138,7 @@ class _CourierEditProfileScreenState extends State<CourierEditProfileScreen> {
       });
       Get.snackbar('تم الشحن', 'تم شحن المحفظة بنجاح.',
           snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: GFColors.SUCCESS,
+          backgroundColor: AppThemeArabic.clientSuccess,
           colorText: Colors.white);
     }
   }
@@ -146,16 +147,16 @@ class _CourierEditProfileScreenState extends State<CourierEditProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('تعديل الملف الشخصي', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFE724C), fontFamily: 'Tajawal', fontSize: 20)),
+        title: const Text('تعديل الملف الشخصي', style: TextStyle(fontWeight: FontWeight.bold, color: AppThemeArabic.clientPrimary, fontFamily: 'Tajawal', fontSize: 20)),
         backgroundColor: Colors.white,
         elevation: 1,
         centerTitle: true,
-        iconTheme: const IconThemeData(color: Color(0xFFFE724C)),
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
         ),
       ),
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: AppThemeArabic.clientBackground,
       body: _loading
           ? const Center(child: GFLoader(type: GFLoaderType.circle))
           : SingleChildScrollView(
@@ -174,7 +175,7 @@ class _CourierEditProfileScreenState extends State<CourierEditProfileScreen> {
                         child: const Align(
                           alignment: Alignment.bottomRight,
                           child: GFAvatar(
-                            backgroundColor: GFColors.PRIMARY,
+                              backgroundColor: AppThemeArabic.clientPrimary,
                             radius: 14,
                             child: Icon(Icons.edit, size: 16, color: Colors.white),
                           ),
@@ -203,7 +204,7 @@ class _CourierEditProfileScreenState extends State<CourierEditProfileScreen> {
                     GFButton(
                       onPressed: _saveProfile,
                       text: 'حفظ التعديلات',
-                      color: GFColors.SUCCESS,
+                      color: AppThemeArabic.clientPrimary,
                       fullWidthButton: true,
                       size: GFSize.LARGE,
                       shape: GFButtonShape.pills,
@@ -215,12 +216,12 @@ class _CourierEditProfileScreenState extends State<CourierEditProfileScreen> {
                         Text(
                           'رصيد المحفظة: ${widget.currentData['wallet'] != null ? widget.currentData['wallet'].toStringAsFixed(2) : '0.00'} ريال',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16, color: GFColors.WARNING),
+                              fontWeight: FontWeight.bold, fontSize: 16, color: AppThemeArabic.clientAccent),
                         ),
                         GFButton(
                           onPressed: _chargeWallet,
                           text: 'شحن المحفظة',
-                          color: GFColors.WARNING,
+                          color: AppThemeArabic.clientAccent,
                           size: GFSize.MEDIUM,
                           shape: GFButtonShape.pills,
                         ),

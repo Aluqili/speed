@@ -1,82 +1,79 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'courier_order_details_screen.dart'; // تأكد أن الشاشة موجودة
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+
+import 'courier_order_details_screen.dart';
 
 class CourierNewOrdersScreen extends StatelessWidget {
   final String driverId;
 
-  const CourierNewOrdersScreen({Key? key, required this.driverId}) : super(key: key);
-
-  Future<String?> _getDriverRegion() async {
-    final doc = await FirebaseFirestore.instance.collection('drivers').doc(driverId).get();
-    if (doc.exists) {
-      return doc.data()?['region'];
-    }
-    return null;
-  }
+  const CourierNewOrdersScreen({Key? key, required this.driverId})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('الطلبات الجديدة')),
-      body: FutureBuilder<String?>(
-        future: _getDriverRegion(),
+      backgroundColor: AppThemeArabic.clientBackground,
+      appBar: AppBar(
+        title: const Text('الطلبات الجديدة', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('orders')
+            .where('offeredDriverId', isEqualTo: driverId)
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (!snapshot.hasData || snapshot.data == null) {
-            return const Center(child: Text('لم يتم تحديد منطقتك بعد'));
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return const Center(child: Text('لا توجد عروض متاحة لك حالياً'));
           }
 
-          final driverRegion = snapshot.data!;
+          final orders = snapshot.data!.docs.where((d) {
+            final m = d.data() as Map<String, dynamic>;
+            final status = (m['orderStatus'] ?? m['status'] ?? '').toString();
+            return status == 'courier_offer_pending';
+          }).toList();
 
-          return StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('orders')
-                .where('status', isEqualTo: 'قيد المراجعة')
-                .where('region', isEqualTo: driverRegion) // فقط الطلبات في نفس المنطقة
-                .where('assignedDriverId', isNull: true) // الطلبات غير المعينة
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
+          if (orders.isEmpty) {
+            return const Center(child: Text('لا توجد عروض متاحة لك حالياً'));
+          }
 
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return const Center(child: Text('لا توجد طلبات جديدة حالياً'));
-              }
+          return ListView.builder(
+            itemCount: orders.length,
+            itemBuilder: (context, index) {
+              final data = orders[index].data() as Map<String, dynamic>;
 
-              final orders = snapshot.data!.docs;
-
-              return ListView.builder(
-                itemCount: orders.length,
-                itemBuilder: (context, index) {
-                  final data = orders[index].data() as Map<String, dynamic>;
-
-                  return Card(
-                    margin: const EdgeInsets.all(8),
-                    child: ListTile(
-                      title: Text('طلب #${data['orderId']}'),
-                      subtitle: Text('العميل: ${data['clientName'] ?? 'غير معروف'}'),
-                      trailing: ElevatedButton(
-                        child: const Text('عرض التفاصيل'),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => CourierOrderDetailsScreen(
-                                orderId: orders[index].id,
-                                driverId: driverId,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  );
-                },
+              return Card(
+                margin: const EdgeInsets.all(8),
+                child: ListTile(
+                  title: Text('طلب #${data['orderId'] ?? orders[index].id}'),
+                  subtitle:
+                      Text('العميل: ${data['clientName'] ?? 'غير معروف'}'),
+                  trailing: ElevatedButton(
+                    child: const Text('عرض التفاصيل'),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CourierOrderDetailsScreen(
+                            orderId: orders[index].id,
+                            driverId: driverId,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
               );
             },
           );

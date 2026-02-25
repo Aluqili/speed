@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({Key? key}) : super(key: key);
@@ -46,7 +47,17 @@ class _ChatScreenState extends State<ChatScreen> {
         currentUserRole == 'driver' ? 'دردشة مع العميل' : 'دردشة مع المندوب';
 
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      backgroundColor: AppThemeArabic.clientBackground,
+      appBar: AppBar(
+        title: Text(title, style: const TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
+      ),
       body: Column(
         children: [
           Expanded(
@@ -89,7 +100,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: isMe ? Colors.blue[100] : Colors.grey[300],
+                          color: isMe
+                              ? AppThemeArabic.clientSurface
+                              : Theme.of(context).colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(

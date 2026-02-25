@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class RoleSelectionScreen extends StatelessWidget {
   const RoleSelectionScreen({super.key});
@@ -6,8 +7,27 @@ class RoleSelectionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('اختيار الدور')),
-      body: const Center(child: Text('اختيار الدور (لاحقاً)')),
+      backgroundColor: AppThemeArabic.clientBackground,
+      appBar: AppBar(
+        title: const Text('اختيار الدور', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
+      ),
+      body: Center(
+        child: Card(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          elevation: 2,
+          child: const Padding(
+            padding: EdgeInsets.all(20),
+            child: Text('اختيار الدور (لاحقاً)'),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,10 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 class LoginScreenArabic extends StatefulWidget {
-  const LoginScreenArabic({super.key});
+  const LoginScreenArabic({
+    super.key,
+    this.allowRegister = true,
+    this.allowGoogleSignIn = true,
+    this.allowPhoneSignIn = true,
+    this.allowGuestSignIn = true,
+  });
+
+  final bool allowRegister;
+  final bool allowGoogleSignIn;
+  final bool allowPhoneSignIn;
+  final bool allowGuestSignIn;
 
   @override
   State<LoginScreenArabic> createState() => _LoginScreenArabicState();
@@ -82,7 +94,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  const Text('أدخل بريدك وكلمة المرور أو تابع كضيف'),
+                  const Text('أدخل بريدك وكلمة المرور لتسجيل الدخول'),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _email,
@@ -120,11 +132,23 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
                               )
                             : const Text('تسجيل الدخول'),
                       ),
-                      OutlinedButton(
-                        onPressed: _loading ? null : _register,
-                        child: const Text('إنشاء حساب'),
-                      ),
-                      if (_allowGoogle)
+                      if (widget.allowRegister)
+                        OutlinedButton(
+                          onPressed: _loading
+                              ? null
+                              : () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => _RegisterScreenArabic(
+                                        defaultDialCode: _defaultDialCode,
+                                      ),
+                                    ),
+                                  );
+                                },
+                          child: const Text('إنشاء حساب'),
+                        ),
+                      if (_allowGoogle && widget.allowGoogleSignIn)
                         OutlinedButton.icon(
                           onPressed: _loading ? null : _signInWithGoogle,
                           icon: const Icon(Icons.login),
@@ -136,19 +160,30 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
                   Wrap(
                     spacing: 12,
                     children: [
-                      if (_allowGuest)
+                      if (_allowGuest && widget.allowGuestSignIn)
                         TextButton(
                           onPressed: _loading ? null : _continueAsGuest,
                           child: const Text('تابع كضيف'),
                         ),
                       TextButton(
-                        onPressed: _loading ? null : _resetPassword,
+                        onPressed: _loading
+                            ? null
+                            : () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => _ForgotPasswordScreenArabic(
+                                      initialEmail: _email.text.trim(),
+                                    ),
+                                  ),
+                                );
+                              },
                         child: const Text('نسيت كلمة المرور؟'),
                       ),
                     ],
                   ),
                   const SizedBox(height: 24),
-                  if (_allowPhone) ...[
+                  if (_allowPhone && widget.allowPhoneSignIn) ...[
                     const Text('أو الدخول برقم الهاتف'),
                     const SizedBox(height: 12),
                     TextField(
@@ -218,6 +253,14 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  void _closeIfPresentedAsRoute() {
+    if (!mounted) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop(true);
+    }
+  }
+
   String _messageForCode(String code) {
     switch (code) {
       case 'invalid-email':
@@ -241,7 +284,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
       case 'user-disabled':
         return 'هذا الحساب موقوف';
       case 'invalid-credential':
-        return 'بيانات الاعتماد غير صالحة';
+        return 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
       default:
         return 'تعذّر إتمام العملية ($code)';
     }
@@ -264,58 +307,13 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
         email: email,
         password: pass,
       );
+      _closeIfPresentedAsRoute();
     } on FirebaseAuthException catch (e) {
       _showError(_messageForCode(e.code));
     } catch (e) {
       _showError('حدث خطأ غير متوقع');
     } finally {
       if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _register() async {
-    setState(() => _loading = true);
-    try {
-      final email = _email.text.trim();
-      final pass = _password.text;
-      if (email.isEmpty) {
-        _showError('الرجاء إدخال البريد الإلكتروني');
-        return;
-      }
-      if (pass.length < 6) {
-        _showError('الحد الأدنى لطول كلمة المرور هو 6 أحرف');
-        return;
-      }
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email,
-        password: pass,
-      );
-    } on FirebaseAuthException catch (e) {
-      _showError(_messageForCode(e.code));
-    } catch (e) {
-      _showError('حدث خطأ غير متوقع');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _resetPassword() async {
-    try {
-      final email = _email.text.trim();
-      if (email.isEmpty) {
-        _showError('الرجاء إدخال البريد الإلكتروني أولاً');
-        return;
-      }
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم إرسال رابط استعادة كلمة المرور إلى بريدك'),
-        ),
-      );
-    } on FirebaseAuthException catch (e) {
-      _showError(_messageForCode(e.code));
-    } catch (_) {
-      _showError('تعذّر إرسال رابط الاستعادة');
     }
   }
 
@@ -343,6 +341,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
         timeout: const Duration(seconds: 60),
         verificationCompleted: (PhoneAuthCredential credential) async {
           await FirebaseAuth.instance.signInWithCredential(credential);
+          _closeIfPresentedAsRoute();
         },
         verificationFailed: (FirebaseAuthException e) {
           final em = e.message ?? '';
@@ -383,6 +382,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
         smsCode: code,
       );
       await FirebaseAuth.instance.signInWithCredential(credential);
+      _closeIfPresentedAsRoute();
     } on FirebaseAuthException catch (e) {
       _showError(_messageForCode(e.code));
     } catch (e) {
@@ -396,6 +396,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
     setState(() => _loading = true);
     try {
       await FirebaseAuth.instance.signInAnonymously();
+      _closeIfPresentedAsRoute();
     } on FirebaseAuthException catch (e) {
       _showError(_messageForCode(e.code));
     } catch (e) {
@@ -419,6 +420,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
         idToken: googleAuth.idToken,
       );
       await FirebaseAuth.instance.signInWithCredential(credential);
+      _closeIfPresentedAsRoute();
     } on FirebaseAuthException catch (e) {
       _showError(_messageForCode(e.code));
     } catch (e) {
@@ -426,5 +428,305 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+}
+
+class _RegisterScreenArabic extends StatefulWidget {
+  const _RegisterScreenArabic({required this.defaultDialCode});
+
+  final String defaultDialCode;
+
+  @override
+  State<_RegisterScreenArabic> createState() => _RegisterScreenArabicState();
+}
+
+class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
+  final _name = TextEditingController();
+  final _phone = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _phone.dispose();
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  String _messageForCode(String code) {
+    switch (code) {
+      case 'invalid-email':
+        return 'البريد الإلكتروني غير صالح';
+      case 'email-already-in-use':
+        return 'البريد مستخدم بالفعل';
+      case 'weak-password':
+        return 'الكلمة ضعيفة؛ استخدم 6 أحرف فأكثر';
+      default:
+        return 'تعذّر إتمام العملية ($code)';
+    }
+  }
+
+  String _normalizePhone(String input) {
+    var p = input.trim().replaceAll(' ', '');
+    if (p.isEmpty) return p;
+    if (p.startsWith('+')) return p;
+    if (p.startsWith('00')) return '+${p.substring(2)}';
+    while (p.startsWith('0')) {
+      p = p.substring(1);
+    }
+    return '${widget.defaultDialCode}$p';
+  }
+
+  Future<void> _register() async {
+    setState(() => _loading = true);
+    try {
+      final name = _name.text.trim();
+      final phone = _normalizePhone(_phone.text);
+      final email = _email.text.trim();
+      final pass = _password.text;
+
+      if (name.isEmpty) {
+        _showError('الرجاء إدخال الاسم');
+        return;
+      }
+      if (phone.isEmpty) {
+        _showError('الرجاء إدخال رقم الهاتف');
+        return;
+      }
+      if (email.isEmpty) {
+        _showError('الرجاء إدخال البريد الإلكتروني');
+        return;
+      }
+      if (pass.length < 6) {
+        _showError('الحد الأدنى لطول كلمة المرور هو 6 أحرف');
+        return;
+      }
+
+      final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: pass,
+      );
+
+      final user = credential.user;
+      if (user != null) {
+        await user.updateDisplayName(name);
+        await FirebaseFirestore.instance.collection('clients').doc(user.uid).set({
+          'name': name,
+          'phone': phone,
+          'phoneNumber': phone,
+          'email': email,
+          'ownerUid': user.uid,
+          'uid': user.uid,
+          'userId': user.uid,
+          'userType': 'client',
+          'updatedAt': FieldValue.serverTimestamp(),
+          'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } on FirebaseAuthException catch (e) {
+      _showError(_messageForCode(e.code));
+    } catch (_) {
+      _showError('حدث خطأ غير متوقع أثناء إنشاء الحساب');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('إنشاء حساب عميل')),
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  TextField(
+                    controller: _name,
+                    decoration: const InputDecoration(
+                      labelText: 'الاسم',
+                      filled: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _phone,
+                    keyboardType: TextInputType.phone,
+                    decoration: InputDecoration(
+                      labelText: 'رقم الهاتف',
+                      hintText:
+                          'مثال: +2499XXXXXXX أو اكتب رقمك المحلي وسيُضاف رمز ${widget.defaultDialCode}',
+                      prefixText: '${widget.defaultDialCode} ',
+                      filled: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _email,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'البريد الإلكتروني',
+                      hintText: 'name@example.com',
+                      filled: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _password,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'كلمة المرور',
+                      filled: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: _loading ? null : _register,
+                    child: _loading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('إنشاء الحساب'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ForgotPasswordScreenArabic extends StatefulWidget {
+  const _ForgotPasswordScreenArabic({required this.initialEmail});
+
+  final String initialEmail;
+
+  @override
+  State<_ForgotPasswordScreenArabic> createState() =>
+      _ForgotPasswordScreenArabicState();
+}
+
+class _ForgotPasswordScreenArabicState extends State<_ForgotPasswordScreenArabic> {
+  late final TextEditingController _email;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _email = TextEditingController(text: widget.initialEmail);
+  }
+
+  @override
+  void dispose() {
+    _email.dispose();
+    super.dispose();
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  String _messageForCode(String code) {
+    switch (code) {
+      case 'invalid-email':
+        return 'البريد الإلكتروني غير صالح';
+      case 'user-not-found':
+        return 'لا يوجد حساب بهذا البريد';
+      default:
+        return 'تعذّر إتمام العملية ($code)';
+    }
+  }
+
+  Future<void> _sendResetEmail() async {
+    setState(() => _loading = true);
+    try {
+      final email = _email.text.trim();
+      if (email.isEmpty) {
+        _showError('الرجاء إدخال البريد الإلكتروني');
+        return;
+      }
+
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك'),
+        ),
+      );
+      Navigator.of(context).pop();
+    } on FirebaseAuthException catch (e) {
+      _showError(_messageForCode(e.code));
+    } catch (_) {
+      _showError('تعذّر إرسال رابط الاستعادة');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('نسيت كلمة المرور')),
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  const Text('أدخل بريدك وسنرسل لك رابط إعادة تعيين كلمة المرور.'),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _email,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'البريد الإلكتروني',
+                      hintText: 'name@example.com',
+                      filled: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: _loading ? null : _sendResetEmail,
+                    child: _loading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('إرسال رابط إعادة التعيين'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class ClientWalletScreen extends StatefulWidget {
   final String clientId;
@@ -19,14 +19,14 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
           title: const Text('محفظتي'),
           backgroundColor: Colors.white,
           centerTitle: true,
-          iconTheme: const IconThemeData(color: Color(0xFFFE724C)),
+          iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
           elevation: 1,
         ),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.account_balance_wallet, size: 80, color: Color(0xFFFE724C)),
+              const Icon(Icons.account_balance_wallet, size: 80, color: AppThemeArabic.clientPrimary),
               const SizedBox(height: 20),
               const Text('رصيدك الحالي', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
               const SizedBox(height: 10),
@@ -36,12 +36,15 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
               ElevatedButton.icon(
                 onPressed: () {
                   // الانتقال إلى شاشة الشحن
-                  Get.toNamed('/client_wallet_recharge', arguments: {'clientId': widget.clientId});
+                  Navigator.of(context).pushNamed(
+                    '/client_wallet_recharge',
+                    arguments: {'clientId': widget.clientId},
+                  );
                 },
                 icon: const Icon(Icons.add_circle_outline),
                 label: const Text('شحن المحفظة'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Color(0xFFFE724C),
+                  backgroundColor: AppThemeArabic.clientPrimary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 32),
                   textStyle: const TextStyle(fontWeight: FontWeight.bold),

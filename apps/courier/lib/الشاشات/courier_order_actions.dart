@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class CourierOrderActions extends StatelessWidget {
   final String orderId;
@@ -10,14 +11,16 @@ class CourierOrderActions extends StatelessWidget {
   static Future<void> _driverGoToClient(String orderId, String driverId) {
     return FirebaseFirestore.instance.collection('orders').doc(orderId).update({
       'assignedDriverId': driverId,
-      'orderStatus': 'قيد التوصيل',
+      'orderStatus': 'picked_up',
+      'status': 'picked_up',
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
   static Future<void> _driverCompleteDelivery(String orderId) {
     return FirebaseFirestore.instance.collection('orders').doc(orderId).update({
-      'orderStatus': 'تم التوصيل',
+      'orderStatus': 'delivered',
+      'status': 'delivered',
       'deliveredAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -64,7 +67,7 @@ class CourierOrderActions extends StatelessWidget {
                 }
               },
               text: 'الذهاب إلى العميل',
-              color: GFColors.WARNING,
+              color: AppThemeArabic.clientPrimary,
             ),
             const SizedBox(height: 8),
             GFButton(
@@ -85,7 +88,7 @@ class CourierOrderActions extends StatelessWidget {
                 }
               },
               text: 'تم التسليم',
-              color: GFColors.SUCCESS,
+              color: AppThemeArabic.clientSuccess,
             ),
           ],
         ),

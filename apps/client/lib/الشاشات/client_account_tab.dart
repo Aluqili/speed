@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import 'client_wallet_screen.dart';
 import 'client_settings_screen.dart';
-import 'client_support_screen.dart';
+import 'chat_screen.dart';
 import 'address_selection_screen.dart';
 import 'role_selection_screen.dart'; // تم تصحيح اسم الملف
 
@@ -28,7 +29,7 @@ class ClientAccountTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const primaryColor = Color(0xFFFE724C);
+    const primaryColor = AppThemeArabic.clientPrimary;
 
     if (clientId.isEmpty) {
       return const Center(child: Text('يرجى تسجيل الدخول لعرض حسابك.'));
@@ -74,7 +75,15 @@ class ClientAccountTab extends StatelessWidget {
         'subtitle': 'تواصل معنا للمساعدة',
         'onTap': () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const ClientSupportScreen()),
+              MaterialPageRoute(
+                builder: (_) => ChatScreen(
+                  currentUserId: clientId,
+                  otherUserId: 'support',
+                  currentUserRole: 'client',
+                  chatId: '${clientId}-support',
+                  currentUserName: 'عميل',
+                ),
+              ),
             ),
       },
       {

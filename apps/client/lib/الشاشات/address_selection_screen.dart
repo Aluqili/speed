@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'add_new_address_screen.dart';
 import 'address_details_screen.dart';
 
@@ -20,8 +21,8 @@ class AddressSelectionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = const Color(0xFFFE724C);
-    final collectionPath = userType + 's';
+    const primaryColor = AppThemeArabic.clientPrimary;
+    final collectionPath = '${userType}s';
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -31,15 +32,20 @@ class AddressSelectionScreen extends StatelessWidget {
           backgroundColor: Colors.transparent,
           elevation: 0,
           centerTitle: true,
-          title: const Text('العناوين', style: TextStyle(color: Colors.black87)),
+          title:
+              const Text('العناوين', style: TextStyle(color: Colors.black87)),
           iconTheme: const IconThemeData(color: Colors.black87),
         ),
         body: StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance.collection(collectionPath).doc(userId).snapshots(),
+          stream: FirebaseFirestore.instance
+              .collection(collectionPath)
+              .doc(userId)
+              .snapshots(),
           builder: (context, snapshot) {
             final defaultAddressId = snapshot.hasData &&
                     snapshot.data!.data() != null &&
-                    (snapshot.data!.data() as Map<String, dynamic>).containsKey('defaultAddressId')
+                    (snapshot.data!.data() as Map<String, dynamic>)
+                        .containsKey('defaultAddressId')
                 ? snapshot.data!.get('defaultAddressId')
                 : null;
 
@@ -51,7 +57,8 @@ class AddressSelectionScreen extends StatelessWidget {
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, addressSnapshot) {
-                if (!addressSnapshot.hasData || addressSnapshot.data!.docs.isEmpty) {
+                if (!addressSnapshot.hasData ||
+                    addressSnapshot.data!.docs.isEmpty) {
                   return _buildEmptyState(context);
                 }
 
@@ -78,15 +85,17 @@ class AddressSelectionScreen extends StatelessWidget {
                           };
                           // تحديث العنوان الافتراضي في قاعدة البيانات عند الاختيار
                           await FirebaseFirestore.instance
-                              .collection(userType + 's')
+                              .collection(collectionPath)
                               .doc(userId)
                               .update({'defaultAddressId': addressId});
+                          if (!context.mounted) return;
                           if (onAddressSelected != null) {
                             onAddressSelected!(selectedAddressData);
                           }
                           Navigator.pop(context, selectedAddressData);
                         } else {
-                          _showAddressOptions(context, addressId, address, isDefault);
+                          _showAddressOptions(
+                              context, addressId, address, isDefault);
                         }
                       },
                       child: Container(
@@ -95,14 +104,15 @@ class AddressSelectionScreen extends StatelessWidget {
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.grey.withOpacity(0.06),
+                              color: Colors.grey.withValues(alpha: 0.06),
                               blurRadius: 6,
                               offset: const Offset(0, 2),
                             ),
                           ],
                         ),
                         child: ListTile(
-                          leading: const Icon(Icons.location_on, color: Color(0xFFFE724C)),
+                              leading: const Icon(Icons.location_on,
+                                color: AppThemeArabic.clientPrimary),
                           title: Row(
                             children: [
                               Expanded(
@@ -111,7 +121,9 @@ class AddressSelectionScreen extends StatelessWidget {
                                   textAlign: TextAlign.right, // محاذاة لليمين
                                 ),
                               ),
-                              if (isDefault) const Icon(Icons.star, color: Colors.amber, size: 20),
+                              if (isDefault)
+                                const Icon(Icons.star,
+                                    color: Colors.amber, size: 20),
                             ],
                           ),
                           subtitle: Text(
@@ -154,16 +166,19 @@ class AddressSelectionScreen extends StatelessWidget {
         children: const [
           Icon(Icons.location_off, size: 80, color: Colors.grey),
           SizedBox(height: 16),
-          Text('لا توجد عناوين محفوظة.', style: TextStyle(fontSize: 16, color: Colors.grey)),
+          Text('لا توجد عناوين محفوظة.',
+              style: TextStyle(fontSize: 16, color: Colors.grey)),
         ],
       ),
     );
   }
 
-  void _showAddressOptions(BuildContext context, String addressId, Map<String, dynamic> address, bool isDefault) {
+  void _showAddressOptions(BuildContext context, String addressId,
+      Map<String, dynamic> address, bool isDefault) {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) {
         return Directionality(
           textDirection: TextDirection.rtl, // تطبيق الاتجاه لأسفل ورقة الخيارات
@@ -171,7 +186,8 @@ class AddressSelectionScreen extends StatelessWidget {
             children: [
               ListTile(
                 leading: const Icon(Icons.visibility),
-                title: const Text('عرض العنوان', textAlign: TextAlign.right), // محاذاة لليمين
+                title: const Text('عرض العنوان',
+                    textAlign: TextAlign.right), // محاذاة لليمين
                 onTap: () {
                   Navigator.pop(ctx);
                   Navigator.push(
@@ -188,11 +204,12 @@ class AddressSelectionScreen extends StatelessWidget {
               ),
               ListTile(
                 leading: const Icon(Icons.delete),
-                title: const Text('حذف العنوان', textAlign: TextAlign.right), // محاذاة لليمين
+                title: const Text('حذف العنوان',
+                    textAlign: TextAlign.right), // محاذاة لليمين
                 onTap: () async {
                   Navigator.pop(ctx);
                   await FirebaseFirestore.instance
-                      .collection(userType + 's')
+                      .collection('${userType}s')
                       .doc(userId)
                       .collection('addresses')
                       .doc(addressId)
@@ -202,11 +219,12 @@ class AddressSelectionScreen extends StatelessWidget {
               if (!isDefault)
                 ListTile(
                   leading: const Icon(Icons.star),
-                  title: const Text('تعيين كعنوان افتراضي', textAlign: TextAlign.right), // محاذاة لليمين
+                  title: const Text('تعيين كعنوان افتراضي',
+                      textAlign: TextAlign.right), // محاذاة لليمين
                   onTap: () async {
                     Navigator.pop(ctx);
                     await FirebaseFirestore.instance
-                        .collection(userType + 's')
+                        .collection('${userType}s')
                         .doc(userId)
                         .update({'defaultAddressId': addressId});
                   },

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:getwidget/getwidget.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class CourierMapToClientScreen extends StatelessWidget {
   final double clientLat;
@@ -29,9 +30,16 @@ class CourierMapToClientScreen extends StatelessWidget {
     final LatLng location = LatLng(clientLat, clientLng);
 
     return Scaffold(
-      appBar: GFAppBar(
-        title: const Text('الذهاب إلى العميل'),
-        backgroundColor: GFColors.PRIMARY,
+      backgroundColor: AppThemeArabic.clientBackground,
+      appBar: AppBar(
+        title: const Text('الذهاب إلى العميل', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
       ),
       body: Column(
         children: [
@@ -49,7 +57,7 @@ class CourierMapToClientScreen extends StatelessWidget {
             onPressed: _openGoogleMaps,
             text: 'فتح الموقع في خرائط Google',
             icon: const Icon(Icons.map),
-            color: GFColors.INFO,
+            color: AppThemeArabic.clientPrimary,
             shape: GFButtonShape.pills,
             fullWidthButton: true,
           ),
@@ -58,7 +66,7 @@ class CourierMapToClientScreen extends StatelessWidget {
             onPressed: onNext,
             text: nextStepButtonText,
             icon: const Icon(Icons.directions_walk),
-            color: GFColors.SUCCESS,
+            color: AppThemeArabic.clientPrimary,
             shape: GFButtonShape.pills,
             fullWidthButton: true,
             size: GFSize.LARGE,

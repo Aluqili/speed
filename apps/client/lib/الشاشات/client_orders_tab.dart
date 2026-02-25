@@ -2,7 +2,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'client_order_details_screen.dart';
 import 'client_track_driver_screen.dart';
 
@@ -17,16 +17,25 @@ class ClientOrdersTab extends StatefulWidget {
 class _ClientOrdersTabState extends State<ClientOrdersTab>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  static const Color primaryColor = Color(0xFFFE724C);
-  static const Color backgroundColor = Color(0xFFF5F5F5);
+  static const Color primaryColor = AppThemeArabic.clientPrimary;
+  static const Color backgroundColor = AppThemeArabic.clientBackground;
 
   static const _activeOrderStatuses = [
     'انتظار الدفع',
+    'store_pending',
+    'courier_searching',
+    'courier_assigned',
+    'pickup_ready',
+    'picked_up',
+    'arrived_to_client',
     'قيد المراجعة',
     'قيد التجهيز',
     'قيد التوصيل',
   ];
   static const _pastOrderStatuses = [
+    'delivered',
+    'store_rejected',
+    'cancelled',
     'تم التوصيل',
     'ملغي',
   ];
@@ -53,8 +62,14 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
           backgroundColor: Colors.white,
           elevation: 1,
           centerTitle: true,
-          title: const Text('طلباتي', style: TextStyle(color: _ClientOrdersTabState.primaryColor, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
-          iconTheme: const IconThemeData(color: _ClientOrdersTabState.primaryColor),
+          title: const Text('طلباتي',
+              style: TextStyle(
+                  color: _ClientOrdersTabState.primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  fontFamily: 'Tajawal')),
+          iconTheme:
+              const IconThemeData(color: _ClientOrdersTabState.primaryColor),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
           ),
@@ -86,21 +101,30 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
       stream: FirebaseFirestore.instance
           .collection('orders')
           .where('clientId', isEqualTo: widget.clientId)
-          .orderBy('createdAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        final docs = snapshot.data?.docs ?? [];
+        final docs = [...(snapshot.data?.docs ?? [])];
+        docs.sort((a, b) {
+          final aData = a.data() as Map<String, dynamic>;
+          final bData = b.data() as Map<String, dynamic>;
+          final aTs = aData['createdAt'] as Timestamp?;
+          final bTs = bData['createdAt'] as Timestamp?;
+          final aMs = aTs?.millisecondsSinceEpoch ?? 0;
+          final bMs = bTs?.millisecondsSinceEpoch ?? 0;
+          return bMs.compareTo(aMs);
+        });
         // فلترة محلية حسب الحقلين paymentStatus و orderStatus
         final filtered = docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
           final paymentStatus = (data['paymentStatus'] as String?) ?? '';
-          final orderStatus = (data['orderStatus'] as String?) ?? '';
-          final combined = paymentStatus == 'انتظار الدفع'
-              ? 'انتظار الدفع'
-              : orderStatus;
+          final orderStatus = (data['orderStatus'] as String? ??
+              data['status'] as String? ??
+              '');
+          final combined =
+              paymentStatus == 'انتظار الدفع' ? 'انتظار الدفع' : orderStatus;
           return active
               ? _activeOrderStatuses.contains(combined)
               : _pastOrderStatuses.contains(combined);
@@ -131,7 +155,8 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
 
   Widget _buildOrderCard(String orderId, Map<String, dynamic> data) {
     final paymentStatus = (data['paymentStatus'] as String?) ?? '';
-    final orderStatus = (data['orderStatus'] as String?) ?? '';
+    final orderStatus =
+        (data['orderStatus'] as String? ?? data['status'] as String? ?? '');
     final displayStatus = paymentStatus == 'انتظار الدفع'
         ? 'بانتظار رفع إيصال الدفع'
         : _statusText(orderStatus);
@@ -178,8 +203,13 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
             Expanded(
               child: ElevatedButton.icon(
                 onPressed: () {
-                  Get.to(() =>
-                      ClientOrderDetailsScreen(orderId: orderId));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          ClientOrderDetailsScreen(orderId: orderId),
+                    ),
+                  );
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
@@ -192,12 +222,21 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
               ),
             ),
             const SizedBox(width: 12),
-            if (orderStatus == 'قيد التوصيل')
+            if (orderStatus == 'courier_assigned' ||
+                orderStatus == 'pickup_ready' ||
+                orderStatus == 'قيد التوصيل' ||
+                orderStatus == 'picked_up' ||
+                orderStatus == 'arrived_to_client')
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () {
-                    Get.to(() =>
-                        ClientTrackDriverScreen(orderId: orderId));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            ClientTrackDriverScreen(orderId: orderId),
+                      ),
+                    );
                   },
                   icon: const Icon(Icons.location_on_outlined),
                   label: const Text('تتبع'),
@@ -218,14 +257,27 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
 
   String _statusText(String status) {
     switch (status) {
+      case 'store_pending':
       case 'قيد المراجعة':
         return 'قيد المراجعة';
+      case 'courier_searching':
+        return 'جاري البحث عن مندوب';
+      case 'courier_assigned':
+        return 'تم تعيين مندوب';
+      case 'pickup_ready':
+        return 'جاهز للاستلام';
+      case 'picked_up':
       case 'قيد التجهيز':
-        return 'قيد التجهيز';
-      case 'قيد التوصيل':
         return 'قيد التوصيل';
+      case 'arrived_to_client':
+        return 'وصل المندوب للعميل';
+      case 'delivered':
+      case 'قيد التوصيل':
       case 'تم التوصيل':
         return 'تم التوصيل';
+      case 'store_rejected':
+        return 'مرفوض من المتجر';
+      case 'cancelled':
       case 'ملغي':
         return 'ملغي';
       default:
@@ -238,14 +290,26 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
       return Colors.orange;
     }
     switch (orderStatus) {
+      case 'store_pending':
       case 'قيد المراجعة':
         return Colors.orange;
+      case 'courier_searching':
+        return Colors.deepOrange;
+      case 'courier_assigned':
+        return Colors.indigo;
+      case 'pickup_ready':
+        return Colors.cyan;
+      case 'picked_up':
       case 'قيد التجهيز':
         return Colors.blue;
+      case 'arrived_to_client':
       case 'قيد التوصيل':
         return Colors.green;
+      case 'delivered':
       case 'تم التوصيل':
         return Colors.teal;
+      case 'store_rejected':
+      case 'cancelled':
       case 'ملغي':
         return Colors.red;
       default:

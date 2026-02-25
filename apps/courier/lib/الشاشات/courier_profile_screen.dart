@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import 'courier_edit_profile_screen.dart'; // ✅ استدعاء شاشة تعديل الملف الشخصي
 
@@ -13,9 +14,16 @@ class CourierProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: GFAppBar(
-        title: const Text('الملف الشخصي'),
-        backgroundColor: GFColors.PRIMARY,
+      backgroundColor: AppThemeArabic.clientBackground,
+      appBar: AppBar(
+        title: const Text('الملف الشخصي', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
       ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('drivers').doc(driverId).snapshots(),
@@ -82,7 +90,7 @@ class CourierProfileScreen extends StatelessWidget {
                 },
                 text: 'تعديل البيانات',
                 icon: const Icon(Icons.edit),
-                color: GFColors.SUCCESS,
+                color: AppThemeArabic.clientPrimary,
                 fullWidthButton: true,
                 size: GFSize.LARGE,
                 shape: GFButtonShape.pills,

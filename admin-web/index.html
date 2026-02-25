@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpeedStar Admin</title>
+    <link rel="stylesheet" href="./css/styles.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>لوحة تحكم SpeedStar</h1>
+      <div class="auth-actions">
+        <span id="authState" class="muted">غير مسجل</span>
+        <button id="logoutBtn" class="btn danger" hidden>تسجيل الخروج</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <section id="loginCard" class="card">
+        <h2>دخول المسؤول</h2>
+        <p class="muted">الدخول متاح فقط للحسابات المصرح بها كـ Admin.</p>
+        <form id="loginForm" class="grid">
+          <label>
+            البريد الإلكتروني
+            <input id="emailInput" type="email" required placeholder="admin@speedstar.com" />
+          </label>
+          <label>
+            كلمة المرور
+            <input id="passwordInput" type="password" required />
+          </label>
+          <button type="submit" class="btn primary">دخول</button>
+        </form>
+      </section>
+
+      <section id="appPanel" hidden>
+        <nav class="tabs">
+          <button class="tab active" data-tab="dashboard">اللوحة</button>
+          <button class="tab" data-tab="finance">المالية</button>
+          <button class="tab" data-tab="map">الخريطة</button>
+          <button class="tab" data-tab="management">الإدارة</button>
+          <button class="tab" data-tab="admins">المسؤولون</button>
+          <button class="tab" data-tab="notifications">الإشعارات</button>
+          <button class="tab" data-tab="support">الدعم الفني</button>
+          <button class="tab" data-tab="pending">طلبات التسجيل</button>
+        </nav>
+
+        <section id="map" class="tab-panel">
+          <div class="card">
+            <h3>الخريطة الحية</h3>
+            <p class="muted">المندوبون: أخضر متاح / أحمر غير متاح — العميل ذو طلب حالي: أزرق — المطعم: برتقالي.</p>
+            <div id="mapLegendBar" class="map-legend-bar">جاري تحميل ملخص الخريطة...</div>
+            <div id="liveMap" class="map-canvas"></div>
+          </div>
+          <div class="card">
+            <h3>تفاصيل العنصر المحدد</h3>
+            <div id="mapDetails" class="map-details muted">اضغط على أي علامة في الخريطة لعرض التفاصيل.</div>
+          </div>
+        </section>
+
+        <section id="dashboard" class="tab-panel active">
+          <div class="stats" id="statsGrid"></div>
+          <div class="card">
+            <h3>أحدث الطلبات</h3>
+            <div id="ordersTable"></div>
+          </div>
+        </section>
+
+        <section id="finance" class="tab-panel">
+          <div class="stats" id="financeGrid"></div>
+          <div class="card">
+            <h3>ملخص المدفوعات</h3>
+            <p class="muted">يعتمد على حقول: total, paymentStatus, payoutStatus داخل orders.</p>
+          </div>
+        </section>
+
+        <section id="management" class="tab-panel">
+          <div class="card">
+            <h3>إدارة المتاجر</h3>
+            <div id="restaurantsTable"></div>
+            <div id="storeDetailsPanel" class="management-details muted">اختر متجرًا من الجدول لعرض كل التفاصيل.</div>
+          </div>
+          <div class="card">
+            <h3>إدارة المندوبين</h3>
+            <div id="couriersTable"></div>
+            <div id="courierDetailsPanel" class="management-details muted">اختر مندوبًا من الجدول لعرض كل التفاصيل.</div>
+          </div>
+        </section>
+
+        <section id="admins" class="tab-panel">
+          <div class="card">
+            <h3>إضافة مسؤول جديد</h3>
+            <form id="addAdminForm" class="grid">
+              <label>
+                بريد المستخدم
+                <input id="adminEmailInput" type="email" required placeholder="user@example.com" />
+              </label>
+              <button type="submit" class="btn primary">جعل المستخدم أدمن</button>
+            </form>
+            <p class="muted">المستخدم يجب أن يكون موجود مسبقًا في Firebase Auth.</p>
+          </div>
+          <div class="card">
+            <h3>ترحيل وتوحيد الولاية</h3>
+            <p class="muted">يشغّل دالة normalizeStateIdsBatch لتوحيد stateId في clients وrestaurants وdrivers.</p>
+            <form id="normalizeStateForm" class="grid">
+              <label>
+                الحد الأقصى لكل مجموعة
+                <input id="normalizeLimitInput" type="number" min="1" max="500" value="500" />
+              </label>
+              <button id="normalizeStateBtn" type="submit" class="btn primary">تشغيل الترحيل الآن</button>
+            </form>
+            <div id="normalizeStateResult" class="muted normalize-result"></div>
+          </div>
+          <div class="card">
+            <h3>قائمة المسؤولين</h3>
+            <div id="adminsTable"></div>
+          </div>
+        </section>
+
+        <section id="notifications" class="tab-panel">
+          <div class="card">
+            <h3>إرسال إشعار يدوي</h3>
+            <p class="muted">يمكنك إرسال إشعار لمستخدم محدد أو لدور كامل (عملاء / مندوبين / متاجر) أو للجميع.</p>
+            <form id="notificationForm" class="grid">
+              <label>
+                نوع الإرسال
+                <select id="notificationTargetType" required>
+                  <option value="all">الجميع</option>
+                  <option value="client">كل العملاء</option>
+                  <option value="courier">كل المندوبين</option>
+                  <option value="store">كل المتاجر</option>
+                  <option value="user">مستخدم محدد</option>
+                </select>
+              </label>
+              <label>
+                دور المستخدم (عند اختيار مستخدم محدد)
+                <select id="notificationUserRole">
+                  <option value="client">عميل</option>
+                  <option value="courier">مندوب</option>
+                  <option value="store">متجر</option>
+                </select>
+              </label>
+              <label>
+                UID المستخدم (إلزامي عند مستخدم محدد)
+                <input id="notificationUserId" type="text" placeholder="مثال: eY8..." />
+              </label>
+              <label>
+                العنوان
+                <input id="notificationTitle" type="text" required placeholder="عنوان الإشعار" />
+              </label>
+              <label>
+                الرسالة
+                <textarea id="notificationBody" rows="4" required placeholder="اكتب نص الإشعار"></textarea>
+              </label>
+              <button id="notificationSendBtn" type="submit" class="btn primary">إرسال الإشعار</button>
+            </form>
+            <div id="notificationResult" class="muted normalize-result"></div>
+          </div>
+          <div class="card">
+            <h3>الإشعارات الآلية</h3>
+            <p class="muted">يتم إرسال إشعارات آلية عند تغيّر حالة الطلب (تأكيد المطعم، تعيين مندوب، الاستلام، الوصول، التسليم، الإلغاء).</p>
+          </div>
+        </section>
+
+        <section id="support" class="tab-panel">
+          <div class="card">
+            <h3>مركز الدعم الفني</h3>
+            <div id="supportRoot" class="support-root">
+              <aside class="support-sidebar">
+                <div class="support-filters">
+                  <input id="supportSearchInput" type="text" placeholder="بحث باسم المستخدم / المعرف / الرسالة" />
+                  <select id="supportAppFilter">
+                    <option value="all">كل التطبيقات</option>
+                    <option value="client">العملاء</option>
+                    <option value="courier">المندوبون</option>
+                    <option value="store">المتاجر</option>
+                  </select>
+                  <select id="supportStatusFilter">
+                    <option value="all">كل الحالات</option>
+                    <option value="open">مفتوحة</option>
+                    <option value="closed">مغلقة</option>
+                  </select>
+                </div>
+                <div id="supportConversationList" class="support-conversation-list"></div>
+              </aside>
+
+              <section class="support-main">
+                <div id="supportConversationHeader" class="support-conversation-header muted">
+                  اختر محادثة من القائمة لعرض التفاصيل.
+                </div>
+                <div id="supportMessagesPane" class="support-messages-pane"></div>
+                <div class="support-composer">
+                  <textarea id="supportReplyInput" rows="3" placeholder="اكتب ردك هنا..."></textarea>
+                  <div class="support-composer-actions">
+                    <button id="supportToggleStatusBtn" class="btn ghost" type="button">إغلاق المحادثة</button>
+                    <button id="supportSendBtn" class="btn primary" type="button">إرسال الرد</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section id="pending" class="tab-panel">
+          <div class="card">
+            <h3>طلبات التسجيل المعلقة</h3>
+            <div id="pendingTable"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    ></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>

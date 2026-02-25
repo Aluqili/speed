@@ -5,9 +5,14 @@ import 'login_screen_ar.dart';
 
 /// بوابة بسيطة: إن لم يكن المستخدم مسجلاً، تُظهر شاشة تسجيل الدخول.
 class LoginGate extends StatelessWidget {
-  const LoginGate({super.key, required this.signedIn});
+  const LoginGate({
+    super.key,
+    required this.signedIn,
+    this.unauthenticatedBuilder,
+  });
 
   final Widget signedIn;
+  final WidgetBuilder? unauthenticatedBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -21,6 +26,9 @@ class LoginGate extends StatelessWidget {
         builder: (context, snap) {
           final user = snap.data;
           if (user == null) {
+            if (unauthenticatedBuilder != null) {
+              return unauthenticatedBuilder!(context);
+            }
             return const LoginScreenArabic();
           }
           return signedIn;

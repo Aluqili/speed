@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class CourierNotificationsScreen extends StatelessWidget {
   final String driverId;
@@ -10,9 +11,16 @@ class CourierNotificationsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: GFAppBar(
-        title: const Text('الإشعارات'),
-        backgroundColor: GFColors.PRIMARY,
+      backgroundColor: AppThemeArabic.clientBackground,
+      appBar: AppBar(
+        title: const Text('الإشعارات', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -41,9 +49,9 @@ class CourierNotificationsScreen extends StatelessWidget {
 
               return GFListTile(
                 margin: const EdgeInsets.only(bottom: 12),
-                color: GFColors.LIGHT,
+                color: AppThemeArabic.clientSurface,
                 avatar: const GFAvatar(
-                  backgroundColor: GFColors.PRIMARY,
+                  backgroundColor: AppThemeArabic.clientPrimary,
                   child: Icon(Icons.notifications_active, color: Colors.white),
                 ),
                 titleText: data['title'] ?? 'إشعار بدون عنوان',

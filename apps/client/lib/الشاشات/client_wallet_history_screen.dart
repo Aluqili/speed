@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class ClientWalletHistoryScreen extends StatefulWidget {
   final String clientId;
@@ -19,7 +20,7 @@ class _ClientWalletHistoryScreenState extends State<ClientWalletHistoryScreen> {
           title: const Text('سجل المحفظة'),
           backgroundColor: Colors.white,
           centerTitle: true,
-          iconTheme: const IconThemeData(color: Color(0xFFFE724C)),
+          iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
           elevation: 1,
         ),
         body: StreamBuilder<QuerySnapshot>(
@@ -44,7 +45,7 @@ class _ClientWalletHistoryScreenState extends State<ClientWalletHistoryScreen> {
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
-                    leading: Icon(Icons.account_balance_wallet, color: Color(0xFFFE724C)),
+                    leading: Icon(Icons.account_balance_wallet, color: AppThemeArabic.clientPrimary),
                     title: Text('المبلغ: ${data['amount']} ج.س', style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text('الحالة: ${data['status']}', style: const TextStyle(color: Colors.grey)),
                     trailing: Text(

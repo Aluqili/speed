@@ -4,6 +4,75 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'menu_item.dart';
 
 class StoreFullMenuController extends GetxController {
+  String _normalizeImageUrl(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.startsWith('http://')) {
+      return 'https://${trimmed.substring(7)}';
+    }
+    return trimmed;
+  }
+
+  String _extractImageUrl(Map<String, dynamic> data) {
+    final dynamic raw =
+        data['imageUrl'] ?? data['image'] ?? data['photoUrl'] ?? data['photo'];
+
+    if (raw is String) {
+      return _normalizeImageUrl(raw);
+    }
+
+    if (raw is Map<String, dynamic>) {
+      final dynamic nested =
+          raw['secure_url'] ?? raw['url'] ?? raw['imageUrl'] ?? raw['image'];
+      if (nested is String) {
+        return _normalizeImageUrl(nested);
+      }
+    }
+
+    return '';
+  }
+
+  String _extractCategory(Map<String, dynamic> data) {
+    final dynamic raw = data['category'] ?? data['section'] ?? data['group'];
+    return (raw ?? '').toString().trim();
+  }
+
+  Future<void> _backfillMissingImages(List<MenuItem> items) async {
+    final missing = items.where((i) => (i.imageUrl ?? '').trim().isEmpty).toList();
+    if (missing.isEmpty) return;
+
+    for (final item in missing) {
+      final category = (item.category ?? '').trim();
+      if (category.isEmpty) continue;
+
+      try {
+        final legacyDoc = await FirebaseFirestore.instance
+            .collection('restaurants')
+            .doc(restaurantId)
+            .collection('menu')
+            .doc(category)
+            .collection('items')
+            .doc(item.id)
+            .get();
+
+        if (!legacyDoc.exists) continue;
+        final legacyData = legacyDoc.data() ?? <String, dynamic>{};
+        final recoveredImage = _extractImageUrl(legacyData);
+        if (recoveredImage.isEmpty) continue;
+
+        await FirebaseFirestore.instance
+            .collection('restaurants')
+            .doc(restaurantId)
+            .collection('full_menu')
+            .doc(item.id)
+            .set({
+          'imageUrl': recoveredImage,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (_) {
+      }
+    }
+  }
   /// تحديث سعر صنف في القائمة الكاملة والقائمة المصنفة
   Future<void> updateMenuItemPrice(String itemId, double newPrice) async {
     try {
@@ -69,7 +138,6 @@ class StoreFullMenuController extends GetxController {
         .collection('restaurants')
         .doc(restaurantId)
         .collection('full_menu')
-        .orderBy('createdAt', descending: true)
         .snapshots()
         .listen((snapshot) {
       _processFullMenuSnapshot(snapshot);
@@ -98,17 +166,25 @@ class StoreFullMenuController extends GetxController {
       return MenuItem(
         id: doc.id,
         name: data['name'] as String? ?? '',
-        price: (data['price'] ?? 0).toDouble(),
-        imageUrl: data['imageUrl'] as String? ?? '',
+        price: (data['price'] is num)
+            ? (data['price'] as num).toDouble()
+            : double.tryParse('${data['price']}') ?? 0,
+        imageUrl: _extractImageUrl(data),
         description: data['description'] as String? ?? '',
-        category: data['category'] as String? ?? '',
+        category: _extractCategory(data),
         isAvailable: data['available'] as bool? ?? true,
         createdAt: ts?.toDate(),
       );
-    }).toList();
+    }).toList()
+      ..sort((a, b) {
+        final at = a.createdAt?.millisecondsSinceEpoch ?? 0;
+        final bt = b.createdAt?.millisecondsSinceEpoch ?? 0;
+        return bt.compareTo(at);
+      });
 
     menuItems.assignAll(newItems);
     isLoading.value = false;
+    _backfillMissingImages(newItems);
   }
 
   /// يحدِّث حالة توافر الصنف (تفعيل/تعطيل)

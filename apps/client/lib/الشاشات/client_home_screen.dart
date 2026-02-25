@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:badges/badges.dart' as badges;
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import 'client_home_tab.dart';
 import 'client_orders_tab.dart';
@@ -27,26 +28,34 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
   bool _openAddressOnStart = true;
   bool _showFavoritesTab = true;
   bool _showCartBadge = true;
-  Color _accentColor = const Color(0xFFF57C00);
+  Color _accentColor = AppThemeArabic.clientPrimary;
+  bool _startupHandled = false;
 
   @override
   void initState() {
     super.initState();
-    _loadRemoteConfig();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      Provider.of<CartProvider>(context, listen: false).initialize();
-      if (_openAddressOnStart) {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => AddressSelectionScreen(
-              userId: widget.clientId,
-              userType: 'client',
-              isSelecting: true,
-            ),
+    WidgetsBinding.instance.addPostFrameCallback((_) => _handleStartup());
+  }
+
+  Future<void> _handleStartup() async {
+    if (_startupHandled || !mounted) return;
+    _startupHandled = true;
+
+    Provider.of<CartProvider>(context, listen: false).initialize();
+    await _loadRemoteConfig();
+    if (!mounted) return;
+
+    if (_openAddressOnStart) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => AddressSelectionScreen(
+            userId: widget.clientId,
+            userType: 'client',
+            isSelecting: true,
           ),
-        );
-      }
-    });
+        ),
+      );
+    }
   }
 
   Future<void> _loadRemoteConfig() async {

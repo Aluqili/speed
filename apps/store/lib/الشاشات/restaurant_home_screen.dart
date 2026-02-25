@@ -1,21 +1,36 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:speedstar_core/src/config/ops_runtime_config.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import 'store_settings_screen.dart';
 import 'store_add_menu_item_screen.dart';
 import 'store_full_menu_screen.dart';
 import 'store_working_hours_screen.dart';
 import 'store_wallet_screen.dart';
+import 'store_change_requests_screen.dart';
 import 'chat_screen.dart';
 import 'store_current_orders_screen.dart';
 
-const Color primaryColor = Color(0xFFFE724C);
-const Color backgroundColor = Color(0xFFF5F5F5);
+const Color primaryColor = AppThemeArabic.clientPrimary;
+const Color backgroundColor = AppThemeArabic.clientBackground;
 const _statusPriority = [
+  'store_pending',
+  'courier_searching',
+  'courier_offer_pending',
+  'courier_assigned',
+  'pickup_ready',
+  'picked_up',
+  'arrived_to_client',
+  'delivered',
+  'store_rejected',
+  'cancelled',
   'قيد المراجعة',
   'قيد التجهيز',
   'قيد التوصيل',
@@ -43,11 +58,71 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
   }
   bool temporarilyClosed = false;
   bool autoAcceptOrders = false;
-  Set<String> notifiedOrders = {}; // لمنع تكرار الجرس لنفس الطلب
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  bool _ringtoneEnabled = true;
+  double _ringtoneVolume = 1.0;
+  final Set<String> _notifiedOrders = <String>{};
+  StreamSubscription<QuerySnapshot>? _ordersSubscription;
+  Timer? _storeRingtoneTimer;
+  bool _hasPendingStoreOrders = false;
+  final AudioPlayer _ringtonePlayer = AudioPlayer();
 
   String? restaurantName;
   String? logoUrl;
+
+  void _showErrorMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openPage(Widget page) async {
+    if (!mounted) return;
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  }
+
+  String _getOrderStatus(Map<String, dynamic> data) {
+    return (data['orderStatus'] ?? data['status'] ?? '').toString().trim();
+  }
+
+  String _displayOrderStatus(String status) {
+    switch (status) {
+      case 'store_pending':
+        return 'قيد المراجعة';
+      case 'courier_searching':
+        return 'جاري البحث عن مندوب';
+      case 'courier_offer_pending':
+        return 'بانتظار رد المندوب';
+      case 'courier_assigned':
+        return 'تم تعيين مندوب';
+      case 'pickup_ready':
+        return 'جاهز للاستلام';
+      case 'picked_up':
+        return 'تم الاستلام من المطعم';
+      case 'arrived_to_client':
+        return 'وصل المندوب للعميل';
+      case 'delivered':
+        return 'تم التوصيل';
+      case 'store_rejected':
+        return 'مرفوض من المتجر';
+      case 'cancelled':
+        return 'ملغي';
+      default:
+        return status;
+    }
+  }
+
+  Future<void> _setOrderStatus(String orderId, String status, {Map<String, dynamic>? extra}) async {
+    try {
+      await FirebaseFirestore.instance.collection('orders').doc(orderId).update({
+        'orderStatus': status,
+        'status': status,
+        'updatedAt': FieldValue.serverTimestamp(),
+        ...?extra,
+      });
+    } on FirebaseException catch (e) {
+      _showErrorMessage('تعذر تحديث حالة الطلب: ${e.message ?? e.code}');
+      rethrow;
+    }
+  }
 
   @override
   void initState() {
@@ -56,7 +131,24 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     _checkUserRole();
     _loadTemporaryStatus();
     _loadAutoAccept();
+    _loadOpsRuntimeConfig();
     _loadRestaurantInfo();
+    _listenForIncomingStoreOrders();
+  }
+
+  Future<void> _loadOpsRuntimeConfig() async {
+    try {
+      final rc = FirebaseRemoteConfig.instance;
+      await rc.fetchAndActivate();
+      final ops = OpsRuntimeConfig.fromRemoteConfig(rc, appKey: 'store');
+      if (!mounted) return;
+      setState(() {
+        _ringtoneEnabled = ops.ringtoneEnabled;
+        _ringtoneVolume = ops.ringtoneVolume;
+      });
+    } catch (_) {
+      // Keep defaults
+    }
   }
 
   Future<void> _saveRestaurantId() async {
@@ -66,57 +158,175 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
 
   Future<void> _checkUserRole() async {
     if (FirebaseAuth.instance.currentUser == null) {
-      Get.offAllNamed('/login');
+      if (!mounted) return;
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
     }
   }
 
   Future<void> _loadTemporaryStatus() async {
-    final doc = await FirebaseFirestore.instance
-        .collection('restaurants')
-        .doc(widget.restaurantId)
-        .get();
-    setState(() => temporarilyClosed = doc['temporarilyClosed'] == true);
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(widget.restaurantId)
+          .get();
+      if (!mounted) return;
+      final data = doc.data() ?? {};
+      setState(() => temporarilyClosed = data['temporarilyClosed'] == true);
+    } on FirebaseException catch (e) {
+      _showErrorMessage('تعذر تحميل حالة الإغلاق: ${e.message ?? e.code}');
+    }
   }
 
   Future<void> _toggleTemporaryClosure(bool value) async {
+    final previous = temporarilyClosed;
     setState(() => temporarilyClosed = value);
-    await FirebaseFirestore.instance
-        .collection('restaurants')
-        .doc(widget.restaurantId)
-        .update({'temporarilyClosed': value});
+    try {
+      await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(widget.restaurantId)
+          .update({'temporarilyClosed': value});
+    } on FirebaseException catch (e) {
+      if (!mounted) return;
+      setState(() => temporarilyClosed = previous);
+      _showErrorMessage('لا تملك صلاحية تعديل حالة الإغلاق: ${e.message ?? e.code}');
+    }
   }
 
   Future<void> _loadAutoAccept() async {
-    final doc = await FirebaseFirestore.instance
-        .collection('restaurants')
-        .doc(widget.restaurantId)
-        .get();
-    setState(() {
-      autoAcceptOrders = doc['autoAcceptOrders'] == true;
-    });
-    // استمع لأي تغيير في الإعدادات
-    FirebaseFirestore.instance
-        .collection('restaurants')
-        .doc(widget.restaurantId)
-        .snapshots()
-        .listen((doc) {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(widget.restaurantId)
+          .get();
+      if (!mounted) return;
+      final data = doc.data() ?? {};
       setState(() {
-        autoAcceptOrders = doc['autoAcceptOrders'] == true;
+        autoAcceptOrders = data['autoAcceptOrders'] == true;
       });
-    });
+      FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(widget.restaurantId)
+          .snapshots()
+          .listen((doc) {
+        if (!mounted) return;
+        final liveData = doc.data() ?? {};
+        setState(() {
+          autoAcceptOrders = liveData['autoAcceptOrders'] == true;
+        });
+      }, onError: (error) {
+        if (error is FirebaseException) {
+          _showErrorMessage('تعذر متابعة إعدادات القبول التلقائي: ${error.message ?? error.code}');
+        }
+      });
+    } on FirebaseException catch (e) {
+      _showErrorMessage('تعذر تحميل إعدادات القبول التلقائي: ${e.message ?? e.code}');
+    }
   }
 
   Future<void> _loadRestaurantInfo() async {
-    final doc = await FirebaseFirestore.instance
-        .collection('restaurants')
-        .doc(widget.restaurantId)
-        .get();
-    if (doc.exists) {
-      setState(() {
-        restaurantName = doc['name'] ?? null;
-        logoUrl = doc['logoImageUrl'] ?? null;
-      });
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(widget.restaurantId)
+          .get();
+      if (!mounted) return;
+      if (doc.exists) {
+        final data = doc.data() ?? {};
+        setState(() {
+          restaurantName = (data['name'] ?? '').toString();
+          logoUrl = (data['logoImageUrl'] ?? '').toString();
+        });
+      }
+    } on FirebaseException catch (e) {
+      _showErrorMessage('تعذر تحميل بيانات المتجر: ${e.message ?? e.code}');
     }
+  }
+
+  bool _isStorePendingStatus(String status) {
+    return status == 'store_pending' || status == 'قيد المراجعة' || status == 'بانتظار المطعم';
+  }
+
+  Future<void> _playIncomingOrderTone() async {
+    if (!_ringtoneEnabled) return;
+    try {
+      await _ringtonePlayer.setVolume(_ringtoneVolume);
+      await _ringtonePlayer.setPlayerMode(PlayerMode.lowLatency);
+      await _ringtonePlayer.play(
+        AssetSource('sounds/incoming_order.mp3'),
+        volume: _ringtoneVolume,
+      );
+      return;
+    } catch (_) {
+      // Fallback to system sound if custom file is missing.
+    }
+
+    try {
+      await SystemSound.play(SystemSoundType.alert);
+    } catch (_) {
+      // Ignore tone errors on unsupported devices.
+    }
+  }
+
+  void _startStoreRingtoneLoop() {
+    if (!_ringtoneEnabled) return;
+    _storeRingtoneTimer ??= Timer.periodic(const Duration(seconds: 6), (_) {
+      if (!_hasPendingStoreOrders || !_ringtoneEnabled) return;
+      _playIncomingOrderTone();
+    });
+  }
+
+  void _stopStoreRingtoneLoop() {
+    _storeRingtoneTimer?.cancel();
+    _storeRingtoneTimer = null;
+    _ringtonePlayer.stop();
+  }
+
+  void _updateStoreRingtoneLoop(bool hasPendingOrders) {
+    _hasPendingStoreOrders = hasPendingOrders;
+    if (_hasPendingStoreOrders) {
+      _startStoreRingtoneLoop();
+    } else {
+      _stopStoreRingtoneLoop();
+    }
+  }
+
+  void _listenForIncomingStoreOrders() {
+    _ordersSubscription?.cancel();
+    _ordersSubscription = FirebaseFirestore.instance
+        .collection('orders')
+        .where('restaurantId', isEqualTo: widget.restaurantId)
+        .snapshots()
+        .listen((snapshot) {
+      final pendingDocs = snapshot.docs.where((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return _isStorePendingStatus(_getOrderStatus(data));
+      }).toList();
+
+      _updateStoreRingtoneLoop(pendingDocs.isNotEmpty);
+
+      for (final doc in pendingDocs) {
+        final orderId = doc.id;
+        if (_notifiedOrders.contains(orderId)) continue;
+        _notifiedOrders.add(orderId);
+        _playIncomingOrderTone();
+
+        if (autoAcceptOrders && !temporarilyClosed) {
+          _setOrderStatus(orderId, 'courier_searching');
+        }
+      }
+    }, onError: (error) {
+      if (error is FirebaseException) {
+        _showErrorMessage('تعذر متابعة الطلبات الجديدة: ${error.message ?? error.code}');
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ordersSubscription?.cancel();
+    _stopStoreRingtoneLoop();
+    _ringtonePlayer.dispose();
+    super.dispose();
   }
 
   @override
@@ -222,9 +432,9 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   icon: Icons.add,
                   iconBg: Colors.orange.shade50,
                   text: ' إضافة عنصر جديد',
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    Get.to(() => StoreAddMenuItemScreen(restaurantId: widget.restaurantId));
+                    await _openPage(StoreAddMenuItemScreen(restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 2),
@@ -232,9 +442,9 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   icon: Icons.menu_book,
                   iconBg: Colors.blue.shade50,
                   text: ' القائمة الكاملة',
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    Get.to(() => StoreFullMenuScreen(restaurantId: widget.restaurantId));
+                    await _openPage(StoreFullMenuScreen(restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 2),
@@ -242,9 +452,9 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   icon: Icons.receipt_long,
                   iconBg: Colors.purple.shade50,
                   text: ' الطلبات الحالية',
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    Get.to(() => StoreCurrentOrdersScreen(restaurantId: widget.restaurantId));
+                    await _openPage(StoreCurrentOrdersScreen(restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 2),
@@ -252,9 +462,9 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   icon: Icons.access_time,
                   iconBg: Colors.green.shade50,
                   text: ' أوقات الدوام',
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    Get.to(() => StoreWorkingHoursScreen(restaurantId: widget.restaurantId));
+                    await _openPage(StoreWorkingHoursScreen(restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 2),
@@ -262,9 +472,9 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   icon: Icons.account_balance_wallet,
                   iconBg: Colors.amber.shade50,
                   text: ' محفظتي',
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    Get.to(() => StoreWalletScreen(restaurantId: widget.restaurantId));
+                    await _openPage(StoreWalletScreen(restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 2),
@@ -289,9 +499,20 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   iconBg: Colors.grey.shade200,
                   text: ' الإعدادات',
                   iconColor: Colors.grey,
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    Get.to(() => StoreSettingsScreen(restaurantId: widget.restaurantId));
+                    await _openPage(StoreSettingsScreen(restaurantId: widget.restaurantId));
+                  },
+                ),
+                const SizedBox(height: 2),
+                _drawerTile(
+                  icon: Icons.approval,
+                  iconBg: Colors.indigo.shade50,
+                  text: 'طلبات تعديل الإدارة',
+                  iconColor: Colors.indigo,
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _openPage(StoreChangeRequestsScreen(restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 10),
@@ -305,7 +526,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                     final prefs = await SharedPreferences.getInstance();
                     await FirebaseAuth.instance.signOut();
                     await prefs.remove('userType');
-                    Get.offAllNamed('/roleSelection');
+                    if (!mounted) return;
+                    Navigator.of(context).pushNamedAndRemoveUntil('/roleSelection', (route) => false);
                   },
                 ),
               ],
@@ -316,50 +538,34 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
           stream: FirebaseFirestore.instance
               .collection('orders')
               .where('restaurantId', isEqualTo: widget.restaurantId)
-              .where('orderStatus', whereIn: _statusPriority)
               .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator(color: primaryColor));
             }
+            if (snapshot.hasError) {
+              return const Center(
+                child: Text('تعذر تحميل الطلبات حالياً', style: TextStyle(fontFamily: 'Tajawal', color: Colors.red)),
+              );
+            }
             var docs = snapshot.data?.docs ?? [];
+            docs = docs.where((d) {
+              final data = d.data() as Map<String, dynamic>;
+              return _statusPriority.contains(_getOrderStatus(data));
+            }).toList();
 
             // رتب حسب أولوية الحالة ثم الإنشاء
             docs.sort((a, b) {
-              final sa = _statusPriority.indexOf(a['orderStatus'] as String);
-              final sb = _statusPriority.indexOf(b['orderStatus'] as String);
+              final da = a.data() as Map<String, dynamic>;
+              final db = b.data() as Map<String, dynamic>;
+              final sa = _statusPriority.indexOf(_getOrderStatus(da));
+              final sb = _statusPriority.indexOf(_getOrderStatus(db));
               if (sa != sb) return sa.compareTo(sb);
               final ta = (a['createdAt'] as Timestamp?);
               final tb = (b['createdAt'] as Timestamp?);
               if (ta != null && tb != null) return tb.compareTo(ta);
               return 0;
             });
-
-            // منطق القبول التلقائي والتنبيه
-            for (final doc in docs) {
-              final data = doc.data() as Map<String, dynamic>;
-              final docId = doc.id;
-              final status = data['orderStatus'] as String;
-              // إذا الطلب جديد ولم يتم التنبيه عليه
-              if (status == 'قيد المراجعة' && !notifiedOrders.contains(docId)) {
-                // تشغيل جرس تنبيه (audioplayers) بشكل متكرر وبصوت مرتفع
-                _audioPlayer.setReleaseMode(ReleaseMode.loop);
-                _audioPlayer.setVolume(1.0);
-                _audioPlayer.play(
-                  AssetSource('sounds/notification.mp3'),
-                  volume: 1.0,
-                );
-                notifiedOrders.add(docId);
-
-                // القبول التلقائي
-                if (autoAcceptOrders && !temporarilyClosed) {
-                  FirebaseFirestore.instance
-                      .collection('orders')
-                      .doc(docId)
-                      .update({'orderStatus': 'قيد التجهيز'});
-                }
-              }
-            }
 
             if (docs.isEmpty) {
               return const Center(
@@ -373,7 +579,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
               itemBuilder: (context, index) {
                 final data = docs[index].data() as Map<String, dynamic>;
                 final docId = docs[index].id;
-                final status = data['orderStatus'] as String;
+                final status = _getOrderStatus(data);
 
                 Widget orderDetails = Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -422,7 +628,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   ],
                 );
 
-                if (status == 'قيد المراجعة') {
+                if (status == 'store_pending' || status == 'قيد المراجعة') {
                   // الطلب الجديد: التفاصيل تظهر مباشرة
                   return Card(
                     elevation: 4,
@@ -453,14 +659,12 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                               Expanded(
                                 child: ElevatedButton(
                                   onPressed: () async {
-                                    await FirebaseFirestore.instance.collection('orders').doc(docId).update({
-                                      'orderStatus': 'قيد التجهيز',
+                                    await _setOrderStatus(docId, 'courier_searching', extra: {
                                       'assignedDriverId': null,
                                       'candidateDrivers': [],
                                       'driverResponded': false,
                                       'driverResponseTime': null
                                     });
-                                    _audioPlayer.stop();
                                   },
                                   style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                                   child: const Text('قبول الطلب', style: TextStyle(color: Colors.white)),
@@ -470,8 +674,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                               Expanded(
                                 child: ElevatedButton(
                                   onPressed: () async {
-                                    await FirebaseFirestore.instance.collection('orders').doc(docId).update({'orderStatus': 'ملغي'});
-                                    _audioPlayer.stop();
+                                    await _setOrderStatus(docId, 'store_rejected');
                                   },
                                   style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                                   child: const Text('رفض الطلب', style: TextStyle(color: Colors.white)),
@@ -562,13 +765,25 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                         decoration: BoxDecoration(
-                                          color: status == 'قيد التجهيز' ? Colors.orange.shade50 : status == 'قيد التوصيل' ? Colors.blue.shade50 : Colors.green.shade50,
+                                          color: status == 'courier_searching' ||
+                                                  status == 'courier_offer_pending' ||
+                                                  status == 'courier_assigned'
+                                              ? Colors.orange.shade50
+                                              : status == 'pickup_ready'
+                                                  ? Colors.blue.shade50
+                                                  : Colors.green.shade50,
                                           borderRadius: BorderRadius.circular(8),
                                         ),
                                         child: Text(
-                                          status,
+                                          _displayOrderStatus(status),
                                           style: TextStyle(
-                                            color: status == 'قيد التجهيز' ? Colors.orange : status == 'قيد التوصيل' ? Colors.blueGrey : Colors.green,
+                                            color: status == 'courier_searching' ||
+                                                    status == 'courier_offer_pending' ||
+                                                    status == 'courier_assigned'
+                                                ? Colors.orange
+                                                : status == 'pickup_ready'
+                                                    ? Colors.blueGrey
+                                                    : Colors.green,
                                             fontWeight: FontWeight.bold,
                                             fontFamily: 'Tajawal',
                                           ),
@@ -585,16 +800,19 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                                     ],
                                   ),
                                   const Divider(height: 24),
-                                  if (status == 'قيد التجهيز')
+                                  if (status == 'courier_searching' ||
+                                      status == 'courier_offer_pending' ||
+                                      status == 'courier_assigned' ||
+                                      status == 'قيد التجهيز')
                                     _actionButton(' جاهز', () async {
-                                      await FirebaseFirestore.instance.collection('orders').doc(docId).update({'orderStatus': 'قيد التوصيل'});
+                                      await _setOrderStatus(docId, 'pickup_ready');
                                       setState(() {});
-                                      Get.snackbar('تم', 'تم تحديث حالة الطلب إلى قيد التوصيل', snackPosition: SnackPosition.BOTTOM);
+                                      _showErrorMessage('تم تحديث حالة الطلب إلى جاهز للاستلام');
                                     }),
-                                  if (status == 'قيد التوصيل')
+                                  if (status == 'pickup_ready' || status == 'قيد التوصيل')
                                     const Padding(
                                       padding: EdgeInsets.only(top: 10),
-                                      child: Text('📦 الطلب في الطريق',
+                                      child: Text('📦 بانتظار استلام المندوب',
                                           style: TextStyle(color: Colors.blueGrey, fontFamily: 'Tajawal', fontWeight: FontWeight.bold)),
                                     ),
                                 ],
@@ -608,8 +826,16 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                         child: Row(
                           children: [
                             Icon(
-                              status == 'قيد التجهيز' ? Icons.kitchen : Icons.delivery_dining,
-                              color: status == 'قيد التجهيز' ? Colors.orange : Colors.blueGrey,
+                              status == 'courier_searching' ||
+                                      status == 'courier_offer_pending' ||
+                                      status == 'courier_assigned'
+                                  ? Icons.kitchen
+                                  : Icons.delivery_dining,
+                              color: status == 'courier_searching' ||
+                                      status == 'courier_offer_pending' ||
+                                      status == 'courier_assigned'
+                                  ? Colors.orange
+                                  : Colors.blueGrey,
                               size: 26,
                             ),
                             const SizedBox(width: 8),
@@ -621,9 +847,13 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              status == 'قيد التجهيز' ? 'قيد التجهيز' : 'قيد التوصيل',
+                              _displayOrderStatus(status),
                               style: TextStyle(
-                                color: status == 'قيد التجهيز' ? Colors.orange : Colors.blueGrey,
+                                color: status == 'courier_searching' ||
+                                        status == 'courier_offer_pending' ||
+                                        status == 'courier_assigned'
+                                    ? Colors.orange
+                                    : Colors.blueGrey,
                                 fontWeight: FontWeight.bold,
                                 fontFamily: 'Tajawal',
                               ),
@@ -678,7 +908,14 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                 Expanded(
                   child: Text(
                     text,
-                    style: const TextStyle(fontFamily: 'Tajawal', fontSize: 15, fontWeight: FontWeight.w500),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Tajawal',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.black87,
+                    ),
                   ),
                 ),
               ],

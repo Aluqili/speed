@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class CourierOrderHistoryScreen extends StatelessWidget {
   final String driverId;
@@ -11,34 +12,37 @@ class CourierOrderHistoryScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('سجل الطلبات', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFE724C), fontFamily: 'Tajawal', fontSize: 20)),
+        title: const Text('سجل الطلبات', style: TextStyle(fontWeight: FontWeight.bold, color: AppThemeArabic.clientPrimary, fontFamily: 'Tajawal', fontSize: 20)),
         backgroundColor: Colors.white,
         elevation: 1,
         centerTitle: true,
-        iconTheme: const IconThemeData(color: Color(0xFFFE724C)),
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
         ),
       ),
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: AppThemeArabic.clientBackground,
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('orders')
             .where('assignedDriverId', isEqualTo: driverId)
-            .where('status', isEqualTo: 'تم التوصيل')
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: GFLoader(type: GFLoaderType.circle));
           }
 
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          final orders = (snapshot.data?.docs ?? []).where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
+            return status == 'delivered' || status == 'تم التوصيل';
+          }).toList();
+
+          if (orders.isEmpty) {
             return const Center(
               child: Text('لا توجد طلبات مكتملة في السجل.', style: TextStyle(fontSize: 16)),
             );
           }
-
-          final orders = snapshot.data!.docs;
 
           return ListView.builder(
             padding: const EdgeInsets.all(12),

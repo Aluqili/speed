@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'courier_privacy_policy_screen.dart';
 
 class CourierAccountTab extends StatefulWidget {
   final String driverId;
@@ -37,16 +39,20 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
     final snapshot = await FirebaseFirestore.instance
         .collection('orders')
         .where('assignedDriverId', isEqualTo: widget.driverId)
-        .where('status', isEqualTo: 'تم التوصيل')
         .get();
 
     double total = 0;
+    int completed = 0;
     for (var doc in snapshot.docs) {
-      total += (doc.data()['deliveryFee'] ?? 0).toDouble();
+      final data = doc.data();
+      final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
+      if (status != 'delivered' && status != 'تم التوصيل') continue;
+      total += (data['deliveryFeeForDriver'] ?? data['deliveryFee'] ?? 0).toDouble();
+      completed++;
     }
 
     setState(() {
-      completedOrders = snapshot.docs.length;
+      completedOrders = completed;
       totalEarnings = total;
     });
   }
@@ -114,7 +120,17 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
     final phone = driverData!['phone'] ?? 'غير متاح';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('حسابي')),
+      backgroundColor: AppThemeArabic.clientBackground,
+      appBar: AppBar(
+        title: const Text('حسابي', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -186,6 +202,21 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
               icon: const Icon(Icons.lock),
               fullWidthButton: true,
               color: GFColors.DANGER,
+              shape: GFButtonShape.pills,
+            ),
+            const SizedBox(height: 12),
+            GFButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const CourierPrivacyPolicyScreen(),
+                  ),
+                );
+              },
+              text: 'سياسة الخصوصية',
+              icon: const Icon(Icons.privacy_tip),
+              fullWidthButton: true,
+              color: AppThemeArabic.clientPrimary,
               shape: GFButtonShape.pills,
             ),
           ],

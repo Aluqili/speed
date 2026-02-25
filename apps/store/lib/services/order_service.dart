@@ -5,6 +5,10 @@ class OrderService {
     await FirebaseFirestore.instance
         .collection('orders')
         .doc(orderId)
-        .update({'status': 'قيد التجهيز'});
+        .update({
+      'orderStatus': 'courier_searching',
+      'status': 'courier_searching',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 }

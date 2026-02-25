@@ -31,10 +31,11 @@ class SmartLocationTracker {
         .listen((snapshot) {
       if (!snapshot.exists) return;
 
-      final status = snapshot.data()?['status'];
-      if (status == 'قيد التوصيل') {
+      final data = snapshot.data() as Map<String, dynamic>?;
+      final status = (data?['orderStatus'] ?? data?['status'] ?? '').toString();
+      if (status == 'picked_up' || status == 'arrived_to_client' || status == 'قيد التوصيل') {
         _startLocationStream(); // يبدأ التتبع
-      } else if (status == 'تم التوصيل') {
+      } else if (status == 'delivered' || status == 'تم التوصيل') {
         stopTracking(); // يوقف التتبع تلقائيًا
       }
     });

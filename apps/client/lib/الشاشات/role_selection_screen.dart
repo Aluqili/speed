@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 // تم إلغاء شاشة تسجيل الدخول مؤقتاً وسيتم التوجيه لاحقاً عبر SDUI
 
 class RoleSelectionScreen extends StatelessWidget {
@@ -71,20 +72,20 @@ class RoleSelectionScreen extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
         decoration: BoxDecoration(
-          color: const Color(0xFFF57C00).withOpacity(0.1),
+          color: AppThemeArabic.clientPrimary.withOpacity(0.1),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFF57C00)),
+          border: Border.all(color: AppThemeArabic.clientPrimary),
         ),
         child: Row(
           children: [
-            Icon(icon, color: const Color(0xFFF57C00), size: 32),
+            Icon(icon, color: AppThemeArabic.clientPrimary, size: 32),
             const SizedBox(width: 20),
             Text(
               label,
               style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFFF57C00),
+                color: AppThemeArabic.clientPrimary,
               ),
             ),
           ],

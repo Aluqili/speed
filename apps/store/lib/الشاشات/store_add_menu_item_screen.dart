@@ -12,22 +12,81 @@ class StoreAddMenuItemScreen extends StatefulWidget {
   const StoreAddMenuItemScreen({super.key, required this.restaurantId});
 
   @override
-  State<StoreAddMenuItemScreen> createState() =>
-      _StoreAddMenuItemScreenState();
+  State<StoreAddMenuItemScreen> createState() => _StoreAddMenuItemScreenState();
 }
 
-class _StoreAddMenuItemScreenState
-    extends State<StoreAddMenuItemScreen> {
+class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
+  static const List<String> _categoryOptions = [
+    'وجبات رئيسية',
+    'وجبات سريعة',
+    'أرز وبرياني',
+    'مشاوي',
+    'شاورما',
+    'برجر',
+    'بيتزا',
+    'باستا',
+    'مندي',
+    'مأكولات بحرية',
+    'أسماك',
+    'دجاج',
+    'لحوم',
+    'سندويتشات',
+    'مقبلات',
+    'شوربات',
+    'سلطات',
+    'فطور',
+    'فطائر',
+    'معجنات',
+    'مناقيش',
+    'كريب',
+    'حلويات',
+    'كيك',
+    'آيس كريم',
+    'عصائر',
+    'سموثي',
+    'قهوة',
+    'مشروبات ساخنة',
+    'مشروبات باردة',
+    'موهيتو',
+    'مشروبات غازية',
+    'مياه',
+    'وجبات أطفال',
+    'صحي',
+    'نباتي',
+    'خالي من الجلوتين',
+    'صوصات وإضافات',
+    'أطباق جانبية',
+    'عروض ووجبات كومبو',
+    'رمضان',
+    'مخبوزات',
+    'مكسرات وتسالي',
+    'مأكولات شعبية',
+    'وجبات اقتصادية',
+    'بوكسات عائلية',
+    'صنف اليوم',
+    'أخرى',
+  ];
+
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _itemNameController = TextEditingController();
   final TextEditingController _itemPriceController = TextEditingController();
-  final TextEditingController _itemCategoryController = TextEditingController(); // حقل لإدخال الفئة
+  String? _selectedCategory;
   File? _imageFile;
   bool _isLoading = false;
 
+  @override
+  void dispose() {
+    _itemNameController.dispose();
+    _itemPriceController.dispose();
+    super.dispose();
+  }
+
   Future<void> _pickImage() async {
-    final pickedImage =
-        await ImagePicker().pickImage(source: ImageSource.gallery);
+    final pickedImage = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 1400,
+    );
     if (pickedImage != null) {
       setState(() => _imageFile = File(pickedImage.path));
     }
@@ -53,86 +112,141 @@ class _StoreAddMenuItemScreenState
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate() || _imageFile == null) return;
+    if (_isLoading) return;
+    final messenger = ScaffoldMessenger.of(context);
 
-    setState(() => _isLoading = true);
-
-    double? price = double.tryParse(_itemPriceController.text.trim());
-    if (price == null) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('الرجاء إدخال سعر صالح')),
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    if (_imageFile == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('الرجاء اختيار صورة للصنف')),
       );
       return;
     }
 
-    final String category = _itemCategoryController.text.trim(); // الحصول على قيمة الفئة
+    setState(() => _isLoading = true);
+
+    final itemName = _itemNameController.text.trim();
+    final rawPrice = _itemPriceController.text.trim().replaceAll(',', '.');
+    final category = _selectedCategory?.trim() ?? '';
+
+    final price = double.tryParse(rawPrice);
+    if (price == null) {
+      setState(() => _isLoading = false);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('الرجاء إدخال سعر صالح')),
+      );
+      return;
+    }
+    if (price <= 0) {
+      setState(() => _isLoading = false);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('السعر يجب أن يكون أكبر من صفر')),
+      );
+      return;
+    }
+
     if (category.isEmpty) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('الرجاء إدخال اسم الفئة')),
       );
       return;
     }
 
-    final imageUrl = await _uploadImageToCloudinary(_imageFile!);
-    if (imageUrl == null) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('فشل رفع الصورة')),
-      );
-      return;
-    }
+    final categoryDocId = category.replaceAll('/', '-');
 
-    await FirebaseFirestore.instance
-        .collection('restaurants')
-        .doc(widget.restaurantId)
-        .collection('menu')
-        .doc(category) // استخدام اسم الفئة كمستند (يمكنك تعديل هذا الهيكل إذا أردت)
-        .collection('items')
-        .add({
-      'name': _itemNameController.text.trim(),
-      'price': price,
-      'imageUrl': imageUrl,
-      'category': category, // حفظ الفئة هنا
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      final imageUrl = await _uploadImageToCloudinary(_imageFile!);
+      if (imageUrl == null) {
+        setState(() => _isLoading = false);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('فشل رفع الصورة')),
+        );
+        return;
+      }
 
-    // أضف أيضاً إلى القائمة الكاملة full_menu ليظهر في شاشة التفاصيل
-    await FirebaseFirestore.instance
-        .collection('restaurants')
-        .doc(widget.restaurantId)
-        .collection('full_menu')
-        .add({
-      'name': _itemNameController.text.trim(),
-      'price': price,
-      'imageUrl': imageUrl,
-      'category': category,
-      'available': true,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+      final menuItemRef = FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(widget.restaurantId)
+          .collection('menu')
+          .doc(categoryDocId)
+          .collection('items')
+          .doc();
 
-    setState(() {
-      _isLoading = false;
-      _itemNameController.clear();
-      _itemPriceController.clear();
-      _itemCategoryController.clear(); // مسح حقل الفئة
-      _imageFile = null;
-    });
+      await menuItemRef.set({
+        'name': itemName,
+        'price': price,
+        'imageUrl': imageUrl,
+        'category': category,
+        'available': true,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('تمت الإضافة'),
-        content: const Text('تمت إضافة الصنف بنجاح ✅'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('حسنًا'),
+      String? warningMessage;
+      try {
+        await FirebaseFirestore.instance
+            .collection('restaurants')
+            .doc(widget.restaurantId)
+            .collection('full_menu')
+            .doc(menuItemRef.id)
+            .set({
+          'name': itemName,
+          'price': price,
+          'imageUrl': imageUrl,
+          'category': category,
+          'available': true,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } on FirebaseException catch (e) {
+        warningMessage = e.code == 'permission-denied'
+            ? 'تمت إضافة الصنف لكن تعذرت مزامنته في القائمة الكاملة بسبب الصلاحيات.'
+            : 'تمت إضافة الصنف لكن تعذرت مزامنته في القائمة الكاملة.';
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _itemNameController.clear();
+        _itemPriceController.clear();
+        _selectedCategory = null;
+        _imageFile = null;
+      });
+
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('تمت الإضافة'),
+          content: Text(
+            warningMessage ?? 'تمت إضافة الصنف بنجاح ✅',
           ),
-        ],
-      ),
-    );
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('حسنًا'),
+            ),
+          ],
+        ),
+      );
+    } on FirebaseException catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      final message = e.code == 'permission-denied'
+          ? 'لا تملك صلاحية إضافة صنف. تأكد أن المتجر معتمد وحسابك يطابق صاحب المتجر.'
+          : 'تعذر إضافة الصنف: ${e.message ?? e.code}';
+      messenger.showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر إضافة الصنف: $e')),
+      );
+    }
   }
 
   @override
@@ -161,25 +275,42 @@ class _StoreAddMenuItemScreenState
               const SizedBox(height: 16),
               TextFormField(
                 controller: _itemPriceController,
-                keyboardType: TextInputType.number,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(labelText: 'السعر بالجنيه'),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'الرجاء إدخال السعر';
                   }
-                  if (double.tryParse(value) == null) {
+                  final parsed =
+                      double.tryParse(value.trim().replaceAll(',', '.'));
+                  if (parsed == null) {
                     return 'الرجاء إدخال سعر صالح';
+                  }
+                  if (parsed <= 0) {
+                    return 'السعر يجب أن يكون أكبر من صفر';
                   }
                   return null;
                 },
               ),
               const SizedBox(height: 16),
-              TextFormField( // حقل إدخال الفئة
-                controller: _itemCategoryController,
-                decoration: const InputDecoration(labelText: 'اسم الفئة'),
+              DropdownButtonFormField<String>(
+                value: _selectedCategory,
+                decoration: const InputDecoration(labelText: 'فئة الصنف'),
+                items: _categoryOptions
+                    .map(
+                      (category) => DropdownMenuItem<String>(
+                        value: category,
+                        child: Text(category),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setState(() => _selectedCategory = value);
+                },
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'الرجاء إدخال اسم الفئة';
+                  if (value == null || value.trim().isEmpty) {
+                    return 'الرجاء اختيار فئة من القائمة';
                   }
                   return null;
                 },
@@ -202,7 +333,16 @@ class _StoreAddMenuItemScreenState
               ),
               const SizedBox(height: 24),
               _isLoading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 8),
+                          Text('جاري إضافة الصنف...')
+                        ],
+                      ),
+                    )
                   : GFButton(
                       onPressed: _submit,
                       text: 'إضافة الصنف',

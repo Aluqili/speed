@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:get/get.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class ClientWalletRechargeScreen extends StatefulWidget {
   final String clientId;
@@ -26,8 +27,8 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
   bool _accountsLoading = true;
   final picker = ImagePicker();
   final _cloudinary = CloudinaryPublic('dvnzloec6', 'flutter_unsigned');
-  final Color primaryColor = const Color(0xFFFE724C);
-  final Color backgroundColor = const Color(0xFFF5F5F5);
+  final Color primaryColor = AppThemeArabic.clientPrimary;
+  final Color backgroundColor = AppThemeArabic.clientBackground;
 
   @override
   void initState() {
@@ -113,12 +114,12 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: backgroundColor,
         appBar: AppBar(
-          title: const Text('شحن المحفظة', style: TextStyle(color: Color(0xFFFE724C), fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+          title: const Text('شحن المحفظة', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
           backgroundColor: Colors.white,
           centerTitle: true,
-          iconTheme: const IconThemeData(color: Color(0xFFFE724C)),
+          iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
           elevation: 1,
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
@@ -201,7 +202,7 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
                         hintText: 'المبلغ...',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         filled: true,
-                        fillColor: Color(0xFFF5F5F5),
+                        fillColor: AppThemeArabic.clientBackground,
                       ),
                     ),
                     const SizedBox(height: 18),

@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class ClientOrderTrackingScreen extends StatefulWidget {
   final String orderId;
@@ -24,8 +25,8 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
   bool _hasNotifiedArrival = false;
   GoogleMapController? _mapController;
 
-  static const Color primaryColor = Color(0xFFFE724C);
-  static const Color backgroundColor = Color(0xFFF5F5F5);
+  static const Color primaryColor = AppThemeArabic.clientPrimary;
+  static const Color backgroundColor = AppThemeArabic.clientBackground;
 
   final FlutterLocalNotificationsPlugin _notificationsPlugin = FlutterLocalNotificationsPlugin();
 
@@ -50,9 +51,10 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
       final data = snap.data();
       if (data == null) return;
 
-      final orderStatus = (data['orderStatus'] as String? ?? '').trim();
+      final rawStatus = ((data['orderStatus'] ?? data['status']) as String? ?? '').trim();
+      final orderStatus = _normalizeStatus(rawStatus);
 
-      if (orderStatus == 'تم التوصيل' && !_hasNotifiedArrival) {
+      if (orderStatus == 'delivered' && !_hasNotifiedArrival) {
         _hasNotifiedArrival = true;
         _showArrivalNotification();
       }
@@ -63,7 +65,7 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
       }
 
       final driverId = data['assignedDriverId'];
-      if ((orderStatus == 'قيد التوصيل') && driverId != null) {
+      if ((orderStatus == 'picked_up' || orderStatus == 'arrived_to_client') && driverId != null) {
         _driverSub?.cancel();
         _driverSub = FirebaseFirestore.instance
             .collection('drivers')
@@ -73,12 +75,17 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
           final dData = dSnap.data();
           if (dData != null) {
             _driverName = dData['name'];
-            final loc = dData['currentLocation'];
-            if (loc != null && loc['lat'] != null && loc['lng'] != null) {
+            final currentLocation = dData['currentLocation'];
+            final location = dData['location'];
+            if (currentLocation is Map &&
+                currentLocation['lat'] != null &&
+                currentLocation['lng'] != null) {
               _driverLocation = LatLng(
-                (loc['lat'] as num).toDouble(),
-                (loc['lng'] as num).toDouble(),
+                (currentLocation['lat'] as num).toDouble(),
+                (currentLocation['lng'] as num).toDouble(),
               );
+            } else if (location is GeoPoint) {
+              _driverLocation = LatLng(location.latitude, location.longitude);
 
               if (_mapController != null) {
                 _mapController!.animateCamera(CameraUpdate.newLatLng(_driverLocation!));
@@ -148,7 +155,8 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
             }
 
             final data = snap.data!.data()! as Map<String, dynamic>;
-            final orderStatus = (data['orderStatus'] as String? ?? '').trim();
+            final rawStatus = ((data['orderStatus'] ?? data['status']) as String? ?? '').trim();
+            final orderStatus = _normalizeStatus(rawStatus);
             final total = (data['totalWithDelivery'] as num?)?.toDouble() ?? 0.0;
             final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
             int currentStep = _statusSteps.indexOf(orderStatus);
@@ -157,7 +165,8 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                if (orderStatus == 'قيد التوصيل' && _driverLocation != null)
+                if ((orderStatus == 'picked_up' || orderStatus == 'arrived_to_client') &&
+                    _driverLocation != null)
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -207,7 +216,7 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
                 const SizedBox(height: 12),
                 Column(
                   children: List.generate(_statusSteps.length, (i) {
-                    final label = _statusSteps[i];
+                    final label = _statusStepText(_statusSteps[i]);
                     final done = i < currentStep;
                     final active = i == currentStep;
                     final color = done
@@ -257,10 +266,64 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
 }
 
 const List<String> _statusSteps = [
-  'انتظار الدفع',
-  'قيد المراجعة',
-  'قيد التجهيز',
-  'قيد التوصيل',
-  'تم التوصيل',
-  'ملغي',
+  'store_pending',
+  'courier_searching',
+  'courier_assigned',
+  'picked_up',
+  'arrived_to_client',
+  'delivered',
+  'cancelled',
 ];
+
+String _normalizeStatus(String status) {
+  switch (status) {
+    case 'انتظار الدفع':
+    case 'store_pending':
+    case 'قيد المراجعة':
+      return 'store_pending';
+    case 'courier_searching':
+    case 'قيد التجهيز':
+      return 'courier_searching';
+    case 'courier_offer_pending':
+    case 'courier_assigned':
+    case 'pickup_ready':
+    case 'جاهز للتوصيل':
+      return 'courier_assigned';
+    case 'picked_up':
+    case 'قيد التوصيل':
+      return 'picked_up';
+    case 'arrived_to_client':
+    case 'وصل إلى العميل':
+      return 'arrived_to_client';
+    case 'delivered':
+    case 'تم التوصيل':
+      return 'delivered';
+    case 'cancelled':
+    case 'store_rejected':
+    case 'ملغي':
+      return 'cancelled';
+    default:
+      return 'store_pending';
+  }
+}
+
+String _statusStepText(String status) {
+  switch (status) {
+    case 'store_pending':
+      return 'قيد المراجعة';
+    case 'courier_searching':
+      return 'جاري البحث عن مندوب';
+    case 'courier_assigned':
+      return 'تم تعيين مندوب';
+    case 'picked_up':
+      return 'الطلب في الطريق';
+    case 'arrived_to_client':
+      return 'وصل المندوب للموقع';
+    case 'delivered':
+      return 'تم التوصيل';
+    case 'cancelled':
+      return 'ملغي';
+    default:
+      return status;
+  }
+}

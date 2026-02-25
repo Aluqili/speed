@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class CourierEarningsScreen extends StatefulWidget {
   final String driverId;
@@ -26,7 +27,6 @@ class _CourierEarningsScreenState extends State<CourierEarningsScreen> {
     final snapshot = await FirebaseFirestore.instance
         .collection('orders')
         .where('assignedDriverId', isEqualTo: widget.driverId)
-        .where('status', isEqualTo: 'تم التوصيل')
         .get();
 
     double earnings = 0;
@@ -34,6 +34,8 @@ class _CourierEarningsScreenState extends State<CourierEarningsScreen> {
 
     for (var doc in snapshot.docs) {
       final data = doc.data();
+      final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
+      if (status != 'delivered' && status != 'تم التوصيل') continue;
       final deliveryFee = (data['deliveryFeeForDriver'] ?? 0).toDouble();
       earnings += deliveryFee;
       orders++;
@@ -49,9 +51,16 @@ class _CourierEarningsScreenState extends State<CourierEarningsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: GFAppBar(
-        title: const Text('أرباحي'),
-        backgroundColor: GFColors.SUCCESS,
+      backgroundColor: AppThemeArabic.clientBackground,
+      appBar: AppBar(
+        title: const Text('أرباحي', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 1,
+        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+        ),
       ),
       body: isLoading
           ? const Center(child: GFLoader(type: GFLoaderType.circle))
@@ -63,7 +72,7 @@ class _CourierEarningsScreenState extends State<CourierEarningsScreen> {
                   const SizedBox(height: 20),
                   GFCard(
                     elevation: 8,
-                    color: Colors.white,
+                    color: AppThemeArabic.clientSurface,
                     padding: const EdgeInsets.all(24),
                     borderRadius: BorderRadius.circular(16),
                     content: Column(
@@ -101,7 +110,7 @@ class _CourierEarningsScreenState extends State<CourierEarningsScreen> {
                       );
                     },
                     text: 'تحديث الأرباح',
-                    color: GFColors.SUCCESS,
+                    color: AppThemeArabic.clientPrimary,
                     size: GFSize.LARGE,
                     fullWidthButton: true,
                     shape: GFButtonShape.pills,

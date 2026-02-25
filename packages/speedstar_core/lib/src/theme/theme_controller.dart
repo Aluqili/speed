@@ -4,7 +4,7 @@ class ThemeController {
   ThemeController._();
   static final ThemeController instance = ThemeController._();
 
-  final ValueNotifier<ThemeMode> themeMode = ValueNotifier(ThemeMode.system);
+  final ValueNotifier<ThemeMode> themeMode = ValueNotifier(ThemeMode.light);
   final ValueNotifier<Color?> accentSeed = ValueNotifier<Color?>(null);
 
   void setThemeMode(ThemeMode mode) {
