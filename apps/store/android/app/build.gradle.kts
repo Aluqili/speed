@@ -12,7 +12,23 @@ val localProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
-val mapsApiKey: String = localProperties.getProperty("MAPS_API_KEY")
+val keyProperties = Properties().apply {
+    val file = rootProject.file("key.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+val mapsApiKeyDebug: String = localProperties.getProperty("MAPS_API_KEY_DEBUG")
+    ?: (project.findProperty("MAPS_API_KEY_DEBUG") as String?)
+    ?: System.getenv("MAPS_API_KEY_DEBUG")
+    ?: localProperties.getProperty("MAPS_API_KEY")
+    ?: (project.findProperty("MAPS_API_KEY") as String?)
+    ?: System.getenv("MAPS_API_KEY")
+    ?: ""
+
+val mapsApiKeyRelease: String = localProperties.getProperty("MAPS_API_KEY_RELEASE")
+    ?: (project.findProperty("MAPS_API_KEY_RELEASE") as String?)
+    ?: System.getenv("MAPS_API_KEY_RELEASE")
+    ?: localProperties.getProperty("MAPS_API_KEY")
     ?: (project.findProperty("MAPS_API_KEY") as String?)
     ?: System.getenv("MAPS_API_KEY")
     ?: ""
@@ -32,20 +48,40 @@ android {
         jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
+    signingConfigs {
+        create("release") {
+            val releaseStoreFile = keyProperties.getProperty("storeFile")
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = keyProperties.getProperty("storePassword")
+                keyAlias = keyProperties.getProperty("keyAlias")
+                keyPassword = keyProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.aluqili.speedstar.store"
         minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKeyDebug
     }
 
     buildTypes {
+        getByName("debug") {
+            manifestPlaceholders["MAPS_API_KEY"] = mapsApiKeyDebug
+        }
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keyProperties.getProperty("storeFile").isNullOrBlank()) {
+                signingConfigs.getByName("debug")
+            } else {
+                signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             isShrinkResources = false
+            manifestPlaceholders["MAPS_API_KEY"] = mapsApiKeyRelease
         }
     }
 }
