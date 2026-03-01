@@ -6,8 +6,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'dart:math' as math;
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 
+import 'chat_screen.dart';
 import 'courier_go_to_client_screen.dart';
 
 class CourierGoToRestaurantScreen extends StatelessWidget {
@@ -33,8 +36,66 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
     );
   }
 
+  void _fitCameraToPoints(GoogleMapController controller, List<LatLng> points) {
+    if (points.isEmpty) return;
+    if (points.length == 1) {
+      controller.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: points.first, zoom: 15),
+        ),
+      );
+      return;
+    }
+
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+
+    for (final point in points.skip(1)) {
+      minLat = math.min(minLat, point.latitude);
+      maxLat = math.max(maxLat, point.latitude);
+      minLng = math.min(minLng, point.longitude);
+      maxLng = math.max(maxLng, point.longitude);
+    }
+
+    controller.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        80,
+      ),
+    );
+  }
+
+  Future<bool> _confirmPickup(BuildContext context) async {
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الاستلام'),
+        content: const Text('هل أنت متأكد أنك استلمت الطلب من المطعم؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('تأكيد الاستلام'),
+          ),
+        ],
+      ),
+    );
+    return approved == true;
+  }
+
   Future<Map<String, dynamic>?> _fetchOrderData() async {
-    final doc = await FirebaseFirestore.instance.collection('orders').doc(orderId).get();
+    final doc = await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(orderId)
+        .get();
     if (!doc.exists) return null;
 
     final data = Map<String, dynamic>.from(doc.data()!);
@@ -44,16 +105,20 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
 
       final hasRestaurantName =
           (data['restaurantName'] ?? '').toString().trim().isNotEmpty;
-      final hasClientName = (data['clientName'] ?? '').toString().trim().isNotEmpty;
+      final hasClientName =
+          (data['clientName'] ?? '').toString().trim().isNotEmpty;
       final hasRestaurantLat = (data['restaurantLat'] as num?) != null;
       final hasRestaurantLng = (data['restaurantLng'] as num?) != null;
       final hasClientLat = (data['clientLat'] as num?) != null;
       final hasClientLng = (data['clientLng'] as num?) != null;
 
-      if (clientId.isNotEmpty && (!hasClientName || !hasClientLat || !hasClientLng)) {
+      if (clientId.isNotEmpty &&
+          (!hasClientName || !hasClientLat || !hasClientLng)) {
         DocumentSnapshot<Map<String, dynamic>>? clientDoc;
-        final directClientDoc =
-            await FirebaseFirestore.instance.collection('clients').doc(clientId).get();
+        final directClientDoc = await FirebaseFirestore.instance
+            .collection('clients')
+            .doc(clientId)
+            .get();
         if (directClientDoc.exists) {
           clientDoc = directClientDoc;
         } else {
@@ -89,7 +154,9 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
           final clientData = clientDoc.data() ?? <String, dynamic>{};
           if (!hasClientName) {
             final clientName =
-                (clientData['name'] ?? clientData['fullName'] ?? '').toString().trim();
+                (clientData['name'] ?? clientData['fullName'] ?? '')
+                    .toString()
+                    .trim();
             if (clientName.isNotEmpty) {
               data['clientName'] = clientName;
             }
@@ -127,7 +194,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
               if (defaultAddressId.isNotEmpty) {
                 final addressDoc = await FirebaseFirestore.instance
                     .collection('clients')
-                  .doc(clientDoc.id)
+                    .doc(clientDoc.id)
                     .collection('addresses')
                     .doc(defaultAddressId)
                     .get();
@@ -169,13 +236,12 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
         if (restaurantDoc != null && restaurantDoc.exists) {
           final restaurantData = restaurantDoc.data() ?? <String, dynamic>{};
           if (!hasRestaurantName) {
-            final fallbackName =
-                (restaurantData['name'] ??
-                        restaurantData['restaurantName'] ??
-                        restaurantData['storeName'] ??
-                        '')
-                    .toString()
-                    .trim();
+            final fallbackName = (restaurantData['name'] ??
+                    restaurantData['restaurantName'] ??
+                    restaurantData['storeName'] ??
+                    '')
+                .toString()
+                .trim();
             if (fallbackName.isNotEmpty) {
               data['restaurantName'] = fallbackName;
             }
@@ -232,6 +298,46 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
     });
   }
 
+  String _generateChatId(String user1, String user2) {
+    final sorted = [user1, user2]..sort();
+    return '${sorted[0]}_${sorted[1]}';
+  }
+
+  Future<void> _openClientChat(
+    BuildContext context,
+    Map<String, dynamic> orderData,
+  ) async {
+    final clientId = (orderData['clientId'] ?? '').toString().trim();
+    if (clientId.isEmpty) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('لا يمكن فتح الدردشة لعدم توفر معرف العميل')),
+      );
+      return;
+    }
+
+    final doc = await FirebaseFirestore.instance
+        .collection('drivers')
+        .doc(driverId)
+        .get();
+    final driverName = (doc.data()?['name'] ?? 'مندوب').toString();
+
+    if (!context.mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          currentUserId: driverId,
+          otherUserId: clientId,
+          currentUserRole: 'driver',
+          chatId: _generateChatId(driverId, clientId),
+          currentUserName: driverName,
+        ),
+      ),
+    );
+  }
+
   Widget _detailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -262,7 +368,8 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
   Widget _buildOrderDetails(Map<String, dynamic> orderData) {
     final items = (orderData['items'] as List?) ?? const [];
     final paymentMethod = (orderData['paymentMethod'] ?? 'غير محدد').toString();
-    final totalWithDelivery = (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
+    final totalWithDelivery =
+        (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
 
     return Card(
       child: ExpansionTile(
@@ -277,9 +384,18 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
         collapsedIconColor: Colors.black87,
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
-          _detailRow('رقم الطلب', (orderData['orderId'] ?? orderId).toString()),
-          _detailRow('العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
-          _detailRow('المطعم', (orderData['restaurantName'] ?? 'غير معروف').toString()),
+          _detailRow(
+            'رقم الطلب',
+            formatUnifiedOrderCode(
+              orderNumber: orderData['orderNumber'],
+              orderId: orderData['orderId'],
+              docId: orderId,
+            ),
+          ),
+          _detailRow(
+              'العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
+          _detailRow('المطعم',
+              (orderData['restaurantName'] ?? 'غير معروف').toString()),
           _detailRow('طريقة الدفع', paymentMethod),
           _detailRow('الإجمالي', '$totalWithDelivery ج.س'),
           const SizedBox(height: 8),
@@ -320,6 +436,51 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildJourneyHeader({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: AppThemeArabic.clientPrimary.withOpacity(0.12),
+            child: Icon(icon, color: AppThemeArabic.clientPrimary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -327,7 +488,11 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text(
           'الذهاب إلى المطعم',
-          style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal'),
+          style: TextStyle(
+              color: AppThemeArabic.clientPrimary,
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+              fontFamily: 'Tajawal'),
         ),
         backgroundColor: Colors.white,
         elevation: 1,
@@ -367,59 +532,88 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
           }
 
           final orderData = snapshot.data!;
-            final String restaurantName =
+          final String restaurantName =
               (orderData['restaurantName'] ?? '').toString().trim().isNotEmpty
-                ? orderData['restaurantName'].toString().trim()
-                : 'اسم غير معروف';
+                  ? orderData['restaurantName'].toString().trim()
+                  : 'اسم غير معروف';
 
-            final restaurantLocationRaw = orderData['restaurantLocation'];
-            final clientLocationRaw = orderData['clientLocation'];
+          final restaurantLocationRaw = orderData['restaurantLocation'];
+          final clientLocationRaw = orderData['clientLocation'];
 
-            final double? restaurantLat = (orderData['restaurantLat'] as num?)?.toDouble() ??
+          final double? restaurantLat = (orderData['restaurantLat'] as num?)
+                  ?.toDouble() ??
               (restaurantLocationRaw is GeoPoint
-                ? restaurantLocationRaw.latitude
-                : (restaurantLocationRaw is Map<String, dynamic>
-                  ? (restaurantLocationRaw['lat'] as num?)?.toDouble() ??
-                    (restaurantLocationRaw['latitude'] as num?)?.toDouble()
-                  : null));
-            final double? restaurantLng = (orderData['restaurantLng'] as num?)?.toDouble() ??
+                  ? restaurantLocationRaw.latitude
+                  : (restaurantLocationRaw is Map<String, dynamic>
+                      ? (restaurantLocationRaw['lat'] as num?)?.toDouble() ??
+                          (restaurantLocationRaw['latitude'] as num?)
+                              ?.toDouble()
+                      : null));
+          final double? restaurantLng = (orderData['restaurantLng'] as num?)
+                  ?.toDouble() ??
               (restaurantLocationRaw is GeoPoint
-                ? restaurantLocationRaw.longitude
-                : (restaurantLocationRaw is Map<String, dynamic>
-                  ? (restaurantLocationRaw['lng'] as num?)?.toDouble() ??
-                    (restaurantLocationRaw['longitude'] as num?)?.toDouble()
-                  : null));
-            final double? clientLat = (orderData['clientLat'] as num?)?.toDouble() ??
+                  ? restaurantLocationRaw.longitude
+                  : (restaurantLocationRaw is Map<String, dynamic>
+                      ? (restaurantLocationRaw['lng'] as num?)?.toDouble() ??
+                          (restaurantLocationRaw['longitude'] as num?)
+                              ?.toDouble()
+                      : null));
+          final double? clientLat = (orderData['clientLat'] as num?)
+                  ?.toDouble() ??
               (clientLocationRaw is GeoPoint
-                ? clientLocationRaw.latitude
-                : (clientLocationRaw is Map<String, dynamic>
-                  ? (clientLocationRaw['lat'] as num?)?.toDouble() ??
-                    (clientLocationRaw['latitude'] as num?)?.toDouble()
-                  : null));
-            final double? clientLng = (orderData['clientLng'] as num?)?.toDouble() ??
+                  ? clientLocationRaw.latitude
+                  : (clientLocationRaw is Map<String, dynamic>
+                      ? (clientLocationRaw['lat'] as num?)?.toDouble() ??
+                          (clientLocationRaw['latitude'] as num?)?.toDouble()
+                      : null));
+          final double? clientLng = (orderData['clientLng'] as num?)
+                  ?.toDouble() ??
               (clientLocationRaw is GeoPoint
-                ? clientLocationRaw.longitude
-                : (clientLocationRaw is Map<String, dynamic>
-                  ? (clientLocationRaw['lng'] as num?)?.toDouble() ??
-                    (clientLocationRaw['longitude'] as num?)?.toDouble()
-                  : null));
+                  ? clientLocationRaw.longitude
+                  : (clientLocationRaw is Map<String, dynamic>
+                      ? (clientLocationRaw['lng'] as num?)?.toDouble() ??
+                          (clientLocationRaw['longitude'] as num?)?.toDouble()
+                      : null));
 
-            final bool hasRestaurantLocation =
+          final bool hasRestaurantLocation =
               restaurantLat != null && restaurantLng != null;
-            final bool hasClientLocation = clientLat != null && clientLng != null;
+          final bool hasClientLocation = clientLat != null && clientLng != null;
 
-            final LatLng? restaurantLocation = hasRestaurantLocation
-              ? LatLng(restaurantLat!, restaurantLng!)
+          final LatLng? restaurantLocation = hasRestaurantLocation
+              ? LatLng(restaurantLat, restaurantLng)
               : null;
-            final LatLng? clientLocation =
-              hasClientLocation ? LatLng(clientLat!, clientLng!) : null;
+          final LatLng? clientLocation =
+              hasClientLocation ? LatLng(clientLat, clientLng) : null;
 
           _saveCurrentStage('going_to_restaurant');
 
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              _buildJourneyHeader(
+                title: 'المرحلة 1 من 3 · التوجه للمطعم',
+                subtitle: 'عند وصولك للمطعم واستلام الطلب اضغط «استلام الطلب»',
+                icon: Icons.store_mall_directory_outlined,
+              ),
+              const SizedBox(height: 12),
               _buildOrderDetails(orderData),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _openClientChat(context, orderData),
+                  icon: const Icon(Icons.chat_bubble_outline),
+                  label: const Text('الدردشة مع العميل'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppThemeArabic.clientAccent,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -429,7 +623,8 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.store, color: AppThemeArabic.clientPrimary, size: 28),
+                    const Icon(Icons.store,
+                        color: AppThemeArabic.clientPrimary, size: 28),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -446,38 +641,83 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               if (hasRestaurantLocation) ...[
-                SizedBox(
-                  height: 240,
-                  child: GoogleMap(
-                    initialCameraPosition: CameraPosition(
-                      target: restaurantLocation!,
-                      zoom: 15,
-                    ),
-                    markers: {
-                      Marker(
-                        markerId: const MarkerId('restaurant'),
-                        position: restaurantLocation,
-                        infoWindow: const InfoWindow(title: 'المطعم'),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: SizedBox(
+                    height: 260,
+                    child: GoogleMap(
+                      initialCameraPosition: CameraPosition(
+                        target: restaurantLocation!,
+                        zoom: hasClientLocation ? 12 : 15,
                       ),
-                    },
-                    zoomControlsEnabled: false,
-                    gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                      Factory<OneSequenceGestureRecognizer>(
-                          () => EagerGestureRecognizer()),
-                    },
+                      markers: {
+                        Marker(
+                          markerId: const MarkerId('restaurant'),
+                          position: restaurantLocation,
+                          infoWindow: const InfoWindow(title: '🍽️ المطعم'),
+                          icon: BitmapDescriptor.defaultMarkerWithHue(
+                            BitmapDescriptor.hueRed,
+                          ),
+                        ),
+                        if (clientLocation != null)
+                          Marker(
+                            markerId: const MarkerId('client'),
+                            position: clientLocation,
+                            infoWindow: const InfoWindow(title: '🏠 العميل'),
+                            icon: BitmapDescriptor.defaultMarkerWithHue(
+                              BitmapDescriptor.hueGreen,
+                            ),
+                          ),
+                      },
+                      polylines: clientLocation == null
+                          ? const {}
+                          : {
+                              Polyline(
+                                polylineId:
+                                    const PolylineId('restaurant_client'),
+                                points: [restaurantLocation, clientLocation],
+                                color: AppThemeArabic.clientPrimary,
+                                width: 4,
+                              ),
+                            },
+                      onMapCreated: (controller) {
+                        final points = <LatLng>[
+                          restaurantLocation,
+                          if (clientLocation != null) clientLocation,
+                        ];
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          _fitCameraToPoints(controller, points);
+                        });
+                      },
+                      zoomControlsEnabled: false,
+                      myLocationButtonEnabled: false,
+                      gestureRecognizers: <Factory<
+                          OneSequenceGestureRecognizer>>{
+                        Factory<OneSequenceGestureRecognizer>(
+                            () => EagerGestureRecognizer()),
+                      },
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
-                GFButton(
-                  onPressed: () => _openGoogleMaps(context, restaurantLocation),
-                  text: 'افتح في خرائط Google',
-                  icon: const Icon(Icons.map_outlined),
-                  color: AppThemeArabic.clientPrimary,
-                  shape: GFButtonShape.pills,
-                  fullWidthButton: true,
-                  size: GFSize.LARGE,
-                  textStyle:
-                      const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                Align(
+                  alignment: Alignment.center,
+                  child: Material(
+                    color: AppThemeArabic.clientPrimary,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => _openGoogleMaps(context, restaurantLocation),
+                      child: const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Icon(
+                          Icons.navigation_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ] else ...[
                 Container(
@@ -495,7 +735,12 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
               const SizedBox(height: 20),
               GFButton(
                 onPressed: () async {
-                  await FirebaseFirestore.instance.collection('orders').doc(orderId).update({
+                  final confirmed = await _confirmPickup(context);
+                  if (!confirmed) return;
+                  await FirebaseFirestore.instance
+                      .collection('orders')
+                      .doc(orderId)
+                      .update({
                     'orderStatus': 'picked_up',
                     'status': 'picked_up',
                     'pickedUpAt': FieldValue.serverTimestamp(),
@@ -517,13 +762,14 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                     ),
                   );
                 },
-                text: 'وصلت إلى المطعم',
+                text: 'استلام الطلب',
                 icon: const Icon(Icons.check_circle),
-                color: AppThemeArabic.clientPrimary,
+                color: AppThemeArabic.clientSuccess,
                 shape: GFButtonShape.pills,
                 fullWidthButton: true,
                 size: GFSize.LARGE,
-                textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                textStyle:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
               ),
             ],
           );

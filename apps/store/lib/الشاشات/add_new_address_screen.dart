@@ -274,6 +274,11 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
                             Marker(
                               markerId: const MarkerId('selectedLocation'),
                               position: selectedLocation!,
+                              infoWindow:
+                                  const InfoWindow(title: '🏪 موقع المتجر'),
+                              icon: BitmapDescriptor.defaultMarkerWithHue(
+                                BitmapDescriptor.hueOrange,
+                              ),
                             )
                           },
                     onMapCreated: _onMapCreated,

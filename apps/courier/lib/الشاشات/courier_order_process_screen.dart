@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:speedstar_core/speedstar_core.dart' show OrderStatusPalette;
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import 'courier_confirm_delivery_screen.dart';
@@ -79,21 +80,22 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
     if (stage == 'going_to_client') {
       final clientLocationRaw = data['clientLocation'];
       final clientLat = (data['clientLat'] as num?)?.toDouble() ??
-        (clientLocationRaw is GeoPoint
-          ? clientLocationRaw.latitude
-          : (clientLocationRaw is Map<String, dynamic>
-            ? (clientLocationRaw['lat'] as num?)?.toDouble() ??
-              (clientLocationRaw['latitude'] as num?)?.toDouble()
-            : null));
+          (clientLocationRaw is GeoPoint
+              ? clientLocationRaw.latitude
+              : (clientLocationRaw is Map<String, dynamic>
+                  ? (clientLocationRaw['lat'] as num?)?.toDouble() ??
+                      (clientLocationRaw['latitude'] as num?)?.toDouble()
+                  : null));
       final clientLng = (data['clientLng'] as num?)?.toDouble() ??
-        (clientLocationRaw is GeoPoint
-          ? clientLocationRaw.longitude
-          : (clientLocationRaw is Map<String, dynamic>
-            ? (clientLocationRaw['lng'] as num?)?.toDouble() ??
-              (clientLocationRaw['longitude'] as num?)?.toDouble()
-            : null));
-      final LatLng? clientLocation =
-          (clientLat != null && clientLng != null) ? LatLng(clientLat, clientLng) : null;
+          (clientLocationRaw is GeoPoint
+              ? clientLocationRaw.longitude
+              : (clientLocationRaw is Map<String, dynamic>
+                  ? (clientLocationRaw['lng'] as num?)?.toDouble() ??
+                      (clientLocationRaw['longitude'] as num?)?.toDouble()
+                  : null));
+      final LatLng? clientLocation = (clientLat != null && clientLng != null)
+          ? LatLng(clientLat, clientLng)
+          : null;
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -122,7 +124,12 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
     return Scaffold(
       backgroundColor: AppThemeArabic.clientBackground,
       appBar: AppBar(
-        title: const Text('متابعة الطلب الحالي', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        title: const Text('متابعة الطلب الحالي',
+            style: TextStyle(
+                color: AppThemeArabic.clientPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+                fontFamily: 'Tajawal')),
         backgroundColor: Colors.white,
         centerTitle: true,
         elevation: 1,
@@ -155,7 +162,7 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.warning_amber_rounded,
-                        color: Colors.orange, size: 52),
+                        color: OrderStatusPalette.pending, size: 52),
                     const SizedBox(height: 12),
                     Text(
                       _routeError!,
@@ -180,7 +187,11 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.check_circle, color: Colors.green, size: 56),
+                    const Icon(
+                      Icons.check_circle,
+                      color: OrderStatusPalette.delivered,
+                      size: 56,
+                    ),
                     const SizedBox(height: 12),
                     const Text('تم إنهاء هذا الطلب بالفعل'),
                     const SizedBox(height: 16),

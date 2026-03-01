@@ -34,6 +34,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
   String? _verificationId;
   int? _resendToken;
   String _defaultDialCode = '+249';
+  bool _obscurePassword = true;
 
   // Toggles via Remote Config
   bool _allowGuest = false; // افتراضي: موقوف
@@ -51,6 +52,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
       final rc = FirebaseRemoteConfig.instance;
       await rc.fetchAndActivate();
       final all = rc.getAll();
+      if (!mounted) return;
       setState(() {
         _allowGuest =
             all.containsKey('allow_guest') ? rc.getBool('allow_guest') : false;
@@ -86,140 +88,171 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(title: const Text('تسجيل الدخول')),
+        backgroundColor: const Color(0xFFF8FAFC),
+        appBar: AppBar(
+          title: const Text('تسجيل الدخول'),
+          centerTitle: true,
+        ),
         body: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  const Text('أدخل بريدك وكلمة المرور لتسجيل الدخول'),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _email,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'البريد الإلكتروني',
-                      hintText: 'name@example.com',
-                      filled: true,
-                      border: OutlineInputBorder(),
-                    ),
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              inputDecorationTheme: InputDecorationTheme(
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFE85D2A),
+                    width: 1.2,
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _password,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'كلمة المرور',
-                      filled: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Wrap(
-                    spacing: 12,
-                    children: [
-                      FilledButton(
-                        onPressed: _loading ? null : _signIn,
-                        child: _loading
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text('تسجيل الدخول'),
+                ),
+              ),
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
                       ),
-                      if (widget.allowRegister)
-                        OutlinedButton(
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'أهلاً بك في SpeedStar',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.w700),
+                          ),
+                          SizedBox(height: 6),
+                          Text('أدخل بريدك وكلمة المرور للمتابعة بأمان.'),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _email,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'البريد الإلكتروني',
+                        hintText: 'name@example.com',
+                        prefixIcon: Icon(Icons.alternate_email),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _password,
+                      obscureText: _obscurePassword,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) {
+                        if (!_loading) _signIn();
+                      },
+                      decoration: InputDecoration(
+                        labelText: 'كلمة المرور',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          onPressed: () => setState(
+                              () => _obscurePassword = !_obscurePassword),
+                          icon: Icon(_obscurePassword
+                              ? Icons.visibility
+                              : Icons.visibility_off),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Wrap(
+                      spacing: 12,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: _loading ? null : _signIn,
+                          icon: const Icon(Icons.login),
+                          label: _loading
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('تسجيل الدخول'),
+                        ),
+                        if (widget.allowRegister)
+                          OutlinedButton(
+                            onPressed: _loading
+                                ? null
+                                : () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => _RegisterScreenArabic(
+                                          defaultDialCode: _defaultDialCode,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                            child: const Text('إنشاء حساب'),
+                          ),
+                        if (_allowGoogle && widget.allowGoogleSignIn)
+                          OutlinedButton.icon(
+                            onPressed: _loading ? null : _signInWithGoogle,
+                            icon: const Icon(Icons.login),
+                            label: const Text('تسجيل بحساب جوجل'),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 12,
+                      children: [
+                        if (_allowGuest && widget.allowGuestSignIn)
+                          TextButton(
+                            onPressed: _loading ? null : _continueAsGuest,
+                            child: const Text('تابع كضيف'),
+                          ),
+                        TextButton(
                           onPressed: _loading
                               ? null
                               : () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => _RegisterScreenArabic(
-                                        defaultDialCode: _defaultDialCode,
+                                      builder: (_) =>
+                                          _ForgotPasswordScreenArabic(
+                                        initialEmail: _email.text.trim(),
                                       ),
                                     ),
                                   );
                                 },
-                          child: const Text('إنشاء حساب'),
-                        ),
-                      if (_allowGoogle && widget.allowGoogleSignIn)
-                        OutlinedButton.icon(
-                          onPressed: _loading ? null : _signInWithGoogle,
-                          icon: const Icon(Icons.login),
-                          label: const Text('تسجيل بحساب جوجل'),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    children: [
-                      if (_allowGuest && widget.allowGuestSignIn)
-                        TextButton(
-                          onPressed: _loading ? null : _continueAsGuest,
-                          child: const Text('تابع كضيف'),
-                        ),
-                      TextButton(
-                        onPressed: _loading
-                            ? null
-                            : () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => _ForgotPasswordScreenArabic(
-                                      initialEmail: _email.text.trim(),
-                                    ),
-                                  ),
-                                );
-                              },
-                        child: const Text('نسيت كلمة المرور؟'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  if (_allowPhone && widget.allowPhoneSignIn) ...[
-                    const Text('أو الدخول برقم الهاتف'),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _phone,
-                      keyboardType: TextInputType.phone,
-                      decoration: InputDecoration(
-                        labelText: 'رقم الهاتف',
-                        hintText:
-                            'مثال: +9665XXXXXXXX أو اكتب رقمك المحلي وسيُضاف رمز $_defaultDialCode',
-                        prefixText: '$_defaultDialCode ',
-                        filled: true,
-                        border: const OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      children: [
-                        FilledButton(
-                          onPressed: _loading
-                              ? null
-                              : () => _sendSmsCode(resend: false),
-                          child: const Text('إرسال الرمز'),
+                          child: const Text('نسيت كلمة المرور؟'),
                         ),
                       ],
                     ),
-                    if (_codeSent) ...[
+                    const SizedBox(height: 24),
+                    if (_allowPhone && widget.allowPhoneSignIn) ...[
+                      const Text('أو الدخول برقم الهاتف'),
                       const SizedBox(height: 12),
                       TextField(
-                        controller: _smsCode,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'رمز التحقق',
-                          hintText: '123456',
-                          filled: true,
-                          border: OutlineInputBorder(),
+                        controller: _phone,
+                        keyboardType: TextInputType.phone,
+                        textInputAction: TextInputAction.next,
+                        decoration: InputDecoration(
+                          labelText: 'رقم الهاتف',
+                          hintText:
+                              'مثال: +9665XXXXXXXX أو اكتب رقمك المحلي وسيُضاف رمز $_defaultDialCode',
+                          prefixText: '$_defaultDialCode ',
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -227,20 +260,44 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
                         spacing: 12,
                         children: [
                           FilledButton(
-                            onPressed: _loading ? null : _verifySmsCode,
-                            child: const Text('تأكيد الرمز'),
-                          ),
-                          OutlinedButton(
                             onPressed: _loading
                                 ? null
-                                : () => _sendSmsCode(resend: true),
-                            child: const Text('إعادة الإرسال'),
+                                : () => _sendSmsCode(resend: false),
+                            child: const Text('إرسال الرمز'),
                           ),
                         ],
                       ),
+                      if (_codeSent) ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _smsCode,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.done,
+                          decoration: const InputDecoration(
+                            labelText: 'رمز التحقق',
+                            hintText: '123456',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 12,
+                          children: [
+                            FilledButton(
+                              onPressed: _loading ? null : _verifySmsCode,
+                              child: const Text('تأكيد الرمز'),
+                            ),
+                            OutlinedButton(
+                              onPressed: _loading
+                                  ? null
+                                  : () => _sendSmsCode(resend: true),
+                              child: const Text('إعادة الإرسال'),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -250,6 +307,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
   }
 
   void _showError(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
@@ -344,12 +402,14 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
           _closeIfPresentedAsRoute();
         },
         verificationFailed: (FirebaseAuthException e) {
+          if (!mounted) return;
           final em = e.message ?? '';
           _showError(
               '${_messageForCode(e.code)}${em.isNotEmpty ? ' - $em' : ''}');
         },
         forceResendingToken: resend ? _resendToken : null,
         codeSent: (String verificationId, int? resendToken) {
+          if (!mounted) return;
           _verificationId = verificationId;
           _resendToken = resendToken;
           _codeSent = true;
@@ -357,6 +417,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
           setState(() {});
         },
         codeAutoRetrievalTimeout: (String verificationId) {
+          if (!mounted) return;
           _verificationId = verificationId;
           _showError(
               'انتهت مهلة الاسترجاع الآلي، يمكنك إدخال الرمز يدويًا أو إعادة الإرسال');
@@ -446,6 +507,7 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _loading = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -484,6 +546,45 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
     return '${widget.defaultDialCode}$p';
   }
 
+  Future<void> _upsertClientProfile({
+    required User user,
+    required String name,
+    required String phone,
+    required String email,
+  }) async {
+    final docRef =
+        FirebaseFirestore.instance.collection('clients').doc(user.uid);
+    final existing = await docRef.get();
+
+    final payload = <String, dynamic>{
+      'name': name,
+      'fullName': name,
+      'displayName': name,
+      'phone': phone,
+      'phoneNumber': phone,
+      'email': email,
+      'ownerUid': user.uid,
+      'uid': user.uid,
+      'userId': user.uid,
+      'userType': 'client',
+      'role': 'client',
+      'isActive': true,
+      'isApproved': true,
+      'approvalStatus': 'approved',
+      'stateId': existing.data()?['stateId'] ?? '',
+      'region': existing.data()?['region'] ?? '',
+      'defaultAddressId': existing.data()?['defaultAddressId'] ?? '',
+      'updatedAt': FieldValue.serverTimestamp(),
+      'lastLoginAt': FieldValue.serverTimestamp(),
+    };
+
+    if (!existing.exists) {
+      payload['createdAt'] = FieldValue.serverTimestamp();
+    }
+
+    await docRef.set(payload, SetOptions(merge: true));
+  }
+
   Future<void> _register() async {
     setState(() => _loading = true);
     try {
@@ -509,26 +610,45 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
         return;
       }
 
-      final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email,
-        password: pass,
-      );
+      UserCredential credential;
+      try {
+        credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: email,
+          password: pass,
+        );
+      } on FirebaseAuthException catch (e) {
+        if (e.code != 'email-already-in-use') rethrow;
+
+        try {
+          credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+            email: email,
+            password: pass,
+          );
+        } on FirebaseAuthException catch (signInError) {
+          if (signInError.code == 'wrong-password' ||
+              signInError.code == 'invalid-credential') {
+            _showError(
+                'هذا البريد مسجل بالفعل. أدخل نفس كلمة مرور الحساب الحالي لربطه كعميل.');
+            return;
+          }
+          if (signInError.code == 'user-disabled') {
+            _showError('هذا الحساب موقوف.');
+            return;
+          }
+          _showError(_messageForCode(signInError.code));
+          return;
+        }
+      }
 
       final user = credential.user;
       if (user != null) {
         await user.updateDisplayName(name);
-        await FirebaseFirestore.instance.collection('clients').doc(user.uid).set({
-          'name': name,
-          'phone': phone,
-          'phoneNumber': phone,
-          'email': email,
-          'ownerUid': user.uid,
-          'uid': user.uid,
-          'userId': user.uid,
-          'userType': 'client',
-          'updatedAt': FieldValue.serverTimestamp(),
-          'createdAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        await _upsertClientProfile(
+          user: user,
+          name: name,
+          phone: phone,
+          email: email,
+        );
       }
 
       if (!mounted) return;
@@ -547,7 +667,8 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(title: const Text('إنشاء حساب عميل')),
+        backgroundColor: const Color(0xFFF8FAFC),
+        appBar: AppBar(title: const Text('إنشاء حساب عميل'), centerTitle: true),
         body: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -555,12 +676,35 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                    ),
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'حساب عميل جديد',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w700),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                            'يمكنك استخدام نفس البريد الموجود في المتجر/المندوب وربطه بدور العميل.'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: _name,
                     decoration: const InputDecoration(
                       labelText: 'الاسم',
                       filled: true,
                       border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person_outline),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -574,6 +718,7 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
                       prefixText: '${widget.defaultDialCode} ',
                       filled: true,
                       border: const OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.phone_outlined),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -585,22 +730,32 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
                       hintText: 'name@example.com',
                       filled: true,
                       border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.alternate_email),
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _password,
-                    obscureText: true,
-                    decoration: const InputDecoration(
+                    obscureText: _obscurePassword,
+                    decoration: InputDecoration(
                       labelText: 'كلمة المرور',
                       filled: true,
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(
+                            () => _obscurePassword = !_obscurePassword),
+                        icon: Icon(_obscurePassword
+                            ? Icons.visibility
+                            : Icons.visibility_off),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 20),
-                  FilledButton(
+                  FilledButton.icon(
                     onPressed: _loading ? null : _register,
-                    child: _loading
+                    icon: const Icon(Icons.person_add_alt_1),
+                    label: _loading
                         ? const SizedBox(
                             width: 16,
                             height: 16,
@@ -628,7 +783,8 @@ class _ForgotPasswordScreenArabic extends StatefulWidget {
       _ForgotPasswordScreenArabicState();
 }
 
-class _ForgotPasswordScreenArabicState extends State<_ForgotPasswordScreenArabic> {
+class _ForgotPasswordScreenArabicState
+    extends State<_ForgotPasswordScreenArabic> {
   late final TextEditingController _email;
   bool _loading = false;
 
@@ -698,7 +854,8 @@ class _ForgotPasswordScreenArabicState extends State<_ForgotPasswordScreenArabic
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  const Text('أدخل بريدك وسنرسل لك رابط إعادة تعيين كلمة المرور.'),
+                  const Text(
+                      'أدخل بريدك وسنرسل لك رابط إعادة تعيين كلمة المرور.'),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _email,

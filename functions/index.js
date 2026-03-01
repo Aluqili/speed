@@ -7,10 +7,12 @@ const crypto = require('crypto');
 admin.initializeApp();
 const db = admin.firestore();
 const DEPLOY_MARKER_NODE22 = '2026-02-23-node22';
-const REGION = 'us-central1';
+const REGION = 'me-central1';
+const SCHEDULE_REGION = 'us-central1';
 
 const COURIER_OFFER_TIMEOUT_SECONDS = 40;
 const ASSIGNMENT_CYCLE_RESET_SECONDS = 120;
+const MAX_DRIVER_RESTAURANT_DISTANCE_KM = 20;
 const BOOTSTRAP_ADMIN_EMAILS = ['admin@speedstar.com', 'speedstarapp0@gmail.com'];
 const PRICING_RECALC_WINDOW_MINUTES = 180;
 const PRICING_RECALC_LIMIT = 250;
@@ -100,79 +102,149 @@ function normalizeAudienceRole(raw) {
   return '';
 }
 
+function roleCollectionRef(normalizedRole) {
+  if (normalizedRole === 'client') return db.collection('clients');
+  if (normalizedRole === 'courier') return db.collection('drivers');
+  if (normalizedRole === 'store') return db.collection('restaurants');
+  return null;
+}
+
+function notificationWriteDataForRole(normalizedRole, uid, payload) {
+  if (normalizedRole === 'client') {
+    return {
+      ref: db.collection('clients').doc(uid).collection('notifications').doc(),
+      data: { ...payload, userId: uid, audience: 'client' },
+    };
+  }
+
+  if (normalizedRole === 'courier') {
+    return {
+      ref: db.collection('notifications').doc(),
+      data: { ...payload, userId: uid, driverId: uid, audience: 'courier' },
+    };
+  }
+
+  if (normalizedRole === 'store') {
+    return {
+      ref: db.collection('notifications').doc(),
+      data: { ...payload, userId: uid, restaurantId: uid, audience: 'store' },
+    };
+  }
+
+  return null;
+}
+
+function extractFcmTokens(data) {
+  const raw = data || {};
+  const values = [
+    raw.fcmToken,
+    raw.messagingToken,
+    raw.deviceToken,
+    raw.token,
+    ...(Array.isArray(raw.fcmTokens) ? raw.fcmTokens : []),
+    ...(Array.isArray(raw.deviceTokens) ? raw.deviceTokens : []),
+  ];
+
+  const valid = values
+    .map((item) => String(item || '').trim())
+    .filter((item) => item.length > 20);
+
+  return [...new Set(valid)];
+}
+
+function notificationPayloadToData(payload, role, userId) {
+  return {
+    title: String(payload.title || ''),
+    body: String(payload.body || ''),
+    type: String(payload.type || ''),
+    source: String(payload.source || ''),
+    orderId: payload.orderId ? String(payload.orderId) : '',
+    audience: String(role || ''),
+    userId: String(userId || ''),
+  };
+}
+
+async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
+  const tokens = extractFcmTokens(userDocData);
+  if (!tokens.length) return 0;
+
+  const message = {
+    tokens,
+    notification: {
+      title: String(payload.title || ''),
+      body: String(payload.body || ''),
+    },
+    data: notificationPayloadToData(payload, normalizedRole, userId),
+    android: {
+      priority: 'high',
+      notification: {
+        channelId: 'speedstar_alerts',
+        priority: 'high',
+        defaultSound: true,
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: 'default',
+        },
+      },
+    },
+  };
+
+  try {
+    const result = await admin.messaging().sendEachForMulticast(message);
+    return Number(result.successCount || 0);
+  } catch (error) {
+    logger.error('sendPushToUser failed', {
+      role: normalizedRole,
+      userId,
+      error: error?.message || String(error),
+    });
+    return 0;
+  }
+}
+
 async function sendNotificationToSingleUser(role, userId, payload) {
   const normalizedRole = normalizeAudienceRole(role);
   const uid = String(userId || '').trim();
   if (!normalizedRole || !uid) return 0;
 
-  if (normalizedRole === 'client') {
-    await db.collection('clients').doc(uid).collection('notifications').add({
-      ...payload,
-      userId: uid,
-      audience: 'client',
-    });
-    return 1;
-  }
+  const roleRef = roleCollectionRef(normalizedRole);
+  const writePayload = notificationWriteDataForRole(normalizedRole, uid, payload);
+  if (!roleRef || !writePayload) return 0;
 
-  if (normalizedRole === 'courier') {
-    await db.collection('notifications').add({
-      ...payload,
-      userId: uid,
-      driverId: uid,
-      audience: 'courier',
-    });
-    return 1;
-  }
-
-  if (normalizedRole === 'store') {
-    await db.collection('notifications').add({
-      ...payload,
-      userId: uid,
-      restaurantId: uid,
-      audience: 'store',
-    });
-    return 1;
-  }
-
-  return 0;
+  const userDoc = await roleRef.doc(uid).get();
+  await writePayload.ref.set(writePayload.data);
+  await sendPushToUser(normalizedRole, uid, userDoc.data() || {}, payload);
+  return 1;
 }
 
 async function sendNotificationToRole(role, payload, maxRecipients = 500) {
   const normalizedRole = normalizeAudienceRole(role);
   if (!normalizedRole) return 0;
 
+  const roleRef = roleCollectionRef(normalizedRole);
+  if (!roleRef) return 0;
+
   let targetSnap;
-  if (normalizedRole === 'client') {
-    targetSnap = await db.collection('clients').limit(maxRecipients).get();
-  } else if (normalizedRole === 'courier') {
-    targetSnap = await db.collection('drivers').limit(maxRecipients).get();
-  } else {
-    targetSnap = await db.collection('restaurants').limit(maxRecipients).get();
-  }
+  targetSnap = await roleRef.limit(maxRecipients).get();
 
   let count = 0;
   let batch = db.batch();
   let opCount = 0;
+  const pushTasks = [];
 
   for (const snap of targetSnap.docs) {
     const uid = snap.id;
-    let ref;
-    let data;
+    const writePayload = notificationWriteDataForRole(normalizedRole, uid, payload);
+    if (!writePayload) continue;
 
-    if (normalizedRole === 'client') {
-      ref = db.collection('clients').doc(uid).collection('notifications').doc();
-      data = { ...payload, userId: uid, audience: 'client' };
-    } else if (normalizedRole === 'courier') {
-      ref = db.collection('notifications').doc();
-      data = { ...payload, userId: uid, driverId: uid, audience: 'courier' };
-    } else {
-      ref = db.collection('notifications').doc();
-      data = { ...payload, userId: uid, restaurantId: uid, audience: 'store' };
-    }
-
-    batch.set(ref, data);
+    batch.set(writePayload.ref, writePayload.data);
     opCount += 1;
     count += 1;
+
+    pushTasks.push(sendPushToUser(normalizedRole, uid, snap.data() || {}, payload));
 
     if (opCount >= 400) {
       await batch.commit();
@@ -185,7 +257,30 @@ async function sendNotificationToRole(role, payload, maxRecipients = 500) {
     await batch.commit();
   }
 
+  if (pushTasks.length) {
+    await Promise.allSettled(pushTasks);
+  }
+
   return count;
+}
+
+function normalizeWalletTargetRole(raw) {
+  const role = String(raw || '').trim().toLowerCase();
+  if (role === 'store' || role === 'restaurant') return 'store';
+  if (role === 'courier' || role === 'driver') return 'courier';
+  return '';
+}
+
+function walletDocRefByRole(role, targetId) {
+  if (role === 'store') return db.collection('restaurants').doc(targetId);
+  if (role === 'courier') return db.collection('drivers').doc(targetId);
+  return null;
+}
+
+function walletTransactionCollection(role, targetId) {
+  if (role === 'store') return db.collection('restaurants').doc(targetId).collection('walletTransactions');
+  if (role === 'courier') return db.collection('drivers').doc(targetId).collection('walletTransactions');
+  return null;
 }
 
 function normalizeOrderStatusForNotification(raw) {
@@ -204,6 +299,267 @@ function normalizeOrderStatusForNotification(raw) {
 function getStatus(order) {
   return String(order.orderStatus || order.status || '').trim();
 }
+
+function normalizePromoCode(rawCode) {
+  return String(rawCode || '').trim().toUpperCase();
+}
+
+function toSafeNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function buildPromoOrderContext(input) {
+  const context = input || {};
+  const subtotal = Math.max(0, Math.round(toSafeNumber(context.subtotal ?? context.total)));
+  const deliveryFee = Math.max(0, Math.round(toSafeNumber(context.deliveryFee)));
+  const largeOrderFee = Math.max(0, Math.round(toSafeNumber(context.largeOrderFee)));
+  const baseTotal = Math.max(0, subtotal + deliveryFee + largeOrderFee);
+  const restaurantId = String(context.restaurantId || '').trim();
+  const orderReference = String(context.orderReference || context.orderId || context.orderNumber || '').trim();
+  const isNewOrder = context.isNewOrder !== false;
+
+  let itemNames = [];
+  if (Array.isArray(context.items)) {
+    itemNames = context.items
+      .map((item) => String(item?.name || '').trim())
+      .filter(Boolean);
+  }
+
+  return {
+    subtotal,
+    deliveryFee,
+    largeOrderFee,
+    baseTotal,
+    restaurantId,
+    isNewOrder,
+    itemNames,
+    orderReference,
+  };
+}
+
+function evaluatePromocode(promo, context, userId) {
+  const code = normalizePromoCode(promo.code);
+  if (!code) {
+    return { ok: false, reason: 'invalid-code' };
+  }
+
+  if (promo.isActive !== true) {
+    return { ok: false, reason: 'inactive' };
+  }
+
+  const nowMillis = Date.now();
+  const expiry = promo.expiryDate?.toMillis?.() || null;
+  if (expiry && expiry <= nowMillis) {
+    return { ok: false, reason: 'expired' };
+  }
+
+  const promoRestaurantId = String(promo.restaurantId || '').trim();
+  if (promoRestaurantId && promoRestaurantId !== context.restaurantId) {
+    return { ok: false, reason: 'restaurant-mismatch' };
+  }
+
+  const minOrder = Math.max(0, Math.round(toSafeNumber(promo.minOrder)));
+  if (minOrder > 0 && context.baseTotal < minOrder) {
+    return { ok: false, reason: 'min-order' };
+  }
+
+  const maxUsage = Math.max(0, Math.floor(toSafeNumber(promo.maxUsage)));
+  const usedCount = Math.max(0, Math.floor(toSafeNumber(promo.usedCount)));
+  if (maxUsage > 0 && usedCount >= maxUsage) {
+    return { ok: false, reason: 'max-usage' };
+  }
+
+  const usersUsed = promo.usersUsed && typeof promo.usersUsed === 'object' ? promo.usersUsed : {};
+  const userUsedCount = Math.max(0, Math.floor(toSafeNumber(usersUsed[userId])));
+  const maxUsagePerUser = Math.max(0, Math.floor(toSafeNumber(promo.maxUsagePerUser)));
+  if (maxUsagePerUser > 0 && userUsedCount >= maxUsagePerUser) {
+    return { ok: false, reason: 'max-usage-per-user' };
+  }
+
+  if (promo.onlyForNewOrders === true && context.isNewOrder !== true) {
+    return { ok: false, reason: 'new-orders-only' };
+  }
+
+  const itemName = String(promo.itemName || '').trim();
+  let discountBase = context.baseTotal;
+  if (itemName) {
+    const matchedItem = context.itemNames.find((name) => name === itemName);
+    if (!matchedItem) {
+      return { ok: false, reason: 'item-mismatch' };
+    }
+    discountBase = context.subtotal;
+  }
+
+  if (discountBase <= 0) {
+    return { ok: false, reason: 'invalid-base-total' };
+  }
+
+  const discountType = String(promo.discountType || '').trim().toLowerCase();
+  const discountValue = toSafeNumber(promo.discountValue);
+  let discountAmount = 0;
+  if (discountType === 'percent') {
+    const boundedPercent = Math.max(0, Math.min(100, discountValue));
+    discountAmount = Math.round((discountBase * boundedPercent) / 100);
+  } else {
+    discountAmount = Math.round(Math.max(0, discountValue));
+  }
+
+  const maxDiscount = Math.max(0, Math.round(toSafeNumber(promo.maxDiscount)));
+  if (maxDiscount > 0) {
+    discountAmount = Math.min(discountAmount, maxDiscount);
+  }
+
+  discountAmount = Math.max(0, Math.min(discountAmount, context.baseTotal));
+  const totalAfterDiscount = Math.max(0, context.baseTotal - discountAmount);
+
+  return {
+    ok: true,
+    code,
+    discountAmount,
+    totalAfterDiscount,
+    promoSnapshot: {
+      code,
+      discountType,
+      discountValue,
+      maxDiscount: maxDiscount || null,
+      minOrder: minOrder || null,
+      restaurantId: promoRestaurantId || null,
+      itemName: itemName || null,
+      onlyForNewOrders: promo.onlyForNewOrders === true,
+      promoId: String(promo.id || ''),
+    },
+  };
+}
+
+exports.validatePromocodeForClient = onCall({ region: REGION }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Authentication is required');
+  }
+
+  const code = normalizePromoCode(request.data?.code);
+  if (!code) {
+    throw new HttpsError('invalid-argument', 'code is required');
+  }
+
+  const context = buildPromoOrderContext(request.data?.order || {});
+  if (!context.restaurantId) {
+    throw new HttpsError('invalid-argument', 'order.restaurantId is required');
+  }
+
+  const promoRef = db.collection('promocodes').doc(code);
+  const promoSnap = await promoRef.get();
+  if (!promoSnap.exists) {
+    return { ok: false, reason: 'not-found' };
+  }
+
+  const promo = promoSnap.data() || {};
+  const result = evaluatePromocode({ ...promo, id: promoSnap.id }, context, request.auth.uid);
+  if (!result.ok) {
+    return {
+      ok: false,
+      reason: result.reason || 'invalid',
+    };
+  }
+
+  return {
+    ok: true,
+    code: result.code,
+    discountAmount: result.discountAmount,
+    totalAfterDiscount: result.totalAfterDiscount,
+    promo: result.promoSnapshot,
+  };
+});
+
+exports.redeemPromocodeForClientOrder = onCall({ region: REGION }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Authentication is required');
+  }
+
+  const uid = String(request.auth.uid || '').trim();
+  const code = normalizePromoCode(request.data?.code);
+  const orderInput = request.data?.order || {};
+  const context = buildPromoOrderContext(orderInput);
+  if (!code) {
+    throw new HttpsError('invalid-argument', 'code is required');
+  }
+  if (!context.restaurantId) {
+    throw new HttpsError('invalid-argument', 'order.restaurantId is required');
+  }
+
+  const orderReference = context.orderReference || `${uid}-${Date.now()}`;
+  const redemptionKey = crypto
+    .createHash('sha1')
+    .update(`${uid}|${code}|${orderReference}`)
+    .digest('hex');
+
+  const promoRef = db.collection('promocodes').doc(code);
+  const redemptionRef = db.collection('promocodeRedemptions').doc(redemptionKey);
+
+  const result = await db.runTransaction(async (tx) => {
+    const [promoSnap, redemptionSnap] = await Promise.all([
+      tx.get(promoRef),
+      tx.get(redemptionRef),
+    ]);
+
+    if (!promoSnap.exists) {
+      throw new HttpsError('not-found', 'Promocode not found');
+    }
+
+    if (redemptionSnap.exists) {
+      const existing = redemptionSnap.data() || {};
+      return {
+        ok: true,
+        alreadyRedeemed: true,
+        code,
+        discountAmount: Math.max(0, Math.round(toSafeNumber(existing.discountAmount))),
+        totalAfterDiscount: Math.max(0, Math.round(toSafeNumber(existing.totalAfterDiscount))),
+        promo: existing.promo || null,
+      };
+    }
+
+    const promo = promoSnap.data() || {};
+    const evaluated = evaluatePromocode({ ...promo, id: promoSnap.id }, context, uid);
+    if (!evaluated.ok) {
+      throw new HttpsError('failed-precondition', evaluated.reason || 'invalid-promocode');
+    }
+
+    const usersUsed = promo.usersUsed && typeof promo.usersUsed === 'object'
+      ? { ...promo.usersUsed }
+      : {};
+    usersUsed[uid] = Math.max(0, Math.floor(toSafeNumber(usersUsed[uid]))) + 1;
+
+    tx.update(promoRef, {
+      usedCount: admin.firestore.FieldValue.increment(1),
+      usersUsed,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: uid,
+    });
+
+    tx.set(redemptionRef, {
+      code,
+      promoId: promoSnap.id,
+      orderReference,
+      userId: uid,
+      restaurantId: context.restaurantId,
+      discountAmount: evaluated.discountAmount,
+      totalAfterDiscount: evaluated.totalAfterDiscount,
+      promo: evaluated.promoSnapshot,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return {
+      ok: true,
+      alreadyRedeemed: false,
+      code,
+      discountAmount: evaluated.discountAmount,
+      totalAfterDiscount: evaluated.totalAfterDiscount,
+      promo: evaluated.promoSnapshot,
+    };
+  });
+
+  return result;
+});
 
 exports.sendAdminNotification = onCall({ region: REGION }, async (request) => {
   if (!request.auth?.uid) {
@@ -270,11 +626,145 @@ exports.sendAdminNotification = onCall({ region: REGION }, async (request) => {
   };
 });
 
+exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+  }
+
+  const isAdminAllowed = isAdminAuth(request.auth) || await isAdminUid(request.auth.uid);
+  if (!isAdminAllowed) {
+    throw new HttpsError('permission-denied', 'ليس لديك صلاحية التحويل.');
+  }
+
+  const role = normalizeWalletTargetRole(request.data?.role);
+  const targetId = String(request.data?.targetId || '').trim();
+  const amountRaw = Number(request.data?.amount);
+  const note = String(request.data?.note || '').trim();
+
+  if (!role || !targetId) {
+    throw new HttpsError('invalid-argument', 'role و targetId مطلوبان.');
+  }
+
+  const roleRef = walletDocRefByRole(role, targetId);
+  const transactionsRef = walletTransactionCollection(role, targetId);
+  if (!roleRef || !transactionsRef) {
+    throw new HttpsError('invalid-argument', 'نوع الهدف غير صالح.');
+  }
+
+  const txResult = await db.runTransaction(async (tx) => {
+    const targetSnap = await tx.get(roleRef);
+    if (!targetSnap.exists) {
+      throw new HttpsError('not-found', 'المستفيد غير موجود.');
+    }
+
+    const targetData = targetSnap.data() || {};
+    const pendingBalance = Math.max(0, Number(targetData.walletPendingBalance || 0));
+    const transferredTotal = Math.max(0, Number(targetData.walletTransferredTotal || 0));
+    const lifetimeEarnings = Math.max(0, Number(targetData.walletLifetimeEarnings || 0));
+
+    const payoutAmount = Number.isFinite(amountRaw) && amountRaw > 0
+      ? Math.round(amountRaw)
+      : Math.round(pendingBalance);
+
+    if (!Number.isFinite(payoutAmount) || payoutAmount <= 0) {
+      throw new HttpsError('failed-precondition', 'لا توجد قيمة صالحة للتحويل.');
+    }
+
+    if (payoutAmount > pendingBalance) {
+      throw new HttpsError('failed-precondition', 'قيمة التحويل أكبر من الرصيد المستحق.');
+    }
+
+    const account = targetData.payoutAccount || {};
+    const accountMethod = String(account.method || targetData.payoutMethod || '').trim();
+    const accountNumber = String(account.accountNumber || targetData.payoutAccountNumber || '').trim();
+    const accountName = String(account.accountName || targetData.payoutAccountName || '').trim();
+
+    const payoutTxRef = transactionsRef.doc();
+    const nowTs = admin.firestore.FieldValue.serverTimestamp();
+
+    tx.set(payoutTxRef, {
+      type: 'admin_payout',
+      role,
+      targetId,
+      amount: payoutAmount,
+      note,
+      accountMethod,
+      accountNumber,
+      accountName,
+      byAdminUid: request.auth.uid,
+      byAdminEmail: String(request.auth.token?.email || ''),
+      createdAt: nowTs,
+    });
+
+    tx.set(db.collection('walletPayoutLogs').doc(), {
+      role,
+      targetId,
+      amount: payoutAmount,
+      note,
+      accountMethod,
+      accountNumber,
+      accountName,
+      byAdminUid: request.auth.uid,
+      byAdminEmail: String(request.auth.token?.email || ''),
+      createdAt: nowTs,
+    });
+
+    tx.set(roleRef, {
+      walletPendingBalance: Math.max(0, pendingBalance - payoutAmount),
+      walletTransferredTotal: transferredTotal + payoutAmount,
+      walletLastTransferAmount: payoutAmount,
+      walletLastTransferAt: nowTs,
+      walletTransferCount: Number(targetData.walletTransferCount || 0) + 1,
+      walletLifetimeEarnings: lifetimeEarnings,
+      updatedAt: nowTs,
+    }, { merge: true });
+
+    return {
+      payoutAmount,
+      remainingPendingBalance: Math.max(0, pendingBalance - payoutAmount),
+      accountMethod,
+      accountNumber,
+      beneficiaryName: String(targetData.name || targetData.fullName || targetId),
+    };
+  });
+
+  const audienceRole = role === 'store' ? 'store' : 'courier';
+  const title = '💸 تم تحويل مستحقاتك';
+  const body = role === 'store'
+    ? `تم تحويل مبلغ ${txResult.payoutAmount} ج.س إلى محفظة المتجر.`
+    : `تم تحويل مبلغ ${txResult.payoutAmount} ج.س إلى محفظة المندوب.`;
+
+  await sendNotificationToSingleUser(
+    audienceRole,
+    targetId,
+    buildNotificationPayload({
+      title,
+      body,
+      type: 'wallet_payout',
+      source: 'admin-finance',
+      extra: {
+        payoutAmount: txResult.payoutAmount,
+        payoutRole: role,
+      },
+    })
+  );
+
+  return {
+    ok: true,
+    role,
+    targetId,
+    payoutAmount: txResult.payoutAmount,
+    remainingPendingBalance: txResult.remainingPendingBalance,
+    accountMethod: txResult.accountMethod,
+    accountNumber: txResult.accountNumber,
+  };
+});
+
 async function dispatchOrderStatusNotifications(orderId, afterData) {
   const afterStatus = normalizeOrderStatusForNotification(afterData.orderStatus || afterData.status);
   if (!afterStatus) return { sent: 0, status: '' };
 
-  const orderNumber = String(afterData.orderNumber || orderId || '');
+  const orderNumber = formatUnifiedOrderCode(afterData.orderNumber || afterData.orderId, orderId);
   const clientId = String(afterData.clientId || '').trim();
   const restaurantId = String(afterData.restaurantId || '').trim();
   const offeredDriverId = String(afterData.offeredDriverId || '').trim();
@@ -337,6 +827,15 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
     );
   }
 
+  if (afterStatus === 'pickup_ready') {
+    sendCourier(
+      assignedDriverId || offeredDriverId,
+      '📦 الطلب جاهز للاستلام',
+      `الطلب رقم ${orderNumber} أصبح جاهزاً للاستلام من المطعم.`,
+      'courier_pickup_ready'
+    );
+  }
+
   if (afterStatus === 'picked_up') {
     sendClient('📦 خرج طلبك للتوصيل', `طلبك رقم ${orderNumber} أصبح في طريقه إليك.`, 'client_order_picked_up');
     sendStore('📦 تم استلام الطلب', `تم استلام الطلب رقم ${orderNumber} من المتجر بواسطة المندوب.`, 'store_order_picked_up');
@@ -379,7 +878,7 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
 
 exports.notifyOnOrderStatusChange = onSchedule(
   {
-    region: REGION,
+    region: SCHEDULE_REGION,
     schedule: 'every 1 minutes',
     timeZone: 'Africa/Khartoum',
   },
@@ -414,6 +913,18 @@ function isWaitingCourierStatus(status) {
   return status === 'courier_searching' || status === 'قيد التجهيز';
 }
 
+function formatUnifiedOrderCode(orderNumber, orderId) {
+  const raw = String(orderNumber || orderId || '').trim().replace(/^#/, '');
+  if (!raw) return 'ORD-000000';
+
+  if (/^ord[\s_-]*/i.test(raw)) {
+    const tail = raw.replace(/^ord[\s_-]*/i, '').trim();
+    return tail ? `ORD-${tail}` : 'ORD-000000';
+  }
+
+  return `ORD-${raw}`;
+}
+
 function normalizeStateId(raw) {
   const value = String(raw || '').trim();
   if (!value) return '';
@@ -423,6 +934,34 @@ function normalizeStateId(raw) {
     .replace(/ة/g, 'ه')
     .replace(/ى/g, 'ي')
     .toLowerCase();
+
+  const compact = normalized
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const khartoumTokens = [
+    'الخرطوم',
+    'ولاية الخرطوم',
+    'خرطوم',
+    'khartoum',
+    'khartum',
+    'بحري',
+    'bahri',
+    'khartoum north',
+    'ام درمان',
+    'امدرمان',
+    'ام درمان الكبرى',
+    'omdurman',
+    'omdorman',
+    'oum durman',
+  ];
+
+  for (const token of khartoumTokens) {
+    if (compact === token || compact.includes(token)) {
+      return 'khartoum';
+    }
+  }
 
   const khartoumAliases = new Set([
     'الخرطوم',
@@ -467,13 +1006,53 @@ function restaurantStateId(restaurant) {
   );
 }
 
+function inferKhartoumStateIdFromCoords(coords) {
+  if (!coords) return '';
+  const lat = Number(coords.lat);
+  const lng = Number(coords.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '';
+
+  const minLat = 15.15;
+  const maxLat = 16.10;
+  const minLng = 32.20;
+  const maxLng = 33.10;
+
+  const insideGreaterKhartoum =
+    lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng;
+
+  return insideGreaterKhartoum ? 'khartoum' : '';
+}
+
 function driverStateId(driver) {
-  return normalizeStateId(
+  const explicitState = normalizeStateId(
     driver.stateId ||
+    driver.driverStateId ||
+    driver.addressStateId ||
+    driver.defaultAddressStateId ||
+    driver.locationStateId ||
+    driver.location?.stateId ||
+    driver.currentLocation?.stateId ||
+    driver.administrativeArea ||
+    driver.stateName ||
     driver.region ||
     driver.state ||
     driver.city
   );
+
+  if (explicitState) {
+    return explicitState;
+  }
+
+  const inferredFromCoords =
+    inferKhartoumStateIdFromCoords(extractLatLng(driver.location)) ||
+    inferKhartoumStateIdFromCoords(extractLatLng(driver.currentLocation)) ||
+    inferKhartoumStateIdFromCoords(extractLatLng(driver.lastLocation)) ||
+    inferKhartoumStateIdFromCoords({
+      lat: driver.latitude ?? driver.lat,
+      lng: driver.longitude ?? driver.lng,
+    });
+
+  return inferredFromCoords;
 }
 
 function toNumberOrNull(value) {
@@ -824,16 +1403,24 @@ async function assignNextCourier(orderRef) {
     }
 
     let remainingDrivers = driverSnap.docs.filter((d) => !candidates.includes(d.id));
+    let assignmentBackoffReason = 'no-available-next-driver-in-cycle';
+    const availableDriversCount = remainingDrivers.length;
+    let sameStateDriversCount = availableDriversCount;
+
     if (stateId) {
       const sameStateDrivers = remainingDrivers.filter((d) => {
         const data = d.data() || {};
         return driverStateId(data) === stateId;
       });
-      if (sameStateDrivers.length > 0) {
-        remainingDrivers = sameStateDrivers;
+      sameStateDriversCount = sameStateDrivers.length;
+      remainingDrivers = sameStateDrivers;
+      if (sameStateDrivers.length === 0) {
+        assignmentBackoffReason = 'no-driver-in-same-state';
       }
     }
+
     let nextDriver = null;
+    let nextDriverDistanceKm = null;
 
     if (remainingDrivers.length > 0) {
       if (!restaurantCoords) {
@@ -853,7 +1440,16 @@ async function assignNextCourier(orderRef) {
           return { doc: d, distanceKm };
         }).sort((a, b) => a.distanceKm - b.distanceKm);
 
-        nextDriver = ranked[0]?.doc || remainingDrivers[0];
+        const withinRange = ranked.filter((item) =>
+          Number.isFinite(item.distanceKm) && item.distanceKm <= MAX_DRIVER_RESTAURANT_DISTANCE_KM
+        );
+
+        if (withinRange.length > 0) {
+          nextDriver = withinRange[0].doc;
+          nextDriverDistanceKm = withinRange[0].distanceKm;
+        } else {
+          assignmentBackoffReason = 'no-driver-within-20km';
+        }
       }
     }
 
@@ -861,10 +1457,14 @@ async function assignNextCourier(orderRef) {
       tx.update(orderRef, {
         candidateDrivers: candidates,
         assignmentCycleStartedAt: cycleExpired ? now : (previousCycleStartedAt || now),
+        assignmentLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+        assignmentOrderStateId: stateId || '',
+        assignmentAvailableDriversCount: availableDriversCount,
+        assignmentSameStateDriversCount: sameStateDriversCount,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
       tx.update(orderRef, {
-        assignmentBackoffReason: 'no-available-next-driver-in-cycle',
+        assignmentBackoffReason,
       });
       return { assigned: false, reason: 'no-driver-found' };
     }
@@ -884,6 +1484,12 @@ async function assignNextCourier(orderRef) {
       assignmentCycleStartedAt: cycleExpired ? now : (previousCycleStartedAt || now),
       orderStatus: 'courier_offer_pending',
       status: 'courier_offer_pending',
+      offeredDriverDistanceKm: nextDriverDistanceKm,
+      maxDriverDistanceKm: MAX_DRIVER_RESTAURANT_DISTANCE_KM,
+      assignmentLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+      assignmentOrderStateId: stateId || '',
+      assignmentAvailableDriversCount: availableDriversCount,
+      assignmentSameStateDriversCount: sameStateDriversCount,
       assignmentBackoffReason: admin.firestore.FieldValue.delete(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -903,7 +1509,7 @@ async function assignNextCourier(orderRef) {
 
 exports.assignWaitingOrders = onSchedule({
   schedule: 'every 1 minutes',
-  region: REGION,
+  region: SCHEDULE_REGION,
 }, async () => {
   const waitingByOrderStatus = await db
     .collection('orders')
@@ -944,7 +1550,7 @@ exports.assignWaitingOrders = onSchedule({
 
 exports.handleCourierOfferTimeouts = onSchedule({
   schedule: 'every 1 minutes',
-  region: REGION,
+  region: SCHEDULE_REGION,
 }, async () => {
   const now = admin.firestore.Timestamp.now();
   const snap = await db
@@ -987,8 +1593,8 @@ exports.handleCourierOfferTimeouts = onSchedule({
       const existingCandidates = Array.isArray(order.candidateDrivers)
         ? order.candidateDrivers.map(String)
         : [];
-      const cleanedCandidates = activeOfferedDriverId
-        ? existingCandidates.filter((id) => id !== activeOfferedDriverId)
+      const nextCandidates = activeOfferedDriverId
+        ? Array.from(new Set([...existingCandidates, activeOfferedDriverId]))
         : existingCandidates;
 
       tx.update(ref, {
@@ -996,7 +1602,7 @@ exports.handleCourierOfferTimeouts = onSchedule({
         offeredDriverId: admin.firestore.FieldValue.delete(),
         offerStartedAt: admin.firestore.FieldValue.delete(),
         offerExpiresAt: admin.firestore.FieldValue.delete(),
-        candidateDrivers: cleanedCandidates,
+        candidateDrivers: nextCandidates,
         orderStatus: 'courier_searching',
         status: 'courier_searching',
         lastOfferTimeoutAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1016,7 +1622,7 @@ exports.handleCourierOfferTimeouts = onSchedule({
 
 exports.recalculateRecentOrderPricing = onSchedule({
   schedule: 'every 5 minutes',
-  region: REGION,
+  region: SCHEDULE_REGION,
 }, async () => {
   const pricingConfig = await getPricingConfigCached();
   const windowStart = admin.firestore.Timestamp.fromMillis(

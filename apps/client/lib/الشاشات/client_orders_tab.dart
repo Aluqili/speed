@@ -2,6 +2,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:speedstar_core/speedstar_core.dart' show OrderStatusPalette;
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'client_order_details_screen.dart';
 import 'client_track_driver_screen.dart';
@@ -256,64 +257,13 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
   }
 
   String _statusText(String status) {
-    switch (status) {
-      case 'store_pending':
-      case 'قيد المراجعة':
-        return 'قيد المراجعة';
-      case 'courier_searching':
-        return 'جاري البحث عن مندوب';
-      case 'courier_assigned':
-        return 'تم تعيين مندوب';
-      case 'pickup_ready':
-        return 'جاهز للاستلام';
-      case 'picked_up':
-      case 'قيد التجهيز':
-        return 'قيد التوصيل';
-      case 'arrived_to_client':
-        return 'وصل المندوب للعميل';
-      case 'delivered':
-      case 'قيد التوصيل':
-      case 'تم التوصيل':
-        return 'تم التوصيل';
-      case 'store_rejected':
-        return 'مرفوض من المتجر';
-      case 'cancelled':
-      case 'ملغي':
-        return 'ملغي';
-      default:
-        return status;
-    }
+    return OrderStatusPalette.displayText(status);
   }
 
   Color _statusColor(String orderStatus, String paymentStatus) {
-    if (paymentStatus == 'انتظار الدفع') {
-      return Colors.orange;
-    }
-    switch (orderStatus) {
-      case 'store_pending':
-      case 'قيد المراجعة':
-        return Colors.orange;
-      case 'courier_searching':
-        return Colors.deepOrange;
-      case 'courier_assigned':
-        return Colors.indigo;
-      case 'pickup_ready':
-        return Colors.cyan;
-      case 'picked_up':
-      case 'قيد التجهيز':
-        return Colors.blue;
-      case 'arrived_to_client':
-      case 'قيد التوصيل':
-        return Colors.green;
-      case 'delivered':
-      case 'تم التوصيل':
-        return Colors.teal;
-      case 'store_rejected':
-      case 'cancelled':
-      case 'ملغي':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
+    return OrderStatusPalette.colorForStatus(
+      orderStatus,
+      paymentStatus: paymentStatus,
+    );
   }
 }

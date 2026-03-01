@@ -189,7 +189,13 @@ service cloud.firestore {
     }
 
     match /promocodes/{promoId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /promocodeRedemptions/{redemptionId} {
+      allow create, update, delete: if isAdmin();
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
     }
 
     match /favorites/{favoriteId} {

@@ -55,6 +55,37 @@ body {
   margin-bottom: 16px;
 }
 
+.finance-subcard {
+  margin-top: 12px;
+}
+
+.finance-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.finance-filter-row label {
+  font-weight: 600;
+  color: #334155;
+}
+
+.finance-filter-row select {
+  max-width: 220px;
+}
+
+.payment-method-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.payment-method-row input[type="checkbox"] {
+  width: auto;
+}
+
 .card h3 {
   margin-top: 0;
   margin-bottom: 10px;
@@ -213,6 +244,9 @@ th {
 }
 
 #ordersTable,
+#financeOrdersTable,
+#financeStoresPayoutTable,
+#financeCouriersPayoutTable,
 #restaurantsTable,
 #couriersTable,
 #adminsTable,
@@ -298,6 +332,23 @@ th {
   gap: 8px;
 }
 
+.support-summary {
+  padding: 10px;
+  border-bottom: 1px solid #eef2f7;
+  background: #fcfcfd;
+  font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.support-summary .chip {
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #fff;
+}
+
 .support-conversation-list {
   overflow: auto;
   padding: 6px;
@@ -312,6 +363,12 @@ th {
   padding: 10px;
   cursor: pointer;
   text-align: right;
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+
+.support-item:hover {
+  border-color: #dbe3ee;
+  transform: translateY(-1px);
 }
 
 .support-item.active {
@@ -330,6 +387,22 @@ th {
 .support-item-title {
   font-weight: 700;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.support-unread {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
 }
 
 .support-item-sub,
@@ -395,6 +468,10 @@ th {
   display: grid;
   gap: 8px;
   background: #fff;
+}
+
+.support-composer-hint {
+  font-size: 12px;
 }
 
 .support-composer textarea {

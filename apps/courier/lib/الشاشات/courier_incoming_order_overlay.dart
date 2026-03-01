@@ -12,6 +12,9 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart'; // ✅ أُضيفت
 import 'package:audioplayers/audioplayers.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/speedstar_core.dart'
+    show formatUnifiedOrderCode, OrderStatusPalette;
+import 'courier_go_to_restaurant_screen.dart';
 
 class CourierIncomingOrderOverlay extends StatefulWidget {
   final String driverId;
@@ -34,10 +37,12 @@ class CourierIncomingOrderOverlay extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<CourierIncomingOrderOverlay> createState() => _CourierIncomingOrderOverlayState();
+  State<CourierIncomingOrderOverlay> createState() =>
+      _CourierIncomingOrderOverlayState();
 }
 
-class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverlay> {
+class _CourierIncomingOrderOverlayState
+    extends State<CourierIncomingOrderOverlay> {
   int _remainingSeconds = 50;
   Timer? _countdownTimer;
   StreamSubscription<RemoteMessage>? _messageSub;
@@ -45,7 +50,6 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
   double _distanceToRestaurant = 0.0;
   double _distanceToClient = 0.0;
   int _driverFee = 0;
-  String _currentStage = 'initial';
   final AudioPlayer _audioPlayer = AudioPlayer();
   GoogleMapController? _mapController;
   bool _isMapExpanded = false;
@@ -53,7 +57,6 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
   @override
   void initState() {
     super.initState();
-    _currentStage = widget.currentStage ?? 'initial';
     _startCountdown();
     _drawRoute();
     _calculateDistancesAndFee();
@@ -85,12 +88,14 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
             : widget.clientLocation.longitude,
       ),
     );
-    await _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
+    await _mapController!
+        .animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
   }
 
   void _setupNotificationListener() {
     _messageSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      if (message.data['type'] == 'order_offer' && message.data['orderId'] == widget.orderId) {
+      if (message.data['type'] == 'order_offer' &&
+          message.data['orderId'] == widget.orderId) {
         if (mounted) setState(() {});
       }
     });
@@ -108,7 +113,10 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
   }
 
   Future<void> _handleTimeout() async {
-    await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
+    await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.orderId)
+        .update({
       'driverResponse': 'timeout',
     });
     _audioPlayer.stop();
@@ -119,7 +127,10 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
 
   Future<void> _acceptOrder() async {
     // تم حذف شرط readyByRestaurant، يمكن قبول الطلب مباشرة
-    await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
+    await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.orderId)
+        .update({
       'driverResponse': 'accepted',
       'driverResponded': true,
       'assignedDriverId': widget.driverId,
@@ -152,17 +163,21 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
     });
 
     if (!mounted) return;
-    Navigator.of(context).pushReplacementNamed(
-      '/driver_order_process',
-      arguments: {
-        'orderId': widget.orderId,
-        'stage': 'going_to_restaurant',
-      },
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => CourierGoToRestaurantScreen(
+          orderId: widget.orderId,
+          driverId: widget.driverId,
+        ),
+      ),
     );
   }
 
   Future<void> _rejectOrder() async {
-    await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
+    await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.orderId)
+        .update({
       'driverResponse': 'rejected',
     });
     _audioPlayer.stop();
@@ -231,14 +246,16 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
           widget.driverLocation.longitude,
           widget.restaurantLocation.latitude,
           widget.restaurantLocation.longitude,
-        ) / 1000;
+        ) /
+        1000;
 
     _distanceToClient = Geolocator.distanceBetween(
           widget.restaurantLocation.latitude,
           widget.restaurantLocation.longitude,
           widget.clientLocation.latitude,
           widget.clientLocation.longitude,
-        ) / 1000;
+        ) /
+        1000;
 
     if (_distanceToClient < 2) {
       _driverFee = 2000;
@@ -253,6 +270,243 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
     }
 
     setState(() {});
+  }
+
+  Widget _buildInitialOfferScreen() {
+    final data = widget.orderData;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: SafeArea(
+        child: SingleChildScrollView(
+          child: Center(
+            child: Card(
+              margin: const EdgeInsets.all(16),
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Chip(
+                          label: const Text(
+                            'عرض جديد',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontFamily: 'Tajawal',
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          backgroundColor: OrderStatusPalette.colorForStatus(
+                              'courier_offer_pending'),
+                          avatar: const Icon(Icons.local_shipping,
+                              color: Colors.white),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '⏱ $_remainingSeconds ثانية',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: OrderStatusPalette.colorForStatus(
+                                'courier_offer_pending'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'اقبل العرض للانتقال مباشرةً إلى شاشة التوجه للمطعم.',
+                      style: TextStyle(color: Colors.grey.shade700),
+                    ),
+                    const SizedBox(height: 12),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      height: _isMapExpanded ? 400 : 260,
+                      width: double.infinity,
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: GoogleMap(
+                              initialCameraPosition: CameraPosition(
+                                  target: widget.restaurantLocation, zoom: 13),
+                              onMapCreated: (controller) {
+                                _mapController = controller;
+                                _moveCameraToBounds();
+                              },
+                              markers: {
+                                Marker(
+                                  markerId: const MarkerId('restaurant'),
+                                  position: widget.restaurantLocation,
+                                  infoWindow:
+                                      const InfoWindow(title: '🍽️ المطعم'),
+                                  icon: BitmapDescriptor.defaultMarkerWithHue(
+                                      BitmapDescriptor.hueRed),
+                                ),
+                                Marker(
+                                  markerId: const MarkerId('client'),
+                                  position: widget.clientLocation,
+                                  infoWindow:
+                                      const InfoWindow(title: '🏠 العميل'),
+                                  icon: BitmapDescriptor.defaultMarkerWithHue(
+                                      BitmapDescriptor.hueAzure),
+                                ),
+                                Marker(
+                                  markerId: const MarkerId('driver'),
+                                  position: widget.driverLocation,
+                                  infoWindow:
+                                      const InfoWindow(title: '🧑‍✈️ موقعك'),
+                                  icon: BitmapDescriptor.defaultMarkerWithHue(
+                                      BitmapDescriptor.hueYellow),
+                                ),
+                              },
+                              polylines: _polylines,
+                              zoomControlsEnabled: true,
+                              scrollGesturesEnabled: true,
+                              rotateGesturesEnabled: true,
+                              tiltGesturesEnabled: true,
+                              myLocationEnabled: true,
+                              myLocationButtonEnabled: true,
+                              gestureRecognizers: {
+                                Factory<OneSequenceGestureRecognizer>(
+                                    () => EagerGestureRecognizer())
+                              },
+                            ),
+                          ),
+                          Positioned(
+                            top: 8,
+                            left: 8,
+                            child: FloatingActionButton(
+                              mini: true,
+                              backgroundColor: Colors.white,
+                              onPressed: () => setState(
+                                  () => _isMapExpanded = !_isMapExpanded),
+                              child: Icon(
+                                  _isMapExpanded
+                                      ? Icons.fullscreen_exit
+                                      : Icons.fullscreen,
+                                  color: Colors.blue),
+                              tooltip: _isMapExpanded
+                                  ? 'تصغير الخريطة'
+                                  : 'توسيع الخريطة',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Icon(Icons.store, color: Colors.deepOrange),
+                        const SizedBox(width: 6),
+                        const Text('المطعم: ',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text(data['restaurantName'] ?? '',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.person_pin_circle,
+                            color: Colors.blueAccent),
+                        const SizedBox(width: 6),
+                        const Text('العميل: ',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text(data['clientName'] ?? '',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.directions_car, color: Colors.green),
+                        const SizedBox(width: 6),
+                        const Text('المسافة للمطعم: ',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text('${_distanceToRestaurant.toStringAsFixed(1)} كم',
+                            style: const TextStyle(color: Colors.black87)),
+                        const Spacer(),
+                        const Icon(Icons.navigation, color: Colors.orange),
+                        const SizedBox(width: 6),
+                        const Text('من المطعم للعميل: ',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text('${_distanceToClient.toStringAsFixed(1)} كم',
+                            style: const TextStyle(color: Colors.black87)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Divider(),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppThemeArabic.clientSurface,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '💰 رسوم التوصيل المتوقعة: $_driverFee ج.س',
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: AppThemeArabic.clientPrimary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Card(
+                      color: AppThemeArabic.clientSurface,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('تفاصيل الأصناف',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 16)),
+                            const SizedBox(height: 6),
+                            ...((data['items'] as List<dynamic>)
+                                .map((item) => Row(
+                                      children: [
+                                        const Icon(Icons.fastfood,
+                                            color: Colors.deepOrange, size: 18),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                            child: Text(
+                                                '${item['name']} × ${item['quantity']} (${item['price']} ج.س)',
+                                                style: const TextStyle(
+                                                    fontSize: 15))),
+                                      ],
+                                    ))),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'كود الطلب: ${formatUnifiedOrderCode(orderNumber: data['orderNumber'], orderId: data['orderId'], docId: widget.orderId)}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -272,260 +526,55 @@ class _CourierIncomingOrderOverlayState extends State<CourierIncomingOrderOverla
       body: Column(
         children: [
           Expanded(
-            child: _buildContentBasedOnStage(),
+            child: _buildInitialOfferScreen(),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+            ),
             child: Row(
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: _acceptOrder,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    icon: Icon(Icons.check, color: Colors.white),
-                    label: Text('قبول الطلب', style: TextStyle(color: Colors.white, fontSize: 18)),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
                     onPressed: _rejectOrder,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      backgroundColor: AppThemeArabic.clientError,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
-                    icon: Icon(Icons.close, color: Colors.white),
-                    label: Text('رفض الطلب', style: TextStyle(color: Colors.white, fontSize: 18)),
+                    icon: const Icon(Icons.close),
+                    label: const Text('رفض'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton.icon(
+                    onPressed: _acceptOrder,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppThemeArabic.clientSuccess,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text(
+                      'قبول الطلب وبدء الرحلة',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
         ],
-      ),
-    );
-  }
-
-  Widget _buildContentBasedOnStage() {
-    switch (_currentStage) {
-      case 'going_to_restaurant':
-        return _buildRestaurantNavigationScreen();
-      case 'order_picked_up':
-        return _buildDeliveryNavigationScreen();
-      case 'delivered':
-        return _buildDeliveryCompleteScreen();
-      default:
-        return _buildInitialOfferScreen();
-    }
-  }
-
-  Widget _buildInitialOfferScreen() {
-    final data = widget.orderData;
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: SafeArea(
-        child: SingleChildScrollView(
-          child: Center(
-            child: Card(
-              margin: const EdgeInsets.all(16),
-              elevation: 3,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // شارة حالة الطلب
-                    Row(
-                      children: [
-                        Chip(
-                          label: Text('بانتظار قبولك', style: TextStyle(color: Colors.white, fontFamily: 'Tajawal')),
-                          backgroundColor: Colors.orange,
-                          avatar: Icon(Icons.timer, color: Colors.white),
-                        ),
-                        Spacer(),
-                        Text('⏱ $_remainingSeconds ثانية', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange)),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      height: _isMapExpanded ? 400 : 260,
-                      width: double.infinity,
-                      child: Stack(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: GoogleMap(
-                              initialCameraPosition: CameraPosition(target: widget.restaurantLocation, zoom: 13),
-                              onMapCreated: (controller) {
-                                _mapController = controller;
-                                _moveCameraToBounds();
-                              },
-                              markers: {
-                                Marker(
-                                  markerId: const MarkerId('restaurant'),
-                                  position: widget.restaurantLocation,
-                                  infoWindow: const InfoWindow(title: '🍽️ المطعم'),
-                                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-                                ),
-                                Marker(
-                                  markerId: const MarkerId('client'),
-                                  position: widget.clientLocation,
-                                  infoWindow: const InfoWindow(title: '🏠 العميل'),
-                                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-                                ),
-                                Marker(
-                                  markerId: const MarkerId('driver'),
-                                  position: widget.driverLocation,
-                                  infoWindow: const InfoWindow(title: '🧑‍✈️ موقعك'),
-                                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
-                                ),
-                              },
-                              polylines: _polylines,
-                              zoomControlsEnabled: true,
-                              scrollGesturesEnabled: true,
-                              rotateGesturesEnabled: true,
-                              tiltGesturesEnabled: true,
-                              myLocationEnabled: true,
-                              myLocationButtonEnabled: true,
-                              gestureRecognizers: {
-                                Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer())
-                              },
-                            ),
-                          ),
-                          Positioned(
-                            top: 8,
-                            left: 8,
-                            child: FloatingActionButton(
-                              mini: true,
-                              backgroundColor: Colors.white,
-                              onPressed: () => setState(() => _isMapExpanded = !_isMapExpanded),
-                              child: Icon(_isMapExpanded ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.blue),
-                              tooltip: _isMapExpanded ? 'تصغير الخريطة' : 'توسيع الخريطة',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Icon(Icons.store, color: Colors.deepOrange),
-                        SizedBox(width: 6),
-                        Text('المطعم: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                        Text(data['restaurantName'] ?? '', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(Icons.person_pin_circle, color: Colors.blueAccent),
-                        SizedBox(width: 6),
-                        Text('العميل: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                        Text(data['clientName'] ?? '', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(Icons.directions_car, color: Colors.green),
-                        SizedBox(width: 6),
-                        Text('المسافة للمطعم: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                        Text('${_distanceToRestaurant.toStringAsFixed(1)} كم', style: TextStyle(color: Colors.black87)),
-                        Spacer(),
-                        Icon(Icons.navigation, color: Colors.orange),
-                        SizedBox(width: 6),
-                        Text('من المطعم للعميل: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                        Text('${_distanceToClient.toStringAsFixed(1)} كم', style: TextStyle(color: Colors.black87)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Divider(),
-                    Text('💰 رسوم التوصيل: $_driverFee ج.س', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.orange)),
-                    const SizedBox(height: 12),
-                    Card(
-                      color: AppThemeArabic.clientSurface,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('تفاصيل الأصناف', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                            const SizedBox(height: 6),
-                            ...((data['items'] as List<dynamic>).map((item) => Row(
-                              children: [
-                                Icon(Icons.fastfood, color: Colors.deepOrange, size: 18),
-                                SizedBox(width: 6),
-                                Expanded(child: Text('${item['name']} × ${item['quantity']} (${item['price']} ج.س)', style: TextStyle(fontSize: 15))),
-                              ],
-                            ))),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRestaurantNavigationScreen() {
-    return const Center(child: Text('🚕 جاري التوجه إلى المطعم...'));
-  }
-
-  Widget _buildDeliveryNavigationScreen() {
-    return const Center(child: Text('📦 تم استلام الطلب، جارٍ التوصيل...'));
-  }
-
-  Widget _buildDeliveryCompleteScreen() {
-    final data = widget.orderData;
-    return Center(
-      child: Card(
-        margin: const EdgeInsets.all(24),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.check_circle, color: Colors.green, size: 64),
-              const SizedBox(height: 16),
-              const Text('تم تسليم الطلب بنجاح!', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              Text('رقم الطلب: ${widget.orderId}', style: const TextStyle(fontSize: 16)),
-              const SizedBox(height: 8),
-              Text('العميل: ${data['clientName'] ?? ''}', style: const TextStyle(fontSize: 16)),
-              const SizedBox(height: 8),
-              Text('المبلغ الإجمالي: ${data['total'] ?? ''} ج.س', style: const TextStyle(fontSize: 16)),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                },
-                icon: const Icon(Icons.home),
-                label: const Text('العودة للرئيسية'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

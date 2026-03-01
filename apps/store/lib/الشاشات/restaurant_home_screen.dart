@@ -8,6 +8,8 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:speedstar_core/src/config/ops_runtime_config.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/src/auth/login_screen_ar.dart';
+import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 
 import 'store_settings_screen.dart';
 import 'store_add_menu_item_screen.dart';
@@ -17,6 +19,7 @@ import 'store_wallet_screen.dart';
 import 'store_change_requests_screen.dart';
 import 'chat_screen.dart';
 import 'store_current_orders_screen.dart';
+import 'store_notifications_screen.dart';
 
 const Color primaryColor = AppThemeArabic.clientPrimary;
 const Color backgroundColor = AppThemeArabic.clientBackground;
@@ -40,6 +43,19 @@ const _statusPriority = [
   'انتظار الدفع',
 ];
 
+const Set<String> _dashboardNewStatuses = {
+  'store_pending',
+  'courier_searching',
+  'courier_offer_pending',
+  'courier_assigned',
+  'pickup_ready',
+  'قيد المراجعة',
+  'قيد التجهيز',
+  'بانتظار المطعم',
+  'جاهز للتوصيل',
+  'انتظار الدفع',
+};
+
 class StoreDashboardScreen extends StatefulWidget {
   final String restaurantId;
   const StoreDashboardScreen({Key? key, required this.restaurantId})
@@ -56,6 +72,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
       _loadRestaurantInfo();
     }
   }
+
   bool temporarilyClosed = false;
   bool autoAcceptOrders = false;
   bool _ringtoneEnabled = true;
@@ -71,7 +88,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
 
   void _showErrorMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _openPage(Widget page) async {
@@ -96,23 +114,63 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
       case 'pickup_ready':
         return 'جاهز للاستلام';
       case 'picked_up':
-        return 'تم الاستلام من المطعم';
       case 'arrived_to_client':
-        return 'وصل المندوب للعميل';
       case 'delivered':
-        return 'تم التوصيل';
+      case 'وصل إلى العميل':
+      case 'تم التوصيل':
+        return 'تم الاستلام من المطعم';
       case 'store_rejected':
         return 'مرفوض من المتجر';
       case 'cancelled':
+      case 'ملغي':
         return 'ملغي';
       default:
-        return status;
+        return status.isEmpty ? '—' : status;
     }
   }
 
-  Future<void> _setOrderStatus(String orderId, String status, {Map<String, dynamic>? extra}) async {
+  Color _orderStatusColor(String status) {
+    switch (status) {
+      case 'انتظار الدفع':
+      case 'store_pending':
+      case 'قيد المراجعة':
+      case 'بانتظار المطعم':
+        return Colors.orange;
+      case 'courier_searching':
+      case 'courier_offer_pending':
+      case 'courier_assigned':
+        return const Color(0xFF2563EB);
+      case 'pickup_ready':
+      case 'جاهز للتوصيل':
+      case 'picked_up':
+      case 'arrived_to_client':
+      case 'قيد التجهيز':
+      case 'قيد التوصيل':
+        return const Color(0xFF0F766E);
+      case 'delivered':
+      case 'تم التوصيل':
+      case 'وصل إلى العميل':
+        return AppThemeArabic.clientSuccess;
+      case 'store_rejected':
+      case 'cancelled':
+      case 'ملغي':
+        return AppThemeArabic.clientError;
+      default:
+        return AppThemeArabic.clientTextSecondary;
+    }
+  }
+
+  Color _orderStatusBackground(String status) {
+    return _orderStatusColor(status).withOpacity(0.12);
+  }
+
+  Future<void> _setOrderStatus(String orderId, String status,
+      {Map<String, dynamic>? extra}) async {
     try {
-      await FirebaseFirestore.instance.collection('orders').doc(orderId).update({
+      await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(orderId)
+          .update({
         'orderStatus': status,
         'status': status,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -188,7 +246,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     } on FirebaseException catch (e) {
       if (!mounted) return;
       setState(() => temporarilyClosed = previous);
-      _showErrorMessage('لا تملك صلاحية تعديل حالة الإغلاق: ${e.message ?? e.code}');
+      _showErrorMessage(
+          'لا تملك صلاحية تعديل حالة الإغلاق: ${e.message ?? e.code}');
     }
   }
 
@@ -215,11 +274,13 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
         });
       }, onError: (error) {
         if (error is FirebaseException) {
-          _showErrorMessage('تعذر متابعة إعدادات القبول التلقائي: ${error.message ?? error.code}');
+          _showErrorMessage(
+              'تعذر متابعة إعدادات القبول التلقائي: ${error.message ?? error.code}');
         }
       });
     } on FirebaseException catch (e) {
-      _showErrorMessage('تعذر تحميل إعدادات القبول التلقائي: ${e.message ?? e.code}');
+      _showErrorMessage(
+          'تعذر تحميل إعدادات القبول التلقائي: ${e.message ?? e.code}');
     }
   }
 
@@ -243,7 +304,9 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
   }
 
   bool _isStorePendingStatus(String status) {
-    return status == 'store_pending' || status == 'قيد المراجعة' || status == 'بانتظار المطعم';
+    return status == 'store_pending' ||
+        status == 'قيد المراجعة' ||
+        status == 'بانتظار المطعم';
   }
 
   Future<void> _playIncomingOrderTone() async {
@@ -298,7 +361,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
         .snapshots()
         .listen((snapshot) {
       final pendingDocs = snapshot.docs.where((doc) {
-        final data = doc.data() as Map<String, dynamic>;
+        final data = doc.data();
         return _isStorePendingStatus(_getOrderStatus(data));
       }).toList();
 
@@ -316,7 +379,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
       }
     }, onError: (error) {
       if (error is FirebaseException) {
-        _showErrorMessage('تعذر متابعة الطلبات الجديدة: ${error.message ?? error.code}');
+        _showErrorMessage(
+            'تعذر متابعة الطلبات الجديدة: ${error.message ?? error.code}');
       }
     });
   }
@@ -334,24 +398,69 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-  backgroundColor: backgroundColor,
-  onDrawerChanged: _onDrawerChanged,
+        backgroundColor: backgroundColor,
+        onDrawerChanged: _onDrawerChanged,
         appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 1,
-          title: const Text(
-            'لوحة تحكم المطعم',
-            style: TextStyle(
-              color: primaryColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 22,
-              fontFamily: 'Tajawal',
-              letterSpacing: 1.1,
-            ),
-          ),
-          iconTheme: const IconThemeData(color: primaryColor),
+          title: const Text('لوحة تحكم المطعم'),
           centerTitle: true,
           actions: [
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('notifications')
+                  .where('restaurantId', isEqualTo: widget.restaurantId)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                final docs = snapshot.data?.docs ?? const [];
+                final unreadCount = docs.where((doc) {
+                  final data = doc.data();
+                  final isRead = data['read'] == true || data['isRead'] == true;
+                  return !isRead;
+                }).length;
+
+                return IconButton(
+                  tooltip: 'الإشعارات',
+                  icon: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      const Icon(Icons.notifications_none, color: primaryColor),
+                      if (unreadCount > 0)
+                        Positioned(
+                          right: -3,
+                          top: -3,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            constraints: const BoxConstraints(minWidth: 18),
+                            child: Text(
+                              unreadCount > 99 ? '99+' : unreadCount.toString(),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => StoreNotificationsScreen(
+                          restaurantId: widget.restaurantId,
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.support_agent, color: primaryColor),
               tooltip: 'الدعم',
@@ -378,7 +487,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                 Container(
                   decoration: const BoxDecoration(
                     color: primaryColor,
-                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+                    borderRadius:
+                        BorderRadius.vertical(bottom: Radius.circular(24)),
                   ),
                   child: DrawerHeader(
                     margin: EdgeInsets.zero,
@@ -396,7 +506,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                             : CircleAvatar(
                                 radius: 44,
                                 backgroundColor: Colors.white,
-                                child: Icon(Icons.restaurant, color: primaryColor, size: 48),
+                                child: Icon(Icons.restaurant,
+                                    color: primaryColor, size: 48),
                               ),
                         const SizedBox(height: 12),
                         Text(
@@ -434,7 +545,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   text: ' إضافة عنصر جديد',
                   onTap: () async {
                     Navigator.pop(context);
-                    await _openPage(StoreAddMenuItemScreen(restaurantId: widget.restaurantId));
+                    await _openPage(StoreAddMenuItemScreen(
+                        restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 2),
@@ -444,7 +556,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   text: ' القائمة الكاملة',
                   onTap: () async {
                     Navigator.pop(context);
-                    await _openPage(StoreFullMenuScreen(restaurantId: widget.restaurantId));
+                    await _openPage(
+                        StoreFullMenuScreen(restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 2),
@@ -454,7 +567,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   text: ' الطلبات الحالية',
                   onTap: () async {
                     Navigator.pop(context);
-                    await _openPage(StoreCurrentOrdersScreen(restaurantId: widget.restaurantId));
+                    await _openPage(StoreCurrentOrdersScreen(
+                        restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 2),
@@ -464,7 +578,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   text: ' أوقات الدوام',
                   onTap: () async {
                     Navigator.pop(context);
-                    await _openPage(StoreWorkingHoursScreen(restaurantId: widget.restaurantId));
+                    await _openPage(StoreWorkingHoursScreen(
+                        restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 2),
@@ -474,23 +589,31 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   text: ' محفظتي',
                   onTap: () async {
                     Navigator.pop(context);
-                    await _openPage(StoreWalletScreen(restaurantId: widget.restaurantId));
+                    await _openPage(
+                        StoreWalletScreen(restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 2),
                 Card(
                   elevation: 0,
                   color: Colors.red.shade50,
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: Colors.red.shade100),
+                  ),
                   child: SwitchListTile(
-                    title: const Text(' إيقاف مؤقت لاستقبال الطلبات', style: TextStyle(fontFamily: 'Tajawal')),
+                    title: const Text(' إيقاف مؤقت لاستقبال الطلبات',
+                        style: TextStyle(fontFamily: 'Tajawal')),
                     value: temporarilyClosed,
                     onChanged: _toggleTemporaryClosure,
-                    secondary: const Icon(Icons.pause_circle_filled, color: Colors.red),
+                    secondary: const Icon(Icons.pause_circle_filled,
+                        color: Colors.red),
                     activeColor: primaryColor,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
                 const Divider(indent: 18, endIndent: 18, height: 24),
@@ -501,7 +624,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   iconColor: Colors.grey,
                   onTap: () async {
                     Navigator.pop(context);
-                    await _openPage(StoreSettingsScreen(restaurantId: widget.restaurantId));
+                    await _openPage(
+                        StoreSettingsScreen(restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 2),
@@ -512,7 +636,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   iconColor: Colors.indigo,
                   onTap: () async {
                     Navigator.pop(context);
-                    await _openPage(StoreChangeRequestsScreen(restaurantId: widget.restaurantId));
+                    await _openPage(StoreChangeRequestsScreen(
+                        restaurantId: widget.restaurantId));
                   },
                 ),
                 const SizedBox(height: 10),
@@ -527,7 +652,17 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                     await FirebaseAuth.instance.signOut();
                     await prefs.remove('userType');
                     if (!mounted) return;
-                    Navigator.of(context).pushNamedAndRemoveUntil('/roleSelection', (route) => false);
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(
+                        builder: (_) => const LoginScreenArabic(
+                          allowRegister: false,
+                          allowGoogleSignIn: false,
+                          allowPhoneSignIn: false,
+                          allowGuestSignIn: false,
+                        ),
+                      ),
+                      (route) => false,
+                    );
                   },
                 ),
               ],
@@ -541,11 +676,13 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
               .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator(color: primaryColor));
+              return const Center(
+                  child: CircularProgressIndicator(color: primaryColor));
             }
             if (snapshot.hasError) {
               return const Center(
-                child: Text('تعذر تحميل الطلبات حالياً', style: TextStyle(fontFamily: 'Tajawal', color: Colors.red)),
+                child: Text('تعذر تحميل الطلبات حالياً',
+                    style: TextStyle(fontFamily: 'Tajawal', color: Colors.red)),
               );
             }
             var docs = snapshot.data?.docs ?? [];
@@ -569,38 +706,500 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
 
             if (docs.isEmpty) {
               return const Center(
-                child: Text('🕒 لا توجد طلبات حالياً', style: TextStyle(fontFamily: 'Tajawal', color: Colors.grey)),
+                child: Text('🕒 لا توجد طلبات حالياً',
+                    style:
+                        TextStyle(fontFamily: 'Tajawal', color: Colors.grey)),
               );
             }
 
+            final newDocs = docs.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final status = _getOrderStatus(data);
+              return _dashboardNewStatuses.contains(status);
+            }).toList();
+
+            final finishedDocs = docs.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final status = _getOrderStatus(data);
+              return !_dashboardNewStatuses.contains(status);
+            }).toList();
+
+            final showNewHeader = newDocs.isNotEmpty;
+            final showFinishedHeader = finishedDocs.isNotEmpty;
+            final totalItems = (showNewHeader ? 1 : 0) +
+                newDocs.length +
+                (showFinishedHeader ? 1 : 0) +
+                finishedDocs.length;
+
             return ListView.builder(
               padding: const EdgeInsets.all(14),
-              itemCount: docs.length,
+              itemCount: totalItems + 1,
               itemBuilder: (context, index) {
-                final data = docs[index].data() as Map<String, dynamic>;
-                final docId = docs[index].id;
+                if (index == 0) {
+                  return _buildDashboardStatsCard(
+                    totalCount: docs.length,
+                    newCount: newDocs.length,
+                    finishedCount: finishedDocs.length,
+                  );
+                }
+
+                final effectiveIndex = index - 1;
+                var cursor = 0;
+                if (showNewHeader) {
+                  if (effectiveIndex == cursor) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        children: const [
+                          Icon(Icons.fiber_new, color: primaryColor),
+                          SizedBox(width: 8),
+                          Text(
+                            'الطلبات الجديدة',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  cursor += 1;
+                }
+
+                if (effectiveIndex < cursor + newDocs.length) {
+                  final doc = newDocs[effectiveIndex - cursor];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final docId = doc.id;
+                  final status = _getOrderStatus(data);
+                  final unifiedOrderCode = formatUnifiedOrderCode(
+                    orderNumber: data['orderNumber'],
+                    orderId: data['orderId'],
+                    docId: docId,
+                  );
+
+                  Widget orderDetails = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 8),
+                      Text('👤 العميل: ${data['clientName'] ?? 'غير متوفر'}',
+                          style: const TextStyle(fontFamily: 'Tajawal')),
+                      Text('💰 الإجمالي: ${data['total'] ?? 0} ج.س',
+                          style: const TextStyle(fontFamily: 'Tajawal')),
+                      if (data['items'] != null && data['items'] is List)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('تفاصيل الطلب:',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: 'Tajawal')),
+                              ...List.generate((data['items'] as List).length,
+                                  (i) {
+                                final item = (data['items'] as List)[i];
+                                return Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 2),
+                                  child: Row(
+                                    children: [
+                                      if (item['imageUrl'] != null &&
+                                          item['imageUrl']
+                                              .toString()
+                                              .isNotEmpty)
+                                        ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                          child: Image.network(
+                                            item['imageUrl'],
+                                            width: 32,
+                                            height: 32,
+                                            fit: BoxFit.cover,
+                                          ),
+                                        ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '${item['name']} × ${item['quantity']}',
+                                          style: const TextStyle(
+                                              fontFamily: 'Tajawal'),
+                                        ),
+                                      ),
+                                      Text('${item['price']} ج.س',
+                                          style: const TextStyle(
+                                              fontFamily: 'Tajawal',
+                                              color: Colors.grey)),
+                                    ],
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
+                        ),
+                    ],
+                  );
+
+                  if (status == 'store_pending' || status == 'قيد المراجعة') {
+                    return Card(
+                      elevation: 1.5,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(color: primaryColor.withOpacity(0.16)),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const SizedBox(width: 8),
+                                Text(
+                                  '📦 رقم الطلب: $unifiedOrderCode',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: 'Tajawal',
+                                      fontSize: 16),
+                                ),
+                                const SizedBox(width: 10),
+                                const Text('🆕 جديد',
+                                    style: TextStyle(
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: 'Tajawal')),
+                              ],
+                            ),
+                            orderDetails,
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: () async {
+                                      await _setOrderStatus(
+                                          docId, 'courier_searching',
+                                          extra: {
+                                            'assignedDriverId': null,
+                                            'candidateDrivers': [],
+                                            'driverResponded': false,
+                                            'driverResponseTime': null
+                                          });
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green),
+                                    child: const Text('قبول الطلب',
+                                        style: TextStyle(color: Colors.white)),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: () async {
+                                      await _setOrderStatus(
+                                          docId, 'store_rejected');
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red),
+                                    child: const Text('رفض الطلب',
+                                        style: TextStyle(color: Colors.white)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  } else {
+                    return Card(
+                      elevation: 1,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        side: BorderSide(color: Colors.grey.withOpacity(0.18)),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () {
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: Colors.white,
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(18)),
+                            ),
+                            builder: (_) => Padding(
+                              padding: const EdgeInsets.all(18),
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (data['items'] != null &&
+                                        data['items'] is List)
+                                      Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text('تفاصيل الطلب:',
+                                              style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontFamily: 'Tajawal',
+                                                  fontSize: 16)),
+                                          const SizedBox(height: 8),
+                                          ...List.generate(
+                                              (data['items'] as List).length,
+                                              (i) {
+                                            final item =
+                                                (data['items'] as List)[i];
+                                            return Card(
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 4),
+                                              elevation: 0,
+                                              color: backgroundColor,
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        vertical: 8,
+                                                        horizontal: 6),
+                                                child: Row(
+                                                  children: [
+                                                    if (item['imageUrl'] !=
+                                                            null &&
+                                                        item['imageUrl']
+                                                            .toString()
+                                                            .isNotEmpty)
+                                                      ClipRRect(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(6),
+                                                        child: Image.network(
+                                                          item['imageUrl'],
+                                                          width: 38,
+                                                          height: 38,
+                                                          fit: BoxFit.cover,
+                                                        ),
+                                                      ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        '${item['name']} × ${item['quantity']}',
+                                                        style: const TextStyle(
+                                                            fontFamily:
+                                                                'Tajawal',
+                                                            fontWeight:
+                                                                FontWeight.w500,
+                                                            color:
+                                                                primaryColor),
+                                                      ),
+                                                    ),
+                                                    Text('${item['price']} ج.س',
+                                                        style: const TextStyle(
+                                                            fontFamily:
+                                                                'Tajawal',
+                                                            color:
+                                                                primaryColor)),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          }),
+                                        ],
+                                      ),
+                                    const Divider(height: 24),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text('رقم الطلب:',
+                                            style: TextStyle(
+                                                fontFamily: 'Tajawal',
+                                                color: Colors.grey.shade700)),
+                                        Text(unifiedOrderCode,
+                                            style: TextStyle(
+                                                fontFamily: 'Tajawal',
+                                                fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text('الحالة:',
+                                            style: TextStyle(
+                                                fontFamily: 'Tajawal',
+                                                color: Colors.grey.shade700)),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color:
+                                                _orderStatusBackground(status),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            _displayOrderStatus(status),
+                                            style: TextStyle(
+                                              color: _orderStatusColor(status),
+                                              fontWeight: FontWeight.bold,
+                                              fontFamily: 'Tajawal',
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text('الإجمالي:',
+                                            style: TextStyle(
+                                                fontFamily: 'Tajawal',
+                                                color: Colors.grey.shade700)),
+                                        Text('${data['total'] ?? 0} ج.س',
+                                            style: TextStyle(
+                                                fontFamily: 'Tajawal',
+                                                fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                    const Divider(height: 24),
+                                    if (status == 'courier_searching' ||
+                                        status == 'courier_offer_pending' ||
+                                        status == 'courier_assigned' ||
+                                        status == 'قيد التجهيز')
+                                      _actionButton(' جاهز', () async {
+                                        await _setOrderStatus(
+                                            docId, 'pickup_ready');
+                                        setState(() {});
+                                        _showErrorMessage(
+                                            'تم تحديث حالة الطلب إلى جاهز للاستلام');
+                                      }),
+                                    if (status == 'pickup_ready' ||
+                                        status == 'قيد التوصيل')
+                                      Padding(
+                                        padding: EdgeInsets.only(top: 10),
+                                        child: Text('📦 بانتظار استلام المندوب',
+                                            style: TextStyle(
+                                                color: _orderStatusColor(
+                                                    'pickup_ready'),
+                                                fontFamily: 'Tajawal',
+                                                fontWeight: FontWeight.bold)),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Icon(
+                                status == 'courier_searching' ||
+                                        status == 'courier_offer_pending' ||
+                                        status == 'courier_assigned'
+                                    ? Icons.kitchen
+                                    : Icons.delivery_dining,
+                                color: _orderStatusColor(status),
+                                size: 26,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '📦 رقم الطلب: $unifiedOrderCode',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: 'Tajawal',
+                                      fontSize: 16),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _displayOrderStatus(status),
+                                style: TextStyle(
+                                  color: _orderStatusColor(status),
+                                  fontWeight: FontWeight.bold,
+                                  fontFamily: 'Tajawal',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                }
+
+                cursor += newDocs.length;
+                if (showFinishedHeader) {
+                  if (effectiveIndex == cursor) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 10),
+                      child: Row(
+                        children: const [
+                          Icon(Icons.check_circle_outline, color: primaryColor),
+                          SizedBox(width: 8),
+                          Text(
+                            'الطلبات المنتهية من منظور المتجر',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  cursor += 1;
+                }
+
+                final doc = finishedDocs[effectiveIndex - cursor];
+                final data = doc.data() as Map<String, dynamic>;
+                final docId = doc.id;
                 final status = _getOrderStatus(data);
+                final unifiedOrderCode = formatUnifiedOrderCode(
+                  orderNumber: data['orderNumber'],
+                  orderId: data['orderId'],
+                  docId: docId,
+                );
 
                 Widget orderDetails = Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 8),
-                    Text('👤 العميل: ${data['clientName'] ?? 'غير متوفر'}', style: const TextStyle(fontFamily: 'Tajawal')),
-                    Text('💰 الإجمالي: ${data['total'] ?? 0} ج.س', style: const TextStyle(fontFamily: 'Tajawal')),
+                    Text('👤 العميل: ${data['clientName'] ?? 'غير متوفر'}',
+                        style: const TextStyle(fontFamily: 'Tajawal')),
+                    Text('💰 الإجمالي: ${data['total'] ?? 0} ج.س',
+                        style: const TextStyle(fontFamily: 'Tajawal')),
                     if (data['items'] != null && data['items'] is List)
                       Padding(
                         padding: const EdgeInsets.only(top: 8.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('تفاصيل الطلب:', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Tajawal')),
-                            ...List.generate((data['items'] as List).length, (i) {
+                            const Text('تفاصيل الطلب:',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: 'Tajawal')),
+                            ...List.generate((data['items'] as List).length,
+                                (i) {
                               final item = (data['items'] as List)[i];
                               return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 2),
                                 child: Row(
                                   children: [
-                                    if (item['imageUrl'] != null && item['imageUrl'].toString().isNotEmpty)
+                                    if (item['imageUrl'] != null &&
+                                        item['imageUrl'].toString().isNotEmpty)
                                       ClipRRect(
                                         borderRadius: BorderRadius.circular(6),
                                         child: Image.network(
@@ -614,10 +1213,14 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                                     Expanded(
                                       child: Text(
                                         '${item['name']} × ${item['quantity']}',
-                                        style: const TextStyle(fontFamily: 'Tajawal'),
+                                        style: const TextStyle(
+                                            fontFamily: 'Tajawal'),
                                       ),
                                     ),
-                                    Text('${item['price']} ج.س', style: const TextStyle(fontFamily: 'Tajawal', color: Colors.grey)),
+                                    Text('${item['price']} ج.س',
+                                        style: const TextStyle(
+                                            fontFamily: 'Tajawal',
+                                            color: Colors.grey)),
                                   ],
                                 ),
                               );
@@ -631,9 +1234,12 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                 if (status == 'store_pending' || status == 'قيد المراجعة') {
                   // الطلب الجديد: التفاصيل تظهر مباشرة
                   return Card(
-                    elevation: 4,
+                    elevation: 1.5,
                     margin: const EdgeInsets.only(bottom: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: primaryColor.withOpacity(0.16)),
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(18),
                       child: Column(
@@ -643,13 +1249,18 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                             children: [
                               const SizedBox(width: 8),
                               Text(
-                                '📦 رقم الطلب: ${data['orderNumber'] ?? data['orderId'] ?? docId}',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Tajawal', fontSize: 16),
+                                '📦 رقم الطلب: $unifiedOrderCode',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: 'Tajawal',
+                                    fontSize: 16),
                               ),
                               const SizedBox(width: 10),
                               const Text('🆕 جديد',
                                   style: TextStyle(
-                                      color: Colors.red, fontWeight: FontWeight.bold, fontFamily: 'Tajawal')),
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: 'Tajawal')),
                             ],
                           ),
                           orderDetails,
@@ -659,25 +1270,32 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                               Expanded(
                                 child: ElevatedButton(
                                   onPressed: () async {
-                                    await _setOrderStatus(docId, 'courier_searching', extra: {
-                                      'assignedDriverId': null,
-                                      'candidateDrivers': [],
-                                      'driverResponded': false,
-                                      'driverResponseTime': null
-                                    });
+                                    await _setOrderStatus(
+                                        docId, 'courier_searching',
+                                        extra: {
+                                          'assignedDriverId': null,
+                                          'candidateDrivers': [],
+                                          'driverResponded': false,
+                                          'driverResponseTime': null
+                                        });
                                   },
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                                  child: const Text('قبول الطلب', style: TextStyle(color: Colors.white)),
+                                  style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green),
+                                  child: const Text('قبول الطلب',
+                                      style: TextStyle(color: Colors.white)),
                                 ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: ElevatedButton(
                                   onPressed: () async {
-                                    await _setOrderStatus(docId, 'store_rejected');
+                                    await _setOrderStatus(
+                                        docId, 'store_rejected');
                                   },
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                  child: const Text('رفض الطلب', style: TextStyle(color: Colors.white)),
+                                  style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red),
+                                  child: const Text('رفض الطلب',
+                                      style: TextStyle(color: Colors.white)),
                                 ),
                               ),
                             ],
@@ -689,17 +1307,21 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                 } else {
                   // الطلبات الأخرى: التفاصيل تظهر عند الضغط
                   return Card(
-                    elevation: 2,
+                    elevation: 1,
                     margin: const EdgeInsets.only(bottom: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      side: BorderSide(color: Colors.grey.withOpacity(0.18)),
+                    ),
                     child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(14),
                       onTap: () {
                         showModalBottomSheet(
                           context: context,
                           backgroundColor: Colors.white,
                           shape: const RoundedRectangleBorder(
-                            borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                            borderRadius:
+                                BorderRadius.vertical(top: Radius.circular(18)),
                           ),
                           builder: (_) => Padding(
                             padding: const EdgeInsets.all(18),
@@ -708,25 +1330,44 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  if (data['items'] != null && data['items'] is List)
+                                  if (data['items'] != null &&
+                                      data['items'] is List)
                                     Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        const Text('تفاصيل الطلب:', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Tajawal', fontSize: 16)),
+                                        const Text('تفاصيل الطلب:',
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontFamily: 'Tajawal',
+                                                fontSize: 16)),
                                         const SizedBox(height: 8),
-                                        ...List.generate((data['items'] as List).length, (i) {
-                                          final item = (data['items'] as List)[i];
+                                        ...List.generate(
+                                            (data['items'] as List).length,
+                                            (i) {
+                                          final item =
+                                              (data['items'] as List)[i];
                                           return Card(
-                                            margin: const EdgeInsets.symmetric(vertical: 4),
+                                            margin: const EdgeInsets.symmetric(
+                                                vertical: 4),
                                             elevation: 0,
                                             color: backgroundColor,
                                             child: Padding(
-                                              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 8,
+                                                      horizontal: 6),
                                               child: Row(
                                                 children: [
-                                                  if (item['imageUrl'] != null && item['imageUrl'].toString().isNotEmpty)
+                                                  if (item['imageUrl'] !=
+                                                          null &&
+                                                      item['imageUrl']
+                                                          .toString()
+                                                          .isNotEmpty)
                                                     ClipRRect(
-                                                      borderRadius: BorderRadius.circular(6),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              6),
                                                       child: Image.network(
                                                         item['imageUrl'],
                                                         width: 38,
@@ -738,10 +1379,17 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                                                   Expanded(
                                                     child: Text(
                                                       '${item['name']} × ${item['quantity']}',
-                                                      style: const TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.w500, color: primaryColor),
+                                                      style: const TextStyle(
+                                                          fontFamily: 'Tajawal',
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                          color: primaryColor),
                                                     ),
                                                   ),
-                                                  Text('${item['price']} ج.س', style: const TextStyle(fontFamily: 'Tajawal', color: primaryColor)),
+                                                  Text('${item['price']} ج.س',
+                                                      style: const TextStyle(
+                                                          fontFamily: 'Tajawal',
+                                                          color: primaryColor)),
                                                 ],
                                               ),
                                             ),
@@ -751,39 +1399,40 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                                     ),
                                   const Divider(height: 24),
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text('رقم الطلب:', style: TextStyle(fontFamily: 'Tajawal', color: Colors.grey.shade700)),
-                                      Text('${data['orderNumber'] ?? data['orderId'] ?? docId}', style: TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold)),
+                                      Text('رقم الطلب:',
+                                          style: TextStyle(
+                                              fontFamily: 'Tajawal',
+                                              color: Colors.grey.shade700)),
+                                      Text(unifiedOrderCode,
+                                          style: TextStyle(
+                                              fontFamily: 'Tajawal',
+                                              fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                   const SizedBox(height: 6),
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text('الحالة:', style: TextStyle(fontFamily: 'Tajawal', color: Colors.grey.shade700)),
+                                      Text('الحالة:',
+                                          style: TextStyle(
+                                              fontFamily: 'Tajawal',
+                                              color: Colors.grey.shade700)),
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 4),
                                         decoration: BoxDecoration(
-                                          color: status == 'courier_searching' ||
-                                                  status == 'courier_offer_pending' ||
-                                                  status == 'courier_assigned'
-                                              ? Colors.orange.shade50
-                                              : status == 'pickup_ready'
-                                                  ? Colors.blue.shade50
-                                                  : Colors.green.shade50,
-                                          borderRadius: BorderRadius.circular(8),
+                                          color: _orderStatusBackground(status),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
                                         ),
                                         child: Text(
                                           _displayOrderStatus(status),
                                           style: TextStyle(
-                                            color: status == 'courier_searching' ||
-                                                    status == 'courier_offer_pending' ||
-                                                    status == 'courier_assigned'
-                                                ? Colors.orange
-                                                : status == 'pickup_ready'
-                                                    ? Colors.blueGrey
-                                                    : Colors.green,
+                                            color: _orderStatusColor(status),
                                             fontWeight: FontWeight.bold,
                                             fontFamily: 'Tajawal',
                                           ),
@@ -793,10 +1442,17 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                                   ),
                                   const SizedBox(height: 6),
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text('الإجمالي:', style: TextStyle(fontFamily: 'Tajawal', color: Colors.grey.shade700)),
-                                      Text('${data['total'] ?? 0} ج.س', style: TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold)),
+                                      Text('الإجمالي:',
+                                          style: TextStyle(
+                                              fontFamily: 'Tajawal',
+                                              color: Colors.grey.shade700)),
+                                      Text('${data['total'] ?? 0} ج.س',
+                                          style: TextStyle(
+                                              fontFamily: 'Tajawal',
+                                              fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                   const Divider(height: 24),
@@ -805,15 +1461,22 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                                       status == 'courier_assigned' ||
                                       status == 'قيد التجهيز')
                                     _actionButton(' جاهز', () async {
-                                      await _setOrderStatus(docId, 'pickup_ready');
+                                      await _setOrderStatus(
+                                          docId, 'pickup_ready');
                                       setState(() {});
-                                      _showErrorMessage('تم تحديث حالة الطلب إلى جاهز للاستلام');
+                                      _showErrorMessage(
+                                          'تم تحديث حالة الطلب إلى جاهز للاستلام');
                                     }),
-                                  if (status == 'pickup_ready' || status == 'قيد التوصيل')
-                                    const Padding(
+                                  if (status == 'pickup_ready' ||
+                                      status == 'قيد التوصيل')
+                                    Padding(
                                       padding: EdgeInsets.only(top: 10),
                                       child: Text('📦 بانتظار استلام المندوب',
-                                          style: TextStyle(color: Colors.blueGrey, fontFamily: 'Tajawal', fontWeight: FontWeight.bold)),
+                                          style: TextStyle(
+                                              color: _orderStatusColor(
+                                                  'pickup_ready'),
+                                              fontFamily: 'Tajawal',
+                                              fontWeight: FontWeight.bold)),
                                     ),
                                 ],
                               ),
@@ -831,29 +1494,24 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                                       status == 'courier_assigned'
                                   ? Icons.kitchen
                                   : Icons.delivery_dining,
-                              color: status == 'courier_searching' ||
-                                      status == 'courier_offer_pending' ||
-                                      status == 'courier_assigned'
-                                  ? Colors.orange
-                                  : Colors.blueGrey,
+                              color: _orderStatusColor(status),
                               size: 26,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                '📦 رقم الطلب: ${data['orderId'] ?? docId}',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Tajawal', fontSize: 16),
+                                '📦 رقم الطلب: $unifiedOrderCode',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: 'Tajawal',
+                                    fontSize: 16),
                               ),
                             ),
                             const SizedBox(width: 8),
                             Text(
                               _displayOrderStatus(status),
                               style: TextStyle(
-                                color: status == 'courier_searching' ||
-                                        status == 'courier_offer_pending' ||
-                                        status == 'courier_assigned'
-                                    ? Colors.orange
-                                    : Colors.blueGrey,
+                                color: _orderStatusColor(status),
                                 fontWeight: FontWeight.bold,
                                 fontFamily: 'Tajawal',
                               ),
@@ -882,16 +1540,17 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
+        color: AppThemeArabic.clientSurface,
+        borderRadius: BorderRadius.circular(12),
         child: InkWell(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           onTap: onTap,
           splashColor: primaryColor.withOpacity(0.10),
           highlightColor: primaryColor.withOpacity(0.06),
           child: Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.withOpacity(0.14)),
             ),
             padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
             child: Row(
@@ -935,11 +1594,92 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
           onPressed: onPressed,
           style: ElevatedButton.styleFrom(
             backgroundColor: primaryColor,
-            minimumSize: const Size.fromHeight(45),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            minimumSize: const Size.fromHeight(48),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          child: Text(label, style: const TextStyle(color: Colors.white, fontFamily: 'Tajawal')),
+          child: Text(label,
+              style:
+                  const TextStyle(color: Colors.white, fontFamily: 'Tajawal')),
         ),
+      ),
+    );
+  }
+
+  Widget _buildDashboardStatsCard({
+    required int totalCount,
+    required int newCount,
+    required int finishedCount,
+  }) {
+    Widget statItem({
+      required IconData icon,
+      required String label,
+      required int value,
+      required Color color,
+    }) {
+      return Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(height: 6),
+              Text(
+                '$value',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: primaryColor.withOpacity(0.12)),
+      ),
+      child: Row(
+        children: [
+          statItem(
+            icon: Icons.receipt_long_rounded,
+            label: 'إجمالي الطلبات',
+            value: totalCount,
+            color: primaryColor,
+          ),
+          const SizedBox(width: 8),
+          statItem(
+            icon: Icons.fiber_new_rounded,
+            label: 'طلبات جديدة',
+            value: newCount,
+            color: Colors.orange,
+          ),
+          const SizedBox(width: 8),
+          statItem(
+            icon: Icons.check_circle_rounded,
+            label: 'منتهية',
+            value: finishedCount,
+            color: Colors.green,
+          ),
+        ],
       ),
     );
   }

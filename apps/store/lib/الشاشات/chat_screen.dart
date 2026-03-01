@@ -20,10 +20,16 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
-  final cloudinary = CloudinaryPublic('dvnzloec6', 'flutter_unsigned', cache: false);
+  final cloudinary =
+      CloudinaryPublic('dvnzloec6', 'flutter_unsigned', cache: false);
   static const _primaryColor = AppThemeArabic.clientPrimary;
   bool _chatEnabled = true;
   String _chatDisabledMessage = 'الدردشة متوقفة مؤقتًا.';
+
+  void _onMessageChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
 
   String get _actorUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -33,6 +39,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _loadChatConfig();
+    _controller.addListener(_onMessageChanged);
   }
 
   Future<void> _loadChatConfig() async {
@@ -52,6 +59,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _controller.removeListener(_onMessageChanged);
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -108,7 +116,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final response = await cloudinary.uploadFile(
-        CloudinaryFile.fromFile(File(pickedFile.path).path, resourceType: CloudinaryResourceType.Image),
+        CloudinaryFile.fromFile(File(pickedFile.path).path,
+            resourceType: CloudinaryResourceType.Image),
       );
       await FirebaseFirestore.instance.collection('supportMessages').add({
         'conversationId': _chatId,
@@ -150,6 +159,11 @@ class _ChatScreenState extends State<ChatScreen> {
     return intl.DateFormat('hh:mm a').format(timestamp.toDate());
   }
 
+  int _timestampMillis(dynamic value) {
+    if (value is Timestamp) return value.millisecondsSinceEpoch;
+    return 0;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_chatEnabled) {
@@ -158,7 +172,12 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Scaffold(
           backgroundColor: AppThemeArabic.clientBackground,
           appBar: AppBar(
-            title: const Text('الدردشة', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+            title: const Text('الدردشة',
+                style: TextStyle(
+                    color: AppThemeArabic.clientPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                    fontFamily: 'Tajawal')),
             backgroundColor: Colors.white,
             centerTitle: true,
             elevation: 1,
@@ -186,7 +205,12 @@ class _ChatScreenState extends State<ChatScreen> {
         backgroundColor: AppThemeArabic.clientBackground,
         resizeToAvoidBottomInset: true,
         appBar: AppBar(
-          title: const Text('الدعم الفني', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+          title: const Text('الدعم الفني',
+              style: TextStyle(
+                  color: AppThemeArabic.clientPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  fontFamily: 'Tajawal')),
           backgroundColor: Colors.white,
           centerTitle: true,
           elevation: 1,
@@ -202,7 +226,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 stream: FirebaseFirestore.instance
                     .collection('supportMessages')
                     .where('conversationId', isEqualTo: _chatId)
-                    .orderBy('timestamp')
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
@@ -213,10 +236,23 @@ class _ChatScreenState extends State<ChatScreen> {
                   if (!snapshot.hasData) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  final msgs = snapshot.data!.docs;
+                  final msgs = snapshot.data!.docs.toList()
+                    ..sort((a, b) {
+                      final aData = a.data() as Map<String, dynamic>;
+                      final bData = b.data() as Map<String, dynamic>;
+                      return _timestampMillis(aData['timestamp'])
+                          .compareTo(_timestampMillis(bData['timestamp']));
+                    });
                   if (msgs.isEmpty) {
                     return const Center(child: Text('لا توجد رسائل بعد'));
                   }
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (_scrollController.hasClients) {
+                      _scrollController.jumpTo(
+                        _scrollController.position.maxScrollExtent,
+                      );
+                    }
+                  });
                   return ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.all(12),
@@ -225,20 +261,25 @@ class _ChatScreenState extends State<ChatScreen> {
                       final m = msgs[index].data() as Map<String, dynamic>;
                       final isMe = m['senderId'] == _actorUid;
                       return Align(
-                        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                        alignment:
+                            isMe ? Alignment.centerRight : Alignment.centerLeft,
                         child: Container(
                           margin: const EdgeInsets.symmetric(vertical: 6),
-                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 8, horizontal: 12),
                           decoration: BoxDecoration(
                             color: isMe
                                 ? AppThemeArabic.clientSurface
-                                : Theme.of(context).colorScheme.surfaceContainerHighest,
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (!isMe && (m['senderName'] ?? '').toString().isNotEmpty)
+                              if (!isMe &&
+                                  (m['senderName'] ?? '').toString().isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(bottom: 4),
                                   child: Text(
@@ -252,7 +293,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ),
                               if (m['imageUrl'] != null)
                                 GestureDetector(
-                                  onTap: () => _showImagePreview((m['imageUrl'] ?? '').toString()),
+                                  onTap: () => _showImagePreview(
+                                      (m['imageUrl'] ?? '').toString()),
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: Image.network(
@@ -264,11 +306,13 @@ class _ChatScreenState extends State<ChatScreen> {
                                   ),
                                 )
                               else
-                                Text((m['message'] ?? m['text'] ?? '').toString()),
+                                Text((m['message'] ?? m['text'] ?? '')
+                                    .toString()),
                               const SizedBox(height: 4),
                               Text(
                                 _formatTimestamp(m['timestamp']),
-                                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey),
                               ),
                             ],
                           ),
@@ -283,14 +327,18 @@ class _ChatScreenState extends State<ChatScreen> {
             SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: [
                     PopupMenuButton<String>(
-                      icon: const Icon(Icons.add_photo_alternate, color: _primaryColor),
+                      icon: const Icon(Icons.add_photo_alternate,
+                          color: _primaryColor),
                       onSelected: (source) {
                         _pickAndSendImage(
-                          source == 'camera' ? ImageSource.camera : ImageSource.gallery,
+                          source == 'camera'
+                              ? ImageSource.camera
+                              : ImageSource.gallery,
                         );
                       },
                       itemBuilder: (context) => const [
@@ -313,7 +361,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.send, color: _primaryColor),
-                      onPressed: _send,
+                      onPressed: _controller.text.trim().isEmpty ? null : _send,
                     ),
                   ],
                 ),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -9,6 +11,7 @@ import 'firebase_options.dart' as dev_firebase;
 import 'firebase_options_prod.dart' as prod_firebase;
 import 'الشاشات/courier_main_screen.dart';
 import 'الشاشات/courier_link_request_screen.dart';
+import 'الخدمات/push_notification_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -75,6 +78,7 @@ class _InitGateCourierState extends State<_InitGateCourier> {
       await Firebase.initializeApp(
         options: firebaseOptions,
       );
+      await PushNotificationService.instance.initialize();
       final rc = FirebaseRemoteConfig.instance;
       await rc.setConfigSettings(
         RemoteConfigSettings(
@@ -93,7 +97,8 @@ class _InitGateCourierState extends State<_InitGateCourier> {
       await rc.fetchAndActivate();
       final accent = rc.getString('accent_seed');
       _maintenanceMode = rc.getBool('courier_maintenance_mode');
-      final maintenanceText = rc.getString('courier_maintenance_message').trim();
+      final maintenanceText =
+          rc.getString('courier_maintenance_message').trim();
       if (maintenanceText.isNotEmpty) {
         _maintenanceMessage = maintenanceText;
       }
@@ -305,8 +310,12 @@ class _CourierHomeByAuthUser extends StatelessWidget {
           );
         }
 
-        if (approvalStatus == 'approved' || isApproved || approvalStatus.isEmpty) {
-          return CourierMainScreen(courierId: (resolved['id'] ?? user.uid).toString());
+        if (approvalStatus == 'approved' ||
+            isApproved ||
+            approvalStatus.isEmpty) {
+          final courierId = (resolved['id'] ?? user.uid).toString();
+          unawaited(PushNotificationService.instance.bindDriver(courierId));
+          return CourierMainScreen(courierId: courierId);
         }
 
         return _DriverLinkStateScreen(
@@ -344,11 +353,13 @@ class _DriverLinkStateScreen extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.info_outline, size: 48, color: Theme.of(context).colorScheme.primary),
+                Icon(Icons.info_outline,
+                    size: 48, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 14),
                 Text(
                   title,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),

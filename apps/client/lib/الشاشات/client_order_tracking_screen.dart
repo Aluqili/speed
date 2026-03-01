@@ -7,13 +7,17 @@ import 'package:getwidget/getwidget.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/speedstar_core.dart'
+    show formatUnifiedOrderCode, OrderStatusPalette;
 
 class ClientOrderTrackingScreen extends StatefulWidget {
   final String orderId;
-  const ClientOrderTrackingScreen({Key? key, required this.orderId}) : super(key: key);
+  const ClientOrderTrackingScreen({Key? key, required this.orderId})
+      : super(key: key);
 
   @override
-  State<ClientOrderTrackingScreen> createState() => _ClientOrderTrackingScreenState();
+  State<ClientOrderTrackingScreen> createState() =>
+      _ClientOrderTrackingScreenState();
 }
 
 class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
@@ -28,7 +32,8 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
   static const Color primaryColor = AppThemeArabic.clientPrimary;
   static const Color backgroundColor = AppThemeArabic.clientBackground;
 
-  final FlutterLocalNotificationsPlugin _notificationsPlugin = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _notificationsPlugin =
+      FlutterLocalNotificationsPlugin();
 
   @override
   void initState() {
@@ -45,13 +50,15 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
   }
 
   void _listenToOrder() {
-    final ref = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
+    final ref =
+        FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
 
     _orderSub = ref.snapshots().listen((snap) {
       final data = snap.data();
       if (data == null) return;
 
-      final rawStatus = ((data['orderStatus'] ?? data['status']) as String? ?? '').trim();
+      final rawStatus =
+          ((data['orderStatus'] ?? data['status']) as String? ?? '').trim();
       final orderStatus = _normalizeStatus(rawStatus);
 
       if (orderStatus == 'delivered' && !_hasNotifiedArrival) {
@@ -65,7 +72,8 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
       }
 
       final driverId = data['assignedDriverId'];
-      if ((orderStatus == 'picked_up' || orderStatus == 'arrived_to_client') && driverId != null) {
+      if ((orderStatus == 'picked_up' || orderStatus == 'arrived_to_client') &&
+          driverId != null) {
         _driverSub?.cancel();
         _driverSub = FirebaseFirestore.instance
             .collection('drivers')
@@ -88,7 +96,8 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
               _driverLocation = LatLng(location.latitude, location.longitude);
 
               if (_mapController != null) {
-                _mapController!.animateCamera(CameraUpdate.newLatLng(_driverLocation!));
+                _mapController!
+                    .animateCamera(CameraUpdate.newLatLng(_driverLocation!));
               }
             }
           }
@@ -135,8 +144,14 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
           backgroundColor: Colors.white,
           elevation: 1,
           centerTitle: true,
-          title: const Text('تتبع الطلب', style: TextStyle(color: _ClientOrderTrackingScreenState.primaryColor, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
-          iconTheme: const IconThemeData(color: _ClientOrderTrackingScreenState.primaryColor),
+          title: const Text('تتبع الطلب',
+              style: TextStyle(
+                  color: _ClientOrderTrackingScreenState.primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  fontFamily: 'Tajawal')),
+          iconTheme: const IconThemeData(
+              color: _ClientOrderTrackingScreenState.primaryColor),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
           ),
@@ -155,9 +170,12 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
             }
 
             final data = snap.data!.data()! as Map<String, dynamic>;
-            final rawStatus = ((data['orderStatus'] ?? data['status']) as String? ?? '').trim();
+            final rawStatus =
+                ((data['orderStatus'] ?? data['status']) as String? ?? '')
+                    .trim();
             final orderStatus = _normalizeStatus(rawStatus);
-            final total = (data['totalWithDelivery'] as num?)?.toDouble() ?? 0.0;
+            final total =
+                (data['totalWithDelivery'] as num?)?.toDouble() ?? 0.0;
             final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
             int currentStep = _statusSteps.indexOf(orderStatus);
             if (currentStep < 0) currentStep = 0;
@@ -165,14 +183,16 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                if ((orderStatus == 'picked_up' || orderStatus == 'arrived_to_client') &&
+                if ((orderStatus == 'picked_up' ||
+                        orderStatus == 'arrived_to_client') &&
                     _driverLocation != null)
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (_driverName != null)
                         Text('🚚 المندوب: $_driverName',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       SizedBox(
                         height: 250,
@@ -181,11 +201,16 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
                             target: _driverLocation!,
                             zoom: 14,
                           ),
-                          onMapCreated: (controller) => _mapController = controller,
+                          onMapCreated: (controller) =>
+                              _mapController = controller,
                           markers: {
-                            Marker(markerId: const MarkerId('driver'), position: _driverLocation!),
+                            Marker(
+                                markerId: const MarkerId('driver'),
+                                position: _driverLocation!),
                             if (_clientLocation != null)
-                              Marker(markerId: const MarkerId('client'), position: _clientLocation!),
+                              Marker(
+                                  markerId: const MarkerId('client'),
+                                  position: _clientLocation!),
                           },
                           polylines: {
                             if (_clientLocation != null)
@@ -197,22 +222,26 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
                               ),
                           },
                           gestureRecognizers: {
-                            Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+                            Factory<OneSequenceGestureRecognizer>(
+                                () => EagerGestureRecognizer()),
                           },
                         ),
                       ),
                     ],
                   ),
-
                 const SizedBox(height: 16),
-                Text('📦 رقم الطلب: ${widget.orderId}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                Text(
+                    '📦 رقم الطلب: ${formatUnifiedOrderCode(orderNumber: data['orderNumber'], orderId: data['orderId'], docId: widget.orderId)}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 18)),
                 const SizedBox(height: 8),
                 Text('💰 الإجمالي: ${total.toStringAsFixed(2)} ج.س'),
                 const SizedBox(height: 16),
-
                 Text('🔁 تقدم الطلب',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor)),
+                    style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: primaryColor)),
                 const SizedBox(height: 12),
                 Column(
                   children: List.generate(_statusSteps.length, (i) {
@@ -220,10 +249,10 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
                     final done = i < currentStep;
                     final active = i == currentStep;
                     final color = done
-                        ? Colors.green
+                        ? OrderStatusPalette.delivered
                         : active
-                            ? primaryColor
-                            : Colors.grey;
+                            ? OrderStatusPalette.colorForStatus(_statusSteps[i])
+                            : OrderStatusPalette.neutral;
                     final icon = done
                         ? Icons.check_circle
                         : active
@@ -231,17 +260,21 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
                             : Icons.radio_button_unchecked;
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 4),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                       elevation: 1,
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
                         child: Row(children: [
                           Icon(icon, color: color),
                           const SizedBox(width: 12),
                           Text(label,
                               style: TextStyle(
                                   fontSize: 16,
-                                  fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                                  fontWeight: active
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
                                   color: color)),
                         ]),
                       ),
@@ -249,12 +282,16 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
                   }),
                 ),
                 const SizedBox(height: 24),
-                Text('🍽️ الأصناف:', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text('🍽️ الأصناف:',
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 ...items.map((item) => ListTile(
-                      leading: const Icon(Icons.restaurant_menu, color: primaryColor),
+                      leading: const Icon(Icons.restaurant_menu,
+                          color: primaryColor),
                       title: Text(item['name'] ?? ''),
-                      subtitle: Text('x${item['quantity']} — ${item['price']} ج.س'),
+                      subtitle:
+                          Text('x${item['quantity']} — ${item['price']} ج.س'),
                     )),
               ],
             );

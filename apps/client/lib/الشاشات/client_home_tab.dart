@@ -42,12 +42,13 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
   bool _addressStateResolved = false;
   bool _isAddressScreenOpening = false;
   final List<String> _recentSearches = [];
+  String? _selectedMealCategory;
   static const double _defaultFallbackVisibleDistanceKm = 120;
 
   double get _fallbackVisibleDistanceKm {
     try {
-      final value =
-          FirebaseRemoteConfig.instance.getDouble('client_state_guard_distance_km');
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('client_state_guard_distance_km');
       return value > 0 ? value : _defaultFallbackVisibleDistanceKm;
     } catch (_) {
       return _defaultFallbackVisibleDistanceKm;
@@ -103,11 +104,13 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           (addressData['addressName'] ?? 'عنوان بدون اسم').toString();
       final lat = (addressData['latitude'] as num?)?.toDouble();
       final lng = (addressData['longitude'] as num?)?.toDouble();
-      final stateId = _normalizeStateId(
-        addressData['stateId'] ??
+      final stateId = _resolveClientStateId(
+        rawState: addressData['stateId'] ??
             addressData['state'] ??
             addressData['city'] ??
             addressData['administrativeArea'],
+        latitude: lat,
+        longitude: lng,
       );
 
       setState(() {
@@ -132,7 +135,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
 
   bool get _isStateRolloutEnabled {
     try {
-      return FirebaseRemoteConfig.instance.getBool('client_state_rollout_enabled');
+      return FirebaseRemoteConfig.instance
+          .getBool('client_state_rollout_enabled');
     } catch (_) {
       return false;
     }
@@ -170,7 +174,15 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
   }
 
   bool _isClientStateEnabledForRollout() {
-    final clientState = (_clientStateId ?? '').trim();
+    var clientState = (_clientStateId ?? '').trim();
+    if (clientState.isEmpty &&
+        _clientLatitude != null &&
+        _clientLongitude != null) {
+      clientState = _inferKhartoumStateId(
+        latitude: _clientLatitude,
+        longitude: _clientLongitude,
+      );
+    }
     if (clientState.isEmpty) {
       return false;
     }
@@ -295,7 +307,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     if (text.startsWith(query)) return 900;
     if (text.contains(' $query')) return 700;
     if (text.contains(query)) return 450;
-    final qTokens = query.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+    final qTokens =
+        query.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
     if (qTokens.isEmpty) return 0;
     var tokenHits = 0;
     for (final token in qTokens) {
@@ -305,7 +318,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     return 250 + (tokenHits * 60);
   }
 
-  List<Map<String, dynamic>> _buildSearchEntries(List<Map<String, dynamic>> searchItems) {
+  List<Map<String, dynamic>> _buildSearchEntries(
+      List<Map<String, dynamic>> searchItems) {
     final entries = <Map<String, dynamic>>[];
     final labelsSeen = <String>{};
 
@@ -315,11 +329,15 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       if (name.isEmpty) continue;
 
       final restaurant = (item['restaurant'] as Map<String, dynamic>?) ??
-          (type == 'restaurant' ? item['restaurant'] as Map<String, dynamic>? : null) ??
+          (type == 'restaurant'
+              ? item['restaurant'] as Map<String, dynamic>?
+              : null) ??
           (type == 'restaurant' ? item : null);
       final restaurantName = (restaurant?['name'] ?? '').toString().trim();
       final offers = (restaurant?['offers'] ?? '').toString().trim();
-      final category = (item['meal']?['category'] ?? item['category'] ?? '').toString().trim();
+      final category = (item['meal']?['category'] ?? item['category'] ?? '')
+          .toString()
+          .trim();
 
       String label = type == 'meal'
           ? '🍽 $name — ${restaurantName.isNotEmpty ? restaurantName : 'مطعم'}'
@@ -340,7 +358,9 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         'restaurant': restaurant,
         'searchText': _normalizeSearchText(searchBlob),
         'subtitle': type == 'meal'
-            ? (category.isNotEmpty ? '$restaurantName · $category' : restaurantName)
+            ? (category.isNotEmpty
+                ? '$restaurantName · $category'
+                : restaurantName)
             : (offers.isNotEmpty ? offers : 'مطعم'),
       });
     }
@@ -478,6 +498,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   return da.compareTo(db);
                 });
 
+                final mealsFuture = fetchAllMeals(restaurants);
+
                 return SafeArea(
                   child: CustomScrollView(
                     physics: BouncingScrollPhysics(),
@@ -509,7 +531,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                                         horizontal: 16.0),
                                     child: FutureBuilder<
                                         List<Map<String, dynamic>>>(
-                                      future: fetchAllMeals(restaurants),
+                                      future: mealsFuture,
                                       builder: (context, mealSnapshot) {
                                         if (mealSnapshot.connectionState ==
                                             ConnectionState.waiting) {
@@ -574,6 +596,23 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                                     context, r, imageProvider);
                               },
                             ),
+                          ),
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0, vertical: 4),
+                          child: FutureBuilder<List<Map<String, dynamic>>>(
+                            future: mealsFuture,
+                            builder: (context, mealsSnapshot) {
+                              if (mealsSnapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return const SizedBox.shrink();
+                              }
+                              final allMeals = mealsSnapshot.data ?? const [];
+                              return _buildCategoriesSection(context, allMeals);
+                            },
                           ),
                         ),
                       ),
@@ -697,7 +736,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
             return IconButton(
               icon: Stack(
                 children: [
-                  Icon(Icons.notifications_none, size: 28, color: textColorPrimary),
+                  Icon(Icons.notifications_none,
+                      size: 28, color: textColorPrimary),
                   if (hasUnread)
                     Positioned(
                       top: 2,
@@ -735,7 +775,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     List<Map<String, dynamic>> searchItems,
   ) {
     final entries = _buildSearchEntries(searchItems);
-    final labels = entries.map((e) => e['label'].toString()).toList(growable: false);
+    final labels =
+        entries.map((e) => e['label'].toString()).toList(growable: false);
     final entryByLabel = <String, Map<String, dynamic>>{
       for (final e in entries) e['label'].toString(): e,
     };
@@ -761,7 +802,9 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           searchQueryBuilder: (String query, List<String?> list) async {
             final normalizedQuery = _normalizeSearchText(query);
             if (normalizedQuery.isEmpty) {
-              return _recentSearches.where((label) => entryByLabel.containsKey(label)).toList();
+              return _recentSearches
+                  .where((label) => entryByLabel.containsKey(label))
+                  .toList();
             }
 
             final scored = <MapEntry<String, int>>[];
@@ -770,7 +813,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
               if (label.isEmpty) continue;
               final entry = entryByLabel[label];
               if (entry == null) continue;
-              final score = _searchScore(normalizedQuery, entry['searchText'].toString());
+              final score =
+                  _searchScore(normalizedQuery, entry['searchText'].toString());
               if (score > 0) {
                 scored.add(MapEntry(label, score));
               }
@@ -806,7 +850,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                       color: textColorPrimary,
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      fontFamily: 'Tajawal',
                     ),
                     textAlign: TextAlign.right,
                   ),
@@ -816,7 +859,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                       style: TextStyle(
                         color: textColorSecondary,
                         fontSize: 12,
-                        fontFamily: 'Tajawal',
                       ),
                       textAlign: TextAlign.right,
                     ),
@@ -827,7 +869,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                         color: primaryColor,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        fontFamily: 'Tajawal',
                       ),
                       textAlign: TextAlign.right,
                     ),
@@ -859,8 +900,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           },
           searchBoxInputDecoration: InputDecoration(
             hintText: 'ابحث عن مطعم، وجبة، أو عرض...',
-            hintStyle: TextStyle(
-                color: Colors.grey[600], fontSize: 16, fontFamily: 'Tajawal'),
+            hintStyle: TextStyle(color: Colors.grey[600], fontSize: 16),
             border: InputBorder.none,
             enabledBorder: InputBorder.none,
             focusedBorder: InputBorder.none,
@@ -891,6 +931,468 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           textAlign: TextAlign.right,
         ),
       ],
+    );
+  }
+
+  List<String> _extractMealCategories(List<Map<String, dynamic>> allMeals) {
+    final categories = <String>{};
+    for (final entry in allMeals) {
+      final meal = (entry['meal'] as Map<String, dynamic>?) ?? const {};
+      final category =
+          (meal['category'] ?? entry['category'] ?? '').toString().trim();
+      if (category.isNotEmpty) {
+        categories.add(category);
+      }
+    }
+    final list = categories.toList()..sort((a, b) => a.compareTo(b));
+    return list;
+  }
+
+  List<Map<String, dynamic>> _mealsForCategory(
+    List<Map<String, dynamic>> allMeals,
+    String category,
+  ) {
+    return allMeals.where((entry) {
+      final meal = (entry['meal'] as Map<String, dynamic>?) ?? const {};
+      final itemCategory =
+          (meal['category'] ?? entry['category'] ?? '').toString().trim();
+      return itemCategory == category;
+    }).toList();
+  }
+
+  Widget _buildCategoriesSection(
+    BuildContext context,
+    List<Map<String, dynamic>> allMeals,
+  ) {
+    final categories = _extractMealCategories(allMeals);
+    if (categories.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final selected = (_selectedMealCategory != null &&
+            categories.contains(_selectedMealCategory))
+        ? _selectedMealCategory!
+        : categories.first;
+    final selectedMeals = _mealsForCategory(allMeals, selected);
+    final previewMeals = selectedMeals.take(12).toList();
+    final restaurantsInSelected = selectedMeals
+        .map((entry) =>
+            ((entry['restaurant'] as Map<String, dynamic>?)?['id'] ?? '')
+                .toString())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Row(
+          children: [
+            TextButton.icon(
+              onPressed: () {
+                _showCategoryMealsSheet(context, selected, selectedMeals);
+              },
+              icon: const Icon(Icons.open_in_new_rounded, size: 18),
+              label: const Text('عرض الكل'),
+            ),
+            const Spacer(),
+            _buildSectionHeader(
+                Icons.grid_view_rounded, 'تصفح الأصناف', textColorPrimary),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _buildCategoryStatCard(
+                label: 'أصناف',
+                value: categories.length.toString(),
+                icon: Icons.category_rounded,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildCategoryStatCard(
+                label: 'عناصر',
+                value: selectedMeals.length.toString(),
+                icon: Icons.fastfood_rounded,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildCategoryStatCard(
+                label: 'مطاعم',
+                value: restaurantsInSelected.toString(),
+                icon: Icons.storefront_rounded,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 42,
+          child: ListView.builder(
+            reverse: true,
+            scrollDirection: Axis.horizontal,
+            itemCount: categories.length,
+            itemBuilder: (context, index) {
+              final category = categories[index];
+              final isSelected = category == selected;
+              return Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: FilterChip(
+                  selected: isSelected,
+                  showCheckmark: false,
+                  selectedColor: primaryColor.withOpacity(0.16),
+                  side: BorderSide(
+                    color: isSelected
+                        ? primaryColor.withOpacity(0.45)
+                        : Colors.grey.withOpacity(0.25),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  label: Text(
+                    category,
+                    style: TextStyle(
+                      color: isSelected ? primaryColor : textColorPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  onSelected: (_) {
+                    setState(() {
+                      _selectedMealCategory = category;
+                    });
+                    final allInCategory = _mealsForCategory(allMeals, category);
+                    _showCategoryMealsSheet(context, category, allInCategory);
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+        if (previewMeals.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 186,
+            child: ListView.builder(
+              reverse: true,
+              scrollDirection: Axis.horizontal,
+              itemCount: previewMeals.length,
+              itemBuilder: (context, index) {
+                return _buildMealPreviewCard(context, previewMeals[index]);
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCategoryStatCard({
+    required String label,
+    required String value,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: primaryColor.withOpacity(0.12)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: primaryColor, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: textColorSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMealPreviewCard(
+    BuildContext context,
+    Map<String, dynamic> entry,
+  ) {
+    final meal = (entry['meal'] as Map<String, dynamic>?) ?? const {};
+    final restaurant =
+        (entry['restaurant'] as Map<String, dynamic>?) ?? const {};
+
+    final mealName = (meal['name'] ?? 'وجبة').toString();
+    final restaurantName = (restaurant['name'] ?? 'مطعم').toString();
+    final category = (meal['category'] ?? '').toString();
+    final price = (meal['price'] ?? '').toString();
+    final imageUrl =
+        (meal['imageUrl'] ?? meal['image'] ?? meal['photoUrl'] ?? '')
+            .toString();
+    final imageProvider = imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null;
+
+    return InkWell(
+      onTap: () {
+        if (restaurant.isNotEmpty) {
+          _openRestaurantDetail(context, restaurant);
+        }
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        width: 230,
+        margin: const EdgeInsets.only(left: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius:
+                  const BorderRadius.horizontal(left: Radius.circular(16)),
+              child: imageProvider != null
+                  ? Image(
+                      image: imageProvider,
+                      width: 74,
+                      height: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 74,
+                        color: Colors.grey.shade200,
+                        child: Icon(Icons.image_not_supported_outlined,
+                            color: Colors.grey.shade500),
+                      ),
+                    )
+                  : Container(
+                      width: 74,
+                      color: Colors.grey.shade100,
+                      child: Icon(Icons.fastfood_rounded,
+                          color: Colors.grey.shade500),
+                    ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      mealName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      restaurantName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        color: textColorSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (category.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        category,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(color: primaryColor, fontSize: 11),
+                      ),
+                    ],
+                    if (price.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        '$price ج.س',
+                        style: TextStyle(
+                          color: primaryColor,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCategoryMealsSheet(
+    BuildContext context,
+    String category,
+    List<Map<String, dynamic>> meals,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: Container(
+            height: MediaQuery.of(ctx).size.height * 0.82,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 56,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      Text(
+                        '${meals.length} عنصر',
+                        style: TextStyle(color: textColorSecondary),
+                      ),
+                      const Spacer(),
+                      Text(
+                        category,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: meals.isEmpty
+                      ? Center(
+                          child: Text(
+                            'لا توجد عناصر في هذا الصنف',
+                            style: TextStyle(color: textColorSecondary),
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: meals.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final entry = meals[index];
+                            final meal =
+                                (entry['meal'] as Map<String, dynamic>?) ??
+                                    const {};
+                            final restaurant = (entry['restaurant']
+                                    as Map<String, dynamic>?) ??
+                                const {};
+                            final mealName =
+                                (meal['name'] ?? 'وجبة').toString();
+                            final restaurantName =
+                                (restaurant['name'] ?? 'مطعم').toString();
+                            final price = (meal['price'] ?? '').toString();
+
+                            return InkWell(
+                              onTap: () {
+                                Navigator.pop(context);
+                                if (restaurant.isNotEmpty) {
+                                  _openRestaurantDetail(context, restaurant);
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(14),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppThemeArabic.clientSurface,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: Colors.grey.withOpacity(0.16),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      mealName,
+                                      textAlign: TextAlign.right,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'يتبع لمطعم: $restaurantName',
+                                      textAlign: TextAlign.right,
+                                      style: TextStyle(
+                                        color: textColorSecondary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    if (price.isNotEmpty) ...[
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        '$price ج.س',
+                                        style: TextStyle(
+                                          color: primaryColor,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1253,6 +1755,33 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         .replaceAll('ى', 'ي')
         .toLowerCase();
 
+    final compact = normalized
+        .replaceAll(RegExp(r'[^\p{L}\p{N}\s]+', unicode: true), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    final khartoumTokens = [
+      'الخرطوم',
+      'خرطوم',
+      'khartoum',
+      'khartum',
+      'بحري',
+      'bahri',
+      'khartoum north',
+      'ام درمان',
+      'امدرمان',
+      'ام درمان الكبرى',
+      'omdurman',
+      'omdorman',
+      'oum durman',
+    ];
+
+    for (final token in khartoumTokens) {
+      if (compact == token || compact.contains(token)) {
+        return 'khartoum';
+      }
+    }
+
     const khartoumAliases = {
       'الخرطوم',
       'خرطوم',
@@ -1271,6 +1800,43 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     if (khartoumAliases.contains(normalized)) {
       return 'khartoum';
     }
+    return normalized;
+  }
+
+  String _inferKhartoumStateId({double? latitude, double? longitude}) {
+    if (latitude == null || longitude == null) return '';
+
+    const minLat = 15.15;
+    const maxLat = 16.10;
+    const minLng = 32.20;
+    const maxLng = 33.10;
+
+    final insideGreaterKhartoum = latitude >= minLat &&
+        latitude <= maxLat &&
+        longitude >= minLng &&
+        longitude <= maxLng;
+
+    return insideGreaterKhartoum ? 'khartoum' : '';
+  }
+
+  String _resolveClientStateId({
+    required dynamic rawState,
+    required double? latitude,
+    required double? longitude,
+  }) {
+    final normalized = _normalizeStateId(rawState);
+    final enabledStates = _enabledStatesFromRemote;
+
+    if (normalized.isNotEmpty && enabledStates.contains(normalized)) {
+      return normalized;
+    }
+
+    final inferred =
+        _inferKhartoumStateId(latitude: latitude, longitude: longitude);
+    if (inferred.isNotEmpty && enabledStates.contains(inferred)) {
+      return inferred;
+    }
+
     return normalized;
   }
 

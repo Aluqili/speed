@@ -35,8 +35,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
   double get _maxAllowedCrossCheckDistanceKm {
     try {
-      final value =
-          FirebaseRemoteConfig.instance.getDouble('client_state_guard_distance_km');
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('client_state_guard_distance_km');
       return value > 0 ? value : _defaultMaxAllowedCrossCheckDistanceKm;
     } catch (_) {
       return _defaultMaxAllowedCrossCheckDistanceKm;
@@ -45,7 +45,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
   bool get _isStateRolloutEnabled {
     try {
-      return FirebaseRemoteConfig.instance.getBool('client_state_rollout_enabled');
+      return FirebaseRemoteConfig.instance
+          .getBool('client_state_rollout_enabled');
     } catch (_) {
       return false;
     }
@@ -83,7 +84,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
   bool get _largeOrderFeeEnabled {
     try {
-      return FirebaseRemoteConfig.instance.getBool('pricing_large_item_fee_enabled');
+      return FirebaseRemoteConfig.instance
+          .getBool('pricing_large_item_fee_enabled');
     } catch (_) {
       return true;
     }
@@ -91,7 +93,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
   double get _largeItemThreshold {
     try {
-      final value = FirebaseRemoteConfig.instance.getDouble('pricing_large_item_threshold');
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('pricing_large_item_threshold');
       return value > 0 ? value : _defaultLargeItemThreshold;
     } catch (_) {
       return _defaultLargeItemThreshold;
@@ -100,7 +103,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
   double get _largeItemFeeBase {
     try {
-      final value = FirebaseRemoteConfig.instance.getDouble('pricing_large_item_fee_base');
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('pricing_large_item_fee_base');
       return value >= 0 ? value : _defaultLargeItemFeeBase;
     } catch (_) {
       return _defaultLargeItemFeeBase;
@@ -109,7 +113,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
   double get _largeItemStepAmount {
     try {
-      final value = FirebaseRemoteConfig.instance.getDouble('pricing_large_item_step_amount');
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('pricing_large_item_step_amount');
       return value > 0 ? value : _defaultLargeItemStepAmount;
     } catch (_) {
       return _defaultLargeItemStepAmount;
@@ -118,7 +123,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
   double get _largeItemStepFee {
     try {
-      final value = FirebaseRemoteConfig.instance.getDouble('pricing_large_item_step_fee');
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('pricing_large_item_step_fee');
       return value >= 0 ? value : _defaultLargeItemStepFee;
     } catch (_) {
       return _defaultLargeItemStepFee;
@@ -127,7 +133,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
   double get _largeItemFeeCapPerUnit {
     try {
-      final value = FirebaseRemoteConfig.instance.getDouble('pricing_large_item_fee_cap_per_unit');
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('pricing_large_item_fee_cap_per_unit');
       return value >= 0 ? value : _defaultLargeItemFeeCapPerUnit;
     } catch (_) {
       return _defaultLargeItemFeeCapPerUnit;
@@ -459,7 +466,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     }
     if (!addressDoc.exists) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر العثور على عنوان التوصيل الافتراضي')),
+        const SnackBar(
+            content: Text('تعذر العثور على عنوان التوصيل الافتراضي')),
       );
       return;
     }
@@ -472,8 +480,17 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
           addressData['city'] ??
           addressData['administrativeArea'],
     );
+    final resolvedClientStateId = _resolveClientStateId(
+      rawState: addressData['stateId'] ??
+          addressData['state'] ??
+          addressData['city'] ??
+          addressData['administrativeArea'],
+      latitude: clientLat,
+      longitude: clientLng,
+    );
 
-    if (_isStateRolloutEnabled && !_enabledStatesFromRemote.contains(clientStateId)) {
+    if (_isStateRolloutEnabled &&
+        !_enabledStatesFromRemote.contains(resolvedClientStateId)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_stateRolloutBlockMessage)),
       );
@@ -482,18 +499,20 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
     if (clientLat == null || clientLng == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('إحداثيات عنوان العميل غير مكتملة، يرجى تحديث العنوان')),
+        const SnackBar(
+            content:
+                Text('إحداثيات عنوان العميل غير مكتملة، يرجى تحديث العنوان')),
       );
       return;
     }
 
     final items = cart.cartItems
         .map((i) => {
-          'id': i.id,
-          'menuItemId': i.menuItemId,
+              'id': i.id,
+              'menuItemId': i.menuItemId,
               'name': i.name,
-          if ((i.sizeKey ?? '').isNotEmpty) 'sizeKey': i.sizeKey,
-          if ((i.sizeLabel ?? '').isNotEmpty) 'sizeLabel': i.sizeLabel,
+              if ((i.sizeKey ?? '').isNotEmpty) 'sizeKey': i.sizeKey,
+              if ((i.sizeLabel ?? '').isNotEmpty) 'sizeLabel': i.sizeLabel,
               'description': i.description,
               'price': i.price,
               'quantity': i.quantity,
@@ -529,9 +548,10 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         (restData['lng'] as num?)?.toDouble() ??
         (restData['restaurantLng'] as num?)?.toDouble();
 
-    final restaurantName = (restData['name'] ?? restData['restaurantName'] ?? '')
-        .toString()
-        .trim();
+    final restaurantName =
+        (restData['name'] ?? restData['restaurantName'] ?? '')
+            .toString()
+            .trim();
     final restaurantStateId = _normalizeStateId(
       restData['stateId'] ??
           restData['state'] ??
@@ -544,7 +564,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         clientStateId != restaurantStateId) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('لا يمكن الطلب من مطعم خارج ولايتك الحالية. يرجى اختيار مطعم داخل نفس الولاية.'),
+          content: Text(
+              'لا يمكن الطلب من مطعم خارج ولايتك الحالية. يرجى اختيار مطعم داخل نفس الولاية.'),
         ),
       );
       return;
@@ -552,7 +573,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
     if (restLat == null || restLng == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('موقع المطعم غير مكتمل، لا يمكن متابعة الطلب')),
+        const SnackBar(
+            content: Text('موقع المطعم غير مكتمل، لا يمكن متابعة الطلب')),
       );
       return;
     }
@@ -564,7 +586,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         distanceKm > _maxAllowedCrossCheckDistanceKm) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('هذا المطعم خارج نطاق ولايتك (بيانات الولاية غير مكتملة للمطعم).'),
+          content: Text(
+              'هذا المطعم خارج نطاق ولايتك (بيانات الولاية غير مكتملة للمطعم).'),
         ),
       );
       return;
@@ -573,23 +596,29 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     if (distanceKm > _maxAllowedCrossCheckDistanceKm) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('المطعم بعيد جدًا عن موقعك الحالي، لا يمكن إكمال الطلب.'),
+          content:
+              Text('المطعم بعيد جدًا عن موقعك الحالي، لا يمكن إكمال الطلب.'),
         ),
       );
       return;
     }
 
-    final clientNameFromDoc =
-        (refreshedClientDoc.data()?['name'] ?? refreshedClientDoc.data()?['fullName'] ?? '')
-            .toString()
-            .trim();
-    final clientPhone =
-        (refreshedClientDoc.data()?['phone'] ?? refreshedClientDoc.data()?['phoneNumber'] ?? '')
-            .toString()
-            .trim();
+    final clientNameFromDoc = (refreshedClientDoc.data()?['name'] ??
+            refreshedClientDoc.data()?['fullName'] ??
+            '')
+        .toString()
+        .trim();
+    final clientPhone = (refreshedClientDoc.data()?['phone'] ??
+            refreshedClientDoc.data()?['phoneNumber'] ??
+            '')
+        .toString()
+        .trim();
+
+    final generatedOrderCode = 'ORD-${Random().nextInt(1000000)}';
 
     final draftOrderData = {
-      'orderId': 'ORD-${Random().nextInt(1000000)}',
+      'orderId': generatedOrderCode,
+      'orderNumber': generatedOrderCode,
       'clientId': user.uid,
       'clientName': clientNameFromDoc.isNotEmpty
           ? clientNameFromDoc
@@ -597,10 +626,14 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       'clientPhone': clientPhone,
       'restaurantId': restaurantId,
       'restaurantName': restaurantName,
-      'clientStateId': clientStateId,
+      'clientStateId': resolvedClientStateId,
       'restaurantStateId': restaurantStateId,
-      'stateId': restaurantStateId.isNotEmpty ? restaurantStateId : clientStateId,
-      'region': restaurantStateId.isNotEmpty ? restaurantStateId : clientStateId,
+      'stateId': restaurantStateId.isNotEmpty
+          ? restaurantStateId
+          : resolvedClientStateId,
+      'region': restaurantStateId.isNotEmpty
+          ? restaurantStateId
+          : resolvedClientStateId,
       'clientLat': clientLat,
       'clientLng': clientLng,
       'restaurantLat': restLat,
@@ -651,6 +684,33 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         .replaceAll('ى', 'ي')
         .toLowerCase();
 
+    final compact = normalized
+        .replaceAll(RegExp(r'[^\p{L}\p{N}\s]+', unicode: true), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    final khartoumTokens = [
+      'الخرطوم',
+      'خرطوم',
+      'khartoum',
+      'khartum',
+      'بحري',
+      'bahri',
+      'khartoum north',
+      'ام درمان',
+      'امدرمان',
+      'ام درمان الكبرى',
+      'omdurman',
+      'omdorman',
+      'oum durman',
+    ];
+
+    for (final token in khartoumTokens) {
+      if (compact == token || compact.contains(token)) {
+        return 'khartoum';
+      }
+    }
+
     const khartoumAliases = {
       'الخرطوم',
       'خرطوم',
@@ -669,6 +729,43 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
     if (khartoumAliases.contains(normalized)) {
       return 'khartoum';
+    }
+
+    return normalized;
+  }
+
+  String _inferKhartoumStateId({double? latitude, double? longitude}) {
+    if (latitude == null || longitude == null) return '';
+
+    const minLat = 15.15;
+    const maxLat = 16.10;
+    const minLng = 32.20;
+    const maxLng = 33.10;
+
+    final insideGreaterKhartoum = latitude >= minLat &&
+        latitude <= maxLat &&
+        longitude >= minLng &&
+        longitude <= maxLng;
+
+    return insideGreaterKhartoum ? 'khartoum' : '';
+  }
+
+  String _resolveClientStateId({
+    required dynamic rawState,
+    required double? latitude,
+    required double? longitude,
+  }) {
+    final normalized = _normalizeStateId(rawState);
+    final enabledStates = _enabledStatesFromRemote;
+
+    if (normalized.isNotEmpty && enabledStates.contains(normalized)) {
+      return normalized;
+    }
+
+    final inferred =
+        _inferKhartoumStateId(latitude: latitude, longitude: longitude);
+    if (inferred.isNotEmpty && enabledStates.contains(inferred)) {
+      return inferred;
     }
 
     return normalized;
@@ -735,7 +832,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
             _buildRow('قيمة الطلب', '${total.toStringAsFixed(2)} ج.س'),
             _buildRow('رسوم التوصيل', '${_deliveryFee.toStringAsFixed(2)} ج.س'),
             if (_largeOrderFee > 0)
-              _buildRow('رسوم الطلبات الكبيرة', '${_largeOrderFee.toStringAsFixed(2)} ج.س'),
+              _buildRow('رسوم الطلبات الكبيرة',
+                  '${_largeOrderFee.toStringAsFixed(2)} ج.س'),
             const Divider(),
             _buildRow('الإجمالي النهائي', '${withDel.toStringAsFixed(2)} ج.س',
                 bold: true),

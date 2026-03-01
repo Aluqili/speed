@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 
 import 'client_wallet_screen.dart';
 import 'client_settings_screen.dart';
 import 'chat_screen.dart';
 import 'address_selection_screen.dart';
-import 'role_selection_screen.dart'; // تم تصحيح اسم الملف
 
 class ClientAccountTab extends StatelessWidget {
   final String clientId;
@@ -21,7 +21,7 @@ class ClientAccountTab extends StatelessWidget {
 
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (_) => const RoleSelectionScreen(), // تم التعديل هنا
+        builder: (_) => const LoginScreenArabic(),
       ),
       (route) => false,
     );

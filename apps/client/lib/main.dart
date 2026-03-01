@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -12,6 +14,7 @@ import 'firebase_options.dart' as dev_firebase;
 import 'firebase_options_prod.dart' as prod_firebase;
 import 'الشاشات/client_home_screen.dart';
 import 'الشاشات/cart_provider.dart' as client_cart;
+import 'الخدمات/push_notification_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -82,6 +85,7 @@ class _InitGateClientState extends State<_InitGateClient> {
       await Firebase.initializeApp(
         options: firebaseOptions,
       );
+      await PushNotificationService.instance.initialize();
       final rc = FirebaseRemoteConfig.instance;
       await rc.setConfigSettings(
         RemoteConfigSettings(
@@ -222,6 +226,7 @@ class _ClientHomeByAuthUser extends StatelessWidget {
     if (user == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    unawaited(PushNotificationService.instance.bindClient(user.uid));
     return ClientHomeScreen(clientId: user.uid);
   }
 }

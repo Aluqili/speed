@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'dart:math';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/speedstar_core.dart'
+    show formatUnifiedOrderCode, OrderStatusPalette;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'chat_screen.dart' show ChatScreen;
-import 'courier_order_map_screen.dart';
+import 'courier_go_to_restaurant_screen.dart';
+import 'courier_go_to_client_screen.dart';
+import 'courier_confirm_delivery_screen.dart';
 
 class CourierOrderDetailsScreen extends StatefulWidget {
   final String orderId;
@@ -27,26 +28,11 @@ class CourierOrderDetailsScreen extends StatefulWidget {
 }
 
 class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
-  File? _deliveryImage;
-  bool _uploading = false;
   Map<String, dynamic>? orderData;
   double deliveryFee = 0;
 
   String _getOrderStatus(Map<String, dynamic> data) {
     return (data['orderStatus'] ?? data['status'] ?? '').toString().trim();
-  }
-
-  Future<void> _setOrderStatus(String status,
-      {Map<String, dynamic>? extra}) async {
-    await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(widget.orderId)
-        .update({
-      'orderStatus': status,
-      'status': status,
-      'updatedAt': FieldValue.serverTimestamp(),
-      ...?extra,
-    });
   }
 
   @override
@@ -97,6 +83,24 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
         deliveryFee = 700 + (distanceInKm * 100).roundToDouble();
       }
 
+      try {
+        final driverDoc = await FirebaseFirestore.instance
+            .collection('drivers')
+            .doc(widget.driverId)
+            .get();
+        final driverData = driverDoc.data() ?? <String, dynamic>{};
+        final loc = driverData['location'];
+        if (loc is GeoPoint) {
+          data['driverLat'] = loc.latitude;
+          data['driverLng'] = loc.longitude;
+        } else if (loc is Map<String, dynamic>) {
+          data['driverLat'] = (loc['lat'] as num?)?.toDouble() ??
+              (loc['latitude'] as num?)?.toDouble();
+          data['driverLng'] = (loc['lng'] as num?)?.toDouble() ??
+              (loc['longitude'] as num?)?.toDouble();
+        }
+      } catch (_) {}
+
       setState(() {
         orderData = data;
       });
@@ -119,99 +123,6 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
 
   double _deg2rad(double deg) => deg * (pi / 180);
 
-  Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.camera);
-    if (pickedFile != null) {
-      setState(() {
-        _deliveryImage = File(pickedFile.path);
-      });
-    }
-  }
-
-  Future<String?> _uploadImageToCloudinary(File imageFile) async {
-    const cloudName = 'dvnzloec6';
-    const uploadPreset = 'flutter_unsigned';
-
-    final url =
-        Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/image/upload');
-    final request = http.MultipartRequest('POST', url)
-      ..fields['upload_preset'] = uploadPreset
-      ..files.add(await http.MultipartFile.fromPath('file', imageFile.path));
-
-    final response = await request.send();
-    if (response.statusCode == 200) {
-      final resStr = await response.stream.bytesToString();
-      final resData = json.decode(resStr);
-      return resData['secure_url'];
-    } else {
-      return null;
-    }
-  }
-
-  Future<void> _confirmDelivery() async {
-    if (_deliveryImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يرجى التقاط صورة لإثبات التسليم')),
-      );
-      return;
-    }
-
-    setState(() => _uploading = true);
-
-    final imageUrl = await _uploadImageToCloudinary(_deliveryImage!);
-
-    if (imageUrl == null) {
-      setState(() => _uploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('فشل رفع الصورة. حاول مرة أخرى.')),
-      );
-      return;
-    }
-
-    // تأكيد وجود deliveryFeeForDriver في الطلب
-    final docSnapshot = await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(widget.orderId)
-        .get();
-    double? deliveryFeeForDriver =
-        docSnapshot.data()?['deliveryFeeForDriver']?.toDouble();
-    if (deliveryFeeForDriver == null || deliveryFeeForDriver == 0) {
-      // إعادة حسابها إذا لم تكن موجودة
-      if (orderData != null &&
-          orderData!['restaurantLat'] != null &&
-          orderData!['restaurantLng'] != null &&
-          orderData!['clientLat'] != null &&
-          orderData!['clientLng'] != null) {
-        double distanceInKm = _calculateDistance(
-          orderData!['restaurantLat'],
-          orderData!['restaurantLng'],
-          orderData!['clientLat'],
-          orderData!['clientLng'],
-        );
-        deliveryFeeForDriver = 700 + (distanceInKm * 100).roundToDouble();
-      } else {
-        deliveryFeeForDriver = deliveryFee;
-      }
-    }
-    await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(widget.orderId)
-        .update({
-      'status': 'delivered',
-      'orderStatus': 'delivered',
-      'deliveryImage': imageUrl,
-      'deliveredAt': Timestamp.now(),
-      'deliveryFeeForDriver': deliveryFeeForDriver,
-    });
-
-    setState(() => _uploading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم تأكيد التسليم بنجاح')),
-    );
-    Navigator.pop(context);
-  }
-
   Future<void> _acceptOrder() async {
     if (orderData == null) return;
 
@@ -225,7 +136,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
       return;
     }
 
-    await FirebaseFunctions.instance
+    await FirebaseFunctions.instanceFor(region: 'me-central1')
         .httpsCallable('courierRespondToOffer')
         .call({
       'orderId': widget.orderId,
@@ -245,12 +156,89 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('تم قبول الطلب')),
     );
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => CourierGoToRestaurantScreen(
+          orderId: widget.orderId,
+          driverId: widget.driverId,
+        ),
+      ),
+    );
+  }
 
-    _loadOrderData();
+  LatLng? _resolvePoint(
+    Map<String, dynamic> data, {
+    required String rawKey,
+    required String latKey,
+    required String lngKey,
+  }) {
+    final raw = data[rawKey];
+    if (raw is GeoPoint) return LatLng(raw.latitude, raw.longitude);
+    if (raw is Map<String, dynamic>) {
+      final lat = (raw['lat'] as num?)?.toDouble() ??
+          (raw['latitude'] as num?)?.toDouble();
+      final lng = (raw['lng'] as num?)?.toDouble() ??
+          (raw['longitude'] as num?)?.toDouble();
+      if (lat != null && lng != null) return LatLng(lat, lng);
+    }
+    final lat = (data[latKey] as num?)?.toDouble();
+    final lng = (data[lngKey] as num?)?.toDouble();
+    if (lat == null || lng == null) return null;
+    return LatLng(lat, lng);
+  }
+
+  Future<void> _openProfessionalFlow() async {
+    if (orderData == null || !mounted) return;
+    final status = _getOrderStatus(orderData!);
+    final clientLoc = _resolvePoint(
+      orderData!,
+      rawKey: 'clientLocation',
+      latKey: 'clientLat',
+      lngKey: 'clientLng',
+    );
+
+    if (status == 'courier_assigned' ||
+        status == 'pickup_ready' ||
+        status == 'جاهز للتوصيل') {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => CourierGoToRestaurantScreen(
+            orderId: widget.orderId,
+            driverId: widget.driverId,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (status == 'picked_up' || status == 'قيد التوصيل') {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => CourierGoToClientScreen(
+            orderId: widget.orderId,
+            clientLocation: clientLoc,
+            driverId: widget.driverId,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (status == 'arrived_to_client' || status == 'وصل إلى العميل') {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => CourierConfirmDeliveryScreen(
+            orderId: widget.orderId,
+            driverId: widget.driverId,
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _rejectOffer() async {
-    await FirebaseFunctions.instance
+    await FirebaseFunctions.instanceFor(region: 'me-central1')
         .httpsCallable('courierRespondToOffer')
         .call({
       'orderId': widget.orderId,
@@ -264,33 +252,23 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     Navigator.pop(context);
   }
 
-  Future<void> _markPickedUp() async {
-    await _setOrderStatus('picked_up');
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم تسجيل استلام الطلب من المطعم')),
-    );
-    _loadOrderData();
-  }
-
-  Future<void> _markArrivedToClient() async {
-    await _setOrderStatus('arrived_to_client', extra: {
-      'arrivedToClientAt': Timestamp.now(),
-    });
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم إشعار العميل بوصول المندوب')),
-    );
-    _loadOrderData();
-  }
-
   String _generateChatId(String user1, String user2) {
     final ids = [user1, user2]..sort();
     return ids.join('_');
   }
 
+  bool _isOrderFinished(String status) {
+    final normalized = status.trim().toLowerCase();
+    return normalized == 'delivered' ||
+        normalized == 'cancelled' ||
+        normalized == 'store_rejected' ||
+        status.trim() == 'تم التوصيل' ||
+        status.trim() == 'ملغي';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final data = orderData;
     return Scaffold(
       appBar: AppBar(
         title: const Text('تفاصيل الطلب',
@@ -308,185 +286,272 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
         ),
       ),
       backgroundColor: AppThemeArabic.clientBackground,
-      body: orderData == null
+      body: data == null
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: ListView(
-                children: [
-                  // رقم الطلب بشكل موحد وبارز
-                  Row(
-                    children: [
-                      const Text('رقم الطلب: ',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16)),
-                      Text(
-                        orderData!['orderNumber'] != null
-                            ? '#${orderData!['orderNumber']}'
-                            : '#${widget.orderId.substring(0, 8)}',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.deepOrange,
-                            fontSize: 18),
-                      ),
-                    ],
+          : Builder(builder: (context) {
+              final status = _getOrderStatus(data);
+              final clientId = (data['clientId'] ?? '').toString().trim();
+              final isFinished = _isOrderFinished(status);
+              final isOfferForMe = status == 'courier_offer_pending' &&
+                  (data['offeredDriverId'] ?? '').toString() == widget.driverId;
+
+              final restaurantLocation = _resolvePoint(
+                data,
+                rawKey: 'restaurantLocation',
+                latKey: 'restaurantLat',
+                lngKey: 'restaurantLng',
+              );
+              final clientLocation = _resolvePoint(
+                data,
+                rawKey: 'clientLocation',
+                latKey: 'clientLat',
+                lngKey: 'clientLng',
+              );
+              final driverLocation = _resolvePoint(
+                data,
+                rawKey: 'driverLocation',
+                latKey: 'driverLat',
+                lngKey: 'driverLng',
+              );
+
+              final restaurantToClientKm =
+                  (restaurantLocation != null && clientLocation != null)
+                      ? _calculateDistance(
+                          restaurantLocation.latitude,
+                          restaurantLocation.longitude,
+                          clientLocation.latitude,
+                          clientLocation.longitude,
+                        )
+                      : null;
+
+              final driverToRestaurantKm =
+                  (driverLocation != null && restaurantLocation != null)
+                      ? _calculateDistance(
+                          driverLocation.latitude,
+                          driverLocation.longitude,
+                          restaurantLocation.latitude,
+                          restaurantLocation.longitude,
+                        )
+                      : null;
+
+              final markers = <Marker>{
+                if (restaurantLocation != null)
+                  Marker(
+                    markerId: const MarkerId('restaurant'),
+                    position: restaurantLocation,
+                    infoWindow: const InfoWindow(title: 'المطعم'),
+                    icon: BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueOrange),
                   ),
-                  const SizedBox(height: 12),
-                  Text('العميل: ${orderData!['clientName'] ?? "غير متوفر"}'),
-                  Text(
-                      'العنوان: ${orderData!['deliveryAddressName'] ?? "غير متوفر"}'),
-                  Text('الحالة الحالية: ${_getOrderStatus(orderData!)}'),
-                  const SizedBox(height: 12),
-                  Text('رسوم التوصيل الخاصة بك: $deliveryFee ج.س',
-                      style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green)),
-                  const SizedBox(height: 20),
+                if (clientLocation != null)
+                  Marker(
+                    markerId: const MarkerId('client'),
+                    position: clientLocation,
+                    infoWindow: const InfoWindow(title: 'العميل'),
+                    icon: BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueAzure),
+                  ),
+                if (driverLocation != null)
+                  Marker(
+                    markerId: const MarkerId('driver'),
+                    position: driverLocation,
+                    infoWindow: const InfoWindow(title: 'موقعك'),
+                    icon: BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueGreen),
+                  ),
+              };
 
-                  if (_getOrderStatus(orderData!) == 'courier_offer_pending' &&
-                      (orderData?['offeredDriverId'] ?? '').toString() ==
-                          widget.driverId)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+              final polylines = <Polyline>{
+                if (restaurantLocation != null && clientLocation != null)
+                  Polyline(
+                    polylineId: const PolylineId('restaurant_client'),
+                    points: [restaurantLocation, clientLocation],
+                    color: AppThemeArabic.clientPrimary,
+                    width: 5,
+                  ),
+              };
+
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.black12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        ElevatedButton.icon(
-                          onPressed: _acceptOrder,
-                          icon: const Icon(Icons.check),
-                          label: const Text('قبول العرض'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            minimumSize: const Size.fromHeight(48),
+                        Text(
+                          formatUnifiedOrderCode(
+                            orderNumber: data['orderNumber'],
+                            orderId: data['orderId'],
+                            docId: widget.orderId,
+                          ),
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            color: AppThemeArabic.clientPrimary,
+                            fontFamily: 'Tajawal',
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        OutlinedButton.icon(
-                          onPressed: _rejectOffer,
-                          icon: const Icon(Icons.close),
-                          label: const Text('رفض العرض'),
+                        const SizedBox(height: 6),
+                        Text(
+                          'العميل: ${data['clientName'] ?? 'غير متوفر'}',
+                          style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'Tajawal'),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color:
+                                OrderStatusPalette.backgroundForStatus(status),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            'الحالة: ${OrderStatusPalette.displayText(status)}',
+                            style: TextStyle(
+                              color: OrderStatusPalette.colorForStatus(status),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        if (markers.length >= 2)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: SizedBox(
+                              height: 250,
+                              child: GoogleMap(
+                                initialCameraPosition: CameraPosition(
+                                  target: restaurantLocation ?? clientLocation!,
+                                  zoom: 12.5,
+                                ),
+                                markers: markers,
+                                polylines: polylines,
+                                zoomControlsEnabled: false,
+                                myLocationButtonEnabled: false,
+                              ),
+                            ),
+                          )
+                        else
+                          const Text('لا توجد بيانات موقع كافية لعرض الخريطة'),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            if (driverToRestaurantKm != null)
+                              Chip(
+                                label: Text(
+                                  'يبعد المطعم عنك: ${driverToRestaurantKm.toStringAsFixed(1)} كم',
+                                ),
+                              ),
+                            if (restaurantToClientKm != null)
+                              Chip(
+                                label: Text(
+                                  'يبعد العميل عن المطعم: ${restaurantToClientKm.toStringAsFixed(1)} كم',
+                                ),
+                              ),
+                            Chip(
+                                label: Text(
+                                    'رسومك: ${deliveryFee.toStringAsFixed(0)} ج.س')),
+                          ],
                         ),
                       ],
-                    )
-                  else if (orderData?['assignedDriverId'] == widget.driverId)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (_getOrderStatus(orderData!) == 'pickup_ready')
-                          ElevatedButton.icon(
-                            onPressed: _markPickedUp,
-                            icon: const Icon(Icons.inventory_2),
-                            label: const Text('تم الاستلام من المطعم'),
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.teal),
-                          ),
-                        if (_getOrderStatus(orderData!) == 'picked_up')
-                          ElevatedButton.icon(
-                            onPressed: _markArrivedToClient,
-                            icon: const Icon(Icons.location_on),
-                            label: const Text('وصلت للعميل'),
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.deepPurple),
-                          ),
-                        if (_getOrderStatus(orderData!) ==
-                            'arrived_to_client') ...[
-                          const SizedBox(height: 12),
-                          const Text('صورة إثبات التسليم:',
-                              style: TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 10),
-                          if (_deliveryImage != null)
-                            Image.file(_deliveryImage!, height: 200)
-                          else if (orderData?['deliveryImage'] != null)
-                            Image.network(orderData!['deliveryImage'],
-                                height: 200)
-                          else
-                            const Text('لم يتم التقاط صورة بعد.'),
-                          const SizedBox(height: 20),
-                          ElevatedButton.icon(
-                            onPressed: _pickImage,
-                            icon: const Icon(Icons.camera_alt),
-                            label: const Text('التقاط صورة للتسليم'),
-                          ),
-                          const SizedBox(height: 16),
-                          _uploading
-                              ? const Center(child: CircularProgressIndicator())
-                              : ElevatedButton.icon(
-                                  onPressed: _confirmDelivery,
-                                  icon: const Icon(Icons.check_circle),
-                                  label: const Text('تأكيد التسليم'),
-                                  style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.green),
-                                ),
-                        ],
-                        const SizedBox(height: 16),
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            if (orderData?['restaurantLat'] != null &&
-                                orderData?['restaurantLng'] != null &&
-                                orderData?['clientLat'] != null &&
-                                orderData?['clientLng'] != null) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => CourierOrderMapScreen(
-                                    restaurantLat: orderData!['restaurantLat'],
-                                    restaurantLng: orderData!['restaurantLng'],
-                                    clientLat: orderData!['clientLat'],
-                                    clientLng: orderData!['clientLng'],
-                                  ),
-                                ),
-                              );
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text(
-                                        'لا توجد بيانات موقع المطعم أو العميل')),
-                              );
-                            }
-                          },
-                          icon: const Icon(Icons.map),
-                          label: const Text('عرض الخريطة'),
-                          style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.deepPurple),
-                        ),
-                      ],
-                    )
-                  else
-                    const Center(
-                        child: Text('هذا الطلب تم استلامه بواسطة مندوب آخر.')),
-
-                  const SizedBox(height: 24),
-                  ElevatedButton.icon(
-                    onPressed: () async {
-                      final doc = await FirebaseFirestore.instance
-                          .collection('drivers')
-                          .doc(widget.driverId)
-                          .get();
-                      final driverName = doc.data()?['name'] ?? 'مندوب';
-                      final chatId = _generateChatId(
-                          widget.driverId, orderData!['clientId']);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChatScreen(
-                            currentUserId: widget.driverId,
-                            otherUserId: orderData!['clientId'],
-                            currentUserRole: 'driver',
-                            chatId: chatId,
-                            currentUserName: driverName,
-                          ),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.chat_bubble_outline),
-                    label: const Text('الدردشة مع العميل'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.deepOrange,
-                      minimumSize: const Size.fromHeight(48),
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  if (isOfferForMe) ...[
+                    ElevatedButton.icon(
+                      onPressed: _acceptOrder,
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Text('قبول العرض وبدء الرحلة'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppThemeArabic.clientSuccess,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: _rejectOffer,
+                      icon: const Icon(Icons.close),
+                      label: const Text('رفض العرض'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                  ] else if ((data['assignedDriverId'] ?? '').toString() ==
+                      widget.driverId) ...[
+                    ElevatedButton.icon(
+                      onPressed: _openProfessionalFlow,
+                      icon: const Icon(Icons.navigation_outlined),
+                      label: const Text('فتح شاشة التنفيذ الاحترافية'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppThemeArabic.clientPrimary,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                  ] else
+                    const Center(
+                      child: Text('هذا الطلب تم استلامه بواسطة مندوب آخر.'),
+                    ),
+                  const SizedBox(height: 14),
+                  if (!isFinished && clientId.isNotEmpty)
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final doc = await FirebaseFirestore.instance
+                            .collection('drivers')
+                            .doc(widget.driverId)
+                            .get();
+                        final driverName = doc.data()?['name'] ?? 'مندوب';
+                        final chatId =
+                            _generateChatId(widget.driverId, clientId);
+                        if (!mounted) return;
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ChatScreen(
+                              currentUserId: widget.driverId,
+                              otherUserId: clientId,
+                              currentUserRole: 'driver',
+                              chatId: chatId,
+                              currentUserName: driverName,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: const Text('الدردشة مع العميل'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppThemeArabic.clientAccent,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
                 ],
-              ),
-            ),
+              );
+            }),
     );
   }
 }

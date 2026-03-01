@@ -34,7 +34,7 @@ class _StoreChangeRequestsScreenState extends State<StoreChangeRequestsScreen> {
     setState(() => _processingIds.add(requestId));
 
     try {
-      final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+      final callable = FirebaseFunctions.instanceFor(region: 'me-central1')
           .httpsCallable('respondStoreChangeRequest');
       await callable.call({
         'requestId': requestId,
@@ -75,14 +75,8 @@ class _StoreChangeRequestsScreenState extends State<StoreChangeRequestsScreen> {
       child: Scaffold(
         backgroundColor: AppThemeArabic.clientBackground,
         appBar: AppBar(
-          title: const Text('طلبات تعديل الإدارة', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
-          backgroundColor: Colors.white,
+          title: const Text('طلبات تعديل الإدارة'),
           centerTitle: true,
-          elevation: 1,
-          iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-          ),
         ),
         body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: FirebaseFirestore.instance

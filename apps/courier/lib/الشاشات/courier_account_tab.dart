@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'courier_privacy_policy_screen.dart';
+import 'courier_wallet_screen.dart';
 
 class CourierAccountTab extends StatefulWidget {
   final String driverId;
@@ -196,6 +197,21 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
               ),
             ),
             const SizedBox(height: 24),
+            GFButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => CourierWalletScreen(driverId: widget.driverId),
+                  ),
+                );
+              },
+              text: 'محفظتي والتحويلات',
+              icon: const Icon(Icons.account_balance_wallet),
+              fullWidthButton: true,
+              color: AppThemeArabic.clientPrimary,
+              shape: GFButtonShape.pills,
+            ),
+            const SizedBox(height: 12),
             GFButton(
               onPressed: _changePassword,
               text: 'تغيير كلمة المرور',

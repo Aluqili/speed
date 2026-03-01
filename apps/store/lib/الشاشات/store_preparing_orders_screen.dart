@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 
 const Set<String> _preparingStatuses = {
   'courier_searching',
@@ -59,7 +60,7 @@ class StorePreparingOrdersScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text('رقم الطلب: ${data['orderId'] ?? doc.id}',
+                        Text('رقم الطلب: ${formatUnifiedOrderCode(orderNumber: data['orderNumber'], orderId: data['orderId'], docId: doc.id)}',
                           style: const TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       Text('العميل: ${data['clientName'] ?? 'غير متوفر'}'),

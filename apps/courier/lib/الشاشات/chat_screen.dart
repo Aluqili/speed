@@ -31,7 +31,8 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final cloudinary = CloudinaryPublic('dvnzloec6', 'flutter_unsigned', cache: false);
+  final cloudinary =
+      CloudinaryPublic('dvnzloec6', 'flutter_unsigned', cache: false);
   String otherUserName = '';
   bool _chatEnabled = true;
   String _chatDisabledMessage = 'الدردشة متوقفة مؤقتًا.';
@@ -43,9 +44,20 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String get _sourceApp => 'courier';
 
+  int _timestampMillis(dynamic value) {
+    if (value is Timestamp) return value.millisecondsSinceEpoch;
+    return 0;
+  }
+
+  void _onMessageChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    _messageController.addListener(_onMessageChanged);
     _loadChatConfig();
     _fetchOtherUserName();
   }
@@ -68,8 +80,10 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<String?> _findUserNameInCollection(
       String collection, String userId) async {
     try {
-      final directDoc =
-          await FirebaseFirestore.instance.collection(collection).doc(userId).get();
+      final directDoc = await FirebaseFirestore.instance
+          .collection(collection)
+          .doc(userId)
+          .get();
       if (directDoc.exists) {
         final data = directDoc.data() ?? <String, dynamic>{};
         final name =
@@ -130,9 +144,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<String> _detectUserType(String userId) async {
     final firestore = FirebaseFirestore.instance;
-    if ((await firestore.collection('clients').doc(userId).get()).exists) return 'عميل';
-    if ((await firestore.collection('drivers').doc(userId).get()).exists) return 'مندوب';
-    if ((await firestore.collection('restaurants').doc(userId).get()).exists) return 'مطعم';
+    if ((await firestore.collection('clients').doc(userId).get()).exists)
+      return 'عميل';
+    if ((await firestore.collection('drivers').doc(userId).get()).exists)
+      return 'مندوب';
+    if ((await firestore.collection('restaurants').doc(userId).get()).exists)
+      return 'مطعم';
     return 'غير معروف';
   }
 
@@ -159,9 +176,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (imageUrl != null) 'imageUrl': imageUrl,
     };
 
-    await FirebaseFirestore.instance
-        .collection('supportMessages')
-        .add(message);
+    await FirebaseFirestore.instance.collection('supportMessages').add(message);
 
     _messageController.clear();
     if (_scrollController.hasClients) {
@@ -182,7 +197,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final response = await cloudinary.uploadFile(
-        CloudinaryFile.fromFile(file.path, resourceType: CloudinaryResourceType.Image),
+        CloudinaryFile.fromFile(file.path,
+            resourceType: CloudinaryResourceType.Image),
       );
       _sendMessage(imageUrl: response.secureUrl);
     } catch (e) {
@@ -213,10 +229,21 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   @override
+  void dispose() {
+    _messageController.removeListener(_onMessageChanged);
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (widget.currentUserId.isEmpty || widget.otherUserId.isEmpty || widget.chatId.isEmpty) {
+    if (widget.currentUserId.isEmpty ||
+        widget.otherUserId.isEmpty ||
+        widget.chatId.isEmpty) {
       return const Scaffold(
-        body: Center(child: Text('⚠️ لا يمكن فتح الدردشة بسبب نقص في المعرفات')),
+        body:
+            Center(child: Text('⚠️ لا يمكن فتح الدردشة بسبب نقص في المعرفات')),
       );
     }
 
@@ -224,7 +251,12 @@ class _ChatScreenState extends State<ChatScreen> {
       return Scaffold(
         backgroundColor: AppThemeArabic.clientBackground,
         appBar: AppBar(
-          title: const Text('الدردشة', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+          title: const Text('الدردشة',
+              style: TextStyle(
+                  color: AppThemeArabic.clientPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  fontFamily: 'Tajawal')),
           backgroundColor: Colors.white,
           centerTitle: true,
           elevation: 1,
@@ -262,15 +294,19 @@ class _ChatScreenState extends State<ChatScreen> {
             padding: const EdgeInsets.only(bottom: 6),
             child: Text(
               _isSupportChat ? 'محادثة دعم' : 'محادثة مباشرة',
-              style: const TextStyle(color: AppThemeArabic.clientTextSecondary, fontSize: 12),
+              style: const TextStyle(
+                  color: AppThemeArabic.clientTextSecondary, fontSize: 12),
             ),
           ),
         ),
         actions: [
           PopupMenuButton(
-            icon: const Icon(Icons.add_photo_alternate, color: AppThemeArabic.clientPrimary),
+            icon: const Icon(Icons.add_photo_alternate,
+                color: AppThemeArabic.clientPrimary),
             onSelected: (source) {
-              _pickAndSendImage(source == 'camera' ? ImageSource.camera : ImageSource.gallery);
+              _pickAndSendImage(source == 'camera'
+                  ? ImageSource.camera
+                  : ImageSource.gallery);
             },
             itemBuilder: (context) => [
               const PopupMenuItem(value: 'camera', child: Text('الكاميرا')),
@@ -286,19 +322,33 @@ class _ChatScreenState extends State<ChatScreen> {
               stream: FirebaseFirestore.instance
                   .collection('supportMessages')
                   .where('conversationId', isEqualTo: widget.chatId)
-                  .orderBy('timestamp')
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  return Center(child: Text('حدث خطأ في تحميل الرسائل: ${snapshot.error}'));
+                  return Center(
+                      child:
+                          Text('حدث خطأ في تحميل الرسائل: ${snapshot.error}'));
                 }
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final messages = snapshot.data!.docs;
+                final messages = snapshot.data!.docs.toList()
+                  ..sort((a, b) {
+                    final aData = a.data() as Map<String, dynamic>;
+                    final bData = b.data() as Map<String, dynamic>;
+                    return _timestampMillis(aData['timestamp'])
+                        .compareTo(_timestampMillis(bData['timestamp']));
+                  });
                 if (messages.isEmpty) {
                   return const Center(child: Text('لا توجد رسائل بعد'));
                 }
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_scrollController.hasClients) {
+                    _scrollController.jumpTo(
+                      _scrollController.position.maxScrollExtent,
+                    );
+                  }
+                });
                 return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(12),
@@ -307,15 +357,19 @@ class _ChatScreenState extends State<ChatScreen> {
                     final data = messages[index].data() as Map<String, dynamic>;
                     final isMe = data['senderId'] == widget.currentUserId;
                     return Align(
-                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                      alignment:
+                          isMe ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
                         margin: const EdgeInsets.symmetric(vertical: 4),
                         padding: const EdgeInsets.all(10),
-                        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
+                        constraints: BoxConstraints(
+                            maxWidth: MediaQuery.of(context).size.width * 0.7),
                         decoration: BoxDecoration(
                           color: isMe
                               ? AppThemeArabic.clientSurface
-                              : Theme.of(context).colorScheme.surfaceContainerHighest,
+                              : Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
                           borderRadius: BorderRadius.only(
                             topLeft: const Radius.circular(12),
                             topRight: const Radius.circular(12),
@@ -326,7 +380,10 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (!isMe && (data['senderName'] ?? '').toString().isNotEmpty)
+                            if (!isMe &&
+                                (data['senderName'] ?? '')
+                                    .toString()
+                                    .isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 4),
                                 child: Text(
@@ -340,7 +397,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               ),
                             if (data['imageUrl'] != null)
                               GestureDetector(
-                                onTap: () => _showImagePreview(data['imageUrl']),
+                                onTap: () =>
+                                    _showImagePreview(data['imageUrl']),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
                                   child: Image.network(
@@ -359,7 +417,8 @@ class _ChatScreenState extends State<ChatScreen> {
                             const SizedBox(height: 5),
                             Text(
                               _formatTimestamp(data['timestamp']),
-                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.grey),
                             ),
                           ],
                         ),
@@ -383,12 +442,16 @@ class _ChatScreenState extends State<ChatScreen> {
                       hintText: 'اكتب رسالتك...',
                       border: OutlineInputBorder(),
                     ),
-                    onSubmitted: (_) => _sendMessage(text: _messageController.text),
+                    onSubmitted: (_) =>
+                        _sendMessage(text: _messageController.text),
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.send, color: Colors.blue),
-                  onPressed: () => _sendMessage(text: _messageController.text),
+                  icon: const Icon(Icons.send,
+                      color: AppThemeArabic.clientPrimary),
+                  onPressed: _messageController.text.trim().isEmpty
+                      ? null
+                      : () => _sendMessage(text: _messageController.text),
                 ),
               ],
             ),

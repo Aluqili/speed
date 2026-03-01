@@ -162,7 +162,7 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
           return;
         }
 
-        final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+        final callable = FirebaseFunctions.instanceFor(region: 'me-central1')
             .httpsCallable('submitRestaurantApplication');
         await callable.call({
           'email': ownerEmail,

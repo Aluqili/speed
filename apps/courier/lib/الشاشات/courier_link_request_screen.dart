@@ -19,7 +19,8 @@ class CourierLinkRequestScreen extends StatefulWidget {
   final String? email;
 
   @override
-  State<CourierLinkRequestScreen> createState() => _CourierLinkRequestScreenState();
+  State<CourierLinkRequestScreen> createState() =>
+      _CourierLinkRequestScreenState();
 }
 
 class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
@@ -72,7 +73,8 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
     const cloudName = 'dvnzloec6';
     const uploadPreset = 'flutter_unsigned';
 
-    final uri = Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/image/upload');
+    final uri =
+        Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/image/upload');
     final request = http.MultipartRequest('POST', uri)
       ..fields['upload_preset'] = uploadPreset
       ..files.add(await http.MultipartFile.fromPath('file', imageFile.path));
@@ -94,7 +96,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
     required String idImageUrl,
   }) async {
     final uri = Uri.parse(
-      'https://us-central1-speedstar-dev.cloudfunctions.net/submitCourierApplication',
+      'https://me-central1-speedstar-dev.cloudfunctions.net/submitCourierApplication',
     );
 
     final response = await http.post(
@@ -168,7 +170,8 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
         if (email.isEmpty || password.length < 6) {
           setState(() => _submitting = false);
           messenger.showSnackBar(
-            const SnackBar(content: Text('أدخل بريدًا صحيحًا وكلمة مرور 6 أحرف فأكثر')),
+            const SnackBar(
+                content: Text('أدخل بريدًا صحيحًا وكلمة مرور 6 أحرف فأكثر')),
           );
           return;
         }
@@ -177,7 +180,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
         ownerEmail = email;
 
         try {
-          final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+          final callable = FirebaseFunctions.instanceFor(region: 'me-central1')
               .httpsCallable('submitCourierApplication');
           final response = await callable.call({
             'email': email,
@@ -248,7 +251,8 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
       if (!mounted) return;
       setState(() => _submitting = false);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم إرسال طلب المندوب. انتظر موافقة الإدارة.')),
+        const SnackBar(
+            content: Text('تم إرسال طلب المندوب. انتظر موافقة الإدارة.')),
       );
       Navigator.pop(context, true);
     } on FirebaseFunctionsException catch (e) {
@@ -276,7 +280,12 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
       child: Scaffold(
         backgroundColor: AppThemeArabic.clientBackground,
         appBar: AppBar(
-          title: const Text('طلب إنشاء حساب مندوب', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+          title: const Text('طلب إنشاء حساب مندوب',
+              style: TextStyle(
+                  color: AppThemeArabic.clientPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  fontFamily: 'Tajawal')),
           backgroundColor: Colors.white,
           centerTitle: true,
           elevation: 1,
@@ -294,45 +303,53 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                 TextFormField(
                   controller: _nameController,
                   decoration: const InputDecoration(labelText: 'اسم المندوب'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'الرجاء إدخال الاسم' : null,
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? 'الرجاء إدخال الاسم'
+                      : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(labelText: 'رقم الجوال'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'الرجاء إدخال رقم الجوال' : null,
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? 'الرجاء إدخال رقم الجوال'
+                      : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _vehicleTypeController,
                   decoration: const InputDecoration(labelText: 'نوع المركبة'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'الرجاء إدخال نوع المركبة' : null,
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? 'الرجاء إدخال نوع المركبة'
+                      : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _vehiclePlateController,
                   decoration: const InputDecoration(labelText: 'رقم اللوحة'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'الرجاء إدخال رقم اللوحة' : null,
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? 'الرجاء إدخال رقم اللوحة'
+                      : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _nationalIdController,
-                  decoration: const InputDecoration(labelText: 'رقم الهوية/الرخصة'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'الرجاء إدخال رقم الهوية/الرخصة' : null,
+                  decoration:
+                      const InputDecoration(labelText: 'رقم الهوية/الرخصة'),
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? 'الرجاء إدخال رقم الهوية/الرخصة'
+                      : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _emailController,
                   readOnly: !_requiresAccountCreation,
-                  decoration: const InputDecoration(labelText: 'البريد الإلكتروني'),
+                  decoration:
+                      const InputDecoration(labelText: 'البريد الإلكتروني'),
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'الرجاء إدخال البريد الإلكتروني';
+                    if (v == null || v.trim().isEmpty)
+                      return 'الرجاء إدخال البريد الإلكتروني';
                     if (!v.contains('@')) return 'البريد الإلكتروني غير صالح';
                     return null;
                   },
@@ -356,7 +373,8 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                     ? const Text('لم يتم رفع صورة الهوية/الرخصة بعد')
                     : ClipRRect(
                         borderRadius: BorderRadius.circular(10),
-                        child: Image.file(_idImage!, height: 160, fit: BoxFit.cover),
+                        child: Image.file(_idImage!,
+                            height: 160, fit: BoxFit.cover),
                       ),
                 const SizedBox(height: 8),
                 ElevatedButton.icon(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,6 +14,7 @@ import 'firebase_options.dart' as dev_firebase;
 import 'firebase_options_prod.dart' as prod_firebase;
 import 'الشاشات/store_home_screen.dart';
 import 'الشاشات/store_link_request_screen.dart';
+import 'الخدمات/push_notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,6 +81,7 @@ class _InitGateState extends State<_InitGate> {
       await Firebase.initializeApp(
         options: firebaseOptions,
       );
+      await PushNotificationService.instance.initialize();
       final rc = FirebaseRemoteConfig.instance;
       await rc.setConfigSettings(
         RemoteConfigSettings(
@@ -224,7 +228,8 @@ class _StoreHomeByAuthUser extends StatelessWidget {
     };
   }
 
-  Future<Map<String, dynamic>?> _resolveRestaurantById(String restaurantId) async {
+  Future<Map<String, dynamic>?> _resolveRestaurantById(
+      String restaurantId) async {
     final id = restaurantId.trim();
     if (id.isEmpty) return null;
     final doc = await FirebaseFirestore.instance
@@ -237,7 +242,8 @@ class _StoreHomeByAuthUser extends StatelessWidget {
 
   Future<Map<String, dynamic>?> _resolveRestaurant(User user) async {
     final restaurants = FirebaseFirestore.instance.collection('restaurants');
-    final applications = FirebaseFirestore.instance.collection('restaurantApplications');
+    final applications =
+        FirebaseFirestore.instance.collection('restaurantApplications');
 
     final direct = await restaurants.doc(user.uid).get();
     if (direct.exists) {
@@ -271,7 +277,8 @@ class _StoreHomeByAuthUser extends StatelessWidget {
         return _resolvedPayload(query.docs.first);
       }
       if (query.docs.length > 1) {
-        final exactById = query.docs.where((doc) => doc.id == user.uid).toList();
+        final exactById =
+            query.docs.where((doc) => doc.id == user.uid).toList();
         if (exactById.length == 1) {
           return _resolvedPayload(exactById.first);
         }
@@ -354,7 +361,9 @@ class _StoreHomeByAuthUser extends StatelessWidget {
           );
         }
 
-        return StoreHomeScreen(storeId: (resolved['id'] ?? '').toString());
+        final storeId = (resolved['id'] ?? '').toString();
+        unawaited(PushNotificationService.instance.bindStore(storeId));
+        return StoreHomeScreen(storeId: storeId);
       },
     );
   }

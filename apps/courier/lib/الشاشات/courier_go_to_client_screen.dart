@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -8,7 +9,9 @@ import 'package:get_storage/get_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import '../helpers/smart_location_tracker.dart';
+import 'chat_screen.dart';
 import 'courier_confirm_delivery_screen.dart';
 
 class CourierGoToClientScreen extends StatefulWidget {
@@ -24,11 +27,13 @@ class CourierGoToClientScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<CourierGoToClientScreen> createState() => _CourierGoToClientScreenState();
+  State<CourierGoToClientScreen> createState() =>
+      _CourierGoToClientScreenState();
 }
 
 class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
   SmartLocationTracker? tracker;
+  GoogleMapController? _mapController;
 
   @override
   void initState() {
@@ -50,6 +55,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
 
   @override
   void dispose() {
+    _mapController?.dispose();
     tracker?.stopTracking();
     super.dispose();
   }
@@ -58,7 +64,8 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
     if (widget.clientLocation == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('لا يوجد موقع عميل في هذا الطلب لفتحه على الخرائط')),
+        const SnackBar(
+            content: Text('لا يوجد موقع عميل في هذا الطلب لفتحه على الخرائط')),
       );
       return;
     }
@@ -76,18 +83,78 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
     );
   }
 
+  LatLng? _resolvePoint(
+    Map<String, dynamic> data, {
+    required String rawKey,
+    required String latKey,
+    required String lngKey,
+  }) {
+    final raw = data[rawKey];
+    if (raw is GeoPoint) return LatLng(raw.latitude, raw.longitude);
+    if (raw is Map<String, dynamic>) {
+      final lat = (raw['lat'] as num?)?.toDouble() ??
+          (raw['latitude'] as num?)?.toDouble();
+      final lng = (raw['lng'] as num?)?.toDouble() ??
+          (raw['longitude'] as num?)?.toDouble();
+      if (lat != null && lng != null) return LatLng(lat, lng);
+    }
+    final lat = (data[latKey] as num?)?.toDouble();
+    final lng = (data[lngKey] as num?)?.toDouble();
+    if (lat == null || lng == null) return null;
+    return LatLng(lat, lng);
+  }
+
+  void _fitCameraToPoints(List<LatLng> points) {
+    if (_mapController == null || points.isEmpty) return;
+    if (points.length == 1) {
+      _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+            CameraPosition(target: points.first, zoom: 15)),
+      );
+      return;
+    }
+
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+
+    for (final point in points.skip(1)) {
+      minLat = math.min(minLat, point.latitude);
+      maxLat = math.max(maxLat, point.latitude);
+      minLng = math.min(minLng, point.longitude);
+      maxLng = math.max(maxLng, point.longitude);
+    }
+
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        80,
+      ),
+    );
+  }
+
   Future<Map<String, dynamic>?> _fetchOrderData() async {
-    final doc = await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).get();
+    final doc = await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.orderId)
+        .get();
     if (!doc.exists) return null;
 
     final data = Map<String, dynamic>.from(doc.data()!);
     final clientId = (data['clientId'] ?? '').toString();
-    final hasClientName = (data['clientName'] ?? '').toString().trim().isNotEmpty;
+    final hasClientName =
+        (data['clientName'] ?? '').toString().trim().isNotEmpty;
 
     if (clientId.isNotEmpty && !hasClientName) {
       DocumentSnapshot<Map<String, dynamic>>? clientDoc;
-      final directClientDoc =
-          await FirebaseFirestore.instance.collection('clients').doc(clientId).get();
+      final directClientDoc = await FirebaseFirestore.instance
+          .collection('clients')
+          .doc(clientId)
+          .get();
       if (directClientDoc.exists) {
         clientDoc = directClientDoc;
       } else {
@@ -121,8 +188,9 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
 
       if (clientDoc != null && clientDoc.exists) {
         final clientData = clientDoc.data() ?? <String, dynamic>{};
-        final clientName =
-            (clientData['name'] ?? clientData['fullName'] ?? '').toString().trim();
+        final clientName = (clientData['name'] ?? clientData['fullName'] ?? '')
+            .toString()
+            .trim();
         if (clientName.isNotEmpty) {
           data['clientName'] = clientName;
         }
@@ -139,6 +207,43 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
     }
 
     return data;
+  }
+
+  String _generateChatId(String user1, String user2) {
+    final sorted = [user1, user2]..sort();
+    return '${sorted[0]}_${sorted[1]}';
+  }
+
+  Future<void> _openClientChat(Map<String, dynamic> orderData) async {
+    final clientId = (orderData['clientId'] ?? '').toString().trim();
+    if (clientId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('لا يمكن فتح الدردشة لعدم توفر معرف العميل')),
+      );
+      return;
+    }
+
+    final doc = await FirebaseFirestore.instance
+        .collection('drivers')
+        .doc(widget.driverId)
+        .get();
+    final driverName = (doc.data()?['name'] ?? 'مندوب').toString();
+
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          currentUserId: widget.driverId,
+          otherUserId: clientId,
+          currentUserRole: 'driver',
+          chatId: _generateChatId(widget.driverId, clientId),
+          currentUserName: driverName,
+        ),
+      ),
+    );
   }
 
   Widget _detailRow(String label, String value) {
@@ -171,7 +276,8 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
   Widget _buildOrderDetails(Map<String, dynamic> orderData) {
     final items = (orderData['items'] as List?) ?? const [];
     final paymentMethod = (orderData['paymentMethod'] ?? 'غير محدد').toString();
-    final totalWithDelivery = (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
+    final totalWithDelivery =
+        (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
 
     return Card(
       child: ExpansionTile(
@@ -186,9 +292,18 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
         collapsedIconColor: Colors.black87,
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
-          _detailRow('رقم الطلب', (orderData['orderId'] ?? widget.orderId).toString()),
-          _detailRow('العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
-          _detailRow('المطعم', (orderData['restaurantName'] ?? 'غير معروف').toString()),
+          _detailRow(
+            'رقم الطلب',
+            formatUnifiedOrderCode(
+              orderNumber: orderData['orderNumber'],
+              orderId: orderData['orderId'],
+              docId: widget.orderId,
+            ),
+          ),
+          _detailRow(
+              'العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
+          _detailRow('المطعم',
+              (orderData['restaurantName'] ?? 'غير معروف').toString()),
           _detailRow('طريقة الدفع', paymentMethod),
           _detailRow('الإجمالي', '$totalWithDelivery ج.س'),
           const SizedBox(height: 8),
@@ -229,12 +344,62 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
     );
   }
 
+  Widget _buildJourneyHeader({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: AppThemeArabic.clientPrimary.withOpacity(0.12),
+            child: Icon(icon, color: AppThemeArabic.clientPrimary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppThemeArabic.clientBackground,
       appBar: AppBar(
-        title: const Text('الذهاب إلى العميل', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        title: const Text('الذهاب إلى العميل',
+            style: TextStyle(
+                color: AppThemeArabic.clientPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+                fontFamily: 'Tajawal')),
         backgroundColor: Colors.white,
         elevation: 1,
         centerTitle: true,
@@ -261,11 +426,47 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
 
           final orderData = snapshot.data!;
           final String clientName = orderData['clientName'] ?? 'عميل غير معروف';
+          final clientLocation = _resolvePoint(
+                orderData,
+                rawKey: 'clientLocation',
+                latKey: 'clientLat',
+                lngKey: 'clientLng',
+              ) ??
+              widget.clientLocation;
+          final restaurantLocation = _resolvePoint(
+            orderData,
+            rawKey: 'restaurantLocation',
+            latKey: 'restaurantLat',
+            lngKey: 'restaurantLng',
+          );
 
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              _buildJourneyHeader(
+                title: 'المرحلة 2 من 3 · التوجه للعميل',
+                subtitle: 'تابع الملاحة حتى تصل، ثم أكّد الوصول للعميل',
+                icon: Icons.home_work_outlined,
+              ),
+              const SizedBox(height: 12),
               _buildOrderDetails(orderData),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _openClientChat(orderData),
+                  icon: const Icon(Icons.chat_bubble_outline),
+                  label: const Text('الدردشة مع العميل'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppThemeArabic.clientAccent,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -275,7 +476,8 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.person, color: AppThemeArabic.clientPrimary, size: 28),
+                    const Icon(Icons.person,
+                        color: AppThemeArabic.clientPrimary, size: 28),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -291,25 +493,64 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              if (widget.clientLocation != null)
-                SizedBox(
-                  height: 240,
-                  child: GoogleMap(
-                    initialCameraPosition: CameraPosition(
-                      target: widget.clientLocation!,
-                      zoom: 15,
-                    ),
-                    markers: {
-                      Marker(
-                        markerId: const MarkerId('client'),
-                        position: widget.clientLocation!,
-                        infoWindow: const InfoWindow(title: 'موقع العميل'),
+              if (clientLocation != null)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: SizedBox(
+                    height: 260,
+                    child: GoogleMap(
+                      initialCameraPosition: CameraPosition(
+                        target: clientLocation,
+                        zoom: restaurantLocation == null ? 15 : 12,
                       ),
-                    },
-                    zoomControlsEnabled: false,
-                    gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                      Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
-                    },
+                      markers: {
+                        Marker(
+                          markerId: const MarkerId('client'),
+                          position: clientLocation,
+                          infoWindow: const InfoWindow(title: '🏠 موقع العميل'),
+                          icon: BitmapDescriptor.defaultMarkerWithHue(
+                            BitmapDescriptor.hueGreen,
+                          ),
+                        ),
+                        if (restaurantLocation != null)
+                          Marker(
+                            markerId: const MarkerId('restaurant'),
+                            position: restaurantLocation,
+                            infoWindow: const InfoWindow(title: '🍽️ المطعم'),
+                            icon: BitmapDescriptor.defaultMarkerWithHue(
+                              BitmapDescriptor.hueRed,
+                            ),
+                          ),
+                      },
+                      polylines: restaurantLocation == null
+                          ? const {}
+                          : {
+                              Polyline(
+                                polylineId:
+                                    const PolylineId('restaurant_client'),
+                                points: [restaurantLocation, clientLocation],
+                                color: AppThemeArabic.clientPrimary,
+                                width: 4,
+                              ),
+                            },
+                      onMapCreated: (controller) {
+                        _mapController = controller;
+                        final points = <LatLng>[
+                          clientLocation,
+                          if (restaurantLocation != null) restaurantLocation,
+                        ];
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          _fitCameraToPoints(points);
+                        });
+                      },
+                      zoomControlsEnabled: false,
+                      myLocationButtonEnabled: false,
+                      gestureRecognizers: <Factory<
+                          OneSequenceGestureRecognizer>>{
+                        Factory<OneSequenceGestureRecognizer>(
+                            () => EagerGestureRecognizer()),
+                      },
+                    ),
                   ),
                 )
               else
@@ -325,15 +566,24 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                   ),
                 ),
               const SizedBox(height: 20),
-              GFButton(
-                onPressed: _openGoogleMaps,
-                text: 'افتح في خرائط Google',
-                icon: const Icon(Icons.map_outlined),
-                color: AppThemeArabic.clientPrimary,
-                shape: GFButtonShape.pills,
-                fullWidthButton: true,
-                size: GFSize.LARGE,
-                textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+              Align(
+                alignment: Alignment.center,
+                child: Material(
+                  color: AppThemeArabic.clientPrimary,
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: _openGoogleMaps,
+                    child: const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Icon(
+                        Icons.navigation_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(height: 20),
               GFButton(
@@ -364,13 +614,14 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                     ),
                   );
                 },
-                text: 'وصلت إلى العميل',
+                text: 'تأكيد الوصول للعميل',
                 icon: const Icon(Icons.check_circle),
-                color: AppThemeArabic.clientPrimary,
+                color: AppThemeArabic.clientSuccess,
                 shape: GFButtonShape.pills,
                 fullWidthButton: true,
                 size: GFSize.LARGE,
-                textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                textStyle:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
               ),
             ],
           );

@@ -98,17 +98,73 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
     });
   }
 
-  Future<String> _getCityFromLatLng(LatLng latLng) async {
+  String _normalizeStateId(dynamic raw) {
+    final value = (raw ?? '').toString().trim();
+    if (value.isEmpty) return '';
+    final normalized = value
+        .replaceAll('أ', 'ا')
+        .replaceAll('إ', 'ا')
+        .replaceAll('آ', 'ا')
+        .replaceAll('ة', 'ه')
+        .replaceAll('ى', 'ي')
+        .toLowerCase();
+
+    final compact = normalized
+        .replaceAll(RegExp(r'[^\p{L}\p{N}\s]+', unicode: true), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    final khartoumTokens = [
+      'الخرطوم',
+      'خرطوم',
+      'khartoum',
+      'khartum',
+      'بحري',
+      'bahri',
+      'khartoum north',
+      'ام درمان',
+      'امدرمان',
+      'ام درمان الكبرى',
+      'omdurman',
+      'omdorman',
+      'oum durman',
+    ];
+
+    for (final token in khartoumTokens) {
+      if (compact == token || compact.contains(token)) {
+        return 'khartoum';
+      }
+    }
+
+    return normalized;
+  }
+
+  Future<Map<String, String>> _getAddressGeoMeta(LatLng latLng) async {
     try {
       final placemarks = await placemarkFromCoordinates(
         latLng.latitude,
         latLng.longitude,
       ).timeout(const Duration(seconds: 8));
-      return placemarks.first.locality ??
-          placemarks.first.administrativeArea ??
-          'غير معروف';
+
+      final placemark = placemarks.first;
+      final city =
+          (placemark.locality ?? placemark.subAdministrativeArea ?? '').trim();
+      final administrativeArea = (placemark.administrativeArea ?? '').trim();
+      final stateId = _normalizeStateId(
+        administrativeArea.isNotEmpty ? administrativeArea : city,
+      );
+
+      return {
+        'city': city.isNotEmpty ? city : 'غير معروف',
+        'administrativeArea': administrativeArea,
+        'stateId': stateId,
+      };
     } catch (_) {
-      return 'غير معروف';
+      return {
+        'city': 'غير معروف',
+        'administrativeArea': '',
+        'stateId': '',
+      };
     }
   }
 
@@ -134,13 +190,19 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
       _isSaving = true;
     });
     try {
-      // استخراج اسم المدينة من الإحداثيات
-      final city = await _getCityFromLatLng(selectedLocation!);
+      // استخراج المدينة/الولاية من الإحداثيات
+      final geoMeta = await _getAddressGeoMeta(selectedLocation!);
+      final city = geoMeta['city'] ?? 'غير معروف';
+      final administrativeArea = geoMeta['administrativeArea'] ?? '';
+      final stateId = geoMeta['stateId'] ?? '';
       final addressData = {
         'addressName': _addressNameController.text,
         'latitude': selectedLocation!.latitude,
         'longitude': selectedLocation!.longitude,
         'city': city,
+        'state': administrativeArea.isNotEmpty ? administrativeArea : city,
+        'administrativeArea': administrativeArea,
+        'stateId': stateId,
         'createdAt': FieldValue.serverTimestamp(),
       };
       final collectionPath = '${widget.userType}s';

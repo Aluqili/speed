@@ -39,12 +39,13 @@ const firebaseConfig = configForEnv(activeEnv);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const fns = getFunctions(app, 'us-central1');
+const fns = getFunctions(app, 'me-central1');
 const setUserAdminRole = httpsCallable(fns, 'setUserAdminRole');
 const approveRestaurantApplication = httpsCallable(fns, 'approveRestaurantApplication');
 const approveCourierApplication = httpsCallable(fns, 'approveCourierApplication');
 const normalizeStateIdsBatch = httpsCallable(fns, 'normalizeStateIdsBatch');
 const sendAdminNotification = httpsCallable(fns, 'sendAdminNotification');
+const recordWalletPayout = httpsCallable(fns, 'recordWalletPayout');
 
 const loginCard = document.getElementById('loginCard');
 const appPanel = document.getElementById('appPanel');
@@ -58,6 +59,21 @@ const envSelect = document.getElementById('envSelect');
 const statsGrid = document.getElementById('statsGrid');
 const financeGrid = document.getElementById('financeGrid');
 const ordersTable = document.getElementById('ordersTable');
+const dashboardOrderDetails = document.getElementById('dashboardOrderDetails');
+const financeTotalsSummary = document.getElementById('financeTotalsSummary');
+const financeOrdersTable = document.getElementById('financeOrdersTable');
+const financeRangeFilter = document.getElementById('financeRangeFilter');
+const financeStoresPayoutTable = document.getElementById('financeStoresPayoutTable');
+const financeCouriersPayoutTable = document.getElementById('financeCouriersPayoutTable');
+const paymentSettingsForm = document.getElementById('paymentSettingsForm');
+const enableBankk = document.getElementById('enableBankk');
+const enableOcash = document.getElementById('enableOcash');
+const enableFawry = document.getElementById('enableFawry');
+const bankkAccountInput = document.getElementById('bankkAccountInput');
+const ocashAccountInput = document.getElementById('ocashAccountInput');
+const fawryAccountInput = document.getElementById('fawryAccountInput');
+const savePaymentSettingsBtn = document.getElementById('savePaymentSettingsBtn');
+const paymentSettingsResult = document.getElementById('paymentSettingsResult');
 const restaurantsTable = document.getElementById('restaurantsTable');
 const couriersTable = document.getElementById('couriersTable');
 const adminsTable = document.getElementById('adminsTable');
@@ -71,6 +87,7 @@ const supportToggleStatusBtn = document.getElementById('supportToggleStatusBtn')
 const supportSearchInput = document.getElementById('supportSearchInput');
 const supportAppFilter = document.getElementById('supportAppFilter');
 const supportStatusFilter = document.getElementById('supportStatusFilter');
+const supportSummary = document.getElementById('supportSummary');
 const notificationForm = document.getElementById('notificationForm');
 const notificationTargetType = document.getElementById('notificationTargetType');
 const notificationUserRole = document.getElementById('notificationUserRole');
@@ -88,6 +105,22 @@ const adminEmailInput = document.getElementById('adminEmailInput');
 const normalizeStateForm = document.getElementById('normalizeStateForm');
 const normalizeLimitInput = document.getElementById('normalizeLimitInput');
 const normalizeStateResult = document.getElementById('normalizeStateResult');
+const discountForm = document.getElementById('discountForm');
+const discountCode = document.getElementById('discountCode');
+const discountType = document.getElementById('discountType');
+const discountValue = document.getElementById('discountValue');
+const discountMinOrder = document.getElementById('discountMinOrder');
+const discountMaxUsage = document.getElementById('discountMaxUsage');
+const discountMaxUsagePerUser = document.getElementById('discountMaxUsagePerUser');
+const discountMaxDiscount = document.getElementById('discountMaxDiscount');
+const discountRestaurantId = document.getElementById('discountRestaurantId');
+const discountItemName = document.getElementById('discountItemName');
+const discountExpiryDate = document.getElementById('discountExpiryDate');
+const discountIsActive = document.getElementById('discountIsActive');
+const discountOnlyNewOrders = document.getElementById('discountOnlyNewOrders');
+const discountSaveBtn = document.getElementById('discountSaveBtn');
+const discountResult = document.getElementById('discountResult');
+const discountsTable = document.getElementById('discountsTable');
 const mapDetails = document.getElementById('mapDetails');
 const mapLegendBar = document.getElementById('mapLegendBar');
 
@@ -97,6 +130,7 @@ const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
 let unsubscribers = [];
 let addAdminFormBound = false;
 let normalizeStateFormBound = false;
+let discountFormBound = false;
 let liveMap = null;
 let mapBootstrapped = false;
 let mapAutoFitted = false;
@@ -108,6 +142,9 @@ let supportUiBound = false;
 let notificationFormBound = false;
 let authTransitionInProgress = false;
 let preservedLoginStatus = null;
+let selectedOrderOnMapId = '';
+let financeRangeFilterBound = false;
+let paymentSettingsFormBound = false;
 
 const guaranteedAdminEmails = new Set([
   'speedstarapp0@gmail.com',
@@ -495,6 +532,93 @@ logoutBtn.addEventListener('click', async () => {
 });
 
 function mountDashboard() {
+  const toMoney = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const computeFinancial = (orderData) => {
+    const subtotal = toMoney(orderData.total ?? orderData.subtotal);
+    const deliveryFee = toMoney(orderData.deliveryFee);
+    const largeOrderFee = toMoney(orderData.largeOrderFee);
+    const discountAmount = toMoney(orderData.discountAmount);
+    const fallbackTotal = Math.max(0, subtotal + deliveryFee + largeOrderFee - discountAmount);
+    const totalWithDelivery = toMoney(orderData.totalWithDelivery || fallbackTotal);
+
+    let restaurantShare = toMoney(orderData.restaurantShare ?? orderData.storeShare ?? subtotal);
+    let driverShare = toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? 0);
+    let platformShare = toMoney(orderData.platformShare);
+
+    if (!Number.isFinite(platformShare) || platformShare <= 0) {
+      platformShare = totalWithDelivery - restaurantShare - driverShare;
+    }
+
+    if (platformShare < 0) {
+      platformShare = 0;
+      const maxRestaurantShare = Math.max(0, totalWithDelivery - driverShare);
+      if (restaurantShare > maxRestaurantShare) {
+        restaurantShare = maxRestaurantShare;
+      }
+    }
+
+    return {
+      subtotal,
+      deliveryFee,
+      largeOrderFee,
+      discountAmount,
+      totalWithDelivery,
+      restaurantShare,
+      driverShare,
+      platformShare,
+    };
+  };
+
+  const formatMoney = (value) => `${Math.round(toMoney(value)).toLocaleString('ar-EG')} ج.س`;
+
+  const renderDashboardOrderDetailsPanel = (orderId, data) => {
+    if (!dashboardOrderDetails) return;
+    const financial = computeFinancial(data);
+    const items = Array.isArray(data.items)
+      ? data.items.map((item) => `
+          <tr>
+            <td>${escapeHtml(String(item?.name || item?.title || 'عنصر'))}</td>
+            <td>${escapeHtml(String(item?.quantity ?? 1))}</td>
+            <td>${formatMoney(item?.price || 0)}</td>
+          </tr>
+        `).join('')
+      : '';
+
+    dashboardOrderDetails.innerHTML = `
+      <h4 style="margin:0 0 8px">تفاصيل الطلب ${escapeHtml(formatUnifiedOrderCode(data.orderNumber, data.orderId, orderId))}</h4>
+      <div><span class="kv"><b>الحالة:</b> ${escapeHtml(data.orderStatus || data.status || '-')}</span><span class="kv"><b>الدفع:</b> ${escapeHtml(data.paymentStatus || '-')}</span></div>
+      <div><span class="kv"><b>العميل:</b> ${escapeHtml(data.clientName || data.clientId || '-')}</span><span class="kv"><b>المطعم:</b> ${escapeHtml(data.restaurantName || data.restaurantId || '-')}</span></div>
+      <div><span class="kv"><b>المندوب:</b> ${escapeHtml(data.assignedDriverId || data.offeredDriverId || 'غير معين')}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.clientPhone || '-')}</span></div>
+      <div><span class="kv"><b>الإجمالي:</b> ${formatMoney(financial.totalWithDelivery)}</span><span class="kv"><b>حصة المطعم:</b> ${formatMoney(financial.restaurantShare)}</span><span class="kv"><b>حصة المندوب:</b> ${formatMoney(financial.driverShare)}</span><span class="kv"><b>حصة المنصة:</b> ${formatMoney(financial.platformShare)}</span></div>
+      ${items ? `
+        <div style="margin-top:8px;"><b>العناصر:</b></div>
+        <div style="overflow:auto; border:1px solid #eef2f7; border-radius:10px; margin-top:6px;">
+          <table>
+            <thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th></tr></thead>
+            <tbody>${items}</tbody>
+          </table>
+        </div>
+      ` : '<div style="margin-top:8px;" class="muted">لا توجد عناصر مفصلة.</div>'}
+      <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn primary" data-open-order-map-panel="${escapeHtml(orderId)}">فتح وتتبع الطلب على الخريطة</button>
+        <button class="btn ghost" data-open-order-management="${escapeHtml(orderId)}">فتح من الإدارة</button>
+      </div>
+    `;
+
+    dashboardOrderDetails.querySelector('[data-open-order-map-panel]')?.addEventListener('click', () => {
+      openOrderOnMap(orderId);
+    });
+
+    dashboardOrderDetails.querySelector('[data-open-order-management]')?.addEventListener('click', () => {
+      activateTab('management');
+      setMapDetails(`<p class="muted">الطلب ${escapeHtml(formatUnifiedOrderCode(data.orderNumber, data.orderId, orderId))} مفتوح من لوحة الإدارة. يمكنك فحص المتجر والمندوب مباشرة.</p>`);
+    });
+  };
+
   const cols = [
     ['إجمالي الطلبات', 'orders'],
     ['المتاجر', 'restaurants'],
@@ -522,24 +646,528 @@ function mountDashboard() {
     onSnapshot(latestOrdersQ, (snap) => {
       const rows = snap.docs.map((d) => {
         const data = d.data();
+        const financial = computeFinancial(data);
         return `<tr>
-          <td>${data.orderNumber || d.id}</td>
+          <td>${formatUnifiedOrderCode(data.orderNumber, data.orderId, d.id)}</td>
           <td>${data.clientName || '-'}</td>
+          <td>${data.restaurantName || data.restaurantId || '-'}</td>
+          <td>${data.assignedDriverId || 'غير معين'}</td>
           <td>${data.status || data.orderStatus || '-'}</td>
-          <td>${data.total ?? 0}</td>
+          <td>${formatMoney(financial.totalWithDelivery)}</td>
+          <td>
+            <button class="btn ghost" data-order-details="${escapeHtml(d.id)}">تفاصيل</button>
+            <button class="btn primary" data-order-map="${escapeHtml(d.id)}">الخريطة</button>
+          </td>
         </tr>`;
       });
-      setHtml(ordersTable, table(['رقم الطلب', 'العميل', 'الحالة', 'الإجمالي'], rows));
+      setHtml(ordersTable, table(['رقم الطلب', 'العميل', 'المطعم', 'المندوب', 'الحالة', 'الإجمالي', 'إجراء'], rows));
+
+      ordersTable.querySelectorAll('[data-order-details]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-order-details');
+          const doc = snap.docs.find((item) => item.id === id);
+          if (!id || !doc) return;
+          renderDashboardOrderDetailsPanel(id, doc.data() || {});
+        });
+      });
+
+      ordersTable.querySelectorAll('[data-order-map]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-order-map');
+          if (!id) return;
+          openOrderOnMap(id);
+        });
+      });
+
+      if (snap.docs.length && dashboardOrderDetails && dashboardOrderDetails.classList.contains('muted')) {
+        dashboardOrderDetails.classList.remove('muted');
+        const first = snap.docs[0];
+        renderDashboardOrderDetailsPanel(first.id, first.data() || {});
+      }
     })
   );
 }
 
 function mountFinance() {
+  mountDiscountCodes();
+
   financeGrid.innerHTML = `
     <div class="stat"><h4>طلبات مدفوعة</h4><b id="paidOrders">...</b></div>
     <div class="stat"><h4>طلبات بانتظار السداد</h4><b id="pendingPay">...</b></div>
     <div class="stat"><h4>طلبات تحويل مكتمل</h4><b id="payoutDone">...</b></div>
+    <div class="stat"><h4>إجمالي دخل المنصة</h4><b id="platformTotal">...</b></div>
   `;
+
+  const toMoney = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const computeFinancial = (orderData) => {
+    const subtotal = toMoney(orderData.total ?? orderData.subtotal);
+    const deliveryFee = toMoney(orderData.deliveryFee);
+    const largeOrderFee = toMoney(orderData.largeOrderFee);
+    const discountAmount = toMoney(orderData.discountAmount);
+    const fallbackTotal = Math.max(0, subtotal + deliveryFee + largeOrderFee - discountAmount);
+    const totalWithDelivery = toMoney(orderData.totalWithDelivery || fallbackTotal);
+
+    let restaurantShare = toMoney(orderData.restaurantShare ?? orderData.storeShare ?? subtotal);
+    let driverShare = toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? 0);
+    let platformShare = toMoney(orderData.platformShare);
+    if (platformShare <= 0) {
+      platformShare = totalWithDelivery - restaurantShare - driverShare;
+    }
+    if (platformShare < 0) {
+      platformShare = 0;
+      const maxRestaurantShare = Math.max(0, totalWithDelivery - driverShare);
+      if (restaurantShare > maxRestaurantShare) restaurantShare = maxRestaurantShare;
+    }
+
+    return {
+      subtotal,
+      deliveryFee,
+      largeOrderFee,
+      discountAmount,
+      totalWithDelivery,
+      restaurantShare,
+      driverShare,
+      platformShare,
+    };
+  };
+
+  const needsFinancialUpdate = (orderData, computed) => {
+    const sameRestaurant = Math.round(toMoney(orderData.restaurantShare)) === Math.round(computed.restaurantShare);
+    const sameDriver = Math.round(toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver)) === Math.round(computed.driverShare);
+    const samePlatform = Math.round(toMoney(orderData.platformShare)) === Math.round(computed.platformShare);
+    const sameTotal = Math.round(toMoney(orderData.totalWithDelivery)) === Math.round(computed.totalWithDelivery);
+    return !(sameRestaurant && sameDriver && samePlatform && sameTotal);
+  };
+
+  const formatMoney = (value) => `${Math.round(toMoney(value)).toLocaleString('ar-EG')} ج.س`;
+
+  const normalizeDelivered = (statusRaw) => {
+    const s = String(statusRaw || '').trim().toLowerCase();
+    return s === 'delivered' || s === 'تم التوصيل';
+  };
+
+  const parseAccount = (docData) => {
+    const payoutAccount = docData?.payoutAccount || {};
+    const method = String(payoutAccount.method || docData?.payoutMethod || '').trim();
+    const accountNumber = String(payoutAccount.accountNumber || docData?.payoutAccountNumber || '').trim();
+    const accountName = String(payoutAccount.accountName || docData?.payoutAccountName || '').trim();
+    return { method, accountNumber, accountName };
+  };
+
+  if (paymentSettingsForm && !paymentSettingsFormBound) {
+    paymentSettingsForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const enabledMethods = [];
+      if (enableBankk?.checked) enabledMethods.push('bankk');
+      if (enableOcash?.checked) enabledMethods.push('ocash');
+      if (enableFawry?.checked) enabledMethods.push('fawry');
+
+      if (!enabledMethods.length) {
+        if (paymentSettingsResult) {
+          paymentSettingsResult.textContent = 'يجب تفعيل طريقة دفع واحدة على الأقل.';
+        }
+        return;
+      }
+
+      const payload = {
+        enabledMethods,
+        bankkAccount: String(bankkAccountInput?.value || '').trim(),
+        ocashAccount: String(ocashAccountInput?.value || '').trim(),
+        fawryAccount: String(fawryAccountInput?.value || '').trim(),
+        updatedAt: serverTimestamp(),
+        updatedByAdminUid: auth.currentUser?.uid || '',
+      };
+
+      if (savePaymentSettingsBtn) savePaymentSettingsBtn.disabled = true;
+      if (paymentSettingsResult) paymentSettingsResult.textContent = 'جارٍ حفظ الإعدادات...';
+
+      try {
+        await setDoc(doc(db, 'paymentSettings', 'default'), payload, { merge: true });
+        if (paymentSettingsResult) {
+          paymentSettingsResult.textContent = '✅ تم حفظ إعدادات الدفع بنجاح.';
+        }
+      } catch (err) {
+        if (paymentSettingsResult) {
+          paymentSettingsResult.textContent = `تعذر حفظ إعدادات الدفع: ${err.message || err}`;
+        }
+      } finally {
+        if (savePaymentSettingsBtn) savePaymentSettingsBtn.disabled = false;
+      }
+    });
+
+    paymentSettingsFormBound = true;
+  }
+
+  unsubscribers.push(
+    onSnapshot(doc(db, 'paymentSettings', 'default'), (snap) => {
+      const data = snap.data() || {};
+      const methods = Array.isArray(data.enabledMethods) ? data.enabledMethods : [];
+
+      if (enableBankk) enableBankk.checked = methods.includes('bankk');
+      if (enableOcash) enableOcash.checked = methods.includes('ocash');
+      if (enableFawry) enableFawry.checked = methods.includes('fawry');
+
+      if (bankkAccountInput) bankkAccountInput.value = String(data.bankkAccount || '');
+      if (ocashAccountInput) ocashAccountInput.value = String(data.ocashAccount || '');
+      if (fawryAccountInput) fawryAccountInput.value = String(data.fawryAccount || '');
+
+      if (paymentSettingsResult && !paymentSettingsResult.textContent.includes('✅')) {
+        paymentSettingsResult.textContent = 'الإعدادات الحالية محمّلة من Firebase.';
+      }
+    }, (err) => {
+      if (paymentSettingsResult) {
+        paymentSettingsResult.textContent = `تعذر تحميل إعدادات الدفع: ${err.message || err}`;
+      }
+    })
+  );
+
+  let latestFinanceDocs = [];
+
+  const resolveOrderMillis = (orderData) => {
+    const paidAt = orderData?.paidAt;
+    if (paidAt && typeof paidAt.toMillis === 'function') return paidAt.toMillis();
+    const createdAt = orderData?.createdAt;
+    if (createdAt && typeof createdAt.toMillis === 'function') return createdAt.toMillis();
+    const updatedAt = orderData?.updatedAt;
+    if (updatedAt && typeof updatedAt.toMillis === 'function') return updatedAt.toMillis();
+    return 0;
+  };
+
+  const applyFinanceRangeFilter = (docs) => {
+    const range = String(financeRangeFilter?.value || 'all');
+    if (range === 'all') return docs;
+
+    const now = new Date();
+    if (range === 'day') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      return docs.filter((d) => resolveOrderMillis(d.data() || {}) >= start);
+    }
+
+    if (range === 'month') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      return docs.filter((d) => resolveOrderMillis(d.data() || {}) >= start);
+    }
+
+    return docs;
+  };
+
+  const renderPayoutTables = async (ordersDocs) => {
+    const [restaurantsSnap, driversSnap] = await Promise.all([
+      safeGetDocs(collection(db, 'restaurants')),
+      safeGetDocs(collection(db, 'drivers')),
+    ]);
+
+    const restaurantMap = new Map();
+    restaurantsSnap.docs.forEach((d) => restaurantMap.set(d.id, d.data() || {}));
+    const driverMap = new Map();
+    driversSnap.docs.forEach((d) => driverMap.set(d.id, d.data() || {}));
+
+    const storeAgg = new Map();
+    const courierAgg = new Map();
+
+    ordersDocs.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const isDelivered = normalizeDelivered(data.orderStatus || data.status);
+      if (!isDelivered) return;
+
+      const financial = computeFinancial(data);
+      const restaurantId = String(data.restaurantId || '').trim();
+      const driverId = String(data.assignedDriverId || '').trim();
+
+      if (restaurantId) {
+        const entry = storeAgg.get(restaurantId) || { ordersCount: 0, payable: 0, transferred: 0, totalEarned: 0 };
+        entry.ordersCount += 1;
+        entry.totalEarned += financial.restaurantShare;
+        storeAgg.set(restaurantId, entry);
+      }
+
+      if (driverId) {
+        const entry = courierAgg.get(driverId) || { ordersCount: 0, payable: 0, transferred: 0, totalEarned: 0 };
+        entry.ordersCount += 1;
+        entry.totalEarned += financial.driverShare;
+        courierAgg.set(driverId, entry);
+      }
+    });
+
+    storeAgg.forEach((entry, storeId) => {
+      const storeData = restaurantMap.get(storeId) || {};
+      const transferred = toMoney(storeData.walletTransferredTotal);
+      entry.transferred = transferred;
+      entry.payable = Math.max(0, entry.totalEarned - transferred);
+    });
+
+    courierAgg.forEach((entry, driverId) => {
+      const driverData = driverMap.get(driverId) || {};
+      const transferred = toMoney(driverData.walletTransferredTotal);
+      entry.transferred = transferred;
+      entry.payable = Math.max(0, entry.totalEarned - transferred);
+    });
+
+    const storeRows = Array.from(storeAgg.entries()).map(([storeId, agg]) => {
+      const data = restaurantMap.get(storeId) || {};
+      const account = parseAccount(data);
+      return `<tr>
+        <td>${escapeHtml(String(data.name || storeId))}</td>
+        <td>${agg.ordersCount}</td>
+        <td>${formatMoney(agg.totalEarned)}</td>
+        <td>${formatMoney(agg.transferred)}</td>
+        <td>${formatMoney(agg.payable)}</td>
+        <td>${escapeHtml(account.method || '-')}</td>
+        <td>${escapeHtml(account.accountNumber || '-')}</td>
+        <td>
+          <button class="btn primary" data-pay-store="${escapeHtml(storeId)}" data-payable="${agg.payable}">تم التحويل</button>
+        </td>
+      </tr>`;
+    });
+
+    const courierRows = Array.from(courierAgg.entries()).map(([driverId, agg]) => {
+      const data = driverMap.get(driverId) || {};
+      const account = parseAccount(data);
+      return `<tr>
+        <td>${escapeHtml(String(data.name || driverId))}</td>
+        <td>${agg.ordersCount}</td>
+        <td>${formatMoney(agg.totalEarned)}</td>
+        <td>${formatMoney(agg.transferred)}</td>
+        <td>${formatMoney(agg.payable)}</td>
+        <td>${escapeHtml(account.method || '-')}</td>
+        <td>${escapeHtml(account.accountNumber || '-')}</td>
+        <td>
+          <button class="btn primary" data-pay-courier="${escapeHtml(driverId)}" data-payable="${agg.payable}">تم التحويل</button>
+        </td>
+      </tr>`;
+    });
+
+    if (financeStoresPayoutTable) {
+      setHtml(financeStoresPayoutTable, table(['المطعم', 'عدد الطلبات', 'المستحق الكلي', 'المحول سابقاً', 'المتبقي للتحويل', 'طريقة الدفع', 'رقم الحساب', 'إجراء'], storeRows));
+      financeStoresPayoutTable.querySelectorAll('[data-pay-store]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const targetId = btn.getAttribute('data-pay-store');
+          const payable = toMoney(btn.getAttribute('data-payable'));
+          if (!targetId || payable <= 0) {
+            alert('لا توجد قيمة مستحقة للتحويل.');
+            return;
+          }
+
+          const amountRaw = prompt('ادخل قيمة التحويل (يمكن تعديلها):', String(Math.round(payable)));
+          if (amountRaw === null) return;
+          const amount = toMoney(amountRaw);
+          if (!Number.isFinite(amount) || amount <= 0) {
+            alert('قيمة التحويل غير صحيحة.');
+            return;
+          }
+
+          try {
+            await recordWalletPayout({
+              role: 'store',
+              targetId,
+              amount,
+            });
+            alert('تم تسجيل التحويل للمطعم وإرسال إشعار.');
+          } catch (err) {
+            alert(`تعذر تسجيل التحويل: ${err.message || err}`);
+          }
+        });
+      });
+    }
+
+    if (financeCouriersPayoutTable) {
+      setHtml(financeCouriersPayoutTable, table(['المندوب', 'عدد الطلبات', 'المستحق الكلي', 'المحول سابقاً', 'المتبقي للتحويل', 'طريقة الدفع', 'رقم الحساب', 'إجراء'], courierRows));
+      financeCouriersPayoutTable.querySelectorAll('[data-pay-courier]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const targetId = btn.getAttribute('data-pay-courier');
+          const payable = toMoney(btn.getAttribute('data-payable'));
+          if (!targetId || payable <= 0) {
+            alert('لا توجد قيمة مستحقة للتحويل.');
+            return;
+          }
+
+          const amountRaw = prompt('ادخل قيمة التحويل (يمكن تعديلها):', String(Math.round(payable)));
+          if (amountRaw === null) return;
+          const amount = toMoney(amountRaw);
+          if (!Number.isFinite(amount) || amount <= 0) {
+            alert('قيمة التحويل غير صحيحة.');
+            return;
+          }
+
+          try {
+            await recordWalletPayout({
+              role: 'courier',
+              targetId,
+              amount,
+            });
+            alert('تم تسجيل التحويل للمندوب وإرسال إشعار.');
+          } catch (err) {
+            alert(`تعذر تسجيل التحويل: ${err.message || err}`);
+          }
+        });
+      });
+    }
+
+  };
+
+  const syncWalletBalances = async (ordersDocs) => {
+    const [restaurantsSnap, driversSnap] = await Promise.all([
+      safeGetDocs(collection(db, 'restaurants')),
+      safeGetDocs(collection(db, 'drivers')),
+    ]);
+
+    const restaurantMap = new Map();
+    restaurantsSnap.docs.forEach((d) => restaurantMap.set(d.id, d.data() || {}));
+    const driverMap = new Map();
+    driversSnap.docs.forEach((d) => driverMap.set(d.id, d.data() || {}));
+
+    const storeAgg = new Map();
+    const courierAgg = new Map();
+
+    ordersDocs.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      if (!normalizeDelivered(data.orderStatus || data.status)) return;
+      const financial = computeFinancial(data);
+      const restaurantId = String(data.restaurantId || '').trim();
+      const driverId = String(data.assignedDriverId || '').trim();
+
+      if (restaurantId) {
+        const entry = storeAgg.get(restaurantId) || { ordersCount: 0, totalEarned: 0, transferred: 0, payable: 0 };
+        entry.ordersCount += 1;
+        entry.totalEarned += financial.restaurantShare;
+        storeAgg.set(restaurantId, entry);
+      }
+
+      if (driverId) {
+        const entry = courierAgg.get(driverId) || { ordersCount: 0, totalEarned: 0, transferred: 0, payable: 0 };
+        entry.ordersCount += 1;
+        entry.totalEarned += financial.driverShare;
+        courierAgg.set(driverId, entry);
+      }
+    });
+
+    const walletSyncUpdates = [];
+
+    storeAgg.forEach((agg, storeId) => {
+      const storeData = restaurantMap.get(storeId) || {};
+      const transferred = toMoney(storeData.walletTransferredTotal);
+      const payable = Math.max(0, agg.totalEarned - transferred);
+      walletSyncUpdates.push({
+        ref: doc(db, 'restaurants', storeId),
+        patch: {
+          walletPendingBalance: payable,
+          walletDeliveredOrdersCount: agg.ordersCount,
+          walletLifetimeEarnings: agg.totalEarned,
+          walletSyncedAt: serverTimestamp(),
+        },
+      });
+    });
+
+    courierAgg.forEach((agg, driverId) => {
+      const driverData = driverMap.get(driverId) || {};
+      const transferred = toMoney(driverData.walletTransferredTotal);
+      const payable = Math.max(0, agg.totalEarned - transferred);
+      walletSyncUpdates.push({
+        ref: doc(db, 'drivers', driverId),
+        patch: {
+          walletPendingBalance: payable,
+          walletDeliveredOrdersCount: agg.ordersCount,
+          walletLifetimeEarnings: agg.totalEarned,
+          walletSyncedAt: serverTimestamp(),
+        },
+      });
+    });
+
+    for (let i = 0; i < walletSyncUpdates.length; i += 350) {
+      const batch = writeBatch(db);
+      walletSyncUpdates.slice(i, i + 350).forEach((entry) => {
+        batch.set(entry.ref, entry.patch, { merge: true });
+      });
+      try {
+        await batch.commit();
+      } catch (err) {
+        console.warn('wallet sync failed', err);
+        break;
+      }
+    }
+  };
+
+  const renderFinanceView = async () => {
+    const docs = applyFinanceRangeFilter(latestFinanceDocs);
+
+    let totalOrdersRevenue = 0;
+    let totalRestaurantShare = 0;
+    let totalDriverShare = 0;
+    let totalPlatformShare = 0;
+    let totalPaidOrdersRevenue = 0;
+    let totalPaidRestaurantShare = 0;
+    let totalPaidDriverShare = 0;
+    let totalPaidPlatformShare = 0;
+
+    const rows = [];
+
+    docs.forEach((d) => {
+      const data = d.data() || {};
+      const financial = computeFinancial(data);
+      const isPaid = String(data.paymentStatus || '').toLowerCase() === 'paid';
+
+      totalOrdersRevenue += financial.totalWithDelivery;
+      totalRestaurantShare += financial.restaurantShare;
+      totalDriverShare += financial.driverShare;
+      totalPlatformShare += financial.platformShare;
+
+      if (isPaid) {
+        totalPaidOrdersRevenue += financial.totalWithDelivery;
+        totalPaidRestaurantShare += financial.restaurantShare;
+        totalPaidDriverShare += financial.driverShare;
+        totalPaidPlatformShare += financial.platformShare;
+      }
+
+      rows.push(`<tr>
+        <td>${escapeHtml(formatUnifiedOrderCode(data.orderNumber, data.orderId, d.id))}</td>
+        <td>${escapeHtml(String(data.paymentStatus || '-'))}</td>
+        <td>${formatMoney(financial.totalWithDelivery)}</td>
+        <td>${formatMoney(financial.restaurantShare)}</td>
+        <td>${formatMoney(financial.driverShare)}</td>
+        <td>${formatMoney(financial.platformShare)}</td>
+        <td>${formatMoney(financial.discountAmount)}</td>
+        <td><button class="btn ghost" data-finance-map="${escapeHtml(d.id)}">الخريطة</button></td>
+      </tr>`);
+    });
+
+    if (financeTotalsSummary) {
+      financeTotalsSummary.classList.remove('muted');
+      financeTotalsSummary.innerHTML = `
+        <div><b>إجمالي كل الطلبات:</b> ${formatMoney(totalOrdersRevenue)} | <b>حصة المطاعم:</b> ${formatMoney(totalRestaurantShare)} | <b>حصة المندوبين:</b> ${formatMoney(totalDriverShare)} | <b>حصة المنصة:</b> ${formatMoney(totalPlatformShare)}</div>
+        <div style="margin-top:6px;"><b>إجمالي الطلبات المدفوعة:</b> ${formatMoney(totalPaidOrdersRevenue)} | <b>حصة المطاعم (مدفوعة):</b> ${formatMoney(totalPaidRestaurantShare)} | <b>حصة المندوبين (مدفوعة):</b> ${formatMoney(totalPaidDriverShare)} | <b>حصة المنصة (مدفوعة):</b> ${formatMoney(totalPaidPlatformShare)}</div>
+      `;
+    }
+
+    const platformTotalEl = document.getElementById('platformTotal');
+    if (platformTotalEl) {
+      platformTotalEl.textContent = formatMoney(totalPaidPlatformShare);
+    }
+
+    if (financeOrdersTable) {
+      setHtml(financeOrdersTable, table(['رقم الطلب', 'الدفع', 'إجمالي الطلب', 'حصة المطعم', 'حصة المندوب', 'حصة المنصة', 'الخصم', 'تتبع'], rows));
+      financeOrdersTable.querySelectorAll('[data-finance-map]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const orderId = btn.getAttribute('data-finance-map');
+          if (!orderId) return;
+          openOrderOnMap(orderId);
+        });
+      });
+    }
+
+    await renderPayoutTables(docs);
+  };
+
+  if (financeRangeFilter && !financeRangeFilterBound) {
+    financeRangeFilter.addEventListener('change', () => {
+      void renderFinanceView();
+    });
+    financeRangeFilterBound = true;
+  }
 
   unsubscribers.push(
     onSnapshot(query(collection(db, 'orders'), where('paymentStatus', '==', 'paid')), (snap) => {
@@ -554,6 +1182,50 @@ function mountFinance() {
   unsubscribers.push(
     onSnapshot(query(collection(db, 'orders'), where('payoutStatus', '==', 'done')), (snap) => {
       document.getElementById('payoutDone').textContent = snap.size;
+    })
+  );
+
+  unsubscribers.push(
+    onSnapshot(collection(db, 'orders'), async (snap) => {
+      const updates = [];
+
+      latestFinanceDocs = snap.docs;
+
+      snap.docs.forEach((d) => {
+        const data = d.data() || {};
+        const financial = computeFinancial(data);
+
+        if (needsFinancialUpdate(data, financial)) {
+          updates.push({
+            ref: d.ref,
+            patch: {
+              totalWithDelivery: financial.totalWithDelivery,
+              restaurantShare: financial.restaurantShare,
+              driverShare: financial.driverShare,
+              platformShare: financial.platformShare,
+              financialSnapshotVersion: 1,
+              financialSnapshotAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            },
+          });
+        }
+      });
+
+      if (updates.length) {
+        for (let i = 0; i < updates.length; i += 350) {
+          const batch = writeBatch(db);
+          updates.slice(i, i + 350).forEach((item) => batch.set(item.ref, item.patch, { merge: true }));
+          try {
+            await batch.commit();
+          } catch (err) {
+            console.warn('finance snapshot batch failed', err);
+            break;
+          }
+        }
+      }
+
+      await syncWalletBalances(snap.docs);
+      await renderFinanceView();
     })
   );
 }
@@ -1301,6 +1973,20 @@ function mountSupport() {
       })
       .sort((a, b) => b.latestMillis - a.latestMillis);
 
+    if (supportSummary) {
+      const total = supportConversations.length;
+      const openCount = supportConversations.filter((item) => item.status !== 'closed').length;
+      const closedCount = total - openCount;
+      const unreadCount = supportConversations.reduce((sum, item) => sum + (item.unreadCount || 0), 0);
+      supportSummary.innerHTML = `
+        <span class="chip">الإجمالي: ${total}</span>
+        <span class="chip">مفتوحة: ${openCount}</span>
+        <span class="chip">مغلقة: ${closedCount}</span>
+        <span class="chip">غير مقروء: ${unreadCount}</span>
+        <span class="chip">المعروض: ${rows.length}</span>
+      `;
+    }
+
     if (!rows.length) {
       supportConversationList.innerHTML = '<div class="muted" style="padding:10px;">لا توجد محادثات مطابقة.</div>';
       return;
@@ -1319,7 +2005,7 @@ function mountSupport() {
               <span class="badge ${item.status === 'closed' ? 'closed' : 'open'}">${item.status === 'closed' ? 'مغلقة' : 'مفتوحة'}</span>
               <span class="muted">${escapeHtml(item.latestTimeText)}</span>
             </div>
-            <div class="support-item-title">${escapeHtml(item.senderName || item.userId || item.id)}</div>
+            <div class="support-item-title">${escapeHtml(item.senderName || item.userId || item.id)} ${item.unreadCount > 0 ? `<span class="support-unread">${item.unreadCount}</span>` : ''}</div>
             <div class="support-item-sub">${escapeHtml(appLabel)} · ${escapeHtml(item.actor)} · ${escapeHtml(item.userId || '-')}</div>
             <div class="support-item-preview">${escapeHtml(item.preview || '-')}</div>
           </button>
@@ -1387,9 +2073,17 @@ function mountSupport() {
 
     supportMessagesPane.scrollTop = supportMessagesPane.scrollHeight;
     supportToggleStatusBtn.disabled = false;
-    supportSendBtn.disabled = convo.status === 'closed';
     supportReplyInput.disabled = convo.status === 'closed';
     supportToggleStatusBtn.textContent = convo.status === 'closed' ? 'إعادة فتح المحادثة' : 'إغلاق المحادثة';
+    syncComposerState();
+  };
+
+  const syncComposerState = () => {
+    if (!supportSendBtn) return;
+    const convo = supportConversations.find((item) => item.id === supportSelectedConversationId);
+    const isClosed = !convo || convo.status === 'closed';
+    const hasText = String(supportReplyInput?.value || '').trim().length > 0;
+    supportSendBtn.disabled = isClosed || !hasText;
   };
 
   const sendReply = async () => {
@@ -1421,6 +2115,7 @@ function mountSupport() {
         status: 'open',
       });
       supportReplyInput.value = '';
+      syncComposerState();
     } catch (err) {
       alert(`تعذر إرسال الرد: ${err.message || err}`);
     }
@@ -1453,6 +2148,7 @@ function mountSupport() {
     supportSearchInput?.addEventListener('input', () => renderConversationList());
     supportAppFilter?.addEventListener('change', () => renderConversationList());
     supportStatusFilter?.addEventListener('change', () => renderConversationList());
+    supportReplyInput?.addEventListener('input', () => syncComposerState());
     supportSendBtn?.addEventListener('click', sendReply);
     supportToggleStatusBtn?.addEventListener('click', toggleStatus);
     supportReplyInput?.addEventListener('keydown', (e) => {
@@ -1507,6 +2203,13 @@ function mountSupport() {
           const all = messagesMap.get(id) || [];
           const latestSorted = all.slice().sort((a, b) => b.timestampMillis - a.timestampMillis);
           const latestMsg = latestSorted[0] || latest;
+          const latestAdminMillis = latestSorted
+            .filter((m) => m.senderType === 'admin')
+            .map((m) => m.timestampMillis || 0)
+            .reduce((max, current) => Math.max(max, current), 0);
+          const unreadCount = latestSorted
+            .filter((m) => m.senderType !== 'admin' && (m.timestampMillis || 0) > latestAdminMillis)
+            .length;
           const actor = normalizeActor(
             latestSorted.find((m) => m.senderType && m.senderType !== 'admin')?.senderType
               || latestMsg.senderType
@@ -1523,6 +2226,7 @@ function mountSupport() {
             latestMillis: latestMsg.timestampMillis || 0,
             latestTimeText: latestMsg.timeText || '-',
             userId,
+            unreadCount,
           };
         })
         .sort((a, b) => b.latestMillis - a.latestMillis);
@@ -1535,6 +2239,173 @@ function mountSupport() {
 
       renderConversationList();
       renderSelectedConversation();
+      syncComposerState();
+    })
+  );
+}
+
+function mountDiscountCodes() {
+  if (!discountForm || !discountsTable) return;
+
+  const parseNumberOrNull = (raw) => {
+    const value = Number(String(raw || '').trim());
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  };
+
+  const formatDateTimeLocal = (value) => {
+    if (!value || typeof value.toDate !== 'function') return '-';
+    try {
+      return value.toDate().toLocaleString('ar-EG');
+    } catch (_) {
+      return '-';
+    }
+  };
+
+  if (!discountFormBound) {
+    discountForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = String(discountCode?.value || '').trim().toUpperCase();
+      const type = String(discountType?.value || 'percent').trim().toLowerCase();
+      const value = parseNumberOrNull(discountValue?.value);
+      const expiryRaw = String(discountExpiryDate?.value || '').trim();
+      const expiryMillis = Date.parse(expiryRaw);
+
+      if (!code) {
+        if (discountResult) discountResult.textContent = 'يرجى إدخال كود الخصم.';
+        return;
+      }
+      if (type !== 'percent' && type !== 'fixed') {
+        if (discountResult) discountResult.textContent = 'نوع الخصم غير صالح.';
+        return;
+      }
+      if (value == null || value <= 0) {
+        if (discountResult) discountResult.textContent = 'قيمة الخصم يجب أن تكون أكبر من صفر.';
+        return;
+      }
+      if (!Number.isFinite(expiryMillis)) {
+        if (discountResult) discountResult.textContent = 'يرجى إدخال تاريخ انتهاء صحيح.';
+        return;
+      }
+
+      const payload = {
+        code,
+        discountType: type,
+        discountValue: value,
+        isActive: discountIsActive?.checked === true,
+        onlyForNewOrders: discountOnlyNewOrders?.checked === true,
+        restaurantId: String(discountRestaurantId?.value || '').trim(),
+        itemName: String(discountItemName?.value || '').trim(),
+        minOrder: parseNumberOrNull(discountMinOrder?.value),
+        maxUsage: parseNumberOrNull(discountMaxUsage?.value),
+        maxUsagePerUser: parseNumberOrNull(discountMaxUsagePerUser?.value),
+        maxDiscount: parseNumberOrNull(discountMaxDiscount?.value),
+        expiryDate: new Date(expiryMillis),
+      };
+
+      if (discountSaveBtn) discountSaveBtn.disabled = true;
+      if (discountResult) discountResult.textContent = 'جارٍ حفظ كود الخصم...';
+
+      try {
+        const ref = doc(db, 'promocodes', code);
+        const existing = await getDoc(ref);
+        await setDoc(ref, {
+          code,
+          discountType: payload.discountType,
+          discountValue: payload.discountValue,
+          isActive: payload.isActive,
+          onlyForNewOrders: payload.onlyForNewOrders,
+          restaurantId: payload.restaurantId || '',
+          itemName: payload.itemName || '',
+          minOrder: payload.minOrder,
+          maxUsage: payload.maxUsage,
+          maxUsagePerUser: payload.maxUsagePerUser,
+          maxDiscount: payload.maxDiscount,
+          expiryDate: payload.expiryDate,
+          updatedAt: serverTimestamp(),
+          updatedByAdminUid: auth.currentUser?.uid || '',
+          ...(existing.exists()
+            ? {}
+            : {
+                usedCount: 0,
+                usersUsed: {},
+                createdAt: serverTimestamp(),
+                createdBy: auth.currentUser?.uid || '',
+              }),
+        }, { merge: true });
+
+        if (discountResult) discountResult.textContent = `تم حفظ الكود ${code} بنجاح.`;
+        discountForm.reset();
+        if (discountIsActive) discountIsActive.checked = true;
+      } catch (err) {
+        if (discountResult) discountResult.textContent = `تعذر حفظ الكود: ${err.message || err}`;
+      } finally {
+        if (discountSaveBtn) discountSaveBtn.disabled = false;
+      }
+    });
+    discountFormBound = true;
+  }
+
+  unsubscribers.push(
+    onSnapshot(query(collection(db, 'promocodes'), limit(200)), (snap) => {
+      const docs = snap.docs.slice().sort((a, b) => {
+        const aTime = a.data()?.updatedAt?.toMillis?.() || a.data()?.createdAt?.toMillis?.() || 0;
+        const bTime = b.data()?.updatedAt?.toMillis?.() || b.data()?.createdAt?.toMillis?.() || 0;
+        return bTime - aTime;
+      });
+
+      const rows = docs.map((d) => {
+        const data = d.data() || {};
+        const code = String(data.code || d.id || '');
+        const active = data.isActive === true;
+        const usedCount = Number(data.usedCount || 0);
+        const maxUsage = Number(data.maxUsage || 0);
+        const capText = Number(data.maxDiscount || 0) > 0 ? ` (سقف ${Number(data.maxDiscount)})` : '';
+
+        return `<tr>
+          <td>${escapeHtml(code)}</td>
+          <td>${escapeHtml(String(data.discountType || '-'))}</td>
+          <td>${Number(data.discountValue || 0)}${capText}</td>
+          <td>${usedCount}${maxUsage > 0 ? ` / ${maxUsage}` : ''}</td>
+          <td>${formatDateTimeLocal(data.expiryDate)}</td>
+          <td><span class="badge ${active ? 'closed' : 'open'}">${active ? 'مفعل' : 'موقوف'}</span></td>
+          <td>
+            <button class="btn ghost" data-toggle-discount="${escapeHtml(code)}" data-active="${active ? 'true' : 'false'}">${active ? 'إيقاف' : 'تفعيل'}</button>
+            <button class="btn danger" data-delete-discount="${escapeHtml(code)}">حذف</button>
+          </td>
+        </tr>`;
+      });
+
+      setHtml(discountsTable, table(['الكود', 'النوع', 'القيمة', 'الاستخدام', 'ينتهي في', 'الحالة', 'إجراء'], rows));
+
+      discountsTable.querySelectorAll('[data-toggle-discount]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const code = btn.getAttribute('data-toggle-discount');
+          const isActive = btn.getAttribute('data-active') === 'true';
+          if (!code) return;
+          try {
+            await updateDoc(doc(db, 'promocodes', code), {
+              isActive: !isActive,
+              updatedAt: serverTimestamp(),
+              updatedByAdminUid: auth.currentUser?.uid || '',
+            });
+          } catch (err) {
+            alert(`تعذر تحديث الحالة: ${err.message || err}`);
+          }
+        });
+      });
+
+      discountsTable.querySelectorAll('[data-delete-discount]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const code = btn.getAttribute('data-delete-discount');
+          if (!code) return;
+          if (!confirm(`هل تريد حذف كود ${code}؟`)) return;
+          try {
+            await deleteDoc(doc(db, 'promocodes', code));
+          } catch (err) {
+            alert(`تعذر حذف الكود: ${err.message || err}`);
+          }
+        });
+      });
     })
   );
 }
@@ -1610,6 +2481,7 @@ function mountAdmins() {
       setHtml(adminsTable, table(['البريد', 'UID', 'الدور', 'الحالة'], rows));
     })
   );
+
 }
 
 function escapeHtml(value) {
@@ -1619,6 +2491,39 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function formatUnifiedOrderCode(orderNumber, orderId, docId) {
+  const normalize = (value, shortenFallback = false) => {
+    let raw = String(value ?? '').trim();
+    if (!raw) return '';
+
+    if (raw.startsWith('#')) {
+      raw = raw.slice(1).trim();
+    }
+
+    if (/^ord[\s_-]*/i.test(raw)) {
+      const tail = raw.replace(/^ord[\s_-]*/i, '').trim();
+      return tail ? `ORD-${tail}` : 'ORD-000000';
+    }
+
+    if (shortenFallback && raw.length > 8) {
+      raw = raw.slice(0, 8);
+    }
+
+    return `ORD-${raw}`;
+  };
+
+  const fromOrderNumber = normalize(orderNumber);
+  if (fromOrderNumber) return fromOrderNumber;
+
+  const fromOrderId = normalize(orderId);
+  if (fromOrderId) return fromOrderId;
+
+  const fromDocId = normalize(docId, true);
+  if (fromDocId) return fromDocId;
+
+  return 'ORD-000000';
 }
 
 function getByPath(source, path) {
@@ -1711,6 +2616,47 @@ function activeOrdersFor(fn) {
   return Array.from(mapState.orders.values()).filter((order) => isActiveOrder(order.data) && fn(order.data));
 }
 
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusKm * c;
+}
+
+function getOrderTrackingInsight(orderData, restaurantGeo, driverGeo, clientGeo) {
+  const status = String(orderData.orderStatus || orderData.status || '').trim();
+  if (!driverGeo) {
+    return `لا يوجد مندوب مخصص حالياً. الحالة الحالية: ${status || 'غير محددة'}.`;
+  }
+
+  if (!restaurantGeo || !clientGeo) {
+    return 'موقع المطعم أو العميل غير مكتمل، المتابعة الجزئية فقط متاحة.';
+  }
+
+  const driverToRestaurantKm = haversineKm(driverGeo.lat, driverGeo.lng, restaurantGeo.lat, restaurantGeo.lng);
+  const driverToClientKm = haversineKm(driverGeo.lat, driverGeo.lng, clientGeo.lat, clientGeo.lng);
+
+  if (status === 'pickup_ready' || status === 'courier_assigned' || status === 'courier_offer_pending') {
+    return `المندوب يقترب من المطعم. المسافة التقريبية إلى المطعم: ${driverToRestaurantKm.toFixed(2)} كم.`;
+  }
+
+  if (status === 'picked_up' || status === 'arrived_to_client') {
+    return `الطلب في طريقه للعميل. المسافة التقريبية بين المندوب والعميل: ${driverToClientKm.toFixed(2)} كم.`;
+  }
+
+  if (status === 'delivered' || status === 'تم التوصيل') {
+    return 'الطلب مكتمل (تم التسليم).';
+  }
+
+  return `المتابعة نشطة. مسافة المندوب للمطعم: ${driverToRestaurantKm.toFixed(2)} كم، وللعميل: ${driverToClientKm.toFixed(2)} كم.`;
+}
+
 function renderOrderDetails(orderData, orderId) {
   const clientId = orderData.clientId || '';
   const restaurantId = orderData.restaurantId || '';
@@ -1726,13 +2672,61 @@ function renderOrderDetails(orderData, orderId) {
         .join('')
     : '<li>لا توجد عناصر مفصلة</li>';
 
+  const restaurantGeo = getRestaurantGeoByOrder(orderData);
+  const driverGeo = getDriverGeoByOrder(orderData);
+  const clientGeo = getClientGeoByOrder(orderData);
+  const trackingInsight = getOrderTrackingInsight(orderData, restaurantGeo, driverGeo, clientGeo);
+
   setMapDetails(`
     <h4>تفاصيل الطلب</h4>
-    <div><span class="kv"><b>رقم:</b> ${escapeHtml(orderData.orderNumber || orderId)}</span><span class="kv"><b>الحالة:</b> ${escapeHtml(orderData.status || orderData.orderStatus || '-')}</span></div>
+    <div><span class="kv"><b>رقم:</b> ${escapeHtml(formatUnifiedOrderCode(orderData.orderNumber, orderData.orderId, orderId))}</span><span class="kv"><b>الحالة:</b> ${escapeHtml(orderData.status || orderData.orderStatus || '-')}</span></div>
     <div><span class="kv"><b>العميل:</b> ${escapeHtml(client?.name || orderData.clientName || clientId || '-')}</span><span class="kv"><b>المندوب:</b> ${escapeHtml(driver?.name || driverId || 'غير معين')}</span></div>
     <div><span class="kv"><b>المطعم:</b> ${escapeHtml(restaurant?.name || restaurantId || '-')}</span><span class="kv"><b>الإجمالي:</b> ${escapeHtml(orderData.total ?? orderData.totalPrice ?? '-')}</span></div>
+    <div><span class="kv"><b>المطعم على الخريطة:</b> ${restaurantGeo ? 'متاح' : 'غير متاح'}</span><span class="kv"><b>المندوب على الخريطة:</b> ${driverGeo ? 'متاح' : 'غير متاح'}</span><span class="kv"><b>العميل على الخريطة:</b> ${clientGeo ? 'متاح' : 'غير متاح'}</span></div>
+    <div style="margin-top:6px; padding:8px 10px; border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc;"><b>متابعة ذكية:</b> ${escapeHtml(trackingInsight)}</div>
     <div><b>العناصر:</b><ul>${items}</ul></div>
   `);
+}
+
+function focusMapOnOrder(orderId) {
+  const orderEntry = mapState.orders.get(orderId);
+  if (!orderEntry || !liveMap) return;
+
+  selectedOrderOnMapId = orderId;
+  const orderData = orderEntry.data || {};
+  renderOrderDetails(orderData, orderId);
+
+  const points = [];
+  const restaurantGeo = getRestaurantGeoByOrder(orderData);
+  const driverGeo = getDriverGeoByOrder(orderData);
+  const clientGeo = getClientGeoByOrder(orderData);
+
+  if (restaurantGeo) points.push([restaurantGeo.lat, restaurantGeo.lng]);
+  if (driverGeo) points.push([driverGeo.lat, driverGeo.lng]);
+  if (clientGeo) points.push([clientGeo.lat, clientGeo.lng]);
+
+  if (points.length === 1) {
+    liveMap.setView(points[0], 15);
+  } else if (points.length > 1) {
+    const bounds = window.L.latLngBounds(points);
+    liveMap.fitBounds(bounds.pad(0.25), { animate: true, maxZoom: 16 });
+  }
+
+  const orderMarker = markerState.orders.get(orderId);
+  if (orderMarker) {
+    orderMarker.openPopup();
+  }
+
+  refreshOrderLines();
+}
+
+function openOrderOnMap(orderId) {
+  selectedOrderOnMapId = orderId;
+  activateTab('map');
+  setTimeout(() => {
+    refreshMapLayers();
+    focusMapOnOrder(orderId);
+  }, 220);
 }
 
 function renderEntityDetails(type, id, data) {
@@ -1744,7 +2738,7 @@ function renderEntityDetails(type, id, data) {
       <div><span class="kv"><b>الاسم:</b> ${escapeHtml(name)}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.phone || '-')}</span></div>
       <div><span class="kv"><b>الحالة:</b> ${escapeHtml(data.availabilityStatus || (data.isAvailable ? 'available' : 'unavailable'))}</span></div>
       <div><b>طلبات نشطة:</b> ${orders.length}</div>
-      <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(o.data.orderNumber || o.id)} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
+      <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(formatUnifiedOrderCode(o.data.orderNumber, o.data.orderId, o.id))} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
     `);
     return;
   }
@@ -1755,7 +2749,7 @@ function renderEntityDetails(type, id, data) {
       <h4>العميل</h4>
       <div><span class="kv"><b>الاسم:</b> ${escapeHtml(name)}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.phone || '-')}</span></div>
       <div><b>طلبات نشطة:</b> ${orders.length}</div>
-      <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(o.data.orderNumber || o.id)} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
+      <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(formatUnifiedOrderCode(o.data.orderNumber, o.data.orderId, o.id))} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
     `);
     return;
   }
@@ -1766,7 +2760,7 @@ function renderEntityDetails(type, id, data) {
     <div><span class="kv"><b>الاسم:</b> ${escapeHtml(name)}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.phone || '-')}</span></div>
     <div><span class="kv"><b>الحالة:</b> ${escapeHtml(data.temporarilyClosed ? 'مغلق مؤقتًا' : 'مفتوح')}</span></div>
     <div><b>طلبات نشطة:</b> ${orders.length}</div>
-    <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(o.data.orderNumber || o.id)} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
+    <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(formatUnifiedOrderCode(o.data.orderNumber, o.data.orderId, o.id))} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
   `);
 }
 
@@ -1869,7 +2863,7 @@ function refreshRestaurantMarkers() {
 function refreshOrderMarkers() {
   const validIds = new Set();
   mapState.orders.forEach(({ data }, id) => {
-    if (!isActiveOrder(data)) return;
+    if (!isActiveOrder(data) && id !== selectedOrderOnMapId) return;
     const geo = extractGeo(data, ['deliveryLocation', 'clientLocation', 'address.location']);
     if (!geo) return;
     validIds.add(id);
@@ -1878,7 +2872,7 @@ function refreshOrderMarkers() {
       id,
       [geo.lat, geo.lng],
       '#dc2626',
-      `طلب: ${data.orderNumber || id}`,
+      `طلب: ${formatUnifiedOrderCode(data.orderNumber, data.orderId, id)}`,
       () => renderOrderDetails(data, id)
     );
   });
@@ -1886,6 +2880,12 @@ function refreshOrderMarkers() {
 }
 
 function getRestaurantGeoByOrder(orderData) {
+  const fromOrder = extractGeo(orderData, ['restaurantLocation']);
+  if (fromOrder) return fromOrder;
+  const lat = Number(orderData.restaurantLat);
+  const lng = Number(orderData.restaurantLng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+
   const restaurantId = orderData.restaurantId;
   if (!restaurantId) return null;
   const restaurant = mapState.restaurants.get(restaurantId)?.data;
@@ -1932,7 +2932,7 @@ function removeMissingOrderLines(validIds) {
 function refreshOrderLines() {
   const validIds = new Set();
   mapState.orders.forEach(({ data }, id) => {
-    if (!isActiveOrder(data)) return;
+    if (!isActiveOrder(data) && id !== selectedOrderOnMapId) return;
 
     const restaurantGeo = getRestaurantGeoByOrder(data);
     const driverGeo = getDriverGeoByOrder(data);
@@ -1957,10 +2957,11 @@ function refreshOrderLines() {
 
     validIds.add(id);
     const withDriver = Boolean(driverGeo);
+    const isSelected = selectedOrderOnMapId && selectedOrderOnMapId === id;
     setOrUpdateOrderLine(id, points, {
-      color: withDriver ? '#f59e0b' : '#ef4444',
-      weight: 3,
-      opacity: 0.75,
+      color: isSelected ? '#2563eb' : (withDriver ? '#f59e0b' : '#ef4444'),
+      weight: isSelected ? 5 : 3,
+      opacity: isSelected ? 0.95 : 0.75,
       dashArray: withDriver ? null : '6 6'
     });
   });
@@ -1974,6 +2975,12 @@ function refreshMapLayers() {
   refreshRestaurantMarkers();
   refreshOrderMarkers();
   refreshOrderLines();
+
+  if (selectedOrderOnMapId && mapState.orders.has(selectedOrderOnMapId)) {
+    const current = mapState.orders.get(selectedOrderOnMapId);
+    renderOrderDetails(current.data || {}, selectedOrderOnMapId);
+  }
+
   refreshMapLegendSummary();
   refreshMapViewport();
 }

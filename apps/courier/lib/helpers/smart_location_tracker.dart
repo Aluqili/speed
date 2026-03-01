@@ -20,6 +20,20 @@ class SmartLocationTracker {
     required this.clientLocation,
   });
 
+  String _inferKhartoumStateId(double latitude, double longitude) {
+    const minLat = 15.15;
+    const maxLat = 16.10;
+    const minLng = 32.20;
+    const maxLng = 33.10;
+
+    final insideGreaterKhartoum = latitude >= minLat &&
+        latitude <= maxLat &&
+        longitude >= minLng &&
+        longitude <= maxLng;
+
+    return insideGreaterKhartoum ? 'khartoum' : '';
+  }
+
   Future<void> startTracking() async {
     await _requestLocationPermission();
 
@@ -31,7 +45,7 @@ class SmartLocationTracker {
         .listen((snapshot) {
       if (!snapshot.exists) return;
 
-      final data = snapshot.data() as Map<String, dynamic>?;
+      final data = snapshot.data();
       final status = (data?['orderStatus'] ?? data?['status'] ?? '').toString();
       if (status == 'picked_up' || status == 'arrived_to_client' || status == 'قيد التوصيل') {
         _startLocationStream(); // يبدأ التتبع
@@ -57,6 +71,7 @@ class SmartLocationTracker {
   void _maybeUpdateLocation(Position pos) async {
     final lat = pos.latitude;
     final lng = pos.longitude;
+    final inferredStateId = _inferKhartoumStateId(lat, lng);
 
     if (_lastLat != null && _lastLng != null) {
       final distance = Geolocator.distanceBetween(_lastLat!, _lastLng!, lat, lng);
@@ -66,6 +81,8 @@ class SmartLocationTracker {
     // تحديث Firestore بموقع المندوب
     await FirebaseFirestore.instance.collection('drivers').doc(driverId).update({
       'location': GeoPoint(lat, lng),
+      if (inferredStateId.isNotEmpty) 'stateId': inferredStateId,
+      if (inferredStateId.isNotEmpty) 'region': inferredStateId,
       'lastUpdated': Timestamp.now(),
     });
 

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:getwidget/getwidget.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/speedstar_core.dart'
+    show formatUnifiedOrderCode, OrderStatusPalette;
 
-// import 'client_track_driver_screen.dart';
-// import 'client_order_tracking_screen.dart';
-// import 'chat_screen.dart';
+import 'client_track_driver_screen.dart';
+import 'chat_screen.dart';
 import 'payment_screen.dart';
 
 class AppColors {
@@ -108,6 +111,39 @@ class ClientOrderDetailsScreen extends StatelessWidget {
     return null;
   }
 
+  String _generateChatId(String user1, String user2) {
+    final sorted = [user1, user2]..sort();
+    return '${sorted[0]}_${sorted[1]}';
+  }
+
+  String _resolveDriverPhone(
+    Map<String, dynamic> orderData,
+    Map<String, dynamic>? driverData,
+  ) {
+    final candidates = [
+      orderData['driverPhone'],
+      orderData['driverPhoneNumber'],
+      driverData?['phone'],
+      driverData?['phoneNumber'],
+    ];
+
+    for (final candidate in candidates) {
+      final value = (candidate ?? '').toString().trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  Future<void> _callDriver(BuildContext context, String phone) async {
+    final uri = Uri(scheme: 'tel', path: phone);
+    final launched = await launchUrl(uri);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر فتح تطبيق الاتصال.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final orderRef =
@@ -146,10 +182,10 @@ class ClientOrderDetailsScreen extends StatelessWidget {
             final total = (data['total'] as num?)?.toDouble() ?? 0.0;
             final delivery = (data['deliveryFee'] as num?)?.toDouble() ?? 0.0;
             final largeOrderFee =
-              (data['largeOrderFee'] as num?)?.toDouble() ?? 0.0;
+                (data['largeOrderFee'] as num?)?.toDouble() ?? 0.0;
             final totalWithDelivery =
                 (data['totalWithDelivery'] as num?)?.toDouble() ??
-                (total + delivery + largeOrderFee);
+                    (total + delivery + largeOrderFee);
             final rawPaymentStatus =
                 (data['paymentStatus'] as String?)?.trim() ?? '';
             final rawOrderStatus =
@@ -157,6 +193,13 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                     '';
             final paymentStatus = _normalizePaymentStatus(rawPaymentStatus);
             final orderStatus = _normalizeOrderStep(rawOrderStatus);
+            final assignedDriverId =
+                (data['assignedDriverId'] ?? '').toString().trim();
+            final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+            final clientId =
+                (data['clientId'] ?? currentUserId).toString().trim();
+            final clientName =
+                (data['clientName'] ?? data['name'] ?? 'العميل').toString();
 
             int currentStep = _allSteps.indexOf(orderStatus);
             if (currentStep < 0) currentStep = 0;
@@ -211,6 +254,86 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                           ]),
                     ),
 
+                    if (assignedDriverId.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      StreamBuilder<DocumentSnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('drivers')
+                            .doc(assignedDriverId)
+                            .snapshots(),
+                        builder: (context, driverSnap) {
+                          final driverData =
+                              driverSnap.data?.data() as Map<String, dynamic>?;
+                          final driverName = (data['driverName'] ??
+                                  driverData?['name'] ??
+                                  'المندوب')
+                              .toString();
+                          final driverPhone =
+                              _resolveDriverPhone(data, driverData);
+                          final canChat = clientId.isNotEmpty;
+
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.black12),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'تواصل مع $driverName',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                                IconButton.filledTonal(
+                                  onPressed: !canChat
+                                      ? null
+                                      : () {
+                                          final chatId = _generateChatId(
+                                            clientId,
+                                            assignedDriverId,
+                                          );
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => ChatScreen(
+                                                currentUserId: clientId,
+                                                otherUserId: assignedDriverId,
+                                                currentUserRole: 'client',
+                                                chatId: chatId,
+                                                currentUserName: clientName,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                  tooltip: 'دردشة مع المندوب',
+                                  icon: const Icon(Icons.chat_bubble_outline),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton.filledTonal(
+                                  onPressed: driverPhone.isEmpty
+                                      ? null
+                                      : () => _callDriver(
+                                            context,
+                                            driverPhone,
+                                          ),
+                                  tooltip: 'اتصال بالمندوب',
+                                  icon: const Icon(Icons.call_outlined),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+
                     const SizedBox(height: 24),
 
                     // معلومات الطلب والفاتورة
@@ -222,8 +345,11 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                     // عرض رقم الطلب مع آخر 4 أرقام بشكل بارز
                     Builder(
                       builder: (_) {
-                        String orderNumber = data['orderNumber']?.toString() ??
-                            orderId.substring(0, 8);
+                        final orderNumber = formatUnifiedOrderCode(
+                          orderNumber: data['orderNumber'],
+                          orderId: data['orderId'],
+                          docId: orderId,
+                        );
                         String last4 = orderNumber.length >= 4
                             ? orderNumber.substring(orderNumber.length - 4)
                             : orderNumber;
@@ -238,7 +364,7 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                                         fontSize: 16)),
                                 const SizedBox(width: 8),
                                 Text(
-                                  '#$orderNumber',
+                                  orderNumber,
                                   style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: AppColors.primaryColor,
@@ -295,7 +421,7 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                             : '${delivery.toStringAsFixed(2)} ج.س'),
                     if (largeOrderFee > 0)
                       _buildRow('رسوم الطلبات الكبيرة',
-                        '${largeOrderFee.toStringAsFixed(2)} ج.س'),
+                          '${largeOrderFee.toStringAsFixed(2)} ج.س'),
                     _buildRow('الإجمالي الكلي',
                         '${totalWithDelivery.toStringAsFixed(2)} ج.س',
                         bold: true),
@@ -308,9 +434,11 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                             style: TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 16)),
                         Text(
-                          data['orderNumber'] != null
-                              ? '#${data['orderNumber']}'
-                              : '#${orderId.substring(0, 8)}',
+                          formatUnifiedOrderCode(
+                            orderNumber: data['orderNumber'],
+                            orderId: data['orderId'],
+                            docId: orderId,
+                          ),
                           style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.primaryColor,
@@ -352,10 +480,10 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                         final done = i < currentStep;
                         final active = i == currentStep;
                         final color = done
-                            ? Colors.green
+                            ? OrderStatusPalette.delivered
                             : active
-                                ? AppColors.primaryColor
-                                : Colors.grey;
+                                ? OrderStatusPalette.colorForStatus(label)
+                                : OrderStatusPalette.neutral;
                         final icon = done
                             ? Icons.check_circle
                             : active
@@ -385,6 +513,78 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                         );
                       }),
                     ),
+
+                    if (assignedDriverId.isNotEmpty) ...[
+                      const SizedBox(height: 24),
+                      StreamBuilder<DocumentSnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('drivers')
+                            .doc(assignedDriverId)
+                            .snapshots(),
+                        builder: (context, driverSnap) {
+                          final driverData =
+                              driverSnap.data?.data() as Map<String, dynamic>?;
+                          final driverName = (data['driverName'] ??
+                                  driverData?['name'] ??
+                                  'المندوب')
+                              .toString();
+                          final driverPhone =
+                              _resolveDriverPhone(data, driverData);
+
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.black12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '🛵 خيارات المندوب: $driverName',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (driverPhone.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'رقم المندوب: $driverPhone',
+                                    style:
+                                        const TextStyle(color: Colors.black54),
+                                  ),
+                                ],
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    OutlinedButton.icon(
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                ClientTrackDriverScreen(
+                                              orderId: orderId,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      icon: const Icon(Icons.location_on),
+                                      label: const Text('تتبع المندوب'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                   ]),
             );
           },

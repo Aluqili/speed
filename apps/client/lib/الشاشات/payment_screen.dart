@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:provider/provider.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 
 import '../الخدمات/promocode_service.dart';
 import 'cart_provider.dart';
@@ -46,6 +46,32 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Map<String, dynamic>? _promoData;
   String? _promoError;
   num _discount = 0;
+
+  String _promoReasonMessage(String? reason) {
+    switch ((reason ?? '').trim()) {
+      case 'not-found':
+      case 'invalid-code':
+        return 'الرمز غير صحيح.';
+      case 'inactive':
+        return 'هذا الرمز غير مفعل حالياً.';
+      case 'expired':
+        return 'انتهت صلاحية هذا الرمز.';
+      case 'restaurant-mismatch':
+        return 'هذا الرمز مخصص لمتجر آخر.';
+      case 'min-order':
+        return 'الطلب أقل من الحد الأدنى المطلوب للخصم.';
+      case 'max-usage':
+        return 'تم استهلاك الحد الأقصى لهذا الرمز.';
+      case 'max-usage-per-user':
+        return 'تم تجاوز الحد المسموح لك لاستخدام هذا الرمز.';
+      case 'new-orders-only':
+        return 'هذا الرمز مخصص للطلبات الجديدة فقط.';
+      case 'item-mismatch':
+        return 'هذا الرمز مرتبط بصنف غير موجود في الطلب.';
+      default:
+        return 'تعذر تطبيق الرمز حالياً. حاول مرة أخرى.';
+    }
+  }
 
   @override
   void initState() {
@@ -134,15 +160,62 @@ class _PaymentScreenState extends State<PaymentScreen> {
     setState(() => _submitting = true);
 
     try {
+      final orderData = await _orderFuture;
+      final subtotal = (orderData['total'] as num?)?.toDouble() ?? 0.0;
+      final deliveryFee = (orderData['deliveryFee'] as num?)?.toDouble() ?? 0.0;
+      final largeOrderFee = (orderData['largeOrderFee'] as num?)?.toDouble() ?? 0.0;
+      final restaurantId = (orderData['restaurantId'] ?? '').toString();
+      final items = List<Map<String, dynamic>>.from(orderData['items'] ?? const []);
+
+      String generatedOrderCode = formatUnifiedOrderCode(
+        orderNumber: orderData['orderNumber'],
+        orderId: orderData['orderId'],
+        docId: DateTime.now().millisecondsSinceEpoch.toString(),
+      );
+
+      Map<String, dynamic>? redeemedPromo;
+      if (_promoData != null) {
+        final redeem = await _promocodeService!.redeemPromocode(
+          code: (_promoData!['code'] ?? '').toString(),
+          subtotal: subtotal,
+          deliveryFee: deliveryFee,
+          largeOrderFee: largeOrderFee,
+          restaurantId: restaurantId,
+          items: items,
+          orderReference: widget.orderId ?? generatedOrderCode,
+          isNewOrder: widget.orderId == null,
+        );
+
+        if (redeem['ok'] != true) {
+          if (!mounted) return;
+          setState(() => _submitting = false);
+          GFToast.showToast(_promoReasonMessage(redeem['reason']?.toString()), context);
+          return;
+        }
+        redeemedPromo = redeem;
+      }
+
       var targetOrderId = widget.orderId;
       if (targetOrderId == null) {
         final draft = Map<String, dynamic>.from(widget.draftOrderData!);
+        draft['orderId'] = generatedOrderCode;
+        draft['orderNumber'] = generatedOrderCode;
         draft['status'] = 'store_pending';
         draft['orderStatus'] = 'store_pending';
         draft['paymentStatus'] = 'paid';
         draft['paymentMethod'] = _selectedMethod;
         draft['proofImageUrl'] = _proofUrl;
         draft['transactionReference'] = transactionReference;
+        if (redeemedPromo != null) {
+          final discountAmount = (redeemedPromo['discountAmount'] as num?)?.toDouble() ?? 0;
+          final baseTotal = ((draft['totalWithDelivery'] as num?)?.toDouble() ?? 0);
+          final finalTotal = (redeemedPromo['totalAfterDiscount'] as num?)?.toDouble() ?? (baseTotal - discountAmount);
+          draft['discountAmount'] = discountAmount;
+          draft['discountCode'] = (redeemedPromo['code'] ?? '').toString();
+          draft['promocode'] = redeemedPromo['promo'];
+          draft['totalBeforeDiscount'] = baseTotal;
+          draft['totalWithDelivery'] = finalTotal < 0 ? 0 : finalTotal;
+        }
         draft['createdAt'] = FieldValue.serverTimestamp();
         final created =
             await FirebaseFirestore.instance.collection('orders').add(draft);
@@ -160,9 +233,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
         'transactionReference': transactionReference,
         'submittedAt': FieldValue.serverTimestamp(),
         'status': 'paid',
-        if (_promoData != null) ...{
-          'promocode': _promoData!['code'],
-          'discount': _discount,
+        if (redeemedPromo != null) ...{
+          'promocode': redeemedPromo['code'],
+          'discount': redeemedPromo['discountAmount'],
+          'promoDetails': redeemedPromo['promo'],
         }
       });
 
@@ -176,14 +250,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
         'paymentMethod': _selectedMethod,
         'proofImageUrl': _proofUrl,
         'transactionReference': transactionReference,
+        if (redeemedPromo != null) ...{
+          'discountAmount': redeemedPromo['discountAmount'],
+          'discountCode': redeemedPromo['code'],
+          'promocode': redeemedPromo['promo'],
+          'totalBeforeDiscount': (orderData['totalWithDelivery'] as num?)?.toDouble() ?? 0,
+          'totalWithDelivery': (redeemedPromo['totalAfterDiscount'] as num?)?.toDouble() ??
+              (((orderData['totalWithDelivery'] as num?)?.toDouble() ?? 0) - ((redeemedPromo['discountAmount'] as num?)?.toDouble() ?? 0)),
+        },
         'paidAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
-
-      if (_promoData != null) {
-        final userId = FirebaseAuth.instance.currentUser?.uid ?? '';
-        await _promocodeService!.incrementUsage(_promoData!['code'], userId);
-      }
 
       if (!mounted) return;
       if (widget.clearCartOnSubmit) {
@@ -349,23 +426,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             });
                             final code = _promocodeController.text.trim();
                             if (code.isEmpty) return;
-                            final userId =
-                                FirebaseAuth.instance.currentUser?.uid ?? '';
                             final restaurantId =
                                 (data['restaurantId'] ?? '').toString();
                             final promo =
                                 await _promocodeService!.validatePromocode(
                               code: code,
-                              userId: userId,
-                              orderTotal: subtotal + deliveryFee + largeOrderFee,
+                              subtotal: subtotal,
+                              deliveryFee: deliveryFee,
+                              largeOrderFee: largeOrderFee,
                               restaurantId: restaurantId,
+                              items: items,
+                              isNewOrder: widget.orderId == null,
                             );
                             if (!mounted) {
                               return;
                             }
-                            if (promo == null) {
+                            if (promo == null || promo['ok'] != true) {
                               setState(() {
-                                _promoError = 'الرمز خاطئ';
+                                _promoError = _promoReasonMessage(
+                                  promo == null ? 'invalid-code' : promo['reason']?.toString(),
+                                );
                                 _promoData = null;
                                 _discount = 0;
                               });
@@ -378,92 +458,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                 ),
                               );
                             } else {
-                              // منطق الخيارات المتقدمة
-                              // 1. خصم للطلبات الجديدة فقط
-                              if (promo['onlyForNewOrders'] == true &&
-                                  (data['orderStatus'] != 'انتظار الدفع' &&
-                                      data['paymentStatus'] !=
-                                          'انتظار الدفع')) {
-                                setState(() {
-                                  _promoError =
-                                      'هذا الرمز متاح للطلبات الجديدة فقط.';
-                                  _promoData = null;
-                                  _discount = 0;
-                                });
-                                messenger.showSnackBar(
-                                  SnackBar(
-                                    content: Text(_promoError!,
-                                        style: const TextStyle(
-                                            fontFamily: 'Tajawal')),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                                return;
-                              }
-                              // 2. خصم على صنف محدد
-                              num discount = 0;
-                              if (promo['itemName'] != null &&
-                                  promo['itemName'].toString().isNotEmpty) {
-                                final item = items.firstWhere(
-                                  (i) => i['name'] == promo['itemName'],
-                                  orElse: () => <String, dynamic>{},
-                                );
-                                if (item.isEmpty) {
-                                  setState(() {
-                                    _promoError =
-                                        'الرمز يخص صنف محدد غير موجود في الطلب.';
-                                    _promoData = null;
-                                    _discount = 0;
-                                  });
-                                  messenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text(_promoError!,
-                                          style: const TextStyle(
-                                              fontFamily: 'Tajawal')),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                  return;
-                                }
-                                if (promo['discountType'] == 'percent') {
-                                  discount = ((item['price'] as num) *
-                                          (promo['discountValue'] as num) /
-                                          100)
-                                      .round();
-                                } else {
-                                  discount = promo['discountValue'] as num;
-                                }
-                              } else {
-                                // خصم عادي على كامل الطلب
-                                if (promo['discountType'] == 'percent') {
-                                  discount = ((subtotal + deliveryFee + largeOrderFee) *
-                                          (promo['discountValue'] as num) /
-                                          100)
-                                      .round();
-                                } else {
-                                  discount = promo['discountValue'] as num;
-                                }
-                              }
-                              // 3. تحقق من الحد الأدنى للطلب
-                              if (promo['minOrder'] != null &&
-                                  (subtotal + deliveryFee + largeOrderFee) <
-                                      promo['minOrder']) {
-                                setState(() {
-                                  _promoError =
-                                      'الطلب أقل من الحد الأدنى للخصم.';
-                                  _promoData = null;
-                                  _discount = 0;
-                                });
-                                messenger.showSnackBar(
-                                  SnackBar(
-                                    content: Text(_promoError!,
-                                        style: const TextStyle(
-                                            fontFamily: 'Tajawal')),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                                return;
-                              }
+                              final discount =
+                                  (promo['discountAmount'] as num?) ?? 0;
                               setState(() {
                                 _promoData = promo;
                                 _discount = discount;

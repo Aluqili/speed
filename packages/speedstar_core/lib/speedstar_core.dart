@@ -24,5 +24,7 @@ export 'src/config/remote_helpers.dart';
 export 'src/config/ops_runtime_config.dart';
 export 'src/orders/order_workflow_models_ar.dart';
 export 'src/orders/order_workflow_service_ar.dart';
+export 'src/orders/order_code_formatter.dart';
+export 'src/orders/order_status_palette.dart';
 export 'src/repositories/orders_repository.dart';
 export 'src/auth/login_gate.dart';

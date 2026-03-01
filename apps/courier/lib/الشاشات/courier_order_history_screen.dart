@@ -2,17 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/speedstar_core.dart'
+    show formatUnifiedOrderCode, OrderStatusPalette;
 
 class CourierOrderHistoryScreen extends StatelessWidget {
   final String driverId;
 
-  const CourierOrderHistoryScreen({Key? key, required this.driverId}) : super(key: key);
+  const CourierOrderHistoryScreen({Key? key, required this.driverId})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('سجل الطلبات', style: TextStyle(fontWeight: FontWeight.bold, color: AppThemeArabic.clientPrimary, fontFamily: 'Tajawal', fontSize: 20)),
+        title: const Text('سجل الطلبات',
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppThemeArabic.clientPrimary,
+                fontFamily: 'Tajawal',
+                fontSize: 20)),
         backgroundColor: Colors.white,
         elevation: 1,
         centerTitle: true,
@@ -34,13 +42,15 @@ class CourierOrderHistoryScreen extends StatelessWidget {
 
           final orders = (snapshot.data?.docs ?? []).where((doc) {
             final data = doc.data() as Map<String, dynamic>;
-            final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
+            final status =
+                (data['orderStatus'] ?? data['status'] ?? '').toString();
             return status == 'delivered' || status == 'تم التوصيل';
           }).toList();
 
           if (orders.isEmpty) {
             return const Center(
-              child: Text('لا توجد طلبات مكتملة في السجل.', style: TextStyle(fontSize: 16)),
+              child: Text('لا توجد طلبات مكتملة في السجل.',
+                  style: TextStyle(fontSize: 16)),
             );
           }
 
@@ -54,14 +64,22 @@ class CourierOrderHistoryScreen extends StatelessWidget {
               final time = data.containsKey('deliveredAt')
                   ? _formatTimestamp(data['deliveredAt'])
                   : 'غير معروف';
+              final status =
+                  (data['orderStatus'] ?? data['status'] ?? '').toString();
+              final unifiedOrderCode = formatUnifiedOrderCode(
+                orderNumber: data['orderNumber'],
+                orderId: data['orderId'],
+                docId: orderId,
+              );
 
               return GFCard(
                 elevation: 5,
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(12),
                 title: GFListTile(
-                  titleText: 'رقم الطلب: $orderId',
-                  subTitleText: 'اسم المطعم: $restaurantName\nوقت التوصيل: $time',
+                  titleText: 'رقم الطلب: $unifiedOrderCode',
+                  subTitleText:
+                      'اسم المطعم: $restaurantName\nوقت التوصيل: $time',
                   icon: const Icon(Icons.arrow_forward_ios, size: 20),
                   onTap: () {
                     showModalBottomSheet(
@@ -75,22 +93,47 @@ class CourierOrderHistoryScreen extends StatelessWidget {
                           shrinkWrap: true,
                           children: [
                             const Text('تفاصيل الطلب',
-                                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                                style: TextStyle(
+                                    fontSize: 20, fontWeight: FontWeight.bold)),
                             const SizedBox(height: 12),
-                            Text('اسم العميل: ${data['clientName'] ?? 'غير متوفر'}'),
+                            Text(
+                                'اسم العميل: ${data['clientName'] ?? 'غير متوفر'}'),
                             const SizedBox(height: 4),
-                            Text('رقم الجوال: ${data['clientPhone'] ?? 'غير متاح'}'),
+                            Text(
+                                'رقم الجوال: ${data['clientPhone'] ?? 'غير متاح'}'),
                             const SizedBox(height: 8),
                             const Divider(),
-                            Text('الإجمالي: ${data['total'] ?? 0} ج.س'),
-                            Text('رسوم التوصيل: ${data['deliveryFee'] ?? 0} ج.س'),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: OrderStatusPalette.backgroundForStatus(
+                                    status),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                'الحالة: ${OrderStatusPalette.displayText(status)}',
+                                style: TextStyle(
+                                  color:
+                                      OrderStatusPalette.colorForStatus(status),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
                             const SizedBox(height: 8),
-                            const Text('📦 الأصناف:', style: TextStyle(fontWeight: FontWeight.bold)),
-                            ...((data['items'] ?? []) as List<dynamic>).map((item) {
+                            Text('الإجمالي: ${data['total'] ?? 0} ج.س'),
+                            Text(
+                                'رسوم التوصيل: ${data['deliveryFee'] ?? 0} ج.س'),
+                            const SizedBox(height: 8),
+                            const Text('📦 الأصناف:',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                            ...((data['items'] ?? []) as List<dynamic>)
+                                .map((item) {
                               return Row(
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
-                                  if (item['imageUrl'] != null && item['imageUrl'].toString().isNotEmpty)
+                                  if (item['imageUrl'] != null &&
+                                      item['imageUrl'].toString().isNotEmpty)
                                     Padding(
                                       padding: const EdgeInsets.only(left: 8.0),
                                       child: Image.network(
@@ -100,7 +143,8 @@ class CourierOrderHistoryScreen extends StatelessWidget {
                                         fit: BoxFit.cover,
                                       ),
                                     ),
-                                  Text('- ${item['name']} × ${item['quantity']}'),
+                                  Text(
+                                      '- ${item['name']} × ${item['quantity']}'),
                                 ],
                               );
                             }),

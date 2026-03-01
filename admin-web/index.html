@@ -72,14 +72,127 @@
           <div class="card">
             <h3>أحدث الطلبات</h3>
             <div id="ordersTable"></div>
+            <div id="dashboardOrderDetails" class="management-details muted">اختر طلبًا من الجدول لعرض التفاصيل الكاملة وفتحه على الخريطة.</div>
           </div>
         </section>
 
         <section id="finance" class="tab-panel">
           <div class="stats" id="financeGrid"></div>
           <div class="card">
+            <h3>إعدادات طرق الدفع للعميل</h3>
+            <p class="muted">التحكم الكامل بطرق الدفع وأرقام الحسابات الظاهرة في تطبيق العميل.</p>
+            <form id="paymentSettingsForm" class="grid">
+              <label class="payment-method-row">
+                <input id="enableBankk" type="checkbox" />
+                تفعيل بنكك
+              </label>
+              <label>
+                رقم حساب بنكك
+                <input id="bankkAccountInput" type="text" placeholder="أدخل رقم حساب بنكك" />
+              </label>
+
+              <label class="payment-method-row">
+                <input id="enableOcash" type="checkbox" />
+                تفعيل أوكاش
+              </label>
+              <label>
+                رقم حساب أوكاش
+                <input id="ocashAccountInput" type="text" placeholder="أدخل رقم حساب أوكاش" />
+              </label>
+
+              <label class="payment-method-row">
+                <input id="enableFawry" type="checkbox" />
+                تفعيل فوري
+              </label>
+              <label>
+                رقم حساب فوري
+                <input id="fawryAccountInput" type="text" placeholder="أدخل رقم حساب فوري" />
+              </label>
+
+              <button id="savePaymentSettingsBtn" type="submit" class="btn primary">حفظ إعدادات الدفع</button>
+            </form>
+            <div id="paymentSettingsResult" class="muted normalize-result">جاري تحميل الإعدادات...</div>
+          </div>
+          <div class="card">
+            <h3>إدارة أكواد الخصم</h3>
+            <form id="discountForm" class="grid">
+              <label>
+                الكود
+                <input id="discountCode" type="text" required placeholder="WELCOME20" />
+              </label>
+              <label>
+                نوع الخصم
+                <select id="discountType" required>
+                  <option value="percent">نسبة مئوية</option>
+                  <option value="fixed">مبلغ ثابت</option>
+                </select>
+              </label>
+              <label>
+                قيمة الخصم
+                <input id="discountValue" type="number" min="0" step="0.01" required placeholder="20" />
+              </label>
+              <label>
+                الحد الأدنى للطلب
+                <input id="discountMinOrder" type="number" min="0" step="0.01" placeholder="0" />
+              </label>
+              <label>
+                أقصى عدد استخدام إجمالي
+                <input id="discountMaxUsage" type="number" min="0" step="1" placeholder="0 = بدون حد" />
+              </label>
+              <label>
+                أقصى عدد استخدام لكل عميل
+                <input id="discountMaxUsagePerUser" type="number" min="0" step="1" placeholder="0 = بدون حد" />
+              </label>
+              <label>
+                سقف الخصم (اختياري)
+                <input id="discountMaxDiscount" type="number" min="0" step="0.01" placeholder="0 = بدون سقف" />
+              </label>
+              <label>
+                معرف المطعم (اختياري)
+                <input id="discountRestaurantId" type="text" placeholder="فارغ = لجميع المطاعم" />
+              </label>
+              <label>
+                اسم صنف محدد (اختياري)
+                <input id="discountItemName" type="text" placeholder="مثال: برجر لحم" />
+              </label>
+              <label>
+                تاريخ الانتهاء
+                <input id="discountExpiryDate" type="datetime-local" required />
+              </label>
+              <label>
+                <input id="discountIsActive" type="checkbox" checked />
+                مفعل
+              </label>
+              <label>
+                <input id="discountOnlyNewOrders" type="checkbox" />
+                للطلبات الجديدة فقط
+              </label>
+              <button id="discountSaveBtn" type="submit" class="btn primary">حفظ الكود</button>
+            </form>
+            <div id="discountResult" class="muted normalize-result"></div>
+            <div id="discountsTable"></div>
+          </div>
+          <div class="card">
             <h3>ملخص المدفوعات</h3>
             <p class="muted">يعتمد على حقول: total, paymentStatus, payoutStatus داخل orders.</p>
+            <div class="finance-filter-row">
+              <label for="financeRangeFilter">الفترة:</label>
+              <select id="financeRangeFilter">
+                <option value="all">كل الفترات</option>
+                <option value="day">اليوم</option>
+                <option value="month">هذا الشهر</option>
+              </select>
+            </div>
+            <div id="financeTotalsSummary" class="management-details muted">جاري حساب الملخص المالي...</div>
+            <div id="financeOrdersTable"></div>
+            <div class="card finance-subcard">
+              <h3>تحويلات المطاعم</h3>
+              <div id="financeStoresPayoutTable"></div>
+            </div>
+            <div class="card finance-subcard">
+              <h3>تحويلات المندوبين</h3>
+              <div id="financeCouriersPayoutTable"></div>
+            </div>
           </div>
         </section>
 
@@ -190,6 +303,7 @@
                     <option value="closed">مغلقة</option>
                   </select>
                 </div>
+                <div id="supportSummary" class="support-summary muted"></div>
                 <div id="supportConversationList" class="support-conversation-list"></div>
               </aside>
 
@@ -199,6 +313,7 @@
                 </div>
                 <div id="supportMessagesPane" class="support-messages-pane"></div>
                 <div class="support-composer">
+                  <div class="support-composer-hint muted">للإرسال السريع استخدم Ctrl + Enter</div>
                   <textarea id="supportReplyInput" rows="3" placeholder="اكتب ردك هنا..."></textarea>
                   <div class="support-composer-actions">
                     <button id="supportToggleStatusBtn" class="btn ghost" type="button">إغلاق المحادثة</button>
@@ -227,6 +342,6 @@
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     ></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-    <script type="module" src="./js/app.js?v=20260227b"></script>
+    <script type="module" src="./js/app.js?v=20260228g"></script>
   </body>
 </html>

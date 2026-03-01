@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:speedstar_core/src/config/ops_runtime_config.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 
 import 'courier_order_history_screen.dart';
 import 'courier_account_tab.dart';
@@ -22,6 +23,7 @@ import 'courier_order_process_screen.dart';
 import 'courier_wallet_screen.dart';
 import 'manual_location_picker.dart';
 import 'chat_screen.dart';
+import 'courier_notifications_screen.dart';
 
 const Color primaryColor = AppThemeArabic.clientPrimary;
 const Color backgroundColor = AppThemeArabic.clientBackground;
@@ -449,8 +451,18 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     }
     await FirebaseAuth.instance.signOut();
     await prefs.remove('userType');
-    Navigator.of(context)
-        .pushNamedAndRemoveUntil('/roleSelection', (_) => false);
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreenArabic(
+          allowRegister: false,
+          allowGoogleSignIn: false,
+          allowPhoneSignIn: false,
+          allowGuestSignIn: false,
+        ),
+      ),
+      (_) => false,
+    );
   }
 
   Future<bool> _onWillPop() async {
@@ -521,7 +533,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
-                    leading: const Icon(Icons.history, color: AppThemeArabic.clientPrimary),
+                    leading: const Icon(Icons.history,
+                        color: AppThemeArabic.clientPrimary),
                     title: Text('سجل الطلبات',
                         style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
@@ -538,7 +551,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
-                    leading: const Icon(Icons.person, color: AppThemeArabic.clientTextPrimary),
+                    leading: const Icon(Icons.person,
+                        color: AppThemeArabic.clientTextPrimary),
                     title:
                         Text('الحساب', style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
@@ -555,7 +569,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
-                    leading: const Icon(Icons.monetization_on, color: AppThemeArabic.clientAccent),
+                    leading: const Icon(Icons.monetization_on,
+                        color: AppThemeArabic.clientAccent),
                     title:
                         Text('أرباحي', style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
@@ -572,14 +587,16 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
-                    leading: const Icon(Icons.assignment_turned_in, color: AppThemeArabic.clientPrimary),
+                    leading: const Icon(Icons.assignment_turned_in,
+                        color: AppThemeArabic.clientPrimary),
                     title: Text('عرض الطلب الحالي',
                         style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () async {
                       final box = GetStorage();
                       final currentOrder = box.read('current_order');
 
-                      final currentAssignedOrder = await _findCurrentAssignedOrder();
+                      final currentAssignedOrder =
+                          await _findCurrentAssignedOrder();
 
                       String? orderId;
                       String stage = 'going_to_restaurant';
@@ -591,9 +608,11 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                           'orderId': orderId,
                           'stage': stage,
                         });
-                      } else if (currentOrder != null && currentOrder['orderId'] != null) {
+                      } else if (currentOrder != null &&
+                          currentOrder['orderId'] != null) {
                         orderId = currentOrder['orderId'].toString();
-                        stage = (currentOrder['stage'] ?? 'going_to_restaurant').toString();
+                        stage = (currentOrder['stage'] ?? 'going_to_restaurant')
+                            .toString();
                       }
 
                       if (!mounted) return;
@@ -625,7 +644,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
-                    leading: const Icon(Icons.account_balance_wallet, color: AppThemeArabic.clientAccent),
+                    leading: const Icon(Icons.account_balance_wallet,
+                        color: AppThemeArabic.clientAccent),
                     title:
                         Text('محفظتي', style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
@@ -646,8 +666,9 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                         label: Text(isAvailable ? 'متاح للطلبات' : 'غير متاح',
                             style: TextStyle(
                                 color: Colors.white, fontFamily: 'Tajawal')),
-                        backgroundColor:
-                          isAvailable ? AppThemeArabic.clientSuccess : AppThemeArabic.clientError,
+                        backgroundColor: isAvailable
+                            ? AppThemeArabic.clientSuccess
+                            : AppThemeArabic.clientError,
                         avatar: Icon(
                             isAvailable ? Icons.check_circle : Icons.cancel,
                             color: Colors.white),
@@ -669,7 +690,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
-                    leading: const Icon(Icons.logout, color: AppThemeArabic.clientError),
+                    leading: const Icon(Icons.logout,
+                        color: AppThemeArabic.clientError),
                     title: Text('تسجيل الخروج',
                         style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: _confirmAndLogout,
@@ -688,18 +710,82 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
               borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
             ),
             leading: IconButton(
-                icon: const Icon(Icons.menu, color: AppThemeArabic.clientPrimary),
+                icon:
+                    const Icon(Icons.menu, color: AppThemeArabic.clientPrimary),
                 onPressed: () => _scaffoldKey.currentState!.openDrawer()),
             title: Row(children: [
-              const Icon(Icons.delivery_dining, color: AppThemeArabic.clientPrimary),
+              const Icon(Icons.delivery_dining,
+                  color: AppThemeArabic.clientPrimary),
               const SizedBox(width: 8),
               Text(isAvailable ? 'أنت متاح ✅' : 'غير متاح ',
                   style: const TextStyle(
-                      color: AppThemeArabic.clientTextPrimary, fontWeight: FontWeight.bold)),
+                      color: AppThemeArabic.clientTextPrimary,
+                      fontWeight: FontWeight.bold)),
             ]),
             actions: [
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: FirebaseFirestore.instance
+                    .collection('notifications')
+                    .where('driverId', isEqualTo: widget.driverId)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  final docs = snapshot.data?.docs ?? const [];
+                  final unreadCount = docs.where((doc) {
+                    final data = doc.data();
+                    final isRead =
+                        data['read'] == true || data['isRead'] == true;
+                    return !isRead;
+                  }).length;
+
+                  return IconButton(
+                    tooltip: 'الإشعارات',
+                    icon: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Icon(Icons.notifications_none,
+                            color: AppThemeArabic.clientPrimary),
+                        if (unreadCount > 0)
+                          Positioned(
+                            right: -3,
+                            top: -3,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              constraints: const BoxConstraints(minWidth: 18),
+                              child: Text(
+                                unreadCount > 99
+                                    ? '99+'
+                                    : unreadCount.toString(),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CourierNotificationsScreen(
+                              driverId: widget.driverId),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
               IconButton(
-                icon: const Icon(Icons.support_agent, color: AppThemeArabic.clientPrimary),
+                icon: const Icon(Icons.support_agent,
+                    color: AppThemeArabic.clientPrimary),
                 tooltip: 'الدعم',
                 onPressed: () async {
                   final doc = await FirebaseFirestore.instance

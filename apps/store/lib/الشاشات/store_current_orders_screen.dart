@@ -1,21 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import 'store_order_details_screen.dart';
 
-const Set<String> _activeStoreStatuses = {
+const Set<String> _newStoreStatuses = {
   'store_pending',
   'courier_searching',
   'courier_offer_pending',
   'courier_assigned',
   'pickup_ready',
-  'picked_up',
-  'arrived_to_client',
   'قيد المراجعة',
   'قيد التجهيز',
-  'قيد التوصيل',
+  'جاهز للتوصيل',
   'بانتظار المطعم',
   'انتظار الدفع',
+};
+
+const Set<String> _finishedStoreStatuses = {
+  'picked_up',
+  'arrived_to_client',
+  'delivered',
+  'store_rejected',
+  'cancelled',
+  'وصل إلى العميل',
+  'تم التوصيل',
+  'ملغي',
 };
 
 String _getOrderStatus(Map<String, dynamic> data) {
@@ -35,23 +45,136 @@ String _displayOrderStatus(String status) {
     case 'pickup_ready':
       return 'جاهز للاستلام';
     case 'picked_up':
-      return 'تم الاستلام من المطعم';
     case 'arrived_to_client':
-      return 'وصل المندوب للعميل';
     case 'delivered':
-      return 'تم التوصيل';
+    case 'وصل إلى العميل':
+    case 'تم التوصيل':
+      return 'تم الاستلام من المطعم';
     case 'store_rejected':
       return 'مرفوض من المتجر';
     case 'cancelled':
+    case 'ملغي':
       return 'ملغي';
     default:
       return status.isEmpty ? '—' : status;
   }
 }
 
+DateTime _extractOrderDate(DocumentSnapshot doc) {
+  final data = doc.data() as Map<String, dynamic>;
+  final ts = data['createdAt'];
+  if (ts is Timestamp) return ts.toDate();
+  return DateTime.fromMillisecondsSinceEpoch(0);
+}
+
+Color _statusColor(String status) {
+  if (status == 'store_rejected' || status == 'cancelled' || status == 'ملغي') {
+    return Colors.red;
+  }
+  if (_finishedStoreStatuses.contains(status)) return Colors.green;
+  if (status == 'pickup_ready' || status == 'جاهز للتوصيل') {
+    return Colors.blueGrey;
+  }
+  return AppThemeArabic.clientPrimary;
+}
+
 class StoreCurrentOrdersScreen extends StatelessWidget {
   final String restaurantId;
   const StoreCurrentOrdersScreen({super.key, required this.restaurantId});
+
+  Widget _sectionHeader(String title, int count, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: AppThemeArabic.clientPrimary),
+        const SizedBox(width: 8),
+        Text(
+          '$title ($count)',
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontFamily: 'Tajawal',
+            fontSize: 16,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _orderTile(BuildContext context, DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final orderId = doc.id;
+    final status = _getOrderStatus(data);
+    final clientName = data['clientName'] ?? 'عميل';
+    final total = data['totalWithDelivery'] ?? data['total'] ?? 0;
+    final unifiedOrderCode = formatUnifiedOrderCode(
+      orderNumber: data['orderNumber'],
+      orderId: data['orderId'],
+      docId: orderId,
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: ListTile(
+        title: Text(
+          unifiedOrderCode,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Tajawal',
+          ),
+        ),
+        subtitle: Text(
+          'العميل: $clientName • الإجمالي: $total ج.س',
+          style: const TextStyle(fontFamily: 'Tajawal'),
+        ),
+        trailing: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: _statusColor(status).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            _displayOrderStatus(status),
+            style: TextStyle(
+              color: _statusColor(status),
+              fontWeight: FontWeight.bold,
+              fontFamily: 'Tajawal',
+            ),
+          ),
+        ),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => StoreOrderDetailsScreen(orderData: {
+                'docId': orderId,
+                ...data,
+              }),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _emptyBox(String text) {
+    return Container(
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.grey, fontFamily: 'Tajawal'),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,14 +183,8 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
       child: Scaffold(
         backgroundColor: AppThemeArabic.clientBackground,
         appBar: AppBar(
-          title: const Text('الطلبات الحالية', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
-          backgroundColor: Colors.white,
+          title: const Text('الطلبات الحالية'),
           centerTitle: true,
-          elevation: 1,
-          iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-          ),
         ),
         body: StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
@@ -78,46 +195,58 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
-            final docs = (snapshot.data?.docs ?? []).where((doc) {
-              final data = doc.data() as Map<String, dynamic>;
-              return _activeStoreStatuses.contains(_getOrderStatus(data));
-            }).toList()
-              ..sort((a, b) {
-                final ta = (a['createdAt'] as Timestamp?);
-                final tb = (b['createdAt'] as Timestamp?);
-                if (ta != null && tb != null) return tb.compareTo(ta);
-                return 0;
-              });
+            final allDocs = (snapshot.data?.docs ?? []).toList()
+              ..sort((a, b) => _extractOrderDate(b).compareTo(_extractOrderDate(a)));
 
-            if (docs.isEmpty) {
+            final newDocs = allDocs.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return _newStoreStatuses.contains(_getOrderStatus(data));
+            }).toList();
+
+            final finishedDocs = allDocs.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final status = _getOrderStatus(data);
+              return _finishedStoreStatuses.contains(status) ||
+                  (!_newStoreStatuses.contains(status) && status.isNotEmpty);
+            }).toList();
+
+            if (newDocs.isEmpty && finishedDocs.isEmpty) {
               return const Center(child: Text('لا توجد طلبات حالياً'));
             }
-            return ListView.separated(
-              itemCount: docs.length,
-              separatorBuilder: (_, __) => const Divider(height: 0),
-              itemBuilder: (context, index) {
-                final data = docs[index].data() as Map<String, dynamic>;
-                final orderId = docs[index].id;
-                final status = _displayOrderStatus(_getOrderStatus(data));
-                final clientName = data['clientName'] ?? 'عميل';
-                final total = data['total'] ?? 0;
-                return ListTile(
-                  title: Text('طلب $orderId — $clientName'),
-                  subtitle: Text('الحالة: $status — الإجمالي: $total'),
-                  trailing: const Icon(Icons.chevron_left),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => StoreOrderDetailsScreen(orderData: {
-                          'docId': orderId,
-                          ...data,
-                        }),
-                      ),
-                    );
-                  },
-                );
-              },
+
+            return Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  _sectionHeader('الطلبات الجديدة', newDocs.length, Icons.fiber_new),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: newDocs.isEmpty
+                        ? _emptyBox('لا توجد طلبات جديدة الآن')
+                        : ListView.builder(
+                            itemCount: newDocs.length,
+                            itemBuilder: (context, index) =>
+                                _orderTile(context, newDocs[index]),
+                          ),
+                  ),
+                  const SizedBox(height: 10),
+                  _sectionHeader(
+                    'الطلبات المنتهية من منظور المتجر',
+                    finishedDocs.length,
+                    Icons.check_circle_outline,
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: finishedDocs.isEmpty
+                        ? _emptyBox('لا توجد طلبات منتهية بعد')
+                        : ListView.builder(
+                            itemCount: finishedDocs.length,
+                            itemBuilder: (context, index) =>
+                                _orderTile(context, finishedDocs[index]),
+                          ),
+                  ),
+                ],
+              ),
             );
           },
         ),

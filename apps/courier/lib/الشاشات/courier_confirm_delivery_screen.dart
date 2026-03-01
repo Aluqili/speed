@@ -7,6 +7,8 @@ import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:get_storage/get_storage.dart'; // ✅ لإزالة الطلب من التخزين المحلي
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/speedstar_core.dart'
+    show formatUnifiedOrderCode, OrderStatusPalette;
 import 'chat_screen.dart';
 
 class CourierConfirmDeliveryScreen extends StatefulWidget {
@@ -20,10 +22,12 @@ class CourierConfirmDeliveryScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<CourierConfirmDeliveryScreen> createState() => _CourierConfirmDeliveryScreenState();
+  State<CourierConfirmDeliveryScreen> createState() =>
+      _CourierConfirmDeliveryScreenState();
 }
 
-class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScreen> {
+class _CourierConfirmDeliveryScreenState
+    extends State<CourierConfirmDeliveryScreen> {
   File? _proofImage;
   bool _uploading = false;
   Map<String, dynamic>? _orderData;
@@ -42,17 +46,24 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
   }
 
   Future<void> _loadOrderData() async {
-    final doc = await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).get();
+    final doc = await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.orderId)
+        .get();
     if (doc.exists) {
       final data = Map<String, dynamic>.from(doc.data()!);
       final clientId = (data['clientId'] ?? '').toString();
-      final hasClientName = (data['clientName'] ?? '').toString().trim().isNotEmpty;
-      final hasClientPhone = (data['clientPhone'] ?? '').toString().trim().isNotEmpty;
+      final hasClientName =
+          (data['clientName'] ?? '').toString().trim().isNotEmpty;
+      final hasClientPhone =
+          (data['clientPhone'] ?? '').toString().trim().isNotEmpty;
 
       if (clientId.isNotEmpty && (!hasClientName || !hasClientPhone)) {
         DocumentSnapshot<Map<String, dynamic>>? clientDoc;
-        final directClientDoc =
-            await FirebaseFirestore.instance.collection('clients').doc(clientId).get();
+        final directClientDoc = await FirebaseFirestore.instance
+            .collection('clients')
+            .doc(clientId)
+            .get();
         if (directClientDoc.exists) {
           clientDoc = directClientDoc;
         } else {
@@ -87,7 +98,9 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
         if (clientDoc != null && clientDoc.exists) {
           final clientData = clientDoc.data() ?? <String, dynamic>{};
           final clientName =
-              (clientData['name'] ?? clientData['fullName'] ?? '').toString().trim();
+              (clientData['name'] ?? clientData['fullName'] ?? '')
+                  .toString()
+                  .trim();
           if (clientName.isNotEmpty) {
             data['clientName'] = clientName;
           }
@@ -110,7 +123,8 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
   }
 
   Future<void> _pickImage() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 75);
+    final picked = await ImagePicker()
+        .pickImage(source: ImageSource.camera, imageQuality: 75);
     if (picked != null) {
       setState(() {
         _proofImage = File(picked.path);
@@ -125,10 +139,14 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
 
     try {
       final response = await cloudinary.uploadFile(
-        CloudinaryFile.fromFile(_proofImage!.path, resourceType: CloudinaryResourceType.Image),
+        CloudinaryFile.fromFile(_proofImage!.path,
+            resourceType: CloudinaryResourceType.Image),
       );
 
-      await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
+      await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(widget.orderId)
+          .update({
         'status': 'delivered',
         'orderStatus': 'delivered',
         'deliveredAt': Timestamp.now(),
@@ -161,10 +179,62 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
     const englishDigits = '0123456789';
     var normalized = phone;
     for (var index = 0; index < arabicDigits.length; index++) {
-      normalized = normalized.replaceAll(arabicDigits[index], englishDigits[index]);
+      normalized =
+          normalized.replaceAll(arabicDigits[index], englishDigits[index]);
     }
     normalized = normalized.replaceAll(RegExp(r'[^0-9+]'), '');
     return normalized;
+  }
+
+  String _resolveClientPhone(Map<String, dynamic>? orderData) {
+    final data = orderData ?? <String, dynamic>{};
+    final candidates = [
+      data['clientPhone'],
+      data['clientPhoneNumber'],
+      data['phone'],
+      data['phoneNumber'],
+      (data['client'] is Map<String, dynamic>)
+          ? (data['client'] as Map<String, dynamic>)['phone']
+          : null,
+      (data['client'] is Map<String, dynamic>)
+          ? (data['client'] as Map<String, dynamic>)['phoneNumber']
+          : null,
+    ];
+
+    for (final candidate in candidates) {
+      final value = (candidate ?? '').toString().trim();
+      if (value.isNotEmpty) {
+        return value;
+      }
+    }
+    return '';
+  }
+
+  Future<void> _callClient(String rawPhone) async {
+    final phone = _normalizePhone(rawPhone);
+    if (phone.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('رقم هاتف العميل غير متوفر أو غير صالح')),
+      );
+      return;
+    }
+
+    final phoneUri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(phoneUri)) {
+      await launchUrl(phoneUri, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('❌ لا يمكن فتح الاتصال')),
+    );
+  }
+
+  String _generateChatId(String user1, String user2) {
+    final sorted = [user1, user2]..sort();
+    return '${sorted[0]}_${sorted[1]}';
   }
 
   Widget _detailRow(String label, String value) {
@@ -197,8 +267,11 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
   Widget _buildOrderDetails(Map<String, dynamic> orderData) {
     final items = (orderData['items'] as List?) ?? const [];
     final paymentMethod = (orderData['paymentMethod'] ?? 'غير محدد').toString();
-    final status = (orderData['orderStatus'] ?? orderData['status'] ?? 'غير محدد').toString();
-    final totalWithDelivery = (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
+    final status =
+        (orderData['orderStatus'] ?? orderData['status'] ?? 'غير محدد')
+            .toString();
+    final totalWithDelivery =
+        (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
 
     return Card(
       child: ExpansionTile(
@@ -213,10 +286,36 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
         collapsedIconColor: Colors.black87,
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
-          _detailRow('رقم الطلب', (orderData['orderId'] ?? widget.orderId).toString()),
-          _detailRow('العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
-          _detailRow('المطعم', (orderData['restaurantName'] ?? 'غير معروف').toString()),
-          _detailRow('الحالة', status),
+          _detailRow(
+            'رقم الطلب',
+            formatUnifiedOrderCode(
+              orderNumber: orderData['orderNumber'],
+              orderId: orderData['orderId'],
+              docId: widget.orderId,
+            ),
+          ),
+          _detailRow(
+              'العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
+          _detailRow('المطعم',
+              (orderData['restaurantName'] ?? 'غير معروف').toString()),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: OrderStatusPalette.backgroundForStatus(status),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                'الحالة: ${OrderStatusPalette.displayText(status)}',
+                style: TextStyle(
+                  color: OrderStatusPalette.colorForStatus(status),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
           _detailRow('طريقة الدفع', paymentMethod),
           _detailRow('الإجمالي', '$totalWithDelivery ج.س'),
           const SizedBox(height: 8),
@@ -257,19 +356,66 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
     );
   }
 
+  Widget _buildJourneyHeader() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: AppThemeArabic.clientPrimary.withOpacity(0.12),
+            child: const Icon(Icons.verified_outlined,
+                color: AppThemeArabic.clientPrimary),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'المرحلة 3 من 3 · تأكيد التسليم',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'التقط صورة واضحة كإثبات ثم أنهِ الطلب.',
+                  style: TextStyle(color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final total = (_orderData?['totalWithDelivery'] ?? 0).toDouble();
     final paymentStatus = (_orderData?['paymentStatus'] ?? '').toString();
     final isPaid = _orderData?['paid'] == true || paymentStatus == 'paid';
     final clientName = _orderData?['clientName'] ?? 'غير معروف';
-    final clientPhone = _orderData?['clientPhone'] ?? 'غير متاح';
+    final clientPhone = _resolveClientPhone(_orderData);
     final clientId = (_orderData?['clientId'] ?? '').toString();
 
     return Scaffold(
       backgroundColor: AppThemeArabic.clientBackground,
       appBar: AppBar(
-        title: const Text('إثبات التسليم', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        title: const Text('إثبات التسليم',
+            style: TextStyle(
+                color: AppThemeArabic.clientPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+                fontFamily: 'Tajawal')),
         backgroundColor: Colors.white,
         elevation: 1,
         centerTitle: true,
@@ -283,34 +429,43 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                _buildJourneyHeader(),
+                const SizedBox(height: 12),
                 _buildOrderDetails(_orderData!),
                 const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppThemeArabic.clientSurface,
-                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.black12),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('👤 معلومات العميل:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const Text('👤 معلومات العميل:',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 12),
                       Row(children: [
-                        const Icon(Icons.person, color: AppThemeArabic.clientPrimary),
+                        const Icon(Icons.person,
+                            color: AppThemeArabic.clientPrimary),
                         const SizedBox(width: 8),
                         Text(
                           clientName,
-                          style: const TextStyle(fontSize: 16, color: Colors.black87),
+                          style: const TextStyle(
+                              fontSize: 16, color: Colors.black87),
                         ),
                       ]),
                       const SizedBox(height: 10),
                       Row(children: [
-                        const Icon(Icons.phone_android, color: AppThemeArabic.clientPrimary),
+                        const Icon(Icons.phone_android,
+                            color: AppThemeArabic.clientPrimary),
                         const SizedBox(width: 8),
                         Text(
-                          clientPhone,
-                          style: const TextStyle(fontSize: 16, color: Colors.black87),
+                          clientPhone.isEmpty ? 'غير متاح' : clientPhone,
+                          style: const TextStyle(
+                              fontSize: 16, color: Colors.black87),
                         ),
                       ]),
                       const SizedBox(height: 16),
@@ -322,11 +477,16 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
                               if (clientId.isEmpty) {
                                 if (!mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('لا يمكن فتح الدردشة لعدم توفر معرف العميل')),
+                                  const SnackBar(
+                                      content: Text(
+                                          'لا يمكن فتح الدردشة لعدم توفر معرف العميل')),
                                 );
                                 return;
                               }
-                              final doc = await FirebaseFirestore.instance.collection('drivers').doc(widget.driverId).get();
+                              final doc = await FirebaseFirestore.instance
+                                  .collection('drivers')
+                                  .doc(widget.driverId)
+                                  .get();
                               final driverName = doc.data()?['name'] ?? 'مندوب';
                               if (!mounted) return;
                               Navigator.push(
@@ -336,7 +496,8 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
                                     currentUserId: widget.driverId,
                                     otherUserId: clientId,
                                     currentUserRole: 'driver',
-                                    chatId: widget.orderId,
+                                    chatId: _generateChatId(
+                                        widget.driverId, clientId),
                                     currentUserName: driverName,
                                   ),
                                 ),
@@ -349,30 +510,11 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
                             shape: GFButtonShape.pills,
                           ),
                           GFButton(
-                            onPressed: () async {
-                              final phone = _normalizePhone(clientPhone.toString());
-                              if (phone.isEmpty) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('رقم هاتف العميل غير متوفر أو غير صالح')),
-                                );
-                                return;
-                              }
-
-                              final Uri phoneUri = Uri.parse('tel:$phone');
-                              if (await canLaunchUrl(phoneUri)) {
-                                await launchUrl(phoneUri, mode: LaunchMode.externalApplication);
-                              } else {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('❌ لا يمكن فتح الاتصال')),
-                                );
-                              }
-                            },
+                            onPressed: () => _callClient(clientPhone),
                             text: 'اتصال',
                             icon: const Icon(Icons.call, size: 18),
                             size: GFSize.SMALL,
-                            color: AppThemeArabic.clientPrimary,
+                            color: AppThemeArabic.clientSuccess,
                             shape: GFButtonShape.pills,
                           ),
                         ],
@@ -381,35 +523,57 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
                   ),
                 ),
                 const SizedBox(height: 24),
-                const Text(
-                  '💵 حالة الدفع:',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isPaid ? Colors.green.shade50 : Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  isPaid ? '✅ تم الدفع مسبقًا' : '❗ لم يتم الدفع بعد — يجب تحصيل $total ج.س',
-                  style: TextStyle(fontSize: 16, color: isPaid ? Colors.green : Colors.redAccent),
+                  child: Text(
+                    isPaid
+                        ? '✅ حالة الدفع: تم الدفع مسبقًا'
+                        : '❗ حالة الدفع: لم يتم الدفع بعد — يجب تحصيل $total ج.س',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color:
+                          isPaid ? Colors.green.shade700 : Colors.red.shade700,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 24),
-                const Text(
-                  '📸 إثبات التسليم:',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.black12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '📸 إثبات التسليم',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _proofImage != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.file(_proofImage!),
+                            )
+                          : const Text(
+                              'لم يتم اختيار صورة بعد',
+                              style: TextStyle(color: Colors.black87),
+                            ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                _proofImage != null
-                    ? ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(_proofImage!))
-                    : const Text(
-                        'لم يتم اختيار صورة بعد',
-                        style: TextStyle(color: Colors.black87),
-                      ),
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -422,6 +586,10 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
                         fullWidthButton: true,
                         shape: GFButtonShape.pills,
                         size: GFSize.LARGE,
+                        textStyle: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Tajawal',
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -430,10 +598,14 @@ class _CourierConfirmDeliveryScreenState extends State<CourierConfirmDeliveryScr
                         onPressed: _uploading ? null : _uploadAndFinish,
                         text: _uploading ? 'جاري الرفع...' : 'إنهاء الطلب',
                         icon: const Icon(Icons.done),
-                        color: AppThemeArabic.clientPrimary,
+                        color: AppThemeArabic.clientSuccess,
                         fullWidthButton: true,
                         shape: GFButtonShape.pills,
                         size: GFSize.LARGE,
+                        textStyle: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Tajawal',
+                        ),
                       ),
                     ),
                   ],

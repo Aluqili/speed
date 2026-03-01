@@ -3,11 +3,14 @@ import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'courier_order_details_screen.dart';
+import 'package:speedstar_core/speedstar_core.dart'
+    show formatUnifiedOrderCode, OrderStatusPalette;
 
 class CourierActiveOrdersScreen extends StatelessWidget {
   final String driverId;
 
-  const CourierActiveOrdersScreen({Key? key, required this.driverId}) : super(key: key);
+  const CourierActiveOrdersScreen({Key? key, required this.driverId})
+      : super(key: key);
 
   // الحالات المطلوبة للعرض
   static const List<String> validStatuses = [
@@ -53,7 +56,8 @@ class CourierActiveOrdersScreen extends StatelessWidget {
             final doc = orders[index];
             final data = doc.data() as Map<String, dynamic>;
             final orderId = doc.id;
-            final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
+            final status =
+                (data['orderStatus'] ?? data['status'] ?? '').toString();
 
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -63,11 +67,33 @@ class CourierActiveOrdersScreen extends StatelessWidget {
                 content: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('رقم الطلب: ${data['orderId'] ?? orderId}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text(
+                      'رقم الطلب: ${formatUnifiedOrderCode(orderNumber: data['orderNumber'], orderId: data['orderId'], docId: orderId)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     const SizedBox(height: 6),
                     Text('العميل: ${data['clientName'] ?? 'غير معروف'}'),
                     const SizedBox(height: 6),
                     Text('الإجمالي: ${data['total'] ?? 0} ج.س'),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: OrderStatusPalette.backgroundForStatus(status),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          OrderStatusPalette.displayText(status),
+                          style: TextStyle(
+                            color: OrderStatusPalette.colorForStatus(status),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 12),
 
                     // زر الإجراءات بناءً على الحالة
@@ -102,7 +128,8 @@ class CourierActiveOrdersScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildActionButton(BuildContext context, String status, String orderId) {
+  Widget _buildActionButton(
+      BuildContext context, String status, String orderId) {
     String? buttonText;
     String? newStatus;
 
@@ -129,7 +156,10 @@ class CourierActiveOrdersScreen extends StatelessWidget {
 
     return GFButton(
       onPressed: () async {
-        await FirebaseFirestore.instance.collection('orders').doc(orderId).update({
+        await FirebaseFirestore.instance
+            .collection('orders')
+            .doc(orderId)
+            .update({
           'orderStatus': newStatus,
           'status': newStatus,
           'updatedAt': FieldValue.serverTimestamp(),

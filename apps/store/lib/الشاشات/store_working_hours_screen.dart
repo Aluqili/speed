@@ -198,23 +198,8 @@ class _StoreWorkingHoursScreenState extends State<StoreWorkingHoursScreen> {
       child: Scaffold(
         backgroundColor: backgroundColor,
         appBar: AppBar(
-          title: const Text(
-            'أوقات عمل المطعم',
-            style: TextStyle(
-              color: primaryColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 22,
-              fontFamily: 'Tajawal',
-              letterSpacing: 1.1,
-            ),
-          ),
-          backgroundColor: Colors.white,
+          title: const Text('أوقات عمل المطعم'),
           centerTitle: true,
-          iconTheme: const IconThemeData(color: primaryColor),
-          elevation: 2,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-          ),
         ),
         body: ListView(
           padding: const EdgeInsets.all(18),
