@@ -30,6 +30,7 @@ pubspec.lock
 **/google-services*.json
 **/GoogleService-Info.plist
 **/GoogleService-Info*.plist
+**/ios/Flutter/Secrets.xcconfig
 admin-web/js/firebase-config.js
 
 # Flutter generated/local metadata
@@ -41,6 +42,9 @@ admin-web/js/firebase-config.js
 **/node_modules/
 **/build/
 **/.firebase/
+/artifacts/release_named/
+/artifacts/release_play_named/
+/artifacts/release_split/
 
 # Temporary local preview files
 _live_*.html
