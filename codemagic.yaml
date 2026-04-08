@@ -5,6 +5,8 @@ workflows:
     instance_type: mac_mini_m2
     working_directory: apps/client
     environment:
+      groups:
+        - speedstar_client_ios
       flutter: stable
       xcode: latest
       cocoapods: default
@@ -52,6 +54,8 @@ workflows:
     instance_type: mac_mini_m2
     working_directory: apps/client
     environment:
+      groups:
+        - speedstar_client_ios
       flutter: stable
       xcode: latest
       cocoapods: default
