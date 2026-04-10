@@ -42,7 +42,7 @@ workflows:
       - name: Install CocoaPods dependencies
         script: find . -name "Podfile" -execdir pod install \;
       - name: Build iOS without code signing
-        script: flutter build ios --release --no-codesign
+        script: flutter build ios --release --no-codesign --dart-define=FIREBASE_ENV=prod
     artifacts:
       - build/ios/iphoneos/*.app
       - /tmp/xcodebuild_logs/*.log
@@ -98,7 +98,7 @@ workflows:
       - name: Install CocoaPods dependencies
         script: find . -name "Podfile" -execdir pod install \;
       - name: Build signed IPA
-        script: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
+        script: flutter build ipa --release --dart-define=FIREBASE_ENV=prod --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
