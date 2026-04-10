@@ -1,12 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class CourierPrivacyPolicyScreen extends StatelessWidget {
   const CourierPrivacyPolicyScreen({super.key});
 
   static const String _policyUrl =
       'https://speedstar-dev.web.app/legal/privacy-courier-ar.html';
+  static const String _deletionUrl =
+      'https://speedstar-dev.web.app/legal/account-deletion-courier-ar.html';
+
+  Future<void> _openExternalUrl(BuildContext context, String url) async {
+    final uri = Uri.parse(url);
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر فتح الرابط')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +28,12 @@ class CourierPrivacyPolicyScreen extends StatelessWidget {
       child: Scaffold(
         backgroundColor: AppThemeArabic.clientBackground,
         appBar: AppBar(
-          title: const Text('سياسة الخصوصية', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+          title: const Text('سياسة الخصوصية',
+              style: TextStyle(
+                  color: AppThemeArabic.clientPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  fontFamily: 'Tajawal')),
           backgroundColor: Colors.white,
           centerTitle: true,
           elevation: 1,
@@ -35,7 +53,8 @@ class CourierPrivacyPolicyScreen extends StatelessWidget {
                   children: [
                     const Text(
                       'سياسة الخصوصية للمندوب',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 12),
                     const Text(
@@ -50,9 +69,16 @@ class CourierPrivacyPolicyScreen extends StatelessWidget {
                     const SizedBox(height: 8),
                     SelectableText(
                       _policyUrl,
-                      style: const TextStyle(color: AppThemeArabic.clientPrimary),
+                      style:
+                          const TextStyle(color: AppThemeArabic.clientPrimary),
                     ),
                     const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: () => _openExternalUrl(context, _policyUrl),
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('فتح الرابط الرسمي'),
+                    ),
+                    const SizedBox(height: 8),
                     ElevatedButton.icon(
                       onPressed: () async {
                         await Clipboard.setData(
@@ -60,11 +86,31 @@ class CourierPrivacyPolicyScreen extends StatelessWidget {
                         );
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('تم نسخ رابط سياسة الخصوصية')),
+                          const SnackBar(
+                              content: Text('تم نسخ رابط سياسة الخصوصية')),
                         );
                       },
                       icon: const Icon(Icons.copy),
                       label: const Text('نسخ الرابط'),
+                    ),
+                    const SizedBox(height: 20),
+                    const Divider(),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'رابط حذف الحساب الرسمي:',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    SelectableText(
+                      _deletionUrl,
+                      style:
+                          const TextStyle(color: AppThemeArabic.clientPrimary),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: () => _openExternalUrl(context, _deletionUrl),
+                      icon: const Icon(Icons.delete_forever),
+                      label: const Text('فتح صفحة حذف الحساب'),
                     ),
                   ],
                 ),

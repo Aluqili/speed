@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
@@ -24,6 +25,41 @@ class ClientAccountTab extends StatelessWidget {
         builder: (_) => const LoginScreenArabic(),
       ),
       (route) => false,
+    );
+  }
+
+  Future<void> _openSupportChat(BuildContext context) async {
+    String chatId = '${clientId}-support';
+
+    try {
+      final clientDoc = await FirebaseFirestore.instance
+          .collection('clients')
+          .doc(clientId)
+          .get();
+      final savedChatId =
+          (clientDoc.data()?['lastSupportConversationId'] ?? '').toString().trim();
+      if (savedChatId.isNotEmpty) {
+        chatId = savedChatId;
+      }
+    } catch (_) {
+      // Fallback to the default support conversation id.
+    }
+
+    if (!context.mounted) {
+      return;
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          currentUserId: clientId,
+          otherUserId: 'support',
+          currentUserRole: 'client',
+          chatId: chatId,
+          currentUserName: 'عميل',
+        ),
+      ),
     );
   }
 
@@ -73,18 +109,7 @@ class ClientAccountTab extends StatelessWidget {
         'icon': Icons.support_agent,
         'title': 'خدمة العملاء',
         'subtitle': 'تواصل معنا للمساعدة',
-        'onTap': () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ChatScreen(
-                  currentUserId: clientId,
-                  otherUserId: 'support',
-                  currentUserRole: 'client',
-                  chatId: '${clientId}-support',
-                  currentUserName: 'عميل',
-                ),
-              ),
-            ),
+        'onTap': () => _openSupportChat(context),
       },
       {
         'icon': Icons.logout,

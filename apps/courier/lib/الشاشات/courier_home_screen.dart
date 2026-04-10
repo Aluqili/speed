@@ -206,12 +206,41 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
                     icon: Icons.notifications,
                     title: 'الإشعارات',
                     subtitle: 'عرض الإشعارات والتحديثات الجديدة',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CourierNotificationsScreen(driverId: widget.driverId),
-                      ),
-                    ),
+                    onTap: () async {
+                      final snapshot = await FirebaseFirestore.instance
+                          .collection('notifications')
+                          .where('driverId', isEqualTo: widget.driverId)
+                          .get();
+
+                      final unreadDocs = snapshot.docs.where((doc) {
+                        final data = doc.data();
+                        final isRead =
+                            data['read'] == true || data['isRead'] == true;
+                        return !isRead;
+                      });
+
+                      if (unreadDocs.isNotEmpty) {
+                        final batch = FirebaseFirestore.instance.batch();
+                        for (final doc in unreadDocs) {
+                          batch.update(doc.reference, {
+                            'read': true,
+                            'isRead': true,
+                            'readAt': FieldValue.serverTimestamp(),
+                          });
+                        }
+                        try {
+                          await batch.commit();
+                        } catch (_) {}
+                      }
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              CourierNotificationsScreen(driverId: widget.driverId),
+                        ),
+                      );
+                    },
                   ),
                   _buildDriverOption(
                     icon: Icons.person,

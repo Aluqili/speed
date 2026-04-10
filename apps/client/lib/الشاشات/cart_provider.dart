@@ -163,6 +163,15 @@ class CartProvider extends ChangeNotifier {
         .fold<int>(0, (sum, i) => sum + i.quantity);
   }
 
+      List<CartItem> variantsForMenuItem(String restaurantId, String menuItemId) {
+      if (menuItemId.trim().isEmpty) return const [];
+      return _cartItems
+        .where((i) =>
+          i.restaurantId == restaurantId &&
+          (i.menuItemId == menuItemId || i.id.contains('_$menuItemId')))
+        .toList();
+      }
+
   Future<void> _saveCart() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(

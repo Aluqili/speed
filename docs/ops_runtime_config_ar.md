@@ -16,6 +16,13 @@
 - `ops_ringtone_enabled` (bool): تشغيل/إيقاف النغمة للجميع.
 - `ops_ringtone_volume` (double من 0 إلى 1): مستوى صوت افتراضي عام.
 
+### مفاتيح التحديث الإجباري (Global)
+
+- `ops_force_update_enabled` (bool): مفتاح التفعيل العام للتحديث الإجباري.
+- `ops_min_build_android` (number): أقل `buildNumber` مسموح على أندرويد.
+- `ops_update_message` (string): رسالة تظهر للمستخدم عند وجوب التحديث.
+- `ops_update_url_android` (string): رابط التحديث العام (Play أو رابط APK).
+
 ## المفاتيح الخاصة بكل تطبيق
 
 استبدل `{app}` بـ `client` أو `courier` أو `store`.
@@ -25,6 +32,15 @@
 - `{app}_notifications_enabled` (bool): تحكم تنبيهات التطبيق.
 - `{app}_ringtone_enabled` (bool): تحكم نغمة التطبيق.
 - `{app}_ringtone_volume` (double من 0 إلى 1): مستوى صوت نغمة التطبيق.
+
+### مفاتيح التحديث الإجباري (لكل تطبيق)
+
+استبدل `{app}` بـ `client` أو `courier` أو `store`.
+
+- `{app}_force_update_enabled` (bool): تفعيل التحديث الإجباري للتطبيق.
+- `{app}_min_build_android` (number): أقل `buildNumber` للتطبيق على أندرويد.
+- `{app}_update_message` (string): رسالة مخصصة لهذا التطبيق.
+- `{app}_update_url_android` (string): رابط تحديث مخصص للتطبيق.
 
 ## مفاتيح التسعير المرن (العميل)
 
@@ -62,6 +78,16 @@
 - مستوى الصوت:
   1) `{app}_ringtone_volume` (إذا > 0)
   2) `ops_ringtone_volume`.
+- التحديث الإجباري يعمل فقط إذا:
+  - `ops_force_update_enabled = true`
+  - **و** `{app}_force_update_enabled = true`
+  - **و** `currentBuildNumber < minBuildAndroid`
+- اختيار `minBuildAndroid` يتم بالأولوية:
+  1) `{app}_min_build_android` (إذا > 0)
+  2) `ops_min_build_android`.
+- رابط ورسالة التحديث بالأولوية:
+  1) `{app}_update_message` و `{app}_update_url_android`
+  2) `ops_update_message` و `ops_update_url_android`.
 
 ## أمثلة تشغيل سريعة
 

@@ -10,10 +10,13 @@ import 'package:speedstar_core/src/config/remote_helpers.dart';
 import 'package:speedstar_core/speedstar_core.dart';
 import 'package:speedstar_core/src/auth/login_gate.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'firebase_options.dart' as dev_firebase;
 import 'firebase_options_prod.dart' as prod_firebase;
 import 'الشاشات/store_home_screen.dart';
 import 'الشاشات/store_link_request_screen.dart';
+import 'الشاشات/store_notifications_screen.dart';
+import 'الشاشات/store_order_details_screen.dart';
 import 'الخدمات/push_notification_service.dart';
 
 Future<void> main() async {
@@ -66,6 +69,12 @@ class _InitGateState extends State<_InitGate> {
   late Future<void> _initFuture;
   bool _maintenanceMode = false;
   String _maintenanceMessage = 'التطبيق تحت الصيانة. حاول لاحقًا.';
+  bool _forceUpdateRequired = false;
+  String _forceUpdateMessage =
+      'يتوفر إصدار أحدث من التطبيق لتحسين الأداء والاستقرار. الرجاء التحديث للمتابعة.';
+  String _updateUrl = '';
+  int _currentBuildNumber = 0;
+  int _minBuildNumber = 0;
 
   @override
   void initState() {
@@ -91,6 +100,7 @@ class _InitGateState extends State<_InitGate> {
       );
       final defaults = <String, Object>{
         ...OpsRuntimeConfig.defaultFlagsFor('store'),
+        ...AppUpdateConfig.defaultFlagsFor('store'),
         'accent_seed': 'E85D2A',
         'store_maintenance_mode': false,
         'store_maintenance_message': 'التطبيق تحت الصيانة. حاول لاحقًا.',
@@ -99,6 +109,15 @@ class _InitGateState extends State<_InitGate> {
       await rc.fetchAndActivate();
       final accent = rc.getString('accent_seed');
       _maintenanceMode = rc.getBool('store_maintenance_mode');
+      final update = await AppUpdateConfig.fromRemoteConfig(
+        rc,
+        appKey: 'store',
+      );
+      _forceUpdateRequired = update.forceUpdateRequired;
+      _forceUpdateMessage = update.message;
+      _updateUrl = update.updateUrl;
+      _currentBuildNumber = update.currentBuildNumber;
+      _minBuildNumber = update.minBuildNumber;
       final maintenanceText = rc.getString('store_maintenance_message').trim();
       if (maintenanceText.isNotEmpty) {
         _maintenanceMessage = maintenanceText;
@@ -120,12 +139,28 @@ class _InitGateState extends State<_InitGate> {
       future: _initFuture,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+          return const _InitSplash(
+            title: 'SpeedStar Store',
+            subtitle: 'جاهزين لاستقبال الطلبات بقوة 🔥',
+            imageAsset: 'assets/branding/app_icon_store.png.jpeg',
+            accent: Color(0xFFE85D2A),
           );
         }
         if (_maintenanceMode) {
           return _MaintenanceScreen(message: _maintenanceMessage);
+        }
+        if (_forceUpdateRequired) {
+          return _ForceUpdateScreen(
+            message: _forceUpdateMessage,
+            updateUrl: _updateUrl,
+            currentBuildNumber: _currentBuildNumber,
+            minBuildNumber: _minBuildNumber,
+            onRetry: () {
+              setState(() {
+                _initFuture = _safeInit();
+              });
+            },
+          );
         }
         return LoginGate(
           unauthenticatedBuilder: (_) => const _StoreUnauthenticatedScreen(),
@@ -135,6 +170,92 @@ class _InitGateState extends State<_InitGate> {
           ),
         );
       },
+    );
+  }
+}
+
+class _InitSplash extends StatelessWidget {
+  const _InitSplash({
+    required this.title,
+    required this.subtitle,
+    required this.imageAsset,
+    required this.accent,
+  });
+
+  final String title;
+  final String subtitle;
+  final String imageAsset;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFFFF4EE), Colors.white],
+          ),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 180,
+                  height: 180,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(36),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.18),
+                        blurRadius: 30,
+                        offset: const Offset(0, 14),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Image.asset(imageAsset, fit: BoxFit.contain),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    color: accent,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 26),
+                SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3.2,
+                    color: accent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -363,9 +484,96 @@ class _StoreHomeByAuthUser extends StatelessWidget {
 
         final storeId = (resolved['id'] ?? '').toString();
         unawaited(PushNotificationService.instance.bindStore(storeId));
-        return StoreHomeScreen(storeId: storeId);
+        return _StoreSignedInShell(storeId: storeId);
       },
     );
+  }
+}
+
+class _StoreSignedInShell extends StatefulWidget {
+  const _StoreSignedInShell({required this.storeId});
+
+  final String storeId;
+
+  @override
+  State<_StoreSignedInShell> createState() => _StoreSignedInShellState();
+}
+
+class _StoreSignedInShellState extends State<_StoreSignedInShell> {
+  StreamSubscription<Map<String, dynamic>>? _tapSubscription;
+  String? _lastHandledPayloadKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _tapSubscription = PushNotificationService.instance.notificationTapStream
+        .listen(_handleNotificationPayload);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final pending = PushNotificationService.instance.consumePendingTapPayload();
+      if (pending != null) {
+        _handleNotificationPayload(pending);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tapSubscription?.cancel();
+    super.dispose();
+  }
+
+  String _payloadKey(Map<String, dynamic> payload) {
+    return [
+      payload['orderId'] ?? '',
+      payload['type'] ?? '',
+      payload['title'] ?? '',
+      payload['body'] ?? '',
+    ].join('|');
+  }
+
+  Future<void> _handleNotificationPayload(Map<String, dynamic> payload) async {
+    if (!mounted) return;
+    final payloadKey = _payloadKey(payload);
+    if (payloadKey == _lastHandledPayloadKey) return;
+    _lastHandledPayloadKey = payloadKey;
+
+    final orderId = (payload['orderId'] ?? '').toString().trim();
+    if (orderId.isNotEmpty) {
+      final orderDoc = await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(orderId)
+          .get();
+      final orderData = orderDoc.data();
+      final restaurantId = (orderData?['restaurantId'] ?? '').toString();
+      if (!mounted) return;
+      if (orderDoc.exists && restaurantId == widget.storeId) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => StoreOrderDetailsScreen(
+              orderData: {
+                'docId': orderDoc.id,
+                ...?orderData,
+              },
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StoreNotificationsScreen(
+          restaurantId: widget.storeId,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StoreHomeScreen(storeId: widget.storeId);
   }
 }
 
@@ -495,6 +703,103 @@ class _MaintenanceScreen extends StatelessWidget {
             message,
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 16),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ForceUpdateScreen extends StatelessWidget {
+  const _ForceUpdateScreen({
+    required this.message,
+    required this.updateUrl,
+    required this.currentBuildNumber,
+    required this.minBuildNumber,
+    required this.onRetry,
+  });
+
+  final String message;
+  final String updateUrl;
+  final int currentBuildNumber;
+  final int minBuildNumber;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.system_update_alt_rounded, size: 42),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'يلزم تحديث التطبيق',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 15),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'إصدارك الحالي: $currentBuildNumber • الحد الأدنى المطلوب: $minBuildNumber',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 13,
+                        ),
+                      ),
+                      if (updateUrl.trim().isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          updateUrl,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final uri = Uri.tryParse(updateUrl.trim());
+                            if (uri == null) return;
+                            await launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                            );
+                          },
+                          icon: const Icon(Icons.open_in_new_rounded),
+                          label: const Text('فتح رابط التحديث'),
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      FilledButton.icon(
+                        onPressed: onRetry,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('تحقق مرة أخرى'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),

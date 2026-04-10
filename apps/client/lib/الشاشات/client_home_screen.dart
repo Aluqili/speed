@@ -64,7 +64,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
       await rc.fetchAndActivate();
       setState(() {
         _openAddressOnStart = rc.getBool('client_home_open_address_on_start');
-        _showFavoritesTab = rc.getBool('client_home_show_favorites');
+        _showFavoritesTab = true;
         _showCartBadge = rc.getBool('client_home_show_cart_badge');
         final hex = rc.getString('client_home_nav_accent_hex');
         final parsed = _parseColorHex(hex);
@@ -103,10 +103,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
       // تأكد أن كل تبويب ملفوف بـ SafeArea لمنع أي overflow
       SafeArea(child: ClientHomeTab(clientId: widget.clientId)),
       SafeArea(child: ClientOrdersTab(clientId: widget.clientId)),
-      SafeArea(
-          child: _showFavoritesTab
-              ? ClientFavoritesTab(clientId: widget.clientId)
-              : Center(child: Text('المفضلة موقوفة مؤقتًا'))),
+      SafeArea(child: ClientFavoritesTab(clientId: widget.clientId)),
       SafeArea(child: ClientAccountTab(clientId: widget.clientId)),
     ];
 

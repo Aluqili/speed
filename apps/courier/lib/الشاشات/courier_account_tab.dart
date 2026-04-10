@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 import 'courier_privacy_policy_screen.dart';
 import 'courier_wallet_screen.dart';
 
@@ -19,6 +21,7 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
   Map<String, dynamic>? driverData;
   int completedOrders = 0;
   double totalEarnings = 0;
+  bool _isDeletingAccount = false;
 
   @override
   void initState() {
@@ -28,7 +31,10 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
   }
 
   Future<void> _fetchDriverData() async {
-    final doc = await FirebaseFirestore.instance.collection('drivers').doc(widget.driverId).get();
+    final doc = await FirebaseFirestore.instance
+        .collection('drivers')
+        .doc(widget.driverId)
+        .get();
     if (doc.exists) {
       setState(() {
         driverData = doc.data();
@@ -48,7 +54,8 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
       final data = doc.data();
       final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
       if (status != 'delivered' && status != 'تم التوصيل') continue;
-      total += (data['deliveryFeeForDriver'] ?? data['deliveryFee'] ?? 0).toDouble();
+      total +=
+          (data['deliveryFeeForDriver'] ?? data['deliveryFee'] ?? 0).toDouble();
       completed++;
     }
 
@@ -69,14 +76,21 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
           decoration: InputDecoration(hintText: 'ادخل $fieldName الجديد'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('حفظ')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(context, controller.text),
+              child: const Text('حفظ')),
         ],
       ),
     );
 
     if (result != null && result != currentValue) {
-      await FirebaseFirestore.instance.collection('drivers').doc(widget.driverId).update({fieldName: result});
+      await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(widget.driverId)
+          .update({fieldName: result});
       _fetchDriverData();
     }
   }
@@ -93,8 +107,12 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
           decoration: const InputDecoration(hintText: 'كلمة المرور الجديدة'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('تغيير')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(context, controller.text),
+              child: const Text('تغيير')),
         ],
       ),
     );
@@ -102,12 +120,109 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
     if (result != null && result.length >= 6) {
       try {
         await FirebaseAuth.instance.currentUser?.updatePassword(result);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ تم تغيير كلمة المرور')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('✅ تم تغيير كلمة المرور')));
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('خطأ: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('خطأ: $e')));
       }
     } else if (result != null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ كلمة المرور قصيرة جدًا')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('⚠️ كلمة المرور قصيرة جدًا')));
+    }
+  }
+
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('userType');
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreenArabic(
+          allowRegister: false,
+          allowGoogleSignIn: false,
+          allowPhoneSignIn: false,
+          allowGuestSignIn: false,
+        ),
+      ),
+      (route) => false,
+    );
+  }
+
+  Future<void> _requestAccountDeletion() async {
+    if (_isDeletingAccount) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف حساب المندوب'),
+        content: const Text(
+          'سيتم إرسال طلب حذف حساب المندوب نهائياً. هل تريد المتابعة؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('متابعة الحذف'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      messenger.showSnackBar(
+          const SnackBar(content: Text('لا يوجد مستخدم مسجل حالياً')));
+      return;
+    }
+
+    setState(() => _isDeletingAccount = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('accountDeletionRequests')
+          .doc(widget.driverId)
+          .set({
+        'userId': widget.driverId,
+        'authUid': user.uid,
+        'role': 'courier',
+        'sourceApp': 'courier',
+        'status': 'pending',
+        'requestedFrom': 'in_app',
+        'userName': driverData?['name'] ?? '',
+        'phone': driverData?['phone'] ?? '',
+        'email': driverData?['email'] ?? user.email ?? '',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(widget.driverId)
+          .set({
+        'deletionRequestStatus': 'pending',
+        'deletionRequestedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await _logout();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تم إرسال طلب حذف الحساب بنجاح')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر إرسال طلب الحذف: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isDeletingAccount = false);
     }
   }
 
@@ -123,7 +238,12 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
     return Scaffold(
       backgroundColor: AppThemeArabic.clientBackground,
       appBar: AppBar(
-        title: const Text('حسابي', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+        title: const Text('حسابي',
+            style: TextStyle(
+                color: AppThemeArabic.clientPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+                fontFamily: 'Tajawal')),
         backgroundColor: Colors.white,
         centerTitle: true,
         elevation: 1,
@@ -142,12 +262,16 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
               content: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('👤 معلومات الحساب', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text('👤 معلومات الحساب',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const Divider(height: 20),
                   Row(
                     children: [
                       const Text('الاسم: ', style: TextStyle(fontSize: 16)),
-                      Expanded(child: Text(name, style: const TextStyle(fontSize: 16))),
+                      Expanded(
+                          child:
+                              Text(name, style: const TextStyle(fontSize: 16))),
                       IconButton(
                         icon: const Icon(Icons.edit, color: Colors.grey),
                         onPressed: () => _editField('name', name),
@@ -156,8 +280,11 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
                   ),
                   Row(
                     children: [
-                      const Text('رقم الهاتف: ', style: TextStyle(fontSize: 16)),
-                      Expanded(child: Text(phone, style: const TextStyle(fontSize: 16))),
+                      const Text('رقم الهاتف: ',
+                          style: TextStyle(fontSize: 16)),
+                      Expanded(
+                          child: Text(phone,
+                              style: const TextStyle(fontSize: 16))),
                       IconButton(
                         icon: const Icon(Icons.edit, color: Colors.grey),
                         onPressed: () => _editField('phone', phone),
@@ -165,7 +292,8 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Text('📄 معرف المندوب: ${widget.driverId}', style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                  Text('📄 معرف المندوب: ${widget.driverId}',
+                      style: const TextStyle(fontSize: 14, color: Colors.grey)),
                 ],
               ),
             ),
@@ -176,21 +304,27 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
               content: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('📊 إحصائيات', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text('📊 إحصائيات',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const Divider(height: 20),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('الطلبات المكتملة:', style: TextStyle(fontSize: 16)),
-                      Text('$completedOrders', style: const TextStyle(fontSize: 16)),
+                      const Text('الطلبات المكتملة:',
+                          style: TextStyle(fontSize: 16)),
+                      Text('$completedOrders',
+                          style: const TextStyle(fontSize: 16)),
                     ],
                   ),
                   const SizedBox(height: 10),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('إجمالي الأرباح:', style: TextStyle(fontSize: 16)),
-                      Text('$totalEarnings ج.س', style: const TextStyle(fontSize: 16)),
+                      const Text('إجمالي الأرباح:',
+                          style: TextStyle(fontSize: 16)),
+                      Text('$totalEarnings ج.س',
+                          style: const TextStyle(fontSize: 16)),
                     ],
                   ),
                 ],
@@ -201,7 +335,8 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => CourierWalletScreen(driverId: widget.driverId),
+                    builder: (_) =>
+                        CourierWalletScreen(driverId: widget.driverId),
                   ),
                 );
               },
@@ -233,6 +368,24 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
               icon: const Icon(Icons.privacy_tip),
               fullWidthButton: true,
               color: AppThemeArabic.clientPrimary,
+              shape: GFButtonShape.pills,
+            ),
+            const SizedBox(height: 12),
+            GFButton(
+              onPressed: _isDeletingAccount ? null : _requestAccountDeletion,
+              text: _isDeletingAccount ? 'جاري إرسال الطلب...' : 'حذف الحساب',
+              icon: _isDeletingAccount
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.delete_forever),
+              fullWidthButton: true,
+              color: GFColors.DANGER,
               shape: GFButtonShape.pills,
             ),
           ],

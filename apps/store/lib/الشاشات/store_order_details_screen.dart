@@ -86,9 +86,8 @@ class StoreOrderDetailsScreen extends StatelessWidget {
         final restaurantLng = (orderData['restaurantLng'] as num?)?.toDouble();
 
         // جلب جميع السائقين للتشكيل في قائمة الانتظار
-        final driversSnapshot = await FirebaseFirestore.instance
-            .collection('drivers')
-            .get();
+        final driversSnapshot =
+            await FirebaseFirestore.instance.collection('drivers').get();
 
         List<Map<String, dynamic>> driverList = [];
         if (restaurantLat != null && restaurantLng != null) {
@@ -147,7 +146,9 @@ class StoreOrderDetailsScreen extends StatelessWidget {
     final items = orderData['items'] as List<dynamic>? ?? [];
     final total = orderData['total'] ?? 0;
     final deliveryFee = orderData['deliveryFee'] ?? 0;
-    final totalWithDelivery = orderData['totalWithDelivery'] ?? total;
+    final largeOrderFee = orderData['largeOrderFee'] ?? 0;
+    final totalWithDelivery =
+        orderData['totalWithDelivery'] ?? (total + deliveryFee + largeOrderFee);
     final clientName = orderData['clientName'] ?? 'غير معروف';
     final orderId = orderData['docId'] ?? orderData['orderId'] ?? '—';
     final unifiedOrderCode = formatUnifiedOrderCode(
@@ -158,17 +159,15 @@ class StoreOrderDetailsScreen extends StatelessWidget {
     final status =
         (orderData['orderStatus'] ?? orderData['status'] ?? '').toString();
     final assignedDriverId = orderData['assignedDriverId'] as String?;
-    final showReadyAction =
-        (status == 'courier_searching' ||
-            status == 'courier_offer_pending' ||
-            status == 'courier_assigned' ||
-            status == 'قيد التجهيز') &&
-        (assignedDriverId ?? '').trim().isNotEmpty;
+    final hasAssignedDriver = (assignedDriverId ?? '').trim().isNotEmpty;
+    final showReadyAction = status == 'courier_searching' ||
+        status == 'courier_offer_pending' ||
+        status == 'courier_assigned' ||
+        status == 'قيد التجهيز';
 
-    final showAcceptReject =
-        status == 'store_pending' ||
-            status == 'قيد المراجعة' ||
-            status == 'بانتظار المطعم';
+    final showAcceptReject = status == 'store_pending' ||
+        status == 'قيد المراجعة' ||
+        status == 'بانتظار المطعم';
 
     final storePerspectiveDone = !_storeNewStatuses.contains(status);
 
@@ -211,7 +210,8 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: _statusChipColor(status).withValues(alpha: 0.12),
+                            color: _statusChipColor(status)
+                                .withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
@@ -228,13 +228,17 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       '👤 اسم العميل: $clientName',
-                      style: const TextStyle(fontSize: 16, fontFamily: 'Tajawal'),
+                      style:
+                          const TextStyle(fontSize: 16, fontFamily: 'Tajawal'),
                     ),
-                    if ((orderData['clientPhone'] ?? '').toString().trim().isNotEmpty)
+                    if ((orderData['clientPhone'] ?? '')
+                        .toString()
+                        .trim()
+                        .isNotEmpty)
                       Text(
                         '📞 هاتف العميل: ${orderData['clientPhone']}',
-                        style:
-                            const TextStyle(fontSize: 14, color: Colors.black54),
+                        style: const TextStyle(
+                            fontSize: 14, color: Colors.black54),
                       ),
                     const Divider(height: 30),
                     const Text(
@@ -288,6 +292,11 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                       '🚚 رسوم التوصيل: $deliveryFee ج.س',
                       style: const TextStyle(fontFamily: 'Tajawal'),
                     ),
+                    if (largeOrderFee != 0)
+                      Text(
+                        '📦 رسوم الطلبات الكبيرة: $largeOrderFee ج.س',
+                        style: const TextStyle(fontFamily: 'Tajawal'),
+                      ),
                     const SizedBox(height: 6),
                     Text(
                       '💳 الإجمالي النهائي: $totalWithDelivery ج.س',
@@ -317,12 +326,10 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-
               if (orderId != '—' && !storePerspectiveDone) ...[
                 const SizedBox(height: 12),
                 StoreOrderActions(orderId: orderId),
               ],
-
               if (showAcceptReject)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -352,38 +359,35 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-
               if (showReadyAction)
-                assignedDriverId != null
-                    ? GFButton(
-                        onPressed: () async {
-                          final docId =
-                              orderData['docId'] ?? orderData['orderId'];
-                          await FirebaseFirestore.instance
-                              .collection('orders')
-                              .doc(docId)
-                              .update({
-                            'readyByRestaurant': true,
-                            'orderStatus': 'pickup_ready',
-                            'status': 'pickup_ready',
-                            'updatedAt': FieldValue.serverTimestamp(),
-                          });
-                          GFToast.showToast(
-                            '✅ تم تجهيز الطلب وإرسال إشعار للمندوب',
-                            context,
-                          );
-                          Navigator.of(context).pop();
-                        },
-                        text: 'جاهز للتوصيل',
-                        color: AppThemeArabic.clientPrimary,
-                        fullWidthButton: true,
-                      )
-                    : Center(
-                        child: Text('⏳ في انتظار تعيين مندوب…',
-                            style: TextStyle(
-                                color: Colors.grey[600], fontSize: 16)),
-                      ),
-
+                GFButton(
+                  onPressed: () async {
+                    final docId = orderData['docId'] ?? orderData['orderId'];
+                    await FirebaseFirestore.instance
+                        .collection('orders')
+                        .doc(docId)
+                        .update({
+                      'readyByRestaurant': true,
+                      'orderStatus': hasAssignedDriver
+                          ? 'pickup_ready'
+                          : 'courier_searching',
+                      'status': hasAssignedDriver
+                          ? 'pickup_ready'
+                          : 'courier_searching',
+                      'updatedAt': FieldValue.serverTimestamp(),
+                    });
+                    GFToast.showToast(
+                      hasAssignedDriver
+                          ? '✅ تم تجهيز الطلب وإرسال إشعار للمندوب'
+                          : '✅ تم تجهيز الطلب وسيتم البحث عن مندوب تلقائيًا',
+                      context,
+                    );
+                    Navigator.of(context).pop();
+                  },
+                  text: hasAssignedDriver ? 'جاهز للتوصيل' : 'جاهز وابدأ البحث',
+                  color: AppThemeArabic.clientPrimary,
+                  fullWidthButton: true,
+                ),
               if (status == 'pickup_ready' || status == 'جاهز للتوصيل')
                 const Center(
                   child: Text(

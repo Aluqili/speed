@@ -2,6 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
+String _walletStatusText(String status) {
+  switch (status.trim().toLowerCase()) {
+    case 'pending_review':
+    case 'pending':
+    case 'under_review':
+      return 'قيد المراجعة';
+    case 'approved':
+    case 'paid':
+      return 'تمت الموافقة';
+    case 'rejected':
+      return 'مرفوض';
+    default:
+      return status;
+  }
+}
+
 class ClientWalletHistoryScreen extends StatefulWidget {
   final String clientId;
   const ClientWalletHistoryScreen({Key? key, required this.clientId}) : super(key: key);
@@ -47,7 +63,11 @@ class _ClientWalletHistoryScreenState extends State<ClientWalletHistoryScreen> {
                   child: ListTile(
                     leading: Icon(Icons.account_balance_wallet, color: AppThemeArabic.clientPrimary),
                     title: Text('المبلغ: ${data['amount']} ج.س', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('الحالة: ${data['status']}', style: const TextStyle(color: Colors.grey)),
+                    subtitle: Text(
+                      'الحالة: ${_walletStatusText((data['status'] ?? '').toString())}\n'
+                      'الطريقة: ${(data['paymentMethod'] ?? '').toString()}',
+                      style: const TextStyle(color: Colors.grey),
+                    ),
                     trailing: Text(
                       data['createdAt'] != null
                           ? (data['createdAt'] as Timestamp).toDate().toString().substring(0, 16)

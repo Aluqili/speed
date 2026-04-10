@@ -6,6 +6,8 @@ class StorePrivacyPolicyScreen extends StatelessWidget {
 
   static const String _policyUrl =
       'https://speedstar-dev.web.app/legal/privacy-store-ar.html';
+  static const String _deletionUrl =
+      'https://speedstar-dev.web.app/legal/account-deletion-store-ar.html';
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +29,8 @@ class StorePrivacyPolicyScreen extends StatelessWidget {
                   children: [
                     const Text(
                       'سياسة الخصوصية للمتجر',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 12),
                     const Text(
@@ -52,11 +55,41 @@ class StorePrivacyPolicyScreen extends StatelessWidget {
                         );
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('تم نسخ رابط سياسة الخصوصية')),
+                          const SnackBar(
+                            content: Text('تم نسخ رابط سياسة الخصوصية'),
+                          ),
                         );
                       },
                       icon: const Icon(Icons.copy),
-                      label: const Text('نسخ الرابط'),
+                      label: const Text('نسخ رابط السياسة'),
+                    ),
+                    const SizedBox(height: 20),
+                    const Divider(),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'رابط حذف الحساب الرسمي:',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    SelectableText(
+                      _deletionUrl,
+                      style: const TextStyle(color: Colors.blueAccent),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          const ClipboardData(text: _deletionUrl),
+                        );
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('تم نسخ رابط حذف الحساب'),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.copy),
+                      label: const Text('نسخ رابط حذف الحساب'),
                     ),
                   ],
                 ),

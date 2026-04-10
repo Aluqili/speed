@@ -23,6 +23,7 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
 
   static const _activeOrderStatuses = [
     'انتظار الدفع',
+    'payment_review',
     'store_pending',
     'courier_searching',
     'courier_assigned',
@@ -164,6 +165,10 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
     final statusColor = _statusColor(orderStatus, paymentStatus);
     final total = (data['totalWithDelivery'] as num? ?? 0).toStringAsFixed(2);
     final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+    final restaurantName = (data['restaurantName'] ?? 'غير معروف').toString();
+    final displayOrderNumber = ((data['orderNumber'] ?? data['orderId'] ?? orderId)
+        .toString())
+      .trim();
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -175,7 +180,7 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
             const Icon(Icons.receipt, color: primaryColor),
             const SizedBox(width: 8),
             Text(
-              '#${orderId.substring(0, 8)}',
+              displayOrderNumber.isEmpty ? orderId : displayOrderNumber,
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const Spacer(),
@@ -186,6 +191,20 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
               style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ]),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Icon(Icons.storefront, size: 18, color: primaryColor),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  restaurantName.isEmpty ? 'غير معروف' : restaurantName,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
           Row(children: [
             const Icon(Icons.monetization_on, size: 18, color: primaryColor),

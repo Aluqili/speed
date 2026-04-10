@@ -23,6 +23,7 @@ class ClientTrackDriverScreen extends StatefulWidget {
 class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
   GoogleMapController? _mapController;
   bool _notifiedClient = false;
+  bool _closedAfterFinish = false;
 
   String _generateChatId(String user1, String user2) {
     final sorted = [user1, user2]..sort();
@@ -251,6 +252,38 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
           );
           final orderStatus =
               (data['orderStatus'] ?? data['status'] ?? '').toString();
+
+          const finishedStatuses = {
+            'delivered',
+            'cancelled',
+            'store_rejected',
+            'rejected_by_store',
+          };
+
+          if (finishedStatuses.contains(orderStatus)) {
+            if (!_closedAfterFinish) {
+              _closedAfterFinish = true;
+              Future.microtask(() {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('انتهى الطلب، تم إيقاف تتبع المندوب.'),
+                  ),
+                );
+                Navigator.of(context).maybePop();
+              });
+            }
+
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'انتهى الطلب، لم يعد تتبع المندوب متاحًا.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
 
           if (clientLocation == null) {
             return const Center(child: Text('موقع العميل غير متاح بعد.'));

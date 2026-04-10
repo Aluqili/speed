@@ -315,6 +315,7 @@ const List<String> _statusSteps = [
 String _normalizeStatus(String status) {
   switch (status) {
     case 'انتظار الدفع':
+    case 'payment_review':
     case 'store_pending':
     case 'قيد المراجعة':
       return 'store_pending';

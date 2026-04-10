@@ -1,6 +1,6 @@
 # Google Play - Permissions Declarations (جاهز للنسخ)
 
-آخر تحديث: 23 فبراير 2026
+آخر تحديث: 14 مارس 2026
 
 هذا الملف يقدّم إجابات عملية لقسم الأذونات في Play Console لكل تطبيق.
 تم الاستناد إلى الكود الحالي ونتائج merged manifests الموجودة في build.
@@ -9,13 +9,14 @@
 
 ## 1) تطبيق العميل (Client)
 
-### الأذونات الظاهرة حاليًا
+### أذونات تطبيق العميل الظاهرة حاليًا
+
 - INTERNET
 - ACCESS_COARSE_LOCATION
 - ACCESS_FINE_LOCATION
 - POST_NOTIFICATIONS
 
-### إجابات مقترحة في Play Console
+### إجابات مقترحة لتطبيق العميل في Play Console
 
 - **Location permission**: نعم، التطبيق يستخدم الموقع لتحديد عنوان التوصيل وحساب المسافة وعرض المطاعم ضمن النطاق.
 - **هل الموقع مطلوب لوظائف أساسية؟** نعم.
@@ -23,20 +24,22 @@
 - **Notifications permission**: نعم، لإرسال تنبيهات حالة الطلب والتنبيهات المهمة.
 - **هل الإشعارات ضرورية لوظيفة أساسية؟** ليست شرطًا لفتح التطبيق، لكنها مهمة لتتبع الطلبات.
 
-### نص تبرير مختصر (Copy/Paste)
+### نص تبرير مختصر لتطبيق العميل (Copy/Paste)
+
 نستخدم إذن الموقع الدقيق/التقريبي لتمكين اختيار عنوان التوصيل وحساب المسافة وعرض المطاعم المتاحة ضمن نطاق العميل. ونستخدم إذن الإشعارات لإرسال تحديثات حالة الطلب والتنبيهات التشغيلية المهمة.
 
 ---
 
 ## 2) تطبيق المندوب (Courier)
 
-### الأذونات الظاهرة حاليًا
+### أذونات تطبيق المندوب الظاهرة حاليًا
+
 - INTERNET
 - ACCESS_COARSE_LOCATION
 - ACCESS_FINE_LOCATION
 - POST_NOTIFICATIONS
 
-### إجابات مقترحة في Play Console
+### إجابات مقترحة لتطبيق المندوب في Play Console
 
 - **Location permission**: نعم، التطبيق يعتمد على الموقع لتوجيه المندوب للمطعم والعميل ومتابعة التنفيذ.
 - **هل الموقع مطلوب لوظائف أساسية؟** نعم.
@@ -44,27 +47,31 @@
 - **Notifications permission**: نعم، لاستقبال عروض/إسناد الطلبات والتنبيهات الفورية.
 - **هل الإشعارات ضرورية؟** مهمة جدًا للتشغيل الفوري لكنها ليست شرطًا لفتح التطبيق.
 
-### نص تبرير مختصر (Copy/Paste)
+### نص تبرير مختصر لتطبيق المندوب (Copy/Paste)
+
 يستخدم تطبيق المندوب إذن الموقع الدقيق/التقريبي لتوجيه المندوب أثناء تنفيذ الطلبات (الذهاب للمطعم ثم العميل) وضمان دقة التشغيل. كما يستخدم إذن الإشعارات لاستقبال الطلبات الجديدة وتحديثات الحالة الفورية.
 
 ---
 
 ## 3) تطبيق المتجر (Store)
 
-### الأذونات الظاهرة حاليًا
+### أذونات تطبيق المتجر الظاهرة حاليًا
+
 - INTERNET
 - ACCESS_COARSE_LOCATION
 - ACCESS_FINE_LOCATION
+- POST_NOTIFICATIONS
 
-### إجابات مقترحة في Play Console
+### إجابات مقترحة لتطبيق المتجر في Play Console
 
 - **Location permission**: نعم، لتحديد/التحقق من موقع المتجر وضبط النطاق الجغرافي للخدمة.
 - **هل الموقع مطلوب لوظائف أساسية؟** نعم ضمن إعدادات المتجر والتغطية الجغرافية.
 - **هل تجمعون الموقع في الخلفية (Background)?** لا.
-- **Notifications permission**: غير ظاهر حاليًا في manifests الحالية لهذا التطبيق.
+- **Notifications permission**: نعم، لاستلام تنبيهات الطلبات الجديدة وتغيّر حالات الطلب والتنبيهات التشغيلية المهمة.
 
-### نص تبرير مختصر (Copy/Paste)
-يستخدم تطبيق المتجر إذن الموقع الدقيق/التقريبي لتحديد موقع المتجر وربطه بالنطاق الجغرافي لخدمة الطلبات والتوصيل.
+### نص تبرير مختصر لتطبيق المتجر (Copy/Paste)
+
+يستخدم تطبيق المتجر إذن الموقع الدقيق/التقريبي لتحديد موقع المتجر وربطه بالنطاق الجغرافي لخدمة الطلبات والتوصيل، ويستخدم إذن الإشعارات لاستلام الطلبات الجديدة وتحديثات الحالة التشغيلية.
 
 ---
 
@@ -82,13 +89,13 @@ Play Console يحاسب على الصيغة النهائية داخل ملف AAB
 ## 5) روابط قانونية مرتبطة (ضعها مع الأذونات/البيانات)
 
 - العميل:
-  - Privacy: https://speedstar-dev.web.app/legal/privacy-client-ar.html
-  - Account deletion: https://speedstar-dev.web.app/legal/account-deletion-client-ar.html
+  - Privacy: [https://speedstar-dev.web.app/legal/privacy-client-ar.html](https://speedstar-dev.web.app/legal/privacy-client-ar.html)
+  - Account deletion: [https://speedstar-dev.web.app/legal/account-deletion-client-ar.html](https://speedstar-dev.web.app/legal/account-deletion-client-ar.html)
 
 - المندوب:
-  - Privacy: https://speedstar-dev.web.app/legal/privacy-courier-ar.html
-  - Account deletion: https://speedstar-dev.web.app/legal/account-deletion-courier-ar.html
+  - Privacy: [https://speedstar-dev.web.app/legal/privacy-courier-ar.html](https://speedstar-dev.web.app/legal/privacy-courier-ar.html)
+  - Account deletion: [https://speedstar-dev.web.app/legal/account-deletion-courier-ar.html](https://speedstar-dev.web.app/legal/account-deletion-courier-ar.html)
 
 - المتجر:
-  - Privacy: https://speedstar-dev.web.app/legal/privacy-store-ar.html
-  - Account deletion: https://speedstar-dev.web.app/legal/account-deletion-store-ar.html
+  - Privacy: [https://speedstar-dev.web.app/legal/privacy-store-ar.html](https://speedstar-dev.web.app/legal/privacy-store-ar.html)
+  - Account deletion: [https://speedstar-dev.web.app/legal/account-deletion-store-ar.html](https://speedstar-dev.web.app/legal/account-deletion-store-ar.html)

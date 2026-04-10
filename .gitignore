@@ -48,3 +48,9 @@ admin-web/js/firebase-config.js
 
 # Temporary local preview files
 _live_*.html
+
+# Local dumps and ad-hoc deployment outputs
+**/*.hprof
+remoteconfig.live.json
+remoteconfig.publish.out.json
+/json

@@ -1782,6 +1782,26 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       }
     }
 
+    final riverNileTokens = [
+      'عطبره',
+      'عطبرة',
+      'atbara',
+      'atbarah',
+      'نهر النيل',
+      'ولايه نهر النيل',
+      'ولاية نهر النيل',
+      'river nile',
+      'nile river',
+      'nahr al nil',
+      'nahr el nil',
+    ];
+
+    for (final token in riverNileTokens) {
+      if (compact == token || compact.contains(token)) {
+        return 'river_nile';
+      }
+    }
+
     const khartoumAliases = {
       'الخرطوم',
       'خرطوم',
@@ -1800,6 +1820,24 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     if (khartoumAliases.contains(normalized)) {
       return 'khartoum';
     }
+
+    const riverNileAliases = {
+      'عطبره',
+      'عطبرة',
+      'atbara',
+      'atbarah',
+      'نهر النيل',
+      'ولاية نهر النيل',
+      'ولايه نهر النيل',
+      'river nile',
+      'nile river',
+      'nahr al nil',
+      'nahr el nil',
+    };
+    if (riverNileAliases.contains(normalized)) {
+      return 'river_nile';
+    }
+
     return normalized;
   }
 

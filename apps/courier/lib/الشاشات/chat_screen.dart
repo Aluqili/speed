@@ -247,7 +247,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
 
-    if (!_chatEnabled) {
+    if (!_chatEnabled && _isSupportChat) {
       return Scaffold(
         backgroundColor: AppThemeArabic.clientBackground,
         appBar: AppBar(

@@ -1,6 +1,6 @@
 name: speedstar_courier_app
 description: Courier app for SpeedStar
-version: 0.1.0
+version: 0.1.1+2
 publish_to: none
 environment:
   sdk: ">=3.3.0 <4.0.0"

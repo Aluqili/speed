@@ -136,6 +136,26 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
       }
     }
 
+    final riverNileTokens = [
+      'عطبره',
+      'عطبرة',
+      'atbara',
+      'atbarah',
+      'نهر النيل',
+      'ولايه نهر النيل',
+      'ولاية نهر النيل',
+      'river nile',
+      'nile river',
+      'nahr al nil',
+      'nahr el nil',
+    ];
+
+    for (final token in riverNileTokens) {
+      if (compact == token || compact.contains(token)) {
+        return 'river_nile';
+      }
+    }
+
     return normalized;
   }
 

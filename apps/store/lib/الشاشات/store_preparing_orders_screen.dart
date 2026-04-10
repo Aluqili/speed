@@ -16,7 +16,8 @@ String _getOrderStatus(Map<String, dynamic> data) {
 class StorePreparingOrdersScreen extends StatelessWidget {
   final String restaurantId;
 
-  const StorePreparingOrdersScreen({Key? key, required this.restaurantId}) : super(key: key);
+  const StorePreparingOrdersScreen({Key? key, required this.restaurantId})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +42,8 @@ class StorePreparingOrdersScreen extends StatelessWidget {
           }).toList();
 
           if (orders.isEmpty) {
-            return const Center(child: Text('لا توجد طلبات قيد التجهيز حالياً'));
+            return const Center(
+                child: Text('لا توجد طلبات قيد التجهيز حالياً'));
           }
 
           return ListView.builder(
@@ -50,26 +52,36 @@ class StorePreparingOrdersScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               final doc = orders[index];
               final data = doc.data() as Map<String, dynamic>;
+              final total = (data['total'] as num?) ?? 0;
+              final deliveryFee = (data['deliveryFee'] as num?) ?? 0;
+              final largeOrderFee = (data['largeOrderFee'] as num?) ?? 0;
+              final totalWithDelivery = (data['totalWithDelivery'] as num?) ??
+                  (total + deliveryFee + largeOrderFee);
 
               return Card(
                 elevation: 3,
                 margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                        Text('رقم الطلب: ${formatUnifiedOrderCode(orderNumber: data['orderNumber'], orderId: data['orderId'], docId: doc.id)}',
+                      Text(
+                          'رقم الطلب: ${formatUnifiedOrderCode(orderNumber: data['orderNumber'], orderId: data['orderId'], docId: doc.id)}',
                           style: const TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       Text('العميل: ${data['clientName'] ?? 'غير متوفر'}'),
                       const SizedBox(height: 8),
-                      Text('المبلغ: ${data['totalWithDelivery'] ?? 0} ج.س'),
+                      Text('المبلغ: $totalWithDelivery ج.س'),
                       const SizedBox(height: 12),
                       ElevatedButton.icon(
                         onPressed: () {
-                          FirebaseFirestore.instance.collection('orders').doc(doc.id).update({
+                          FirebaseFirestore.instance
+                              .collection('orders')
+                              .doc(doc.id)
+                              .update({
                             'readyByRestaurant': true,
                             'orderStatus': 'pickup_ready',
                             'status': 'pickup_ready',
@@ -81,7 +93,8 @@ class StorePreparingOrdersScreen extends StatelessWidget {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.orange,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
                         ),
                       )
                     ],

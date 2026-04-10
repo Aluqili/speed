@@ -17,6 +17,7 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
   bool notificationsEnabled = true;
   String language = 'العربية';
   Map<String, dynamic>? userData;
+  bool _isDeletingAccount = false;
 
   static const Color primaryColor = AppThemeArabic.clientPrimary;
   static const Color backgroundColor = AppThemeArabic.clientBackground;
@@ -55,6 +56,80 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
       userData = doc.data();
       if (!mounted) return;
       setState(() {});
+    }
+  }
+
+  Future<void> _requestAccountDeletion() async {
+    if (_isDeletingAccount) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف الحساب'),
+        content: const Text(
+          'سيتم إرسال طلب حذف حسابك نهائياً. قد تستغرق المعالجة وقتاً قصيراً. هل تريد المتابعة؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('متابعة الحذف'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      messenger.showSnackBar(
+          const SnackBar(content: Text('لا يوجد مستخدم مسجل حالياً')));
+      return;
+    }
+
+    setState(() => _isDeletingAccount = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('accountDeletionRequests')
+          .doc(user.uid)
+          .set({
+        'userId': user.uid,
+        'authUid': user.uid,
+        'role': 'client',
+        'sourceApp': 'client',
+        'status': 'pending',
+        'requestedFrom': 'in_app',
+        'userName': userData?['name'] ?? '',
+        'phone': userData?['phone'] ?? '',
+        'email': userData?['email'] ?? user.email ?? '',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await FirebaseFirestore.instance.collection('clients').doc(user.uid).set({
+        'deletionRequestStatus': 'pending',
+        'deletionRequestedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await FirebaseAuth.instance.signOut();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تم إرسال طلب حذف الحساب بنجاح')),
+      );
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر إرسال طلب الحذف: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isDeletingAccount = false);
     }
   }
 
@@ -348,6 +423,36 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                         Navigator.of(context)
                             .pushNamedAndRemoveUntil('/login', (_) => false);
                       },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      icon: _isDeletingAccount
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.delete_forever,
+                              color: Colors.white),
+                      label: const Text(
+                        'حذف الحساب',
+                        style: TextStyle(fontSize: 16, fontFamily: 'Tajawal'),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed:
+                          _isDeletingAccount ? null : _requestAccountDeletion,
                     ),
                   ),
                 ],

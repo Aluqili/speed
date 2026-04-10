@@ -180,22 +180,20 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     }
 
     final threshold = _largeItemThreshold;
+    final subtotal = cart.totalPrice;
+    if (subtotal <= threshold) {
+      return 0.0;
+    }
+
     final baseFee = _largeItemFeeBase;
     final stepAmount = _largeItemStepAmount;
     final stepFee = _largeItemStepFee;
-    final capPerUnit = _largeItemFeeCapPerUnit;
+    final cap = _largeItemFeeCapPerUnit;
 
-    double totalFee = 0;
-    for (final item in cart.cartItems) {
-      final unitPrice = item.price;
-      if (unitPrice <= threshold) continue;
-
-      final steps = ((unitPrice - threshold) / stepAmount).floor() + 1;
-      double unitFee = baseFee + ((steps - 1) * stepFee);
-      if (capPerUnit > 0 && unitFee > capPerUnit) {
-        unitFee = capPerUnit;
-      }
-      totalFee += unitFee * item.quantity;
+    final steps = ((subtotal - threshold) / stepAmount).floor() + 1;
+    double totalFee = baseFee + ((steps - 1) * stepFee);
+    if (cap > 0 && totalFee > cap) {
+      totalFee = cap;
     }
 
     return totalFee;
@@ -222,12 +220,15 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
   }
 
   Future<void> _calculateDeliveryFee() async {
+    final cart = Provider.of<CartProvider?>(context, listen: false);
+    final estimatedLargeOrderFee =
+        cart == null ? 0.0 : _calculateLargeOrderFee(cart);
+
     if (!mounted) {
       return;
     }
     setState(() => _loadingDelivery = true);
     try {
-      final cart = Provider.of<CartProvider?>(context, listen: false);
       if (cart == null) {
         if (mounted) {
           setState(() {
@@ -238,8 +239,6 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         }
         return;
       }
-
-      final estimatedLargeOrderFee = _calculateLargeOrderFee(cart);
 
       if (cart.cartItems.isEmpty) {
         setState(() {
@@ -356,7 +355,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       }
       setState(() {
         _deliveryFee = 0.0;
-        _largeOrderFee = 0.0;
+        _largeOrderFee = estimatedLargeOrderFee;
         _loadingDelivery = false;
       });
       final message = e.code == 'unavailable'
@@ -372,7 +371,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       }
       setState(() {
         _deliveryFee = 0.0;
-        _largeOrderFee = 0.0;
+        _largeOrderFee = estimatedLargeOrderFee;
         _loadingDelivery = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -383,6 +382,10 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
   Future<void> _onCheckoutPressed(CartProvider cart) async {
     final user = FirebaseAuth.instance.currentUser!;
+    await _calculateDeliveryFee();
+    if (!mounted) {
+      return;
+    }
     // تحقق من وجود عنوان افتراضي مؤكد
     final clientDoc = await FirebaseFirestore.instance
         .collection('clients')
@@ -711,6 +714,26 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       }
     }
 
+    final riverNileTokens = [
+      'عطبره',
+      'عطبرة',
+      'atbara',
+      'atbarah',
+      'نهر النيل',
+      'ولايه نهر النيل',
+      'ولاية نهر النيل',
+      'river nile',
+      'nile river',
+      'nahr al nil',
+      'nahr el nil',
+    ];
+
+    for (final token in riverNileTokens) {
+      if (compact == token || compact.contains(token)) {
+        return 'river_nile';
+      }
+    }
+
     const khartoumAliases = {
       'الخرطوم',
       'خرطوم',
@@ -729,6 +752,24 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
     if (khartoumAliases.contains(normalized)) {
       return 'khartoum';
+    }
+
+    const riverNileAliases = {
+      'عطبره',
+      'عطبرة',
+      'atbara',
+      'atbarah',
+      'نهر النيل',
+      'ولاية نهر النيل',
+      'ولايه نهر النيل',
+      'river nile',
+      'nile river',
+      'nahr al nil',
+      'nahr el nil',
+    };
+
+    if (riverNileAliases.contains(normalized)) {
+      return 'river_nile';
     }
 
     return normalized;

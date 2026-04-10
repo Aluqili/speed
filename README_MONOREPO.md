@@ -23,11 +23,18 @@
    - `cd apps/client && flutter run`
 
 ### التحديث السحابي
+
 - استضف ملفات JSON (مثال: `https://yourdomain/sdui/client.json`) وحدّث الروابط داخل ملفات `main.dart` لكل تطبيق.
 - يدعم SDUI مفاتيح عربية في JSON مثل: `نوع`، `نص`، `زر`، `صورة`، `فاصل`، `عنوان`، `رسالة`، `عرض`، `ارتفاع`.
 
 ## لوحة الأدمن ويب
+
 - ملف الواجهة: `admin-web/index.html`
 - دليل التشغيل: `admin-web/README_AR.md`
 - النشر على Firebase Hosting:
-   - `firebase deploy --only hosting`
+  - `firebase deploy --only hosting`
+
+## تجهيز iOS
+
+- دليل iOS الكامل: `docs/ios_release_ar.md`
+- ملاحظة: إخراج IPA موقّع يتطلب macOS (Mac فعلي أو CI بنظام macOS).

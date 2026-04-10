@@ -14,7 +14,9 @@ class OrderStatusPalette {
     switch (status.trim()) {
       case 'pending_payment':
       case 'انتظار الدفع':
+      case 'payment_review':
       case 'store_pending':
+      case 'under_review':
       case 'قيد المراجعة':
       case 'بانتظار المطعم':
         return 'pending';
@@ -41,6 +43,7 @@ class OrderStatusPalette {
       case 'cancelled':
       case 'ملغي':
       case 'rejected':
+      case 'رفض الدفع':
       case 'مرفوض':
         return 'cancelled';
       default:
@@ -78,7 +81,9 @@ class OrderStatusPalette {
       case 'pending_payment':
       case 'انتظار الدفع':
         return 'انتظار الدفع';
+      case 'payment_review':
       case 'store_pending':
+      case 'under_review':
       case 'قيد المراجعة':
       case 'بانتظار المطعم':
         return 'قيد المراجعة';

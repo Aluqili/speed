@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:getwidget/getwidget.dart';
@@ -40,69 +42,172 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   bool isClosed = false;
   String statusText = '';
   Color statusColor = Colors.green;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _restaurantSubscription;
 
   @override
   void initState() {
     super.initState();
-    _checkRestaurantStatus();
+    _listenToRestaurantStatus();
   }
 
-  Future<void> _checkRestaurantStatus() async {
-    final doc = await FirebaseFirestore.instance
+  @override
+  void dispose() {
+    _restaurantSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _listenToRestaurantStatus() {
+    _restaurantSubscription = FirebaseFirestore.instance
         .collection('restaurants')
         .doc(widget.restaurantId)
-        .get();
-
-    final data = doc.data();
-    if (data == null) return;
-
-    final closed = data['temporarilyClosed'] == true;
-    final hours = data['workingHours'] as Map<String, dynamic>?;
-
-    if (closed) {
+        .snapshots()
+        .listen((doc) {
+      final resolved = _resolveRestaurantStatus(doc.data());
+      if (!mounted) return;
       setState(() {
-        isClosed = true;
-        statusText = 'المطعم مغلق مؤقتًا';
-        statusColor = Colors.orange;
+        isClosed = resolved['isClosed'] as bool;
+        statusText = resolved['text'] as String;
+        statusColor = resolved['color'] as Color;
       });
-      return;
+    });
+  }
+
+  Map<String, dynamic> _resolveRestaurantStatus(Map<String, dynamic>? data) {
+    if (data == null) {
+      return {
+        'isClosed': true,
+        'text': 'تعذر تحميل حالة المطعم',
+        'color': Colors.red,
+      };
+    }
+
+    if (data['temporarilyClosed'] == true) {
+      return {
+        'isClosed': true,
+        'text': 'المطعم مغلق مؤقتًا',
+        'color': Colors.orange,
+      };
+    }
+
+    final hours = data['workingHours'] as Map<String, dynamic>?;
+    final todayKey = _getDayKey(DateTime.now().weekday);
+    final today = hours?[todayKey] as Map<String, dynamic>?;
+    if (today == null) {
+      return {
+        'isClosed': true,
+        'text': 'المطعم مغلق اليوم',
+        'color': Colors.red,
+      };
+    }
+
+    final status = (today['status'] ?? '').toString().trim();
+    if (status == 'مغلق') {
+      return {
+        'isClosed': true,
+        'text': 'المطعم مغلق اليوم',
+        'color': Colors.red,
+      };
+    }
+
+    final ranges = _extractTimeRanges(today, status);
+    if (ranges.isEmpty) {
+      return {
+        'isClosed': true,
+        'text': 'المطعم مغلق - وقت غير معروف',
+        'color': Colors.red,
+      };
     }
 
     final now = DateTime.now();
-    final todayKey = _getDayKey(now.weekday);
-    final today = hours?[todayKey];
-
-    if (today == null) {
-      setState(() {
-        isClosed = true;
-        statusText = 'المطعم مغلق اليوم';
-        statusColor = Colors.red;
-      });
-      return;
-    }
-
-    final open = _parseTime(today['open']);
-    final close = _parseTime(today['close']);
-    if (open == null || close == null) {
-      setState(() {
-        isClosed = true;
-        statusText = 'المطعم مغلق - وقت غير معروف';
-        statusColor = Colors.red;
-      });
-      return;
-    }
-
     final nowMinutes = now.hour * 60 + now.minute;
+    for (final range in ranges) {
+      final open = range['open'] as TimeOfDay;
+      final close = range['close'] as TimeOfDay;
+      if (_isWithinTimeRange(nowMinutes, open, close)) {
+        return {
+          'isClosed': false,
+          'text': 'المطعم مفتوح الآن',
+          'color': Colors.green,
+        };
+      }
+    }
+
+    final nextOpening = _findNextOpening(nowMinutes, ranges);
+    if (nextOpening != null) {
+      return {
+        'isClosed': true,
+        'text': 'المطعم مغلق الآن - يفتح الساعة ${nextOpening['label']}',
+        'color': Colors.red,
+      };
+    }
+
+    return {
+      'isClosed': true,
+      'text': 'المطعم أغلق لهذا اليوم',
+      'color': Colors.red,
+    };
+  }
+
+  List<Map<String, dynamic>> _extractTimeRanges(
+    Map<String, dynamic> dayData,
+    String status,
+  ) {
+    final ranges = <Map<String, dynamic>>[];
+
+    void addRange(dynamic openValue, dynamic closeValue) {
+      final openText = openValue?.toString().trim() ?? '';
+      final closeText = closeValue?.toString().trim() ?? '';
+      final open = _parseTime(openText);
+      final close = _parseTime(closeText);
+      if (open == null || close == null) return;
+      ranges.add({
+        'label': openText,
+        'open': open,
+        'close': close,
+      });
+    }
+
+    if (status == 'صباحي ومسائي' ||
+        (dayData['morning'] is Map && dayData['evening'] is Map)) {
+      final morning = dayData['morning'] as Map<String, dynamic>?;
+      final evening = dayData['evening'] as Map<String, dynamic>?;
+      addRange(morning?['open'], morning?['close']);
+      addRange(evening?['open'], evening?['close']);
+      return ranges;
+    }
+
+    addRange(dayData['open'], dayData['close']);
+    return ranges;
+  }
+
+  bool _isWithinTimeRange(int nowMinutes, TimeOfDay open, TimeOfDay close) {
     final openMinutes = open.hour * 60 + open.minute;
     final closeMinutes = close.hour * 60 + close.minute;
-
-    if (nowMinutes < openMinutes || nowMinutes > closeMinutes) {
-      setState(() {
-        isClosed = true;
-        statusText = 'المطعم مغلق الآن - يفتح الساعة ${today['open']}';
-        statusColor = Colors.red;
-      });
+    if (closeMinutes >= openMinutes) {
+      return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
     }
+    return nowMinutes >= openMinutes || nowMinutes <= closeMinutes;
+  }
+
+  Map<String, dynamic>? _findNextOpening(
+    int nowMinutes,
+    List<Map<String, dynamic>> ranges,
+  ) {
+    Map<String, dynamic>? nearest;
+    var bestDelta = 1 << 30;
+    for (final range in ranges) {
+      final open = range['open'] as TimeOfDay;
+      final openMinutes = open.hour * 60 + open.minute;
+      final delta = openMinutes >= nowMinutes
+          ? openMinutes - nowMinutes
+          : (24 * 60 - nowMinutes) + openMinutes;
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        nearest = range;
+      }
+    }
+    return nearest;
   }
 
   TimeOfDay? _parseTime(String time) {
@@ -187,6 +292,63 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       parts.add('كبير ${NumberFormat.decimalPattern().format(large)} ج.س');
     }
     return parts.join(' • ');
+  }
+
+  Future<void> _showSizePickerAndRemoveFromCart({
+    required CartProvider cartProvider,
+    required String restaurantId,
+    required String docId,
+    required String itemName,
+  }) async {
+    final variants = cartProvider.variantsForMenuItem(restaurantId, docId);
+    if (variants.isEmpty) return;
+
+    if (variants.length == 1) {
+      await cartProvider.removeOneItem(variants.first.id);
+      return;
+    }
+
+    final aggregated = <String, Map<String, dynamic>>{};
+    for (final variant in variants) {
+      final key = variant.sizeKey ?? variant.id;
+      final current = aggregated[key] ?? {
+        'id': variant.id,
+        'sizeLabel': variant.sizeLabel ?? 'حجم غير محدد',
+        'price': variant.price,
+        'quantity': 0,
+      };
+      current['quantity'] = (current['quantity'] as int) + variant.quantity;
+      aggregated[key] = current;
+    }
+
+    String? pickedId;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('اختر الحجم المراد إنقاصه من $itemName'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: aggregated.values
+              .map(
+                (entry) => ListTile(
+                  title: Text(entry['sizeLabel'].toString()),
+                  subtitle: Text(
+                    '${NumberFormat.decimalPattern().format(entry['price'])} ج.س • الكمية ${entry['quantity']}',
+                  ),
+                  onTap: () {
+                    pickedId = entry['id'].toString();
+                    Navigator.pop(context);
+                  },
+                ),
+              )
+              .toList(),
+        ),
+      ),
+    );
+
+    if (pickedId != null) {
+      await cartProvider.removeOneItem(pickedId!);
+    }
   }
 
   Future<void> _showSizePickerAndAddToCart({
@@ -533,6 +695,48 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                             fontWeight: FontWeight.w500,
                                             letterSpacing: 0.2),
                                       ),
+                                      if (hasSizes) ...[
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          alignment: WrapAlignment.end,
+                                          children: sizes.entries.map((entry) {
+                                            return Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 10, vertical: 8),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFF8FAFC),
+                                                borderRadius: BorderRadius.circular(12),
+                                                border: Border.all(
+                                                  color: const Color(0xFFE2E8F0),
+                                                ),
+                                              ),
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.end,
+                                                children: [
+                                                  Text(
+                                                    _sizeLabel(entry.key),
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    '${NumberFormat.decimalPattern().format(entry.value)} ج.س',
+                                                    style: const TextStyle(
+                                                      color: primaryColor,
+                                                      fontWeight: FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ],
                                       const SizedBox(height: 8),
                                       // الأزرار تحت الاسم والسعر مباشرة
                                       Row(
@@ -579,24 +783,33 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                                     fontWeight: FontWeight.bold,
                                                     color: Colors.black)),
                                           ),
-                                            if (!hasSizes)
-                                            GFIconButton(
-                                              icon: const Icon(Icons.remove,
-                                                size: 18),
-                                              onPressed: (isClosed ||
-                                                  data['available'] == false)
+                                          GFIconButton(
+                                            icon: const Icon(Icons.remove,
+                                              size: 18),
+                                            onPressed: (isClosed ||
+                                                    data['available'] == false ||
+                                                    quantity <= 0)
                                                 ? null
-                                                : () {
-                                                  cartProvider
-                                                    .removeOneItem(itemId);
-                                                },
-                                              color: primaryColor,
-                                              type: GFButtonType.outline,
-                                              size: GFSize.SMALL,
-                                              shape: GFIconButtonShape.circle,
-                                              splashColor:
+                                                : () async {
+                                                    if (hasSizes) {
+                                                      await _showSizePickerAndRemoveFromCart(
+                                                        cartProvider: cartProvider,
+                                                        restaurantId: widget.restaurantId,
+                                                        docId: doc.id,
+                                                        itemName: itemName,
+                                                      );
+                                                      return;
+                                                    }
+                                                    await cartProvider
+                                                        .removeOneItem(itemId);
+                                                  },
+                                            color: primaryColor,
+                                            type: GFButtonType.outline,
+                                            size: GFSize.SMALL,
+                                            shape: GFIconButtonShape.circle,
+                                            splashColor:
                                                 closedColor.withOpacity(0.15),
-                                            ),
+                                          ),
                                         ],
                                       ),
                                     ],

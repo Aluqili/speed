@@ -2,6 +2,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/fireba
 import {
   getAuth,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
@@ -12,6 +13,7 @@ import {
 import {
   getFirestore,
   collection,
+  collectionGroup,
   doc,
   getDoc,
   addDoc,
@@ -23,6 +25,7 @@ import {
   limit,
   updateDoc,
   setDoc,
+  deleteField,
   serverTimestamp,
   getDocs,
   writeBatch
@@ -32,7 +35,7 @@ import {
   configForEnv,
   resolveAdminEnv,
   staticAdminEmails
-} from './firebase-config.js?v=20260226h';
+} from './firebase-config.js?v=20260315-loginfix1';
 
 const activeEnv = resolveAdminEnv();
 const firebaseConfig = configForEnv(activeEnv);
@@ -46,22 +49,37 @@ const approveCourierApplication = httpsCallable(fns, 'approveCourierApplication'
 const normalizeStateIdsBatch = httpsCallable(fns, 'normalizeStateIdsBatch');
 const sendAdminNotification = httpsCallable(fns, 'sendAdminNotification');
 const recordWalletPayout = httpsCallable(fns, 'recordWalletPayout');
+const reviewOrderPaymentEvidence = httpsCallable(fns, 'reviewOrderPaymentEvidence');
+const reviewClientWalletRecharge = httpsCallable(fns, 'reviewClientWalletRecharge');
+const getAdminRemoteConfigSettings = httpsCallable(fns, 'getAdminRemoteConfigSettings');
+const updateAdminRemoteConfigSettings = httpsCallable(fns, 'updateAdminRemoteConfigSettings');
 
 const loginCard = document.getElementById('loginCard');
 const appPanel = document.getElementById('appPanel');
 const loginForm = document.getElementById('loginForm');
+const resetPasswordBtn = document.getElementById('resetPasswordBtn');
 const loginStatus = document.getElementById('loginStatus');
 const logoutBtn = document.getElementById('logoutBtn');
 const authState = document.getElementById('authState');
 const envBadge = document.getElementById('envBadge');
 const envSelect = document.getElementById('envSelect');
+const adminQuickTab = document.getElementById('adminQuickTab');
+const adminGlobalSearch = document.getElementById('adminGlobalSearch');
+const dashboardQuickActions = document.getElementById('dashboardQuickActions');
 
 const statsGrid = document.getElementById('statsGrid');
+const publicMetricsTotalGrid = document.getElementById('publicMetricsTotalGrid');
+const publicMetricsTodayGrid = document.getElementById('publicMetricsTodayGrid');
+const publicMetricsUpdatedAt = document.getElementById('publicMetricsUpdatedAt');
 const financeGrid = document.getElementById('financeGrid');
 const ordersTable = document.getElementById('ordersTable');
 const dashboardOrderDetails = document.getElementById('dashboardOrderDetails');
 const financeTotalsSummary = document.getElementById('financeTotalsSummary');
 const financeOrdersTable = document.getElementById('financeOrdersTable');
+const financePaymentReviewSummary = document.getElementById('financePaymentReviewSummary');
+const financePaymentReviewTable = document.getElementById('financePaymentReviewTable');
+const financeWalletRechargeSummary = document.getElementById('financeWalletRechargeSummary');
+const financeWalletRechargeTable = document.getElementById('financeWalletRechargeTable');
 const financeRangeFilter = document.getElementById('financeRangeFilter');
 const financeStoresPayoutTable = document.getElementById('financeStoresPayoutTable');
 const financeCouriersPayoutTable = document.getElementById('financeCouriersPayoutTable');
@@ -72,6 +90,9 @@ const enableFawry = document.getElementById('enableFawry');
 const bankkAccountInput = document.getElementById('bankkAccountInput');
 const ocashAccountInput = document.getElementById('ocashAccountInput');
 const fawryAccountInput = document.getElementById('fawryAccountInput');
+const bankkAccountHolderInput = document.getElementById('bankkAccountHolderInput');
+const ocashAccountHolderInput = document.getElementById('ocashAccountHolderInput');
+const fawryAccountHolderInput = document.getElementById('fawryAccountHolderInput');
 const savePaymentSettingsBtn = document.getElementById('savePaymentSettingsBtn');
 const paymentSettingsResult = document.getElementById('paymentSettingsResult');
 const restaurantsTable = document.getElementById('restaurantsTable');
@@ -105,6 +126,26 @@ const adminEmailInput = document.getElementById('adminEmailInput');
 const normalizeStateForm = document.getElementById('normalizeStateForm');
 const normalizeLimitInput = document.getElementById('normalizeLimitInput');
 const normalizeStateResult = document.getElementById('normalizeStateResult');
+const rolloutConfigForm = document.getElementById('rolloutConfigForm');
+const rolloutEnabledInput = document.getElementById('rolloutEnabledInput');
+const rolloutGuardKmInput = document.getElementById('rolloutGuardKmInput');
+const rolloutBlockMessageInput = document.getElementById('rolloutBlockMessageInput');
+const rolloutPresetSudanBtn = document.getElementById('rolloutPresetSudanBtn');
+const rolloutSelectAllBtn = document.getElementById('rolloutSelectAllBtn');
+const rolloutClearAllBtn = document.getElementById('rolloutClearAllBtn');
+const reloadRolloutConfigBtn = document.getElementById('reloadRolloutConfigBtn');
+const rolloutCitySearchInput = document.getElementById('rolloutCitySearchInput');
+const rolloutCitiesList = document.getElementById('rolloutCitiesList');
+const rolloutSelectedCitiesCsv = document.getElementById('rolloutSelectedCitiesCsv');
+const rolloutSelectedCount = document.getElementById('rolloutSelectedCount');
+const rolloutConfigResult = document.getElementById('rolloutConfigResult');
+const saveRolloutConfigBtn = document.getElementById('saveRolloutConfigBtn');
+const remoteConfigBulkForm = document.getElementById('remoteConfigBulkForm');
+const remoteConfigFilterInput = document.getElementById('remoteConfigFilterInput');
+const remoteConfigTable = document.getElementById('remoteConfigTable');
+const reloadRemoteConfigBulkBtn = document.getElementById('reloadRemoteConfigBulkBtn');
+const saveRemoteConfigBulkBtn = document.getElementById('saveRemoteConfigBulkBtn');
+const remoteConfigBulkResult = document.getElementById('remoteConfigBulkResult');
 const discountForm = document.getElementById('discountForm');
 const discountCode = document.getElementById('discountCode');
 const discountType = document.getElementById('discountType');
@@ -130,11 +171,14 @@ const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
 let unsubscribers = [];
 let addAdminFormBound = false;
 let normalizeStateFormBound = false;
+let rolloutConfigFormBound = false;
+let remoteConfigBulkFormBound = false;
 let discountFormBound = false;
 let liveMap = null;
 let mapBootstrapped = false;
 let mapAutoFitted = false;
 let mapLegendControlAdded = false;
+let mapAddressBackfillInProgress = false;
 let supportConversations = [];
 let supportMessagesByConversation = new Map();
 let supportSelectedConversationId = '';
@@ -145,11 +189,73 @@ let preservedLoginStatus = null;
 let selectedOrderOnMapId = '';
 let financeRangeFilterBound = false;
 let paymentSettingsFormBound = false;
+let rolloutSelectedCityIds = new Set();
+let remoteConfigParametersCache = [];
 
 const guaranteedAdminEmails = new Set([
   'speedstarapp0@gmail.com',
   ...staticAdminEmails.map((email) => String(email || '').toLowerCase())
 ]);
+
+const SUDAN_CITY_LABELS = [
+  'الخرطوم', 'بحري', 'أم درمان', 'جبل أولياء', 'شرق النيل',
+  'مدني', 'ود مدني', 'الحصاحيصا', 'رفاعة', 'المناقل',
+  'بورتسودان', 'سواكن', 'سنكات', 'هيا', 'طوكر',
+  'كسلا', 'حلفا الجديدة', 'القضارف', 'دوكة', 'القلابات',
+  'سنار', 'سنجة', 'الدندر', 'الدمازين', 'الروصيرص',
+  'كوستي', 'ربك', 'تندلتي', 'الدويم', 'القطينة',
+  'الأبيض', 'الرهد', 'بارا', 'أم روابة', 'النهود',
+  'الفاشر', 'نيالا', 'الجنينة', 'زالنجي', 'كتم',
+  'الدلنج', 'كادوقلي', 'أبو جبيهة', 'لقاوة', 'تلودي',
+  'عطبرة', 'شندي', 'الدامر', 'بربر', 'ابو حمد',
+  'دنقلا', 'مروي', 'كريمة', 'حلفا', 'وادي حلفا',
+  'النيل الأزرق', 'النيل الازرق', 'الجزيرة', 'القضارف', 'كسلا',
+  'البحر الأحمر', 'البحر الاحمر', 'نهر النيل', 'شمال كردفان', 'غرب كردفان',
+  'جنوب كردفان', 'شمال دارفور', 'جنوب دارفور', 'شرق دارفور', 'غرب دارفور',
+  'وسط دارفور', 'شمال', 'الولاية الشمالية', 'الشمالية', 'شمال السودان'
+];
+
+function normalizeRolloutToken(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  return value
+    .replaceAll('أ', 'ا')
+    .replaceAll('إ', 'ا')
+    .replaceAll('آ', 'ا')
+    .replaceAll('ة', 'ه')
+    .replaceAll('ى', 'ي')
+    .replaceAll(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replaceAll(/\s+/g, ' ')
+    .toLowerCase()
+    .trim();
+}
+
+const SUDAN_CITY_OPTIONS = (() => {
+  const out = [];
+  const seen = new Set();
+  SUDAN_CITY_LABELS.forEach((label) => {
+    const id = normalizeRolloutToken(label);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push({ id, label });
+  });
+  return out.sort((a, b) => a.label.localeCompare(b.label, 'ar'));
+})();
+
+function csvToRolloutSet(raw) {
+  const items = String(raw || '')
+    .split(',')
+    .map((item) => normalizeRolloutToken(item))
+    .filter(Boolean);
+  return new Set(items);
+}
+
+function setToCsv(setValues) {
+  return Array.from(setValues)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'ar'))
+    .join(',');
+}
 
 function syncEnvUi() {
   if (envBadge) {
@@ -186,6 +292,7 @@ const mapState = {
   drivers: new Map(),
   clients: new Map(),
   restaurants: new Map(),
+  restaurantAddresses: new Map(),
   orders: new Map()
 };
 
@@ -393,7 +500,13 @@ async function isAdmin(user) {
 function activateTab(id) {
   tabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === id));
   tabPanels.forEach((p) => p.classList.toggle('active', p.id === id));
+  if (adminQuickTab) {
+    adminQuickTab.value = id;
+  }
+  applyAdminGlobalFilter();
   if (id === 'map') {
+    // Re-enable auto-fit whenever map tab is reopened, unless user moves map again.
+    mapAutoFitted = false;
     mountMap().finally(() => {
       if (liveMap) {
         setTimeout(() => {
@@ -410,6 +523,40 @@ function activateTab(id) {
 }
 
 tabs.forEach((tab) => tab.addEventListener('click', () => activateTab(tab.dataset.tab)));
+
+function applyAdminGlobalFilter() {
+  const query = String(adminGlobalSearch?.value || '').trim().toLowerCase();
+  const activePanel = document.querySelector('.tab-panel.active');
+  if (!activePanel) return;
+
+  const rows = activePanel.querySelectorAll('table tbody tr');
+  rows.forEach((row) => {
+    const text = String(row.textContent || '').toLowerCase();
+    const visible = !query || text.includes(query);
+    row.style.display = visible ? '' : 'none';
+  });
+}
+
+if (adminQuickTab) {
+  adminQuickTab.addEventListener('change', () => {
+    activateTab(String(adminQuickTab.value || 'dashboard'));
+  });
+}
+
+if (adminGlobalSearch) {
+  adminGlobalSearch.addEventListener('input', () => {
+    applyAdminGlobalFilter();
+  });
+}
+
+if (dashboardQuickActions) {
+  dashboardQuickActions.querySelectorAll('[data-quick-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tabId = String(btn.getAttribute('data-quick-tab') || 'dashboard');
+      activateTab(tabId);
+    });
+  });
+}
 
 function setLoginStatus(message = '', tone = 'muted') {
   if (!loginStatus) return;
@@ -432,8 +579,34 @@ function mapAuthErrorMessage(err) {
   if (code.includes('network-request-failed')) {
     return 'تعذر الاتصال بالشبكة. تحقق من الإنترنت ثم حاول مجددًا.';
   }
+  if (code.includes('operation-not-allowed')) {
+    return 'تسجيل الدخول بالبريد وكلمة المرور غير مفعل في Firebase Auth. فعّل Email/Password من إعدادات Authentication.';
+  }
   return err?.message || 'حدث خطأ غير متوقع أثناء تسجيل الدخول.';
 }
+
+async function handlePasswordReset() {
+  const email = document.getElementById('emailInput').value.trim();
+  if (!email) {
+    setLoginStatus('أدخل البريد الإلكتروني أولًا لإرسال رابط إعادة التعيين.', 'error');
+    return;
+  }
+
+  if (resetPasswordBtn) resetPasswordBtn.disabled = true;
+  setLoginStatus('جاري إرسال رابط إعادة التعيين...', 'muted');
+  try {
+    await sendPasswordResetEmail(auth, email);
+    setLoginStatus('تم إرسال رابط إعادة تعيين كلمة المرور إلى البريد الإلكتروني.', 'success');
+  } catch (err) {
+    setLoginStatus(`تعذر إرسال رابط إعادة التعيين: ${mapAuthErrorMessage(err)}`, 'error');
+  } finally {
+    if (resetPasswordBtn) resetPasswordBtn.disabled = false;
+  }
+}
+
+window.__adminResetPassword = () => {
+  void handlePasswordReset();
+};
 
 async function handleAuthenticatedUser(user) {
   if (!user) return;
@@ -504,6 +677,7 @@ loginForm.addEventListener('submit', async (e) => {
   const email = document.getElementById('emailInput').value.trim();
   const password = document.getElementById('passwordInput').value;
   const submitBtn = loginForm.querySelector('button[type="submit"]');
+
   if (!email || !password) {
     setLoginStatus('الرجاء إدخال البريد الإلكتروني وكلمة المرور.', 'error');
     return;
@@ -526,12 +700,86 @@ loginForm.addEventListener('submit', async (e) => {
   }
 });
 
+resetPasswordBtn?.addEventListener('click', async () => {
+  await handlePasswordReset();
+});
+
 logoutBtn.addEventListener('click', async () => {
   preservedLoginStatus = null;
   await signOut(auth);
 });
 
 function mountDashboard() {
+  const publicMetricDefs = [
+    ['زيارات الصفحة', 'page_view'],
+    ['تحميل العميل', 'download_client_android'],
+    ['تحميل المتجر', 'download_store_android'],
+    ['تحميل المندوب', 'download_courier_android'],
+    ['اتصال هاتفي', 'contact_phone'],
+    ['بريد إلكتروني', 'contact_email'],
+    ['واتساب', 'contact_whatsapp'],
+    ['انستغرام', 'contact_instagram'],
+    ['فيسبوك', 'contact_facebook'],
+    ['تيك توك', 'contact_tiktok'],
+  ];
+
+  const readCount = (docData, key) => {
+    const nestedValue = docData?.events?.[key];
+    const dottedValue = docData?.[`events.${key}`];
+    const value = Number(nestedValue ?? dottedValue ?? 0);
+    return Number.isFinite(value) ? value : 0;
+  };
+
+  const renderPublicMetrics = (target, docData, headingPrefix) => {
+    if (!target) return;
+    const blocks = publicMetricDefs.map(([label, key]) => {
+      const count = readCount(docData, key).toLocaleString('ar-EG');
+      return `<div class="stat"><h4>${headingPrefix} ${label}</h4><b>${count}</b></div>`;
+    });
+    target.innerHTML = blocks.join('');
+  };
+
+  const dayKey = new Date().toISOString().slice(0, 10);
+  const rootMetricsRef = doc(db, 'public_metrics', 'landing_page');
+  const dailyMetricsRef = doc(db, 'public_metrics', 'landing_page', 'daily', dayKey);
+
+  renderPublicMetrics(publicMetricsTotalGrid, {}, 'إجمالي');
+  renderPublicMetrics(publicMetricsTodayGrid, {}, 'اليوم');
+
+  unsubscribers.push(
+    onSnapshot(rootMetricsRef, (snap) => {
+      const data = snap.data() || {};
+      renderPublicMetrics(publicMetricsTotalGrid, data, 'إجمالي');
+      if (publicMetricsUpdatedAt) {
+        const hasData = snap.exists();
+        publicMetricsUpdatedAt.textContent = hasData
+          ? 'تم تحديث الإحصائيات الإجمالية بنجاح.'
+          : 'لا توجد بيانات إجمالية بعد.';
+      }
+    }, (err) => {
+      if (publicMetricsUpdatedAt) {
+        publicMetricsUpdatedAt.textContent = `تعذر تحميل الإحصائيات الإجمالية: ${err.message || err}`;
+      }
+    })
+  );
+
+  unsubscribers.push(
+    onSnapshot(dailyMetricsRef, (snap) => {
+      const data = snap.data() || {};
+      renderPublicMetrics(publicMetricsTodayGrid, data, 'اليوم');
+      if (publicMetricsUpdatedAt) {
+        const hasData = snap.exists();
+        publicMetricsUpdatedAt.textContent = hasData
+          ? `آخر تحديث: ${dayKey}`
+          : `لا توجد بيانات لليوم (${dayKey}) بعد.`;
+      }
+    }, (err) => {
+      if (publicMetricsUpdatedAt) {
+        publicMetricsUpdatedAt.textContent = `تعذر تحميل إحصائيات اليوم: ${err.message || err}`;
+      }
+    })
+  );
+
   const toMoney = (value) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -779,6 +1027,9 @@ function mountFinance() {
         bankkAccount: String(bankkAccountInput?.value || '').trim(),
         ocashAccount: String(ocashAccountInput?.value || '').trim(),
         fawryAccount: String(fawryAccountInput?.value || '').trim(),
+        bankkAccountHolder: String(bankkAccountHolderInput?.value || '').trim(),
+        ocashAccountHolder: String(ocashAccountHolderInput?.value || '').trim(),
+        fawryAccountHolder: String(fawryAccountHolderInput?.value || '').trim(),
         updatedAt: serverTimestamp(),
         updatedByAdminUid: auth.currentUser?.uid || '',
       };
@@ -815,6 +1066,9 @@ function mountFinance() {
       if (bankkAccountInput) bankkAccountInput.value = String(data.bankkAccount || '');
       if (ocashAccountInput) ocashAccountInput.value = String(data.ocashAccount || '');
       if (fawryAccountInput) fawryAccountInput.value = String(data.fawryAccount || '');
+      if (bankkAccountHolderInput) bankkAccountHolderInput.value = String(data.bankkAccountHolder || '');
+      if (ocashAccountHolderInput) ocashAccountHolderInput.value = String(data.ocashAccountHolder || '');
+      if (fawryAccountHolderInput) fawryAccountHolderInput.value = String(data.fawryAccountHolder || '');
 
       if (paymentSettingsResult && !paymentSettingsResult.textContent.includes('✅')) {
         paymentSettingsResult.textContent = 'الإعدادات الحالية محمّلة من Firebase.';
@@ -1092,6 +1346,180 @@ function mountFinance() {
     }
   };
 
+  const formatDateTimeCell = (value) => {
+    try {
+      if (value && typeof value.toDate === 'function') {
+        return value.toDate().toLocaleString('ar-EG');
+      }
+    } catch (_) {
+    }
+    return '-';
+  };
+
+  const renderPaymentReviewQueue = async (docs) => {
+    if (!financePaymentReviewTable) return;
+
+    const reviewDocs = docs.filter((d) => {
+      const data = d.data() || {};
+      const status = String(data.paymentStatus || '').trim();
+      const decision = String(data.paymentReviewDecision || '').trim().toLowerCase();
+      return status === 'قيد المراجعة' || decision === 'pending';
+    });
+
+    if (financePaymentReviewSummary) {
+      financePaymentReviewSummary.textContent = reviewDocs.length
+        ? `عدد الإيصالات قيد المراجعة: ${reviewDocs.length}`
+        : 'لا توجد إيصالات بانتظار المراجعة.';
+    }
+
+    const transactionRefs = new Map();
+    docs.forEach((d) => {
+      const data = d.data() || {};
+      const ref = String(data.transactionReference || '').trim();
+      if (!ref) return;
+      transactionRefs.set(ref, (transactionRefs.get(ref) || 0) + 1);
+    });
+
+    const rows = reviewDocs
+      .sort((a, b) => {
+        const at = a.data()?.updatedAt?.toMillis?.() || a.data()?.paidAt?.toMillis?.() || 0;
+        const bt = b.data()?.updatedAt?.toMillis?.() || b.data()?.paidAt?.toMillis?.() || 0;
+        return bt - at;
+      })
+      .map((d) => {
+        const data = d.data() || {};
+        const txRef = String(data.transactionReference || '').trim();
+        const duplicateCount = txRef ? Number(transactionRefs.get(txRef) || 0) : 0;
+        const duplicateLabel = duplicateCount > 1 ? `<span class="badge open">مكرر ${duplicateCount}</span>` : '';
+        return `<tr>
+          <td>${escapeHtml(formatUnifiedOrderCode(data.orderNumber, data.orderId, d.id))}</td>
+          <td>${escapeHtml(String(data.clientName || data.clientId || '-'))}</td>
+          <td>${escapeHtml(String(data.paymentMethod || '-'))}</td>
+          <td>${formatMoney(data.totalWithDelivery || data.total || 0)}</td>
+          <td>${escapeHtml(txRef || '-')} ${duplicateLabel}</td>
+          <td>${data.proofImageUrl ? `<a class="btn ghost" href="${escapeHtml(data.proofImageUrl)}" target="_blank" rel="noopener">عرض</a>` : '-'}</td>
+          <td>${formatDateTimeCell(data.paymentReviewAutoFlaggedAt || data.updatedAt || data.paidAt)}</td>
+          <td>
+            <button class="btn ghost" data-approve-payment="${escapeHtml(d.id)}">قبول</button>
+            <button class="btn danger" data-reject-payment="${escapeHtml(d.id)}">رفض</button>
+          </td>
+        </tr>`;
+      });
+
+    setHtml(financePaymentReviewTable, table(['رقم الطلب', 'العميل', 'الطريقة', 'المبلغ', 'رقم العملية', 'الإيصال', 'آخر تحديث', 'إجراء'], rows));
+
+    financePaymentReviewTable.querySelectorAll('[data-approve-payment]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const orderId = btn.getAttribute('data-approve-payment');
+        if (!orderId) return;
+        try {
+          await reviewOrderPaymentEvidence({ orderId, decision: 'approve' });
+          alert('تم اعتماد الإيصال بنجاح');
+        } catch (err) {
+          alert(`تعذر اعتماد الإيصال: ${err.message || err}`);
+        }
+      });
+    });
+
+    financePaymentReviewTable.querySelectorAll('[data-reject-payment]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const orderId = btn.getAttribute('data-reject-payment');
+        if (!orderId) return;
+        const note = prompt('سبب الرفض (اختياري):', '') || '';
+        try {
+          await reviewOrderPaymentEvidence({ orderId, decision: 'reject', note: note.trim() });
+          alert('تم رفض الإيصال');
+        } catch (err) {
+          alert(`تعذر رفض الإيصال: ${err.message || err}`);
+        }
+      });
+    });
+  };
+
+  const renderWalletRechargeQueue = async () => {
+    if (!financeWalletRechargeTable) return;
+
+    let rechargeDocs = [];
+    try {
+      const rechargeSnap = await getDocs(
+        query(collection(db, 'wallet_recharges'), orderBy('createdAt', 'desc'), limit(300))
+      );
+      rechargeDocs = rechargeSnap.docs;
+    } catch (err) {
+      console.warn('wallet recharge queue failed', err);
+      if (financeWalletRechargeSummary) {
+        financeWalletRechargeSummary.textContent = 'تعذر تحميل طلبات شحن المحافظ.';
+      }
+      setHtml(financeWalletRechargeTable, '<div class="muted">تعذر تحميل طلبات الشحن.</div>');
+      return;
+    }
+
+    const pendingDocs = rechargeDocs.filter((docSnap) => {
+      const data = docSnap.data() || {};
+      const status = String(data.status || '').trim().toLowerCase();
+      const reviewStatus = String(data.reviewStatus || '').trim().toLowerCase();
+      return ['pending', 'pending_review', 'under_review'].includes(status)
+        || reviewStatus === 'pending';
+    });
+
+    if (financeWalletRechargeSummary) {
+      financeWalletRechargeSummary.textContent = pendingDocs.length
+        ? `عدد طلبات شحن المحافظ قيد المراجعة: ${pendingDocs.length}`
+        : 'لا توجد طلبات شحن محافظ بانتظار المراجعة.';
+    }
+
+    const rows = pendingDocs.map((docSnap) => {
+      const data = docSnap.data() || {};
+      return `<tr>
+        <td>${escapeHtml(String(data.clientName || data.clientId || '-'))}</td>
+        <td>${escapeHtml(String(data.clientPhone || '-'))}</td>
+        <td>${formatMoney(data.amount || 0)}</td>
+        <td>${escapeHtml(String(data.paymentMethod || '-'))}</td>
+        <td>${escapeHtml(String(data.transactionReference || '-'))}</td>
+        <td>${data.proofImageUrl ? `<a class="btn ghost" href="${escapeHtml(data.proofImageUrl)}" target="_blank" rel="noopener">عرض</a>` : '-'}</td>
+        <td>${formatDateTimeCell(data.createdAt || data.updatedAt)}</td>
+        <td>
+          <button class="btn ghost" data-approve-wallet-recharge="${escapeHtml(docSnap.id)}">قبول</button>
+          <button class="btn danger" data-reject-wallet-recharge="${escapeHtml(docSnap.id)}">رفض</button>
+        </td>
+      </tr>`;
+    });
+
+    setHtml(
+      financeWalletRechargeTable,
+      table(['العميل', 'الهاتف', 'المبلغ', 'الطريقة', 'الرقم المرجعي', 'الإيصال', 'تاريخ الطلب', 'إجراء'], rows)
+    );
+
+    financeWalletRechargeTable.querySelectorAll('[data-approve-wallet-recharge]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const rechargeId = btn.getAttribute('data-approve-wallet-recharge');
+        if (!rechargeId) return;
+        try {
+          await reviewClientWalletRecharge({ rechargeId, decision: 'approve' });
+          alert('تم اعتماد طلب شحن المحفظة وإضافة الرصيد للعميل.');
+          await renderWalletRechargeQueue();
+        } catch (err) {
+          alert(`تعذر اعتماد طلب الشحن: ${err.message || err}`);
+        }
+      });
+    });
+
+    financeWalletRechargeTable.querySelectorAll('[data-reject-wallet-recharge]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const rechargeId = btn.getAttribute('data-reject-wallet-recharge');
+        if (!rechargeId) return;
+        const note = prompt('سبب الرفض (اختياري):', '') || '';
+        try {
+          await reviewClientWalletRecharge({ rechargeId, decision: 'reject', note: note.trim() });
+          alert('تم رفض طلب شحن المحفظة.');
+          await renderWalletRechargeQueue();
+        } catch (err) {
+          alert(`تعذر رفض طلب الشحن: ${err.message || err}`);
+        }
+      });
+    });
+  };
+
   const renderFinanceView = async () => {
     const docs = applyFinanceRangeFilter(latestFinanceDocs);
 
@@ -1158,6 +1586,9 @@ function mountFinance() {
         });
       });
     }
+
+    await renderPaymentReviewQueue(docs);
+  await renderWalletRechargeQueue();
 
     await renderPayoutTables(docs);
   };
@@ -1509,6 +1940,54 @@ async function renderAdminMenuManager(storeId) {
   const container = document.getElementById(`adminMenuManager-${storeId}`);
   if (!container) return;
 
+  const parsePositiveOrNull = (raw) => {
+    const normalized = String(raw || '').trim().replace(',', '.');
+    if (!normalized) return null;
+    const value = Number(normalized);
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return value;
+  };
+
+  const normalizeSizes = (sizesRaw) => {
+    if (!sizesRaw || typeof sizesRaw !== 'object') return null;
+    const small = parsePositiveOrNull(sizesRaw.small);
+    const medium = parsePositiveOrNull(sizesRaw.medium);
+    const large = parsePositiveOrNull(sizesRaw.large);
+    if (small == null || medium == null || large == null) return null;
+    return { small, medium, large };
+  };
+
+  const buildPricePayload = ({ baseRaw, smallRaw, mediumRaw, largeRaw }) => {
+    const basePrice = parsePositiveOrNull(baseRaw);
+    const small = String(smallRaw || '').trim().replace(',', '.');
+    const medium = String(mediumRaw || '').trim().replace(',', '.');
+    const large = String(largeRaw || '').trim().replace(',', '.');
+
+    const hasAnySize = Boolean(small || medium || large);
+    let sizes = null;
+
+    if (hasAnySize) {
+      const sizeCandidate = normalizeSizes({ small, medium, large });
+      if (!sizeCandidate) {
+        return {
+          ok: false,
+          message: 'عند استخدام الأحجام يجب إدخال أسعار صغيرة/وسط/كبيرة وكلها أكبر من صفر',
+        };
+      }
+      sizes = sizeCandidate;
+    }
+
+    if (basePrice == null && !sizes) {
+      return {
+        ok: false,
+        message: 'أدخل السعر الأساسي أو أسعار الأحجام',
+      };
+    }
+
+    const price = basePrice ?? sizes.medium;
+    return { ok: true, price, sizes };
+  };
+
   const fullMenuRef = collection(db, 'restaurants', storeId, 'full_menu');
   let snap = await safeGetDocs(fullMenuRef);
   let docs = snap.docs || [];
@@ -1526,14 +2005,19 @@ async function renderAdminMenuManager(storeId) {
     const price = Number(item.price || 0);
     const imageUrl = String(item.imageUrl || '').trim();
     const available = item.available !== false;
+    const sizes = normalizeSizes(item.sizes);
     const image = imageUrl
       ? `<a class="btn ghost" href="${escapeHtml(imageUrl)}" target="_blank" rel="noopener">صورة</a>`
+      : '-';
+    const sizesCell = sizes
+      ? `ص:${sizes.small} | و:${sizes.medium} | ك:${sizes.large}`
       : '-';
 
     return `<tr>
       <td>${name}</td>
       <td>${category}</td>
       <td>${Number.isFinite(price) ? price : 0}</td>
+      <td>${sizesCell}</td>
       <td>${image}</td>
       <td>${available ? 'متاح' : 'غير متاح'}</td>
       <td>
@@ -1546,9 +2030,12 @@ async function renderAdminMenuManager(storeId) {
   });
 
   container.innerHTML = `
-    <div class="grid" style="grid-template-columns: 1fr 1fr 1fr 1fr; gap:8px; margin-bottom:8px;">
+    <div class="grid" style="grid-template-columns: repeat(4, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">
       <input id="newItemName-${storeId}" type="text" placeholder="اسم الصنف" />
-      <input id="newItemPrice-${storeId}" type="number" step="0.01" placeholder="السعر" />
+      <input id="newItemPrice-${storeId}" type="number" step="0.01" placeholder="السعر الأساسي (اختياري مع الأحجام)" />
+      <input id="newItemSmallPrice-${storeId}" type="number" step="0.01" placeholder="سعر صغير" />
+      <input id="newItemMediumPrice-${storeId}" type="number" step="0.01" placeholder="سعر وسط" />
+      <input id="newItemLargePrice-${storeId}" type="number" step="0.01" placeholder="سعر كبير" />
       <input id="newItemCategory-${storeId}" type="text" placeholder="الفئة" />
       <input id="newItemImageFile-${storeId}" type="file" accept="image/*" />
     </div>
@@ -1558,24 +2045,38 @@ async function renderAdminMenuManager(storeId) {
       <button class="btn ghost" id="incPrices-${storeId}">زيادة الأسعار %</button>
       <button class="btn ghost" id="decPrices-${storeId}">تخفيض الأسعار %</button>
     </div>
-    ${table(['الصنف', 'الفئة', 'السعر', 'الصورة', 'الحالة', 'إجراء'], rows)}
+    ${table(['الصنف', 'الفئة', 'السعر', 'الأحجام', 'الصورة', 'الحالة', 'إجراء'], rows)}
   `;
 
   const addBtn = document.getElementById(`addMenuItem-${storeId}`);
   addBtn?.addEventListener('click', async () => {
     const name = (document.getElementById(`newItemName-${storeId}`)?.value || '').trim();
-    const priceRaw = (document.getElementById(`newItemPrice-${storeId}`)?.value || '').trim();
+    const basePriceRaw = (document.getElementById(`newItemPrice-${storeId}`)?.value || '').trim();
+    const smallPriceRaw = (document.getElementById(`newItemSmallPrice-${storeId}`)?.value || '').trim();
+    const mediumPriceRaw = (document.getElementById(`newItemMediumPrice-${storeId}`)?.value || '').trim();
+    const largePriceRaw = (document.getElementById(`newItemLargePrice-${storeId}`)?.value || '').trim();
     const category = (document.getElementById(`newItemCategory-${storeId}`)?.value || '').trim();
     const imageInput = document.getElementById(`newItemImageFile-${storeId}`);
     const imageFile = imageInput?.files && imageInput.files.length ? imageInput.files[0] : null;
 
-    const price = Number(priceRaw);
     if (!name) {
       alert('أدخل اسم الصنف');
       return;
     }
-    if (!Number.isFinite(price) || price <= 0) {
-      alert('أدخل سعرًا صحيحًا أكبر من صفر');
+    if (!category) {
+      alert('أدخل اسم الفئة');
+      return;
+    }
+
+    const priceResult = buildPricePayload({
+      baseRaw: basePriceRaw,
+      smallRaw: smallPriceRaw,
+      mediumRaw: mediumPriceRaw,
+      largeRaw: largePriceRaw,
+    });
+
+    if (!priceResult.ok) {
+      alert(priceResult.message);
       return;
     }
     if (!imageFile) {
@@ -1592,7 +2093,8 @@ async function renderAdminMenuManager(storeId) {
 
       await addDoc(fullMenuRef, {
         name,
-        price,
+        price: priceResult.price,
+        ...(priceResult.sizes ? { sizes: priceResult.sizes } : {}),
         category,
         imageUrl,
         available: true,
@@ -1628,13 +2130,29 @@ async function renderAdminMenuManager(storeId) {
       docs.forEach((d) => {
         const item = d.data() || {};
         const oldPrice = Number(item.price || 0);
-        if (!Number.isFinite(oldPrice) || oldPrice <= 0) return;
-        const newPrice = Math.round(oldPrice * factor * 100) / 100;
-        batch.update(doc(db, 'restaurants', storeId, 'full_menu', d.id), {
-          price: newPrice,
+        const updates = {
           updatedAt: serverTimestamp(),
           updatedByAdminUid: auth.currentUser?.uid || null,
-        });
+        };
+
+        if (Number.isFinite(oldPrice) && oldPrice > 0) {
+          updates.price = Math.round(oldPrice * factor * 100) / 100;
+        }
+
+        const sizes = normalizeSizes(item.sizes);
+        if (sizes) {
+          updates.sizes = {
+            small: Math.round(sizes.small * factor * 100) / 100,
+            medium: Math.round(sizes.medium * factor * 100) / 100,
+            large: Math.round(sizes.large * factor * 100) / 100,
+          };
+          if (!updates.price) {
+            updates.price = updates.sizes.medium;
+          }
+        }
+
+        if (!updates.price) return;
+        batch.update(doc(db, 'restaurants', storeId, 'full_menu', d.id), updates);
       });
       await batch.commit();
       await renderAdminMenuManager(storeId);
@@ -1694,15 +2212,28 @@ async function renderAdminMenuManager(storeId) {
 
       const nextName = prompt('اسم الصنف', String(item.name || ''));
       if (nextName === null) return;
-      const nextPriceRaw = prompt('السعر', String(item.price ?? ''));
+      const currentSizes = normalizeSizes(item.sizes);
+      const nextPriceRaw = prompt('السعر الأساسي (اختياري مع الأحجام)', String(item.price ?? ''));
       if (nextPriceRaw === null) return;
-      const nextPrice = Number(String(nextPriceRaw).replace(',', '.'));
-      if (!Number.isFinite(nextPrice) || nextPrice <= 0) {
-        alert('السعر غير صالح');
-        return;
-      }
+      const nextSmallRaw = prompt('سعر صغير (اختياري)', String(currentSizes?.small ?? ''));
+      if (nextSmallRaw === null) return;
+      const nextMediumRaw = prompt('سعر وسط (اختياري)', String(currentSizes?.medium ?? ''));
+      if (nextMediumRaw === null) return;
+      const nextLargeRaw = prompt('سعر كبير (اختياري)', String(currentSizes?.large ?? ''));
+      if (nextLargeRaw === null) return;
       const nextCategory = prompt('الفئة', String(item.category || ''));
       if (nextCategory === null) return;
+
+      const priceResult = buildPricePayload({
+        baseRaw: nextPriceRaw,
+        smallRaw: nextSmallRaw,
+        mediumRaw: nextMediumRaw,
+        largeRaw: nextLargeRaw,
+      });
+      if (!priceResult.ok) {
+        alert(priceResult.message);
+        return;
+      }
 
       let nextImage = String(item.imageUrl || '');
       const wantsImageChange = confirm('هل تريد تغيير الصورة؟');
@@ -1723,7 +2254,8 @@ async function renderAdminMenuManager(storeId) {
       try {
         await updateDoc(doc(db, 'restaurants', storeId, 'full_menu', itemId), {
           name: nextName.trim(),
-          price: nextPrice,
+          price: priceResult.price,
+          ...(priceResult.sizes ? { sizes: priceResult.sizes } : { sizes: deleteField() }),
           category: nextCategory.trim(),
           imageUrl: nextImage.trim(),
           updatedAt: serverTimestamp(),
@@ -2410,6 +2942,155 @@ function mountDiscountCodes() {
   );
 }
 
+function updateRolloutSelectedCount() {
+  if (rolloutSelectedCount) {
+    rolloutSelectedCount.textContent = `المدن المختارة: ${rolloutSelectedCityIds.size}`;
+  }
+}
+
+function syncRolloutCsvFromSet() {
+  if (rolloutSelectedCitiesCsv) {
+    rolloutSelectedCitiesCsv.value = setToCsv(rolloutSelectedCityIds);
+  }
+  updateRolloutSelectedCount();
+}
+
+function syncRolloutSetFromCsv() {
+  if (!rolloutSelectedCitiesCsv) return;
+  rolloutSelectedCityIds = csvToRolloutSet(rolloutSelectedCitiesCsv.value);
+  updateRolloutSelectedCount();
+}
+
+function renderRolloutCityList(filterRaw = '') {
+  if (!rolloutCitiesList) return;
+  const filter = normalizeRolloutToken(filterRaw);
+  const rows = SUDAN_CITY_OPTIONS
+    .filter((item) => {
+      if (!filter) return true;
+      return item.id.includes(filter) || normalizeRolloutToken(item.label).includes(filter);
+    })
+    .map((item) => {
+      const checked = rolloutSelectedCityIds.has(item.id) ? 'checked' : '';
+      return `<label class="city-picker-item">
+        <input type="checkbox" data-rollout-city="${escapeHtml(item.id)}" ${checked} />
+        <span>${escapeHtml(item.label)}</span>
+      </label>`;
+    });
+
+  setHtml(rolloutCitiesList, rows.length ? rows.join('') : '<p class="muted">لا توجد نتائج مطابقة.</p>');
+
+  rolloutCitiesList.querySelectorAll('[data-rollout-city]').forEach((box) => {
+    box.addEventListener('change', () => {
+      const cityId = normalizeRolloutToken(box.getAttribute('data-rollout-city'));
+      if (!cityId) return;
+      if (box.checked) {
+        rolloutSelectedCityIds.add(cityId);
+      } else {
+        rolloutSelectedCityIds.delete(cityId);
+      }
+      syncRolloutCsvFromSet();
+    });
+  });
+}
+
+function normalizeRemoteValueByType(valueRaw, valueTypeRaw) {
+  const valueType = String(valueTypeRaw || 'STRING').trim().toUpperCase();
+  const value = String(valueRaw ?? '').trim();
+
+  if (valueType === 'BOOLEAN') {
+    const normalized = value.toLowerCase();
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes') return 'true';
+    if (normalized === 'false' || normalized === '0' || normalized === 'no') return 'false';
+    return 'false';
+  }
+
+  if (valueType === 'NUMBER') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? String(parsed) : '0';
+  }
+
+  return value;
+}
+
+function renderRemoteConfigTable(filterRaw = '') {
+  if (!remoteConfigTable) return;
+  const filter = String(filterRaw || '').trim().toLowerCase();
+
+  const filtered = remoteConfigParametersCache.filter((item) => {
+    if (!filter) return true;
+    return String(item.key || '').toLowerCase().includes(filter)
+      || String(item.description || '').toLowerCase().includes(filter);
+  });
+
+  if (!filtered.length) {
+    setHtml(remoteConfigTable, '<p class="muted" style="padding:10px;">لا توجد مفاتيح مطابقة للبحث.</p>');
+    return;
+  }
+
+  const rows = filtered.map((item) => {
+    const key = String(item.key || '');
+    const value = String(item.value || '');
+    const valueType = String(item.valueType || 'STRING').toUpperCase();
+    const desc = String(item.description || '').trim();
+    const marker = item.hasConditionalValues ? ' | لديه Conditional Values' : '';
+
+    return `<tr>
+      <td>
+        <span class="remote-key-text">${escapeHtml(key)}</span>
+        <span class="remote-meta">${escapeHtml(valueType)}${escapeHtml(marker)}</span>
+      </td>
+      <td>
+        <input class="remote-value-input" data-remote-key="${escapeHtml(key)}" data-remote-type="${escapeHtml(valueType)}" type="text" value="${escapeHtml(value)}" />
+        ${desc ? `<span class="remote-meta">${escapeHtml(desc)}</span>` : ''}
+      </td>
+    </tr>`;
+  });
+
+  setHtml(remoteConfigTable, `<table><thead><tr><th>المفتاح</th><th>القيمة</th></tr></thead><tbody>${rows.join('')}</tbody></table>`);
+}
+
+async function loadRolloutConfigUi() {
+  if (!rolloutConfigResult) return;
+  rolloutConfigResult.textContent = 'جاري تحميل إعدادات تشغيل المدن...';
+
+  try {
+    const response = await getAdminRemoteConfigSettings({ includeParameters: false });
+    const rollout = response?.data?.rollout || {};
+
+    if (rolloutEnabledInput) rolloutEnabledInput.checked = rollout.enabled === true;
+    if (rolloutGuardKmInput) {
+      rolloutGuardKmInput.value = String(Math.max(1, Math.min(500, Number(rollout.guardDistanceKm || 120))));
+    }
+    if (rolloutBlockMessageInput) {
+      rolloutBlockMessageInput.value = String(rollout.blockMessage || 'لسه ما جيناكم في منطقتكم. قريبًا بإذن الله.');
+    }
+
+    rolloutSelectedCityIds = csvToRolloutSet(rollout.enabledCitiesCsv || '');
+    syncRolloutCsvFromSet();
+    renderRolloutCityList(rolloutCitySearchInput?.value || '');
+
+    rolloutConfigResult.textContent = `تم تحميل الإعدادات. آخر تحديث: ${response?.data?.updatedAt || '-'}`;
+  } catch (err) {
+    rolloutConfigResult.textContent = `تعذر تحميل إعدادات المدن: ${err.message || err}`;
+  }
+}
+
+async function loadRemoteConfigEditorUi() {
+  if (!remoteConfigBulkResult) return;
+  remoteConfigBulkResult.textContent = 'جاري تحميل مفاتيح Remote Config...';
+
+  try {
+    const response = await getAdminRemoteConfigSettings({ includeParameters: true });
+    remoteConfigParametersCache = Array.isArray(response?.data?.parameters)
+      ? response.data.parameters
+      : [];
+    renderRemoteConfigTable(remoteConfigFilterInput?.value || '');
+    remoteConfigBulkResult.textContent = `تم تحميل ${remoteConfigParametersCache.length} مفتاح. آخر تحديث: ${response?.data?.updatedAt || '-'}`;
+  } catch (err) {
+    remoteConfigBulkResult.textContent = `تعذر تحميل المفاتيح: ${err.message || err}`;
+  }
+}
+
 function mountAdmins() {
   if (!addAdminFormBound) {
     addAdminForm.addEventListener('submit', async (e) => {
@@ -2464,6 +3145,144 @@ function mountAdmins() {
     });
     normalizeStateFormBound = true;
   }
+
+  if (!rolloutConfigFormBound && rolloutConfigForm) {
+    rolloutConfigForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      syncRolloutSetFromCsv();
+
+      const enabled = rolloutEnabledInput?.checked === true;
+      const parsedGuard = Number(rolloutGuardKmInput?.value || 120);
+      const guardDistanceKm = Number.isFinite(parsedGuard)
+        ? Math.max(1, Math.min(500, Math.floor(parsedGuard)))
+        : 120;
+      const blockMessage = String(rolloutBlockMessageInput?.value || '').trim()
+        || 'لسه ما جيناكم في منطقتكم. قريبًا بإذن الله.';
+      const enabledCitiesCsv = setToCsv(rolloutSelectedCityIds);
+
+      if (!enabledCitiesCsv) {
+        if (rolloutConfigResult) {
+          rolloutConfigResult.textContent = 'اختر مدينة واحدة على الأقل قبل الحفظ.';
+        }
+        return;
+      }
+
+      if (saveRolloutConfigBtn) saveRolloutConfigBtn.disabled = true;
+      if (rolloutConfigResult) rolloutConfigResult.textContent = 'جارٍ حفظ إعدادات تشغيل المدن...';
+
+      try {
+        const result = await updateAdminRemoteConfigSettings({
+          rollout: {
+            enabled,
+            guardDistanceKm,
+            enabledCitiesCsv,
+            blockMessage,
+          },
+        });
+
+        if (rolloutConfigResult) {
+          rolloutConfigResult.textContent = `تم الحفظ بنجاح. النسخة: ${result?.data?.version || '-'} | مفاتيح محدثة: ${result?.data?.touchedCount || 0}`;
+        }
+      } catch (err) {
+        if (rolloutConfigResult) {
+          rolloutConfigResult.textContent = `تعذر حفظ إعدادات المدن: ${err.message || err}`;
+        }
+      } finally {
+        if (saveRolloutConfigBtn) saveRolloutConfigBtn.disabled = false;
+      }
+    });
+
+    rolloutPresetSudanBtn?.addEventListener('click', () => {
+      rolloutSelectedCityIds = new Set(SUDAN_CITY_OPTIONS.map((item) => item.id));
+      syncRolloutCsvFromSet();
+      renderRolloutCityList(rolloutCitySearchInput?.value || '');
+    });
+
+    rolloutSelectAllBtn?.addEventListener('click', () => {
+      SUDAN_CITY_OPTIONS.forEach((item) => rolloutSelectedCityIds.add(item.id));
+      syncRolloutCsvFromSet();
+      renderRolloutCityList(rolloutCitySearchInput?.value || '');
+    });
+
+    rolloutClearAllBtn?.addEventListener('click', () => {
+      rolloutSelectedCityIds = new Set();
+      syncRolloutCsvFromSet();
+      renderRolloutCityList(rolloutCitySearchInput?.value || '');
+    });
+
+    reloadRolloutConfigBtn?.addEventListener('click', () => {
+      loadRolloutConfigUi();
+    });
+
+    rolloutCitySearchInput?.addEventListener('input', () => {
+      renderRolloutCityList(rolloutCitySearchInput.value || '');
+    });
+
+    rolloutSelectedCitiesCsv?.addEventListener('input', () => {
+      syncRolloutSetFromCsv();
+      renderRolloutCityList(rolloutCitySearchInput?.value || '');
+    });
+
+    rolloutConfigFormBound = true;
+  }
+
+  if (!remoteConfigBulkFormBound && remoteConfigBulkForm) {
+    remoteConfigFilterInput?.addEventListener('input', () => {
+      renderRemoteConfigTable(remoteConfigFilterInput.value || '');
+    });
+
+    reloadRemoteConfigBulkBtn?.addEventListener('click', () => {
+      loadRemoteConfigEditorUi();
+    });
+
+    remoteConfigBulkForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const updates = [];
+      const currentMap = new Map(remoteConfigParametersCache.map((item) => [String(item.key), item]));
+      remoteConfigTable?.querySelectorAll('[data-remote-key]').forEach((input) => {
+        const key = String(input.getAttribute('data-remote-key') || '').trim();
+        const valueType = String(input.getAttribute('data-remote-type') || 'STRING').trim().toUpperCase();
+        if (!key) return;
+
+        const current = currentMap.get(key);
+        const nextValue = normalizeRemoteValueByType(input.value, valueType);
+        const prevValue = normalizeRemoteValueByType(current?.value || '', valueType);
+        if (nextValue === prevValue) return;
+
+        updates.push({ key, value: nextValue, valueType });
+      });
+
+      if (!updates.length) {
+        if (remoteConfigBulkResult) remoteConfigBulkResult.textContent = 'لا توجد تغييرات للحفظ.';
+        return;
+      }
+
+      if (saveRemoteConfigBulkBtn) saveRemoteConfigBulkBtn.disabled = true;
+      if (remoteConfigBulkResult) remoteConfigBulkResult.textContent = `جارٍ حفظ ${updates.length} تعديل...`;
+
+      try {
+        const result = await updateAdminRemoteConfigSettings({ parameters: updates });
+        if (remoteConfigBulkResult) {
+          remoteConfigBulkResult.textContent = `تم الحفظ بنجاح. النسخة: ${result?.data?.version || '-'} | مفاتيح محدثة: ${result?.data?.touchedCount || updates.length}`;
+        }
+        await loadRemoteConfigEditorUi();
+      } catch (err) {
+        if (remoteConfigBulkResult) {
+          remoteConfigBulkResult.textContent = `تعذر حفظ مفاتيح Remote Config: ${err.message || err}`;
+        }
+      } finally {
+        if (saveRemoteConfigBulkBtn) saveRemoteConfigBulkBtn.disabled = false;
+      }
+    });
+
+    remoteConfigBulkFormBound = true;
+  }
+
+  renderRolloutCityList(rolloutCitySearchInput?.value || '');
+  syncRolloutCsvFromSet();
+  loadRolloutConfigUi();
+  loadRemoteConfigEditorUi();
 
   unsubscribers.push(
     onSnapshot(collection(db, 'admins'), (snap) => {
@@ -2541,12 +3360,67 @@ function normalizeGeo(value) {
   return null;
 }
 
+function normalizeNumber(value) {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeGeoFromPair(latRaw, lngRaw) {
+  const lat = normalizeNumber(latRaw);
+  const lng = normalizeNumber(lngRaw);
+  if (lat == null || lng == null) return null;
+  return { lat, lng };
+}
+
 function extractGeo(data, paths) {
   for (const path of paths) {
     const raw = getByPath(data, path);
     const geo = normalizeGeo(raw);
     if (geo) return geo;
   }
+  return null;
+}
+
+function extractGeoByPairs(data, pairs) {
+  for (const pair of pairs) {
+    const latRaw = getByPath(data, pair[0]);
+    const lngRaw = getByPath(data, pair[1]);
+    const geo = normalizeGeoFromPair(latRaw, lngRaw);
+    if (geo) return geo;
+  }
+  return null;
+}
+
+function getRestaurantGeo(restaurantId, restaurantData) {
+  const directGeo = extractGeo(restaurantData, [
+    'location',
+    'currentLocation',
+    'address.location',
+    'defaultAddress.location',
+    'selectedAddress.location',
+  ]);
+  if (directGeo) return directGeo;
+
+  const pairGeo = extractGeoByPairs(restaurantData, [
+    ['latitude', 'longitude'],
+    ['lat', 'lng'],
+    ['address.latitude', 'address.longitude'],
+    ['defaultAddress.latitude', 'defaultAddress.longitude'],
+    ['selectedAddress.latitude', 'selectedAddress.longitude'],
+  ]);
+  if (pairGeo) return pairGeo;
+
+  const addresses = mapState.restaurantAddresses.get(restaurantId);
+  if (addresses && addresses.size) {
+    const preferredId = String(restaurantData?.defaultAddressId || '').trim();
+    if (preferredId && addresses.has(preferredId)) {
+      return addresses.get(preferredId).geo;
+    }
+    const firstAddress = addresses.values().next().value;
+    if (firstAddress?.geo) return firstAddress.geo;
+  }
+
   return null;
 }
 
@@ -2563,15 +3437,57 @@ function setMapLegendSummary(text) {
 function refreshMapLegendSummary() {
   const totalDrivers = mapState.drivers.size;
   const availableDrivers = Array.from(mapState.drivers.values())
-    .filter(({ data }) => data.isAvailable === true || String(data.availabilityStatus || '').toLowerCase() === 'available')
+    .filter(({ data }) => data.isAvailable === true || data.available === true || String(data.availabilityStatus || '').toLowerCase() === 'available')
     .length;
   const activeOrders = Array.from(mapState.orders.values()).filter(({ data }) => isActiveOrder(data)).length;
   const totalRestaurants = mapState.restaurants.size;
+  const visibleRestaurants = markerState.restaurants.size;
+  const hiddenRestaurants = Math.max(0, totalRestaurants - visibleRestaurants);
   const totalClients = mapState.clients.size;
 
   setMapLegendSummary(
-    `طلبات نشطة: ${activeOrders} | مندوبون متاحون: ${availableDrivers}/${totalDrivers} | مطاعم: ${totalRestaurants} | عملاء: ${totalClients}`
+    `طلبات نشطة: ${activeOrders} | مندوبون متاحون: ${availableDrivers}/${totalDrivers} | مطاعم ظاهرة: ${visibleRestaurants}/${totalRestaurants} | غير ظاهرة: ${hiddenRestaurants} | عملاء: ${totalClients}`
   );
+}
+
+async function backfillRestaurantAddressesForMissingRestaurants() {
+  if (mapAddressBackfillInProgress) return;
+
+  const missingIds = [];
+  mapState.restaurants.forEach(({ data }, id) => {
+    const geo = getRestaurantGeo(id, data);
+    if (!geo) missingIds.push(id);
+  });
+
+  if (!missingIds.length) return;
+  mapAddressBackfillInProgress = true;
+
+  try {
+    await Promise.all(
+      missingIds.map(async (restaurantId) => {
+        const snap = await safeGetDocs(collection(db, 'restaurants', restaurantId, 'addresses'));
+        if (!snap?.docs?.length) return;
+
+        const byRestaurant = mapState.restaurantAddresses.get(restaurantId) || new Map();
+        snap.docs.forEach((addressDoc) => {
+          const data = addressDoc.data() || {};
+          const geo = normalizeGeo(data.location)
+            || normalizeGeoFromPair(data.latitude, data.longitude)
+            || normalizeGeoFromPair(data.lat, data.lng);
+          if (!geo) return;
+          byRestaurant.set(addressDoc.id, { geo, data });
+        });
+
+        if (byRestaurant.size) {
+          mapState.restaurantAddresses.set(restaurantId, byRestaurant);
+        }
+      })
+    );
+  } finally {
+    mapAddressBackfillInProgress = false;
+  }
+
+  refreshMapLayers();
 }
 
 function refreshMapViewport() {
@@ -2590,7 +3506,6 @@ function refreshMapViewport() {
   try {
     const bounds = window.L.latLngBounds(latLngs);
     liveMap.fitBounds(bounds.pad(0.12), { maxZoom: 14, animate: false });
-    mapAutoFitted = true;
   } catch (_) {
   }
 }
@@ -2729,14 +3644,17 @@ function openOrderOnMap(orderId) {
   }, 220);
 }
 
-function renderEntityDetails(type, id, data) {
+function renderEntityDetails(type, id, data, context = null) {
+  const formatGeoInline = (geo) => (geo ? `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}` : 'غير متاح');
   const name = data.name || data.fullName || data.displayName || id;
   if (type === 'driver') {
+    const driverGeo = extractGeo(data, ['location', 'currentLocation', 'lastLocation', 'address.location']);
+    const available = data.isAvailable === true || data.available === true || String(data.availabilityStatus || '').toLowerCase() === 'available';
     const orders = activeOrdersFor((order) => order.assignedDriverId === id);
     setMapDetails(`
       <h4>المندوب</h4>
       <div><span class="kv"><b>الاسم:</b> ${escapeHtml(name)}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.phone || '-')}</span></div>
-      <div><span class="kv"><b>الحالة:</b> ${escapeHtml(data.availabilityStatus || (data.isAvailable ? 'available' : 'unavailable'))}</span></div>
+      <div><span class="kv"><b>الحالة:</b> ${available ? 'متاح' : 'غير متاح'}</span><span class="kv"><b>الإحداثيات:</b> ${escapeHtml(formatGeoInline(driverGeo))}</span></div>
       <div><b>طلبات نشطة:</b> ${orders.length}</div>
       <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(formatUnifiedOrderCode(o.data.orderNumber, o.data.orderId, o.id))} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
     `);
@@ -2744,44 +3662,68 @@ function renderEntityDetails(type, id, data) {
   }
 
   if (type === 'client') {
+    const clientGeo = extractGeo(data, ['location', 'currentLocation', 'address.location', 'deliveryLocation']);
     const orders = activeOrdersFor((order) => order.clientId === id);
     setMapDetails(`
       <h4>العميل</h4>
       <div><span class="kv"><b>الاسم:</b> ${escapeHtml(name)}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.phone || '-')}</span></div>
+      <div><span class="kv"><b>الإحداثيات:</b> ${escapeHtml(formatGeoInline(clientGeo))}</span></div>
       <div><b>طلبات نشطة:</b> ${orders.length}</div>
       <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(formatUnifiedOrderCode(o.data.orderNumber, o.data.orderId, o.id))} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
     `);
     return;
   }
 
+  const restaurantGeo = context?.geo || getRestaurantGeo(id, data);
+  const addressName = String(context?.addressData?.addressName || '').trim();
+  const addressCity = String(context?.addressData?.city || '').trim();
+  const addressLine = [addressName, addressCity].filter(Boolean).join(' - ');
+  const addressMeta = addressLine
+    ? `<div><span class="kv"><b>العنوان:</b> ${escapeHtml(addressLine)}</span>${context?.isDefault ? '<span class="kv"><b>افتراضي:</b> نعم</span>' : ''}</div>`
+    : '';
   const orders = activeOrdersFor((order) => order.restaurantId === id);
   setMapDetails(`
     <h4>المطعم</h4>
     <div><span class="kv"><b>الاسم:</b> ${escapeHtml(name)}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.phone || '-')}</span></div>
-    <div><span class="kv"><b>الحالة:</b> ${escapeHtml(data.temporarilyClosed ? 'مغلق مؤقتًا' : 'مفتوح')}</span></div>
+    <div><span class="kv"><b>الحالة:</b> ${escapeHtml(data.temporarilyClosed ? 'مغلق مؤقتًا' : 'مفتوح')}</span><span class="kv"><b>الإحداثيات:</b> ${escapeHtml(formatGeoInline(restaurantGeo))}</span></div>
+    ${addressMeta}
     <div><b>طلبات نشطة:</b> ${orders.length}</div>
     <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(formatUnifiedOrderCode(o.data.orderNumber, o.data.orderId, o.id))} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
   `);
 }
 
-function setOrUpdateMarker(stateMap, id, latLng, color, label, onClick) {
+function buildMarkerIcon({ type, variant = 'default' }) {
+  const glyphByType = {
+    driver: 'D',
+    client: 'C',
+    restaurant: 'R',
+    order: 'O',
+  };
+
+  return window.L.divIcon({
+    className: 'map-pin-shell',
+    html: `<div class="map-pin map-pin--${type} map-pin--${variant}"><span>${glyphByType[type] || '•'}</span></div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14],
+    tooltipAnchor: [12, -12],
+  });
+}
+
+function setOrUpdateMarker(stateMap, id, latLng, markerOptions, label, onClick) {
   if (!liveMap) return;
   const existing = stateMap.get(id);
+  const icon = buildMarkerIcon(markerOptions || {});
+
   if (existing) {
     existing.setLatLng(latLng);
-    existing.setStyle({ color, fillColor: color });
+    existing.setIcon(icon);
     existing.bindTooltip(label);
     existing.bindPopup(label);
     return;
   }
 
-  const marker = window.L.circleMarker(latLng, {
-    radius: 8,
-    color,
-    fillColor: color,
-    fillOpacity: 0.85,
-    weight: 2
-  }).addTo(liveMap);
+  const marker = window.L.marker(latLng, { icon }).addTo(liveMap);
   marker.bindTooltip(label);
   marker.bindPopup(label);
   marker.on('click', onClick);
@@ -2800,17 +3742,16 @@ function removeMissingMarkers(stateMap, validIds) {
 function refreshDriverMarkers() {
   const validIds = new Set();
   mapState.drivers.forEach(({ data }, id) => {
-    const geo = extractGeo(data, ['location', 'currentLocation', 'lastLocation', 'address.location']);
+    const geo = extractGeo(data, ['location', 'currentLocation', 'lastLocation', 'liveLocation', 'address.location']);
     if (!geo) return;
     validIds.add(id);
-    const available = data.isAvailable === true || String(data.availabilityStatus || '').toLowerCase() === 'available';
-    const color = available ? '#16a34a' : '#6b7280';
+    const available = data.isAvailable === true || data.available === true || String(data.availabilityStatus || '').toLowerCase() === 'available';
     setOrUpdateMarker(
       markerState.drivers,
       id,
       [geo.lat, geo.lng],
-      color,
-      `مندوب: ${data.name || id}`,
+      { type: 'driver', variant: available ? 'online' : 'offline' },
+      `${available ? 'مندوب متاح' : 'مندوب غير متاح'}: ${data.name || id}`,
       () => renderEntityDetails('driver', id, data)
     );
   });
@@ -2834,7 +3775,7 @@ function refreshClientMarkers() {
       markerState.clients,
       id,
       [geo.lat, geo.lng],
-      '#2563eb',
+      { type: 'client', variant: 'active' },
       `عميل نشط: ${data.name || id}`,
       () => renderEntityDetails('client', id, data)
     );
@@ -2845,18 +3786,84 @@ function refreshClientMarkers() {
 function refreshRestaurantMarkers() {
   const validIds = new Set();
   mapState.restaurants.forEach(({ data }, id) => {
-    const geo = extractGeo(data, ['location', 'address.location']);
+    const openState = data.temporarilyClosed ? 'closed' : 'open';
+    const addresses = mapState.restaurantAddresses.get(id);
+
+    let chosenAddressId = '';
+    let chosenAddressEntry = null;
+    if (addresses && addresses.size) {
+      const defaultAddressId = String(data.defaultAddressId || '').trim();
+      if (defaultAddressId && addresses.has(defaultAddressId)) {
+        chosenAddressId = defaultAddressId;
+        chosenAddressEntry = addresses.get(defaultAddressId);
+      } else {
+        chosenAddressId = addresses.keys().next().value || '';
+        chosenAddressEntry = chosenAddressId ? addresses.get(chosenAddressId) : null;
+      }
+    }
+
+    const geo = chosenAddressEntry?.geo || getRestaurantGeo(id, data);
     if (!geo) return;
-    validIds.add(id);
+
+    const markerId = id;
+    const chosenAddressName = String(chosenAddressEntry?.data?.addressName || '').trim();
+    const chosenCity = String(chosenAddressEntry?.data?.city || '').trim();
+    const labelParts = [
+      `مطعم ${openState === 'open' ? 'مفتوح' : 'مغلق'}: ${data.name || id}`,
+      chosenAddressName,
+      chosenCity,
+    ].filter(Boolean);
+
+    validIds.add(markerId);
     setOrUpdateMarker(
       markerState.restaurants,
-      id,
+      markerId,
       [geo.lat, geo.lng],
-      '#f97316',
-      `مطعم: ${data.name || id}`,
-      () => renderEntityDetails('restaurant', id, data)
+      { type: 'restaurant', variant: openState },
+      labelParts.join(' | '),
+      () => renderEntityDetails('restaurant', id, data, {
+        geo,
+        addressId: chosenAddressId,
+        addressData: chosenAddressEntry?.data || null,
+        isDefault: Boolean(chosenAddressId && String(data.defaultAddressId || '').trim() === chosenAddressId),
+      })
     );
   });
+
+  // Fallback: addresses that exist under restaurants/{id}/addresses while parent restaurant doc is missing.
+  mapState.restaurantAddresses.forEach((addresses, restaurantId) => {
+    if (mapState.restaurants.has(restaurantId)) return;
+    if (!addresses || !addresses.size) return;
+
+    const firstAddressId = addresses.keys().next().value || '';
+    const entry = firstAddressId ? addresses.get(firstAddressId) : null;
+    const geo = entry?.geo;
+    if (!geo) return;
+
+    const markerId = `orphan:${restaurantId}`;
+    const addressName = String(entry?.data?.addressName || '').trim();
+    const city = String(entry?.data?.city || '').trim();
+
+    validIds.add(markerId);
+    setOrUpdateMarker(
+      markerState.restaurants,
+      markerId,
+      [geo.lat, geo.lng],
+      { type: 'restaurant', variant: 'open' },
+      [`مطعم غير مكتمل: ${restaurantId}`, addressName, city].filter(Boolean).join(' | '),
+      () => renderEntityDetails('restaurant', restaurantId, {
+        name: `مطعم غير مكتمل (${restaurantId})`,
+        phone: '-',
+        temporarilyClosed: false,
+      }, {
+        geo,
+        addressId: firstAddressId,
+        addressData: entry?.data || null,
+        isDefault: false,
+      })
+    );
+  });
+
   removeMissingMarkers(markerState.restaurants, validIds);
 }
 
@@ -2871,7 +3878,7 @@ function refreshOrderMarkers() {
       markerState.orders,
       id,
       [geo.lat, geo.lng],
-      '#dc2626',
+      { type: 'order', variant: 'active' },
       `طلب: ${formatUnifiedOrderCode(data.orderNumber, data.orderId, id)}`,
       () => renderOrderDetails(data, id)
     );
@@ -2889,7 +3896,7 @@ function getRestaurantGeoByOrder(orderData) {
   const restaurantId = orderData.restaurantId;
   if (!restaurantId) return null;
   const restaurant = mapState.restaurants.get(restaurantId)?.data;
-  return restaurant ? extractGeo(restaurant, ['location', 'address.location']) : null;
+  return restaurant ? getRestaurantGeo(restaurantId, restaurant) : null;
 }
 
 function getDriverGeoByOrder(orderData) {
@@ -3018,7 +4025,7 @@ async function mountMap() {
         div.style.lineHeight = '1.6';
         div.style.fontSize = '12px';
         div.innerHTML =
-          '🟢 مندوب متاح<br/>⚪ مندوب غير متاح<br/>🔵 عميل نشط<br/>🟠 مطعم<br/>🔴 موقع طلب نشط';
+          'D أخضر: مندوب متاح<br/>D رمادي: مندوب غير متاح<br/>C أزرق: عميل نشط<br/>R برتقالي: مطعم مفتوح<br/>R بني: مطعم مغلق<br/>O أحمر: موقع طلب نشط';
         return div;
       };
       legend.addTo(liveMap);
@@ -3055,7 +4062,43 @@ async function mountMap() {
       mapState.restaurants.clear();
       snap.docs.forEach((d) => mapState.restaurants.set(d.id, { id: d.id, data: d.data() }));
       refreshMapLayers();
+      void backfillRestaurantAddressesForMissingRestaurants();
     })
+  );
+
+  unsubscribers.push(
+    onSnapshot(
+      collectionGroup(db, 'addresses'),
+      (snap) => {
+        mapState.restaurantAddresses.clear();
+
+        snap.docs.forEach((d) => {
+          const addressesCollection = d.ref.parent;
+          const ownerDoc = addressesCollection?.parent;
+          const ownerCollection = ownerDoc?.parent;
+          if (!ownerDoc || !ownerCollection || ownerCollection.id !== 'restaurants') return;
+
+          const data = d.data() || {};
+          const geo = normalizeGeo(data.location)
+            || normalizeGeoFromPair(data.latitude, data.longitude)
+            || normalizeGeoFromPair(data.lat, data.lng);
+          if (!geo) return;
+
+          const restaurantId = ownerDoc.id;
+          const byRestaurant = mapState.restaurantAddresses.get(restaurantId) || new Map();
+          byRestaurant.set(d.id, { geo, data });
+          mapState.restaurantAddresses.set(restaurantId, byRestaurant);
+        });
+
+        refreshMapLayers();
+        void backfillRestaurantAddressesForMissingRestaurants();
+      },
+      (error) => {
+        console.error('addresses collectionGroup listener failed', error);
+        setMapDetails('<p class="muted">تعذر تحميل عناوين المطاعم الفرعية. سيتم عرض المواقع المتاحة من السجل الرئيسي فقط.</p>');
+        void backfillRestaurantAddressesForMissingRestaurants();
+      }
+    )
   );
 
   unsubscribers.push(
@@ -3098,14 +4141,16 @@ async function mountPending() {
 
   courierApps.forEach((d) => {
     const data = d.data() || {};
+    const identityNumber = data.nationalIdNumber || '-';
+    const identityImageUrl = data.idImageUrl || '';
     rows.push(`<tr>
       <td>مندوب</td>
       <td>${data.name || d.id}</td>
       <td>${data.phone || '-'}</td>
       <td>${data.email || '-'}</td>
       <td>${data.ownerUid || data.driverId || d.id}</td>
-      <td>-</td>
-      <td>-</td>
+      <td>${identityNumber}</td>
+      <td>${imageCell(identityImageUrl)}</td>
       <td>
         <button class="btn ghost" data-approve-courier-app="${d.id}">قبول</button>
         <button class="btn danger" data-reject-courier-app="${d.id}">رفض</button>
@@ -3134,7 +4179,16 @@ async function mountPending() {
     .filter((d) => !pendingDriverIds.has(d.id))
     .forEach((d) => {
       const data = d.data() || {};
-      rows.push(`<tr><td>مندوب</td><td>${data.name || d.id}</td><td>${data.phone || '-'}</td><td>${data.email || '-'}</td><td>${data.ownerUid || d.id}</td><td>-</td><td>-</td><td>-</td></tr>`);
+      rows.push(`<tr>
+        <td>مندوب</td>
+        <td>${data.name || d.id}</td>
+        <td>${data.phone || '-'}</td>
+        <td>${data.email || '-'}</td>
+        <td>${data.ownerUid || d.id}</td>
+        <td>${data.nationalIdNumber || '-'}</td>
+        <td>${imageCell(data.idImageUrl || '')}</td>
+        <td>-</td>
+      </tr>`);
     });
 
   fallbackStoreSnap.docs

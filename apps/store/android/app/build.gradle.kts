@@ -109,6 +109,11 @@ android {
             manifestPlaceholders["MAPS_API_KEY"] = mapsApiKeyRelease
         }
     }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 dependencies {

@@ -26,6 +26,19 @@ const List<String> _allSteps = [
 ];
 
 class ClientOrderDetailsScreen extends StatelessWidget {
+    String _displayOrderNumber(Map<String, dynamic> data) {
+      final candidates = [
+        data['orderNumber'],
+        data['orderId'],
+        orderId,
+      ];
+      for (final candidate in candidates) {
+        final value = (candidate ?? '').toString().trim();
+        if (value.isNotEmpty) return value;
+      }
+      return orderId;
+    }
+
   final String orderId;
   const ClientOrderDetailsScreen({Key? key, required this.orderId})
       : super(key: key);
@@ -35,6 +48,7 @@ class ClientOrderDetailsScreen extends StatelessWidget {
       case 'pending_payment':
       case 'انتظار الدفع':
         return 'انتظار الدفع';
+      case 'payment_review':
       case 'store_pending':
       case 'قيد المراجعة':
         return 'قيد المراجعة';
@@ -65,11 +79,15 @@ class ClientOrderDetailsScreen extends StatelessWidget {
       case 'pending':
       case 'انتظار الدفع':
         return 'انتظار الدفع';
+      case 'under_review':
       case 'قيد المراجعة':
         return 'قيد المراجعة';
       case 'paid':
       case 'تم الدفع':
         return 'تم الدفع';
+      case 'rejected':
+      case 'رفض الدفع':
+        return 'مرفوض';
       default:
         return paymentStatus.trim();
     }
@@ -200,6 +218,9 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                 (data['clientId'] ?? currentUserId).toString().trim();
             final clientName =
                 (data['clientName'] ?? data['name'] ?? 'العميل').toString();
+            final restaurantName =
+              (data['restaurantName'] ?? 'غير معروف').toString().trim();
+            final displayOrderNumber = _displayOrderNumber(data);
 
             int currentStep = _allSteps.indexOf(orderStatus);
             if (currentStep < 0) currentStep = 0;
@@ -345,11 +366,7 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                     // عرض رقم الطلب مع آخر 4 أرقام بشكل بارز
                     Builder(
                       builder: (_) {
-                        final orderNumber = formatUnifiedOrderCode(
-                          orderNumber: data['orderNumber'],
-                          orderId: data['orderId'],
-                          docId: orderId,
-                        );
+                        final orderNumber = displayOrderNumber;
                         String last4 = orderNumber.length >= 4
                             ? orderNumber.substring(orderNumber.length - 4)
                             : orderNumber;
@@ -370,6 +387,28 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                                     color: AppColors.primaryColor,
                                     fontSize: 22,
                                     letterSpacing: 2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Text('المطعم:',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    restaurantName.isEmpty
+                                        ? 'غير معروف'
+                                        : restaurantName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.black87,
+                                      fontSize: 16,
+                                    ),
                                   ),
                                 ),
                               ],

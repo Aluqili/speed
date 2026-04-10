@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpeedStar Admin</title>
+    <link rel="stylesheet" href="./css/styles.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>لوحة تحكم SpeedStar</h1>
+      <div class="auth-actions">
+        <span id="envBadge" class="muted">ENV: DEV</span>
+        <select id="envSelect" class="btn" aria-label="اختيار البيئة">
+          <option value="dev">DEV</option>
+          <option value="prod">PROD</option>
+        </select>
+        <span id="authState" class="muted">غير مسجل</span>
+        <button id="logoutBtn" class="btn danger" hidden>تسجيل الخروج</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <section id="loginCard" class="card">
+        <h2>دخول المسؤول</h2>
+        <p class="muted">الدخول متاح فقط للحسابات المصرح بها كـ Admin.</p>
+        <form id="loginForm" class="grid">
+          <label>
+            البريد الإلكتروني
+            <input id="emailInput" type="email" required placeholder="admin@speedstar.com" />
+          </label>
+          <label>
+            كلمة المرور
+            <input id="passwordInput" type="password" required />
+          </label>
+          <button type="submit" class="btn primary">دخول</button>
+          <button id="resetPasswordBtn" type="button" class="btn ghost" onclick="window.__adminResetPassword && window.__adminResetPassword()">نسيت كلمة المرور؟</button>
+        </form>
+        <p id="loginStatus" class="muted login-status" aria-live="polite"></p>
+      </section>
+
+      <section id="appPanel" hidden>
+        <nav class="tabs">
+          <button class="tab active" data-tab="dashboard">اللوحة</button>
+          <button class="tab" data-tab="finance">المالية</button>
+          <button class="tab" data-tab="map">الخريطة</button>
+          <button class="tab" data-tab="management">الإدارة</button>
+          <button class="tab" data-tab="admins">المسؤولون</button>
+          <button class="tab" data-tab="notifications">الإشعارات</button>
+          <button class="tab" data-tab="support">الدعم الفني</button>
+          <button class="tab" data-tab="pending">طلبات التسجيل</button>
+        </nav>
+
+        <section class="admin-workbar card">
+          <div class="admin-workbar-col">
+            <label for="adminQuickTab">وصول سريع للأقسام</label>
+            <select id="adminQuickTab">
+              <option value="dashboard">اللوحة</option>
+              <option value="finance">المالية</option>
+              <option value="map">الخريطة</option>
+              <option value="management">إدارة المتاجر والمندوبين</option>
+              <option value="admins">المسؤولون</option>
+              <option value="notifications">الإشعارات</option>
+              <option value="support">الدعم الفني</option>
+              <option value="pending">طلبات التسجيل</option>
+            </select>
+          </div>
+          <div class="admin-workbar-col grow">
+            <label for="adminGlobalSearch">بحث فوري داخل الجداول</label>
+            <input id="adminGlobalSearch" type="text" placeholder="ابحث برقم الطلب، اسم العميل، المتجر، المندوب..." />
+          </div>
+        </section>
+
+        <section id="map" class="tab-panel">
+          <div class="card">
+            <h3>الخريطة الحية</h3>
+            <p class="muted">المندوب: D (أخضر متاح / رمادي غير متاح) — العميل النشط: C أزرق — المطعم: R (برتقالي مفتوح / بني مغلق) — موقع الطلب: O أحمر.</p>
+            <div id="mapLegendBar" class="map-legend-bar">جاري تحميل ملخص الخريطة...</div>
+            <div id="liveMap" class="map-canvas"></div>
+          </div>
+          <div class="card">
+            <h3>تفاصيل العنصر المحدد</h3>
+            <div id="mapDetails" class="map-details muted">اضغط على أي علامة في الخريطة لعرض التفاصيل.</div>
+          </div>
+        </section>
+
+        <section id="dashboard" class="tab-panel active">
+          <div class="stats" id="statsGrid"></div>
+          <div class="card">
+            <h3>وصول سريع</h3>
+            <div class="quick-actions" id="dashboardQuickActions">
+              <button class="btn ghost" data-quick-tab="management">إدارة المتاجر والمندوبين</button>
+              <button class="btn ghost" data-quick-tab="support">فتح مركز الدعم الفني</button>
+              <button class="btn ghost" data-quick-tab="pending">طلبات التسجيل الجديدة</button>
+              <button class="btn ghost" data-quick-tab="notifications">إرسال إشعار الآن</button>
+              <button class="btn ghost" data-quick-tab="finance">التقارير المالية</button>
+              <button class="btn ghost" data-quick-tab="map">الخريطة الحية</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>إحصائيات الصفحة العامة</h3>
+            <p class="muted">تعرض زيارات الصفحة وتحميل التطبيقات ونقرات التواصل (إجمالي + اليوم).</p>
+            <div class="stats" id="publicMetricsTotalGrid"></div>
+            <div class="stats" id="publicMetricsTodayGrid"></div>
+            <div id="publicMetricsUpdatedAt" class="muted">جاري تحميل الإحصائيات...</div>
+          </div>
+          <div class="card">
+            <h3>أحدث الطلبات</h3>
+            <div id="ordersTable"></div>
+            <div id="dashboardOrderDetails" class="management-details muted">اختر طلبًا من الجدول لعرض التفاصيل الكاملة وفتحه على الخريطة.</div>
+          </div>
+        </section>
+
+        <section id="finance" class="tab-panel">
+          <div class="stats" id="financeGrid"></div>
+          <div class="card">
+            <h3>إعدادات طرق الدفع للعميل</h3>
+            <p class="muted">التحكم الكامل بطرق الدفع وأرقام الحسابات الظاهرة في تطبيق العميل.</p>
+            <form id="paymentSettingsForm" class="grid">
+              <label class="payment-method-row">
+                <input id="enableBankk" type="checkbox" />
+                تفعيل بنكك
+              </label>
+              <label>
+                رقم حساب بنكك
+                <input id="bankkAccountInput" type="text" placeholder="أدخل رقم حساب بنكك" />
+              </label>
+              <label>
+                اسم صاحب حساب بنكك
+                <input id="bankkAccountHolderInput" type="text" placeholder="أدخل اسم صاحب حساب بنكك" />
+              </label>
+
+              <label class="payment-method-row">
+                <input id="enableOcash" type="checkbox" />
+                تفعيل أوكاش
+              </label>
+              <label>
+                رقم حساب أوكاش
+                <input id="ocashAccountInput" type="text" placeholder="أدخل رقم حساب أوكاش" />
+              </label>
+              <label>
+                اسم صاحب حساب أوكاش
+                <input id="ocashAccountHolderInput" type="text" placeholder="أدخل اسم صاحب حساب أوكاش" />
+              </label>
+
+              <label class="payment-method-row">
+                <input id="enableFawry" type="checkbox" />
+                تفعيل فوري
+              </label>
+              <label>
+                رقم حساب فوري
+                <input id="fawryAccountInput" type="text" placeholder="أدخل رقم حساب فوري" />
+              </label>
+              <label>
+                اسم صاحب حساب فوري
+                <input id="fawryAccountHolderInput" type="text" placeholder="أدخل اسم صاحب حساب فوري" />
+              </label>
+
+              <button id="savePaymentSettingsBtn" type="submit" class="btn primary">حفظ إعدادات الدفع</button>
+            </form>
+            <div id="paymentSettingsResult" class="muted normalize-result">جاري تحميل الإعدادات...</div>
+          </div>
+          <div class="card">
+            <h3>إدارة أكواد الخصم</h3>
+            <form id="discountForm" class="grid">
+              <label>
+                الكود
+                <input id="discountCode" type="text" required placeholder="WELCOME20" />
+              </label>
+              <label>
+                نوع الخصم
+                <select id="discountType" required>
+                  <option value="percent">نسبة مئوية</option>
+                  <option value="fixed">مبلغ ثابت</option>
+                </select>
+              </label>
+              <label>
+                قيمة الخصم
+                <input id="discountValue" type="number" min="0" step="0.01" required placeholder="20" />
+              </label>
+              <label>
+                الحد الأدنى للطلب
+                <input id="discountMinOrder" type="number" min="0" step="0.01" placeholder="0" />
+              </label>
+              <label>
+                أقصى عدد استخدام إجمالي
+                <input id="discountMaxUsage" type="number" min="0" step="1" placeholder="0 = بدون حد" />
+              </label>
+              <label>
+                أقصى عدد استخدام لكل عميل
+                <input id="discountMaxUsagePerUser" type="number" min="0" step="1" placeholder="0 = بدون حد" />
+              </label>
+              <label>
+                سقف الخصم (اختياري)
+                <input id="discountMaxDiscount" type="number" min="0" step="0.01" placeholder="0 = بدون سقف" />
+              </label>
+              <label>
+                معرف المطعم (اختياري)
+                <input id="discountRestaurantId" type="text" placeholder="فارغ = لجميع المطاعم" />
+              </label>
+              <label>
+                اسم صنف محدد (اختياري)
+                <input id="discountItemName" type="text" placeholder="مثال: برجر لحم" />
+              </label>
+              <label>
+                تاريخ الانتهاء
+                <input id="discountExpiryDate" type="datetime-local" required />
+              </label>
+              <label>
+                <input id="discountIsActive" type="checkbox" checked />
+                مفعل
+              </label>
+              <label>
+                <input id="discountOnlyNewOrders" type="checkbox" />
+                للطلبات الجديدة فقط
+              </label>
+              <button id="discountSaveBtn" type="submit" class="btn primary">حفظ الكود</button>
+            </form>
+            <div id="discountResult" class="muted normalize-result"></div>
+            <div id="discountsTable"></div>
+          </div>
+          <div class="card">
+            <h3>ملخص المدفوعات</h3>
+            <p class="muted">يعتمد على حقول: total, paymentStatus, payoutStatus داخل orders.</p>
+            <div class="finance-filter-row">
+              <label for="financeRangeFilter">الفترة:</label>
+              <select id="financeRangeFilter">
+                <option value="all">كل الفترات</option>
+                <option value="day">اليوم</option>
+                <option value="month">هذا الشهر</option>
+              </select>
+            </div>
+            <div id="financeTotalsSummary" class="management-details muted">جاري حساب الملخص المالي...</div>
+            <div id="financeOrdersTable"></div>
+            <div class="card finance-subcard">
+              <h3>مراجعة إيصالات الدفع</h3>
+              <p class="muted">أي عملية تحويل يدوي تبقى قيد المراجعة حتى قبول الأدمن أو الرفض.</p>
+              <div id="financePaymentReviewSummary" class="muted">جاري تحميل طلبات المراجعة...</div>
+              <div id="financePaymentReviewTable"></div>
+            </div>
+            <div class="card finance-subcard">
+              <h3>مراجعة شحن المحافظ</h3>
+              <p class="muted">طلبات شحن المحفظة من تطبيق العميل تحتاج اعتمادًا لإضافة الرصيد فعليًا.</p>
+              <div id="financeWalletRechargeSummary" class="muted">جاري تحميل طلبات شحن المحافظ...</div>
+              <div id="financeWalletRechargeTable"></div>
+            </div>
+            <div class="card finance-subcard">
+              <h3>تحويلات المطاعم</h3>
+              <div id="financeStoresPayoutTable"></div>
+            </div>
+            <div class="card finance-subcard">
+              <h3>تحويلات المندوبين</h3>
+              <div id="financeCouriersPayoutTable"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="management" class="tab-panel">
+          <div class="card">
+            <h3>إدارة المتاجر</h3>
+            <div id="restaurantsTable"></div>
+            <div id="storeDetailsPanel" class="management-details muted">اختر متجرًا من الجدول لعرض كل التفاصيل.</div>
+          </div>
+          <div class="card">
+            <h3>إدارة المندوبين</h3>
+            <div id="couriersTable"></div>
+            <div id="courierDetailsPanel" class="management-details muted">اختر مندوبًا من الجدول لعرض كل التفاصيل.</div>
+          </div>
+        </section>
+
+        <section id="admins" class="tab-panel">
+          <div class="card">
+            <h3>إضافة مسؤول جديد</h3>
+            <form id="addAdminForm" class="grid">
+              <label>
+                بريد المستخدم
+                <input id="adminEmailInput" type="email" required placeholder="user@example.com" />
+              </label>
+              <button type="submit" class="btn primary">جعل المستخدم أدمن</button>
+            </form>
+            <p class="muted">المستخدم يجب أن يكون موجود مسبقًا في Firebase Auth.</p>
+          </div>
+          <div class="card">
+            <h3>ترحيل وتوحيد الولاية</h3>
+            <p class="muted">يشغّل دالة normalizeStateIdsBatch لتوحيد stateId في clients وrestaurants وdrivers.</p>
+            <form id="normalizeStateForm" class="grid">
+              <label>
+                الحد الأقصى لكل مجموعة
+                <input id="normalizeLimitInput" type="number" min="1" max="500" value="500" />
+              </label>
+              <button id="normalizeStateBtn" type="submit" class="btn primary">تشغيل الترحيل الآن</button>
+            </form>
+            <div id="normalizeStateResult" class="muted normalize-result"></div>
+          </div>
+          <div class="card">
+            <h3>تشغيل المدن (Remote Config)</h3>
+            <p class="muted">اختَر المدن المفعّلة لتطبيق العميل. المدن غير المفعّلة ستظهر لها رسالة "لسه ما جيناكم" تلقائيًا.</p>
+            <form id="rolloutConfigForm" class="grid">
+              <label class="payment-method-row">
+                <input id="rolloutEnabledInput" type="checkbox" />
+                تفعيل فلتر المدن/الولايات
+              </label>
+              <label>
+                الحد الأقصى للمسافة (كم)
+                <input id="rolloutGuardKmInput" type="number" min="1" max="500" step="1" />
+              </label>
+              <label>
+                رسالة المناطق غير المفعلة
+                <textarea id="rolloutBlockMessageInput" rows="3" placeholder="لسه ما جيناكم في منطقتكم. قريبًا بإذن الله."></textarea>
+              </label>
+              <div class="rollout-actions-row">
+                <button id="rolloutPresetSudanBtn" type="button" class="btn ghost">تحميل مدن السودان الجاهزة</button>
+                <button id="rolloutSelectAllBtn" type="button" class="btn ghost">تحديد الكل</button>
+                <button id="rolloutClearAllBtn" type="button" class="btn ghost">إلغاء التحديد</button>
+                <button id="reloadRolloutConfigBtn" type="button" class="btn ghost">إعادة تحميل</button>
+              </div>
+              <label>
+                بحث داخل المدن
+                <input id="rolloutCitySearchInput" type="text" placeholder="اكتب اسم المدينة أو الولاية" />
+              </label>
+              <div id="rolloutSelectedCount" class="muted">المدن المختارة: 0</div>
+              <div id="rolloutCitiesList" class="city-picker-list"></div>
+              <label>
+                CSV المدن المفعّلة (يمكنك التعديل اليدوي)
+                <textarea id="rolloutSelectedCitiesCsv" rows="3" placeholder="الخرطوم, بحري, امدرمان"></textarea>
+              </label>
+              <button id="saveRolloutConfigBtn" type="submit" class="btn primary">حفظ إعدادات تشغيل المدن</button>
+            </form>
+            <div id="rolloutConfigResult" class="muted normalize-result">جاري تحميل إعدادات المدن...</div>
+          </div>
+          <div class="card">
+            <h3>محرر Remote Config المبسط</h3>
+            <p class="muted">تحكم سريع في كل مفاتيح Remote Config من الأدمن بدون أوامر CLI.</p>
+            <form id="remoteConfigBulkForm" class="grid">
+              <label>
+                بحث عن مفتاح
+                <input id="remoteConfigFilterInput" type="text" placeholder="مثال: client_ أو pricing_" />
+              </label>
+              <div id="remoteConfigTable" class="remote-table-wrap"></div>
+              <div class="rollout-actions-row">
+                <button id="reloadRemoteConfigBulkBtn" type="button" class="btn ghost">إعادة تحميل المفاتيح</button>
+                <button id="saveRemoteConfigBulkBtn" type="submit" class="btn primary">حفظ التعديلات المحددة</button>
+              </div>
+            </form>
+            <div id="remoteConfigBulkResult" class="muted normalize-result">جاري تحميل مفاتيح Remote Config...</div>
+          </div>
+          <div class="card">
+            <h3>قائمة المسؤولين</h3>
+            <div id="adminsTable"></div>
+          </div>
+        </section>
+
+        <section id="notifications" class="tab-panel">
+          <div class="card">
+            <h3>إرسال إشعار يدوي</h3>
+            <p class="muted">يمكنك إرسال إشعار لمستخدم محدد أو لدور كامل (عملاء / مندوبين / متاجر) أو للجميع.</p>
+            <form id="notificationForm" class="grid">
+              <label>
+                نوع الإرسال
+                <select id="notificationTargetType" required>
+                  <option value="all">الجميع</option>
+                  <option value="client">كل العملاء</option>
+                  <option value="courier">كل المندوبين</option>
+                  <option value="store">كل المتاجر</option>
+                  <option value="user">مستخدم محدد</option>
+                </select>
+              </label>
+              <label>
+                دور المستخدم (عند اختيار مستخدم محدد)
+                <select id="notificationUserRole">
+                  <option value="client">عميل</option>
+                  <option value="courier">مندوب</option>
+                  <option value="store">متجر</option>
+                </select>
+              </label>
+              <label>
+                UID المستخدم (إلزامي عند مستخدم محدد)
+                <input id="notificationUserId" type="text" placeholder="مثال: eY8..." />
+              </label>
+              <label>
+                العنوان
+                <input id="notificationTitle" type="text" required placeholder="عنوان الإشعار" />
+              </label>
+              <label>
+                الرسالة
+                <textarea id="notificationBody" rows="4" required placeholder="اكتب نص الإشعار"></textarea>
+              </label>
+              <button id="notificationSendBtn" type="submit" class="btn primary">إرسال الإشعار</button>
+            </form>
+            <div id="notificationResult" class="muted normalize-result"></div>
+          </div>
+          <div class="card">
+            <h3>الإشعارات الآلية</h3>
+            <p class="muted">يتم إرسال إشعارات آلية عند تغيّر حالة الطلب (تأكيد المطعم، تعيين مندوب، الاستلام، الوصول، التسليم، الإلغاء).</p>
+          </div>
+        </section>
+
+        <section id="support" class="tab-panel">
+          <div class="card">
+            <h3>مركز الدعم الفني</h3>
+            <div id="supportRoot" class="support-root">
+              <aside class="support-sidebar">
+                <div class="support-filters">
+                  <input id="supportSearchInput" type="text" placeholder="بحث باسم المستخدم / المعرف / الرسالة" />
+                  <select id="supportAppFilter">
+                    <option value="all">كل التطبيقات</option>
+                    <option value="client">العملاء</option>
+                    <option value="courier">المندوبون</option>
+                    <option value="store">المتاجر</option>
+                  </select>
+                  <select id="supportStatusFilter">
+                    <option value="all">كل الحالات</option>
+                    <option value="open">مفتوحة</option>
+                    <option value="closed">مغلقة</option>
+                  </select>
+                </div>
+                <div id="supportSummary" class="support-summary muted"></div>
+                <div id="supportConversationList" class="support-conversation-list"></div>
+              </aside>
+
+              <section class="support-main">
+                <div id="supportConversationHeader" class="support-conversation-header muted">
+                  اختر محادثة من القائمة لعرض التفاصيل.
+                </div>
+                <div id="supportMessagesPane" class="support-messages-pane"></div>
+                <div class="support-composer">
+                  <div class="support-composer-hint muted">للإرسال السريع استخدم Ctrl + Enter</div>
+                  <textarea id="supportReplyInput" rows="3" placeholder="اكتب ردك هنا..."></textarea>
+                  <div class="support-composer-actions">
+                    <button id="supportToggleStatusBtn" class="btn ghost" type="button">إغلاق المحادثة</button>
+                    <button id="supportSendBtn" class="btn primary" type="button">إرسال الرد</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section id="pending" class="tab-panel">
+          <div class="card">
+            <h3>طلبات التسجيل المعلقة</h3>
+            <div id="pendingTable"></div>
+          </div>
+          <div class="card">
+            <h3>طلبات اعتماد القوائم</h3>
+            <div id="pendingMenuTable"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    ></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script type="module" src="./js/app.js?v=20260315-metricsfix2"></script>
+  </body>
+</html>

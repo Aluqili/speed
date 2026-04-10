@@ -82,6 +82,14 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
   final String restaurantId;
   const StoreCurrentOrdersScreen({super.key, required this.restaurantId});
 
+  num _resolveDisplayedTotal(Map<String, dynamic> data) {
+    final total = (data['total'] as num?) ?? 0;
+    final deliveryFee = (data['deliveryFee'] as num?) ?? 0;
+    final largeOrderFee = (data['largeOrderFee'] as num?) ?? 0;
+    return (data['totalWithDelivery'] as num?) ??
+        (total + deliveryFee + largeOrderFee);
+  }
+
   Widget _sectionHeader(String title, int count, IconData icon) {
     return Row(
       children: [
@@ -104,7 +112,7 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
     final orderId = doc.id;
     final status = _getOrderStatus(data);
     final clientName = data['clientName'] ?? 'عميل';
-    final total = data['totalWithDelivery'] ?? data['total'] ?? 0;
+    final total = _resolveDisplayedTotal(data);
     final unifiedOrderCode = formatUnifiedOrderCode(
       orderNumber: data['orderNumber'],
       orderId: data['orderId'],
@@ -196,7 +204,8 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
               return const Center(child: CircularProgressIndicator());
             }
             final allDocs = (snapshot.data?.docs ?? []).toList()
-              ..sort((a, b) => _extractOrderDate(b).compareTo(_extractOrderDate(a)));
+              ..sort((a, b) =>
+                  _extractOrderDate(b).compareTo(_extractOrderDate(a)));
 
             final newDocs = allDocs.where((doc) {
               final data = doc.data() as Map<String, dynamic>;
@@ -218,7 +227,8 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
               padding: const EdgeInsets.all(12),
               child: Column(
                 children: [
-                  _sectionHeader('الطلبات الجديدة', newDocs.length, Icons.fiber_new),
+                  _sectionHeader(
+                      'الطلبات الجديدة', newDocs.length, Icons.fiber_new),
                   const SizedBox(height: 8),
                   Expanded(
                     child: newDocs.isEmpty

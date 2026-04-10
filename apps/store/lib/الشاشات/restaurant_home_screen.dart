@@ -448,7 +448,28 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                         ),
                     ],
                   ),
-                  onPressed: () {
+                  onPressed: () async {
+                    final unreadDocs = docs.where((doc) {
+                      final data = doc.data();
+                      final isRead =
+                          data['read'] == true || data['isRead'] == true;
+                      return !isRead;
+                    });
+
+                    if (unreadDocs.isNotEmpty) {
+                      final batch = FirebaseFirestore.instance.batch();
+                      for (final doc in unreadDocs) {
+                        batch.update(doc.reference, {
+                          'read': true,
+                          'isRead': true,
+                          'readAt': FieldValue.serverTimestamp(),
+                        });
+                      }
+                      try {
+                        await batch.commit();
+                      } catch (_) {}
+                    }
+
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -1075,11 +1096,24 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                                         status == 'courier_assigned' ||
                                         status == 'قيد التجهيز')
                                       _actionButton(' جاهز', () async {
+                                        final hasAssignedDriver =
+                                            ((data['assignedDriverId'] ?? '')
+                                                .toString()
+                                                .trim()
+                                                .isNotEmpty);
                                         await _setOrderStatus(
-                                            docId, 'pickup_ready');
+                                          docId,
+                                          hasAssignedDriver
+                                              ? 'pickup_ready'
+                                              : 'courier_searching',
+                                          extra: {
+                                            'readyByRestaurant': true,
+                                          },
+                                        );
                                         setState(() {});
-                                        _showErrorMessage(
-                                            'تم تحديث حالة الطلب إلى جاهز للاستلام');
+                                        _showErrorMessage(hasAssignedDriver
+                                            ? 'تم تحديث حالة الطلب إلى جاهز للاستلام'
+                                            : 'تم تجهيز الطلب وسيتم البحث عن مندوب تلقائيًا');
                                       }),
                                     if (status == 'pickup_ready' ||
                                         status == 'قيد التوصيل')
@@ -1461,11 +1495,24 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                                       status == 'courier_assigned' ||
                                       status == 'قيد التجهيز')
                                     _actionButton(' جاهز', () async {
+                                      final hasAssignedDriver =
+                                          ((data['assignedDriverId'] ?? '')
+                                              .toString()
+                                              .trim()
+                                              .isNotEmpty);
                                       await _setOrderStatus(
-                                          docId, 'pickup_ready');
+                                        docId,
+                                        hasAssignedDriver
+                                            ? 'pickup_ready'
+                                            : 'courier_searching',
+                                        extra: {
+                                          'readyByRestaurant': true,
+                                        },
+                                      );
                                       setState(() {});
-                                      _showErrorMessage(
-                                          'تم تحديث حالة الطلب إلى جاهز للاستلام');
+                                      _showErrorMessage(hasAssignedDriver
+                                          ? 'تم تحديث حالة الطلب إلى جاهز للاستلام'
+                                          : 'تم تجهيز الطلب وسيتم البحث عن مندوب تلقائيًا');
                                     }),
                                   if (status == 'pickup_ready' ||
                                       status == 'قيد التوصيل')

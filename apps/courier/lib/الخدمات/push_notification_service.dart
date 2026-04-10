@@ -10,6 +10,7 @@ class PushNotificationService {
   static final PushNotificationService instance = PushNotificationService._();
 
   static const String _channelId = 'speedstar_alerts';
+  static const String _ordersChannelId = 'speedstar_orders_incoming_v1';
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications =
@@ -39,10 +40,22 @@ class PushNotificationService {
       importance: Importance.max,
       playSound: true,
     );
+    const ordersChannel = AndroidNotificationChannel(
+      _ordersChannelId,
+      'SpeedStar Orders',
+      description: 'تنبيهات الطلبات الجديدة والعروض الفورية',
+      importance: Importance.max,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound('incoming_order'),
+    );
     await _localNotifications
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(ordersChannel);
 
     await _messaging.requestPermission(
       alert: true,
@@ -94,17 +107,29 @@ class PushNotificationService {
             .toString();
     final body =
         (message.notification?.body ?? message.data['body'] ?? '').toString();
+    final type = (message.data['type'] ?? '').toString().toLowerCase();
+    final isOrderAlert = type.contains('order') ||
+        type.contains('offer') ||
+        type.contains('pickup') ||
+        type.contains('courier');
+    final androidChannelId = isOrderAlert ? _ordersChannelId : _channelId;
 
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: AndroidNotificationDetails(
-        _channelId,
-        'SpeedStar Alerts',
-        channelDescription: 'تنبيهات الطلبات والتحديثات',
+        androidChannelId,
+        isOrderAlert ? 'SpeedStar Orders' : 'SpeedStar Alerts',
+        channelDescription: isOrderAlert
+            ? 'تنبيهات الطلبات الجديدة والعروض الفورية'
+            : 'تنبيهات الطلبات والتحديثات',
         importance: Importance.max,
-        priority: Priority.high,
+        priority: Priority.max,
         playSound: true,
+        enableVibration: true,
+        sound: isOrderAlert
+            ? const RawResourceAndroidNotificationSound('incoming_order')
+            : null,
       ),
-      iOS: DarwinNotificationDetails(
+      iOS: const DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,

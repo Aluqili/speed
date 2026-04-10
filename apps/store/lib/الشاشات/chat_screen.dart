@@ -23,8 +23,13 @@ class _ChatScreenState extends State<ChatScreen> {
   final cloudinary =
       CloudinaryPublic('dvnzloec6', 'flutter_unsigned', cache: false);
   static const _primaryColor = AppThemeArabic.clientPrimary;
+  static const _closedSupportTicketMessage =
+      'أغلق الدعم الفني هذه التذكرة. يمكنك قراءة المحادثة السابقة فقط.';
   bool _chatEnabled = true;
   String _chatDisabledMessage = 'الدردشة متوقفة مؤقتًا.';
+  bool _loadingConversation = true;
+  String _supportConversationId = '';
+  String _storeDisplayName = 'المطعم';
 
   void _onMessageChanged() {
     if (!mounted) return;
@@ -33,13 +38,18 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String get _actorUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  String get _chatId => '${_actorUid}-support';
+  String _buildDefaultConversationId() => '${_actorUid}-support';
+
+  String _buildNewSupportChatId() {
+    return '${_actorUid}-support-${DateTime.now().millisecondsSinceEpoch}';
+  }
 
   @override
   void initState() {
     super.initState();
     _loadChatConfig();
     _controller.addListener(_onMessageChanged);
+    _bootstrapSupportConversation();
   }
 
   Future<void> _loadChatConfig() async {
@@ -55,6 +65,64 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (_) {
       // Keep defaults
     }
+  }
+
+  Future<void> _bootstrapSupportConversation() async {
+    if (_actorUid.isEmpty) {
+      if (!mounted) return;
+      setState(() => _loadingConversation = false);
+      return;
+    }
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(widget.userId)
+          .get();
+      final data = doc.data() ?? <String, dynamic>{};
+      final savedConversationId =
+          (data['lastSupportConversationId'] ?? '').toString().trim();
+      final displayName =
+          (data['name'] ?? data['displayName'] ?? 'المطعم').toString().trim();
+      if (!mounted) return;
+      setState(() {
+        _supportConversationId = savedConversationId.isNotEmpty
+            ? savedConversationId
+            : _buildDefaultConversationId();
+        _storeDisplayName = displayName.isNotEmpty ? displayName : 'المطعم';
+        _loadingConversation = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _supportConversationId = _buildDefaultConversationId();
+        _loadingConversation = false;
+      });
+    }
+  }
+
+  Future<void> _persistConversationId(String conversationId) async {
+    await FirebaseFirestore.instance
+        .collection('restaurants')
+        .doc(widget.userId)
+        .set({
+      'lastSupportConversationId': conversationId,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> _startNewSupportTicket() async {
+    if (_actorUid.isEmpty) return;
+    final newConversationId = _buildNewSupportChatId();
+    try {
+      await _persistConversationId(newConversationId);
+    } catch (_) {
+      // Continue even if metadata update fails.
+    }
+    if (!mounted) return;
+    setState(() {
+      _supportConversationId = newConversationId;
+    });
   }
 
   @override
@@ -75,22 +143,24 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _supportConversationId.isEmpty) return;
     await FirebaseFirestore.instance.collection('supportMessages').add({
-      'conversationId': _chatId,
+      'conversationId': _supportConversationId,
       'chatKind': 'support',
       'sourceApp': 'store',
       'senderId': _actorUid,
       'senderType': 'مطعم',
-      'senderName': 'المطعم',
+      'senderName': _storeDisplayName,
       'restaurantId': widget.userId,
       'actorUid': _actorUid,
       'receiverId': 'support',
       'participants': [_actorUid, 'support'],
       'participantsKey': [_actorUid, 'support']..sort(),
       'timestamp': FieldValue.serverTimestamp(),
+      'status': 'open',
       'message': text,
     });
+    await _persistConversationId(_supportConversationId);
     _controller.clear();
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -114,26 +184,30 @@ class _ChatScreenState extends State<ChatScreen> {
     final pickedFile = await picker.pickImage(source: source, imageQuality: 70);
     if (pickedFile == null) return;
 
+    if (_supportConversationId.isEmpty) return;
+
     try {
       final response = await cloudinary.uploadFile(
         CloudinaryFile.fromFile(File(pickedFile.path).path,
             resourceType: CloudinaryResourceType.Image),
       );
       await FirebaseFirestore.instance.collection('supportMessages').add({
-        'conversationId': _chatId,
+        'conversationId': _supportConversationId,
         'chatKind': 'support',
         'sourceApp': 'store',
         'senderId': _actorUid,
         'senderType': 'مطعم',
-        'senderName': 'المطعم',
+        'senderName': _storeDisplayName,
         'restaurantId': widget.userId,
         'actorUid': _actorUid,
         'receiverId': 'support',
         'participants': [_actorUid, 'support'],
         'participantsKey': [_actorUid, 'support']..sort(),
         'timestamp': FieldValue.serverTimestamp(),
+        'status': 'open',
         'imageUrl': response.secureUrl,
       });
+      await _persistConversationId(_supportConversationId);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -166,6 +240,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loadingConversation) {
+      return const Scaffold(
+        backgroundColor: AppThemeArabic.clientBackground,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     if (!_chatEnabled) {
       return Directionality(
         textDirection: TextDirection.rtl,
@@ -225,7 +306,7 @@ class _ChatScreenState extends State<ChatScreen> {
               child: StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('supportMessages')
-                    .where('conversationId', isEqualTo: _chatId)
+                    .where('conversationId', isEqualTo: _supportConversationId)
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
@@ -243,82 +324,138 @@ class _ChatScreenState extends State<ChatScreen> {
                       return _timestampMillis(aData['timestamp'])
                           .compareTo(_timestampMillis(bData['timestamp']));
                     });
-                  if (msgs.isEmpty) {
-                    return const Center(child: Text('لا توجد رسائل بعد'));
+                  final latestData = msgs.isNotEmpty
+                      ? msgs.last.data() as Map<String, dynamic>
+                      : <String, dynamic>{};
+                  final supportConversationClosed =
+                      (latestData['status'] ?? 'open').toString() == 'closed';
+
+                  if (msgs.isNotEmpty) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_scrollController.hasClients) {
+                        _scrollController.jumpTo(
+                          _scrollController.position.maxScrollExtent,
+                        );
+                      }
+                    });
                   }
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (_scrollController.hasClients) {
-                      _scrollController.jumpTo(
-                        _scrollController.position.maxScrollExtent,
-                      );
-                    }
-                  });
-                  return ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: msgs.length,
-                    itemBuilder: (context, index) {
-                      final m = msgs[index].data() as Map<String, dynamic>;
-                      final isMe = m['senderId'] == _actorUid;
-                      return Align(
-                        alignment:
-                            isMe ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 6),
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 8, horizontal: 12),
+
+                  return Column(
+                    children: [
+                      if (supportConversationClosed)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: isMe
-                                ? AppThemeArabic.clientSurface
-                                : Theme.of(context)
-                                    .colorScheme
-                                    .surfaceContainerHighest,
+                            color: const Color(0xFFFFF3E0),
                             borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFFFCC80)),
                           ),
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (!isMe &&
-                                  (m['senderName'] ?? '').toString().isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 4),
-                                  child: Text(
-                                    (m['senderName'] ?? '').toString(),
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black54,
-                                    ),
-                                  ),
+                              const Text(
+                                _closedSupportTicketMessage,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _startNewSupportTicket,
+                                  icon: const Icon(Icons.add_comment_outlined),
+                                  label: const Text('فتح تذكرة جديدة'),
                                 ),
-                              if (m['imageUrl'] != null)
-                                GestureDetector(
-                                  onTap: () => _showImagePreview(
-                                      (m['imageUrl'] ?? '').toString()),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(
-                                      (m['imageUrl'] ?? '').toString(),
-                                      height: 180,
-                                      width: 180,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                )
-                              else
-                                Text((m['message'] ?? m['text'] ?? '')
-                                    .toString()),
-                              const SizedBox(height: 4),
-                              Text(
-                                _formatTimestamp(m['timestamp']),
-                                style: const TextStyle(
-                                    fontSize: 12, color: Colors.grey),
                               ),
                             ],
                           ),
                         ),
-                      );
-                    },
+                      Expanded(
+                        child: msgs.isEmpty
+                            ? const Center(child: Text('لا توجد رسائل بعد'))
+                            : ListView.builder(
+                                controller: _scrollController,
+                                padding: const EdgeInsets.all(12),
+                                itemCount: msgs.length,
+                                itemBuilder: (context, index) {
+                                  final m =
+                                      msgs[index].data() as Map<String, dynamic>;
+                                  final isMe = m['senderId'] == _actorUid;
+                                  return Align(
+                                    alignment: isMe
+                                        ? Alignment.centerRight
+                                        : Alignment.centerLeft,
+                                    child: Container(
+                                      margin: const EdgeInsets.symmetric(
+                                          vertical: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 8, horizontal: 12),
+                                      decoration: BoxDecoration(
+                                        color: isMe
+                                            ? AppThemeArabic.clientSurface
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .surfaceContainerHighest,
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          if (!isMe &&
+                                              (m['senderName'] ?? '')
+                                                  .toString()
+                                                  .isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                  bottom: 4),
+                                              child: Text(
+                                                (m['senderName'] ?? '')
+                                                    .toString(),
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.black54,
+                                                ),
+                                              ),
+                                            ),
+                                          if (m['imageUrl'] != null)
+                                            GestureDetector(
+                                              onTap: () => _showImagePreview(
+                                                  (m['imageUrl'] ?? '')
+                                                      .toString()),
+                                              child: ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                child: Image.network(
+                                                  (m['imageUrl'] ?? '')
+                                                      .toString(),
+                                                  height: 180,
+                                                  width: 180,
+                                                  fit: BoxFit.cover,
+                                                ),
+                                              ),
+                                            )
+                                          else
+                                            Text((m['message'] ?? m['text'] ?? '')
+                                                .toString()),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            _formatTimestamp(m['timestamp']),
+                                            style: const TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
                   );
                 },
               ),
@@ -349,6 +486,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     Expanded(
                       child: TextField(
                         controller: _controller,
+                        enabled: _supportConversationId.isNotEmpty,
                         textInputAction: TextInputAction.send,
                         minLines: 1,
                         maxLines: 4,
@@ -359,9 +497,25 @@ class _ChatScreenState extends State<ChatScreen> {
                         onSubmitted: (_) => _send(),
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.send, color: _primaryColor),
-                      onPressed: _controller.text.trim().isEmpty ? null : _send,
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('supportMessages')
+                          .where('conversationId', isEqualTo: _supportConversationId)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        final latest = snapshot.data?.docs.isNotEmpty == true
+                            ? snapshot.data!.docs.last.data()
+                                as Map<String, dynamic>
+                            : <String, dynamic>{};
+                        final canCompose =
+                            (latest['status'] ?? 'open').toString() != 'closed';
+                        return IconButton(
+                          icon: const Icon(Icons.send, color: _primaryColor),
+                          onPressed: _controller.text.trim().isEmpty || !canCompose
+                              ? null
+                              : _send,
+                        );
+                      },
                     ),
                   ],
                 ),

@@ -771,7 +771,28 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                           ),
                       ],
                     ),
-                    onPressed: () {
+                      onPressed: () async {
+                        final unreadDocs = docs.where((doc) {
+                          final data = doc.data();
+                          final isRead =
+                              data['read'] == true || data['isRead'] == true;
+                          return !isRead;
+                        });
+
+                        if (unreadDocs.isNotEmpty) {
+                          final batch = FirebaseFirestore.instance.batch();
+                          for (final doc in unreadDocs) {
+                            batch.update(doc.reference, {
+                              'read': true,
+                              'isRead': true,
+                              'readAt': FieldValue.serverTimestamp(),
+                            });
+                          }
+                          try {
+                            await batch.commit();
+                          } catch (_) {}
+                        }
+
                       Navigator.push(
                         context,
                         MaterialPageRoute(
