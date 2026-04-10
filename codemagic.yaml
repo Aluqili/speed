@@ -44,9 +44,9 @@ workflows:
       - name: Build iOS without code signing
         script: flutter build ios --release --no-codesign
     artifacts:
-      - apps/client/build/ios/iphoneos/*.app
+      - build/ios/iphoneos/*.app
       - /tmp/xcodebuild_logs/*.log
-      - apps/client/flutter_drive.log
+      - flutter_drive.log
 
   client_ios_release_ipa:
     name: SpeedStar Client iOS Signed IPA
@@ -98,6 +98,6 @@ workflows:
       - name: Build signed IPA
         script: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
     artifacts:
-      - apps/client/build/ios/ipa/*.ipa
+      - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
-      - apps/client/flutter_drive.log
+      - flutter_drive.log
