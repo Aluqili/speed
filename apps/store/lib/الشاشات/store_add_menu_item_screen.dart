@@ -70,6 +70,9 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _itemNameController = TextEditingController();
   final TextEditingController _itemPriceController = TextEditingController();
+  final TextEditingController _smallPriceController = TextEditingController();
+  final TextEditingController _mediumPriceController = TextEditingController();
+  final TextEditingController _largePriceController = TextEditingController();
   String? _selectedCategory;
   File? _imageFile;
   bool _isLoading = false;
@@ -78,6 +81,9 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
   void dispose() {
     _itemNameController.dispose();
     _itemPriceController.dispose();
+    _smallPriceController.dispose();
+    _mediumPriceController.dispose();
+    _largePriceController.dispose();
     super.dispose();
   }
 
@@ -129,23 +135,59 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
 
     final itemName = _itemNameController.text.trim();
     final rawPrice = _itemPriceController.text.trim().replaceAll(',', '.');
+    final rawSmall = _smallPriceController.text.trim().replaceAll(',', '.');
+    final rawMedium = _mediumPriceController.text.trim().replaceAll(',', '.');
+    final rawLarge = _largePriceController.text.trim().replaceAll(',', '.');
     final category = _selectedCategory?.trim() ?? '';
 
-    final price = double.tryParse(rawPrice);
-    if (price == null) {
+    final hasAnySize =
+        rawSmall.isNotEmpty || rawMedium.isNotEmpty || rawLarge.isNotEmpty;
+    final basePrice = rawPrice.isEmpty ? null : double.tryParse(rawPrice);
+    final smallPrice = rawSmall.isEmpty ? null : double.tryParse(rawSmall);
+    final mediumPrice = rawMedium.isEmpty ? null : double.tryParse(rawMedium);
+    final largePrice = rawLarge.isEmpty ? null : double.tryParse(rawLarge);
+
+    if (!hasAnySize && basePrice == null) {
       setState(() => _isLoading = false);
       messenger.showSnackBar(
         const SnackBar(content: Text('الرجاء إدخال سعر صالح')),
       );
       return;
     }
-    if (price <= 0) {
+
+    if (basePrice != null && basePrice <= 0) {
       setState(() => _isLoading = false);
       messenger.showSnackBar(
         const SnackBar(content: Text('السعر يجب أن يكون أكبر من صفر')),
       );
       return;
     }
+
+    if (hasAnySize) {
+      if (smallPrice == null || mediumPrice == null || largePrice == null) {
+        setState(() => _isLoading = false);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('عند استخدام الأحجام يجب إدخال الأسعار الثلاثة')),
+        );
+        return;
+      }
+      if (smallPrice <= 0 || mediumPrice <= 0 || largePrice <= 0) {
+        setState(() => _isLoading = false);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('أسعار الأحجام يجب أن تكون أكبر من صفر')),
+        );
+        return;
+      }
+    }
+
+    final price = basePrice ?? mediumPrice ?? smallPrice ?? largePrice!;
+    final sizes = hasAnySize
+        ? <String, double>{
+            'small': smallPrice!,
+            'medium': mediumPrice!,
+            'large': largePrice!,
+          }
+        : <String, double>{};
 
     if (category.isEmpty) {
       setState(() => _isLoading = false);
@@ -178,6 +220,7 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
       await menuItemRef.set({
         'name': itemName,
         'price': price,
+        if (sizes.isNotEmpty) 'sizes': sizes,
         'imageUrl': imageUrl,
         'category': category,
         'available': true,
@@ -195,6 +238,7 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
             .set({
           'name': itemName,
           'price': price,
+          if (sizes.isNotEmpty) 'sizes': sizes,
           'imageUrl': imageUrl,
           'category': category,
           'available': true,
@@ -212,6 +256,9 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
         _isLoading = false;
         _itemNameController.clear();
         _itemPriceController.clear();
+        _smallPriceController.clear();
+        _mediumPriceController.clear();
+        _largePriceController.clear();
         _selectedCategory = null;
         _imageFile = null;
       });
@@ -277,10 +324,21 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
                 controller: _itemPriceController,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'السعر بالجنيه'),
+                decoration: const InputDecoration(
+                  labelText: 'السعر الأساسي (اختياري عند إدخال الأحجام)',
+                ),
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'الرجاء إدخال السعر';
+                  final small = _smallPriceController.text.trim();
+                  final medium = _mediumPriceController.text.trim();
+                  final large = _largePriceController.text.trim();
+                  final hasAnySize =
+                      small.isNotEmpty || medium.isNotEmpty || large.isNotEmpty;
+
+                  if (!hasAnySize && (value == null || value.isEmpty)) {
+                    return 'الرجاء إدخال السعر أو إدخال أسعار الأحجام';
+                  }
+                  if (value == null || value.trim().isEmpty) {
+                    return null;
                   }
                   final parsed =
                       double.tryParse(value.trim().replaceAll(',', '.'));
@@ -292,6 +350,27 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
                   }
                   return null;
                 },
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _smallPriceController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'سعر الحجم الصغير'),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _mediumPriceController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'سعر الحجم الوسط'),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _largePriceController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'سعر الحجم الكبير'),
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(

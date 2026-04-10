@@ -34,6 +34,9 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
   LatLng? selectedLocation;
   final TextEditingController _addressNameController = TextEditingController();
   GoogleMapController? mapController;
+  bool _locationPermissionGranted = false;
+  bool _mapCreated = false;
+  String? _mapHint;
   bool _isSaving = false;
   bool _canSave = false;
   bool _firstSaveAttempt = true;
@@ -70,6 +73,20 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
+    if (!mounted) return;
+    setState(() {
+      _locationPermissionGranted = permission == LocationPermission.always ||
+          permission == LocationPermission.whileInUse;
+    });
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    mapController = controller;
+    if (!mounted) return;
+    setState(() {
+      _mapCreated = true;
+      _mapHint = null;
+    });
   }
 
   void _onMapTapped(LatLng position) {
@@ -87,7 +104,9 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
         latLng.latitude,
         latLng.longitude,
       ).timeout(const Duration(seconds: 8));
-      return placemarks.first.locality ?? placemarks.first.administrativeArea ?? 'غير معروف';
+      return placemarks.first.locality ??
+          placemarks.first.administrativeArea ??
+          'غير معروف';
     } catch (_) {
       return 'غير معروف';
     }
@@ -147,9 +166,8 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
         newAddressId = docRef.id;
         // اجعل العنوان الافتراضي مباشرة بعد الإضافة
         if (widget.userType == 'client') {
-          await userDocRef
-              .set({'defaultAddressId': newAddressId}, SetOptions(merge: true))
-              .timeout(const Duration(seconds: 12));
+          await userDocRef.set({'defaultAddressId': newAddressId},
+              SetOptions(merge: true)).timeout(const Duration(seconds: 12));
         }
       } else {
         await FirebaseFirestore.instance
@@ -178,7 +196,9 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
     } on TimeoutException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('انتهت مهلة الحفظ. تحقق من الإنترنت ثم أعد المحاولة.')),
+        const SnackBar(
+            content:
+                Text('انتهت مهلة الحفظ. تحقق من الإنترنت ثم أعد المحاولة.')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -198,7 +218,8 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final LatLng initialPosition = selectedLocation ?? const LatLng(15.5007, 32.5599);
+    final LatLng initialPosition =
+        selectedLocation ?? const LatLng(15.5007, 32.5599);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -207,7 +228,8 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          title: Text(widget.editAddressId != null ? 'تعديل العنوان' : 'إضافة عنوان',
+          title: Text(
+              widget.editAddressId != null ? 'تعديل العنوان' : 'إضافة عنوان',
               style: const TextStyle(color: Colors.black87)),
           iconTheme: const IconThemeData(color: Colors.black87),
           centerTitle: true,
@@ -215,27 +237,45 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
         body: Column(
           children: [
             Expanded(
-              child: GoogleMap(
-                initialCameraPosition: CameraPosition(target: initialPosition, zoom: 14),
-                onTap: _onMapTapped,
-                markers: selectedLocation == null
-                    ? {}
-                    : {
-                        Marker(
-                          markerId: const MarkerId('selectedLocation'),
-                          position: selectedLocation!,
-                        )
-                      },
-                onMapCreated: (controller) => mapController = controller,
-                myLocationEnabled: true,
-                myLocationButtonEnabled: true,
+              child: Stack(
+                children: [
+                  GoogleMap(
+                    initialCameraPosition:
+                        CameraPosition(target: initialPosition, zoom: 14),
+                    onTap: _onMapTapped,
+                    markers: selectedLocation == null
+                        ? {}
+                        : {
+                            Marker(
+                              markerId: const MarkerId('selectedLocation'),
+                              position: selectedLocation!,
+                            )
+                          },
+                    onMapCreated: _onMapCreated,
+                    myLocationEnabled: _locationPermissionGranted,
+                    myLocationButtonEnabled: _locationPermissionGranted,
+                  ),
+                  if (!_mapCreated)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.grey.shade200,
+                        child: Center(
+                          child: Text(
+                            _mapHint ?? 'جاري تحميل الخريطة...',
+                            style: const TextStyle(color: Colors.black54),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(20)),
               ),
               child: Column(
                 children: [
@@ -244,13 +284,20 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
                       children: const [
                         Icon(Icons.info, color: Colors.orange),
                         SizedBox(width: 8),
-                        Expanded(child: Text('يرجى الضغط على زر تحديد الموقع على الخريطة قبل الحفظ', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold))),
+                        Expanded(
+                            child: Text(
+                                'يرجى الضغط على زر تحديد الموقع على الخريطة قبل الحفظ',
+                                style: TextStyle(
+                                    color: Colors.orange,
+                                    fontWeight: FontWeight.bold))),
                       ],
                     ),
                   if (_saveWarning != null)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8.0),
-                      child: Text(_saveWarning!, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                      child: Text(_saveWarning!,
+                          style: const TextStyle(
+                              color: Colors.red, fontWeight: FontWeight.bold)),
                     ),
                   TextField(
                     controller: _addressNameController,
@@ -270,10 +317,13 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
                     child: ElevatedButton.icon(
                       onPressed: (!_canSave || _isSaving) ? null : _saveAddress,
                       icon: const Icon(Icons.save),
-                      label: _isSaving ? const Text('جارٍ الحفظ...') : const Text('حفظ العنوان'),
+                      label: _isSaving
+                          ? const Text('جارٍ الحفظ...')
+                          : const Text('حفظ العنوان'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: primaryColor,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                     ),
@@ -285,5 +335,19 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_mapCreated && _mapHint == null) {
+      Future.delayed(const Duration(seconds: 7), () {
+        if (!mounted || _mapCreated) return;
+        setState(() {
+          _mapHint =
+              'تعذر إظهار الخريطة. تحقق من الإنترنت وخدمات Google Play ثم أعد المحاولة.';
+        });
+      });
+    }
   }
 }

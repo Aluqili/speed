@@ -28,8 +28,14 @@ import {
   writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 
-import { firebaseConfig, staticAdminEmails } from './firebase-config.js';
+import {
+  configForEnv,
+  resolveAdminEnv,
+  staticAdminEmails
+} from './firebase-config.js?v=20260226h';
 
+const activeEnv = resolveAdminEnv();
+const firebaseConfig = configForEnv(activeEnv);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -43,8 +49,11 @@ const sendAdminNotification = httpsCallable(fns, 'sendAdminNotification');
 const loginCard = document.getElementById('loginCard');
 const appPanel = document.getElementById('appPanel');
 const loginForm = document.getElementById('loginForm');
+const loginStatus = document.getElementById('loginStatus');
 const logoutBtn = document.getElementById('logoutBtn');
 const authState = document.getElementById('authState');
+const envBadge = document.getElementById('envBadge');
+const envSelect = document.getElementById('envSelect');
 
 const statsGrid = document.getElementById('statsGrid');
 const financeGrid = document.getElementById('financeGrid');
@@ -71,6 +80,7 @@ const notificationBody = document.getElementById('notificationBody');
 const notificationSendBtn = document.getElementById('notificationSendBtn');
 const notificationResult = document.getElementById('notificationResult');
 const pendingTable = document.getElementById('pendingTable');
+const pendingMenuTable = document.getElementById('pendingMenuTable');
 const storeDetailsPanel = document.getElementById('storeDetailsPanel');
 const courierDetailsPanel = document.getElementById('courierDetailsPanel');
 const addAdminForm = document.getElementById('addAdminForm');
@@ -96,6 +106,44 @@ let supportMessagesByConversation = new Map();
 let supportSelectedConversationId = '';
 let supportUiBound = false;
 let notificationFormBound = false;
+let authTransitionInProgress = false;
+let preservedLoginStatus = null;
+
+const guaranteedAdminEmails = new Set([
+  'speedstarapp0@gmail.com',
+  ...staticAdminEmails.map((email) => String(email || '').toLowerCase())
+]);
+
+function syncEnvUi() {
+  if (envBadge) {
+    const envLabel = activeEnv === 'prod' ? 'ENV: PROD' : 'ENV: DEV';
+    envBadge.textContent = `${envLabel} | ${firebaseConfig.projectId}`;
+  }
+  if (envSelect) {
+    envSelect.value = activeEnv;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('env') !== activeEnv) {
+    params.set('env', activeEnv);
+    const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash || ''}`;
+    window.history.replaceState({}, '', nextUrl);
+  }
+}
+
+if (envSelect) {
+  envSelect.addEventListener('change', () => {
+    const selected = String(envSelect.value || 'dev').toLowerCase();
+    const targetEnv = selected === 'prod' ? 'prod' : 'dev';
+    localStorage.setItem('speedstar_admin_env', targetEnv);
+    const params = new URLSearchParams(window.location.search);
+    params.set('env', targetEnv);
+    const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash || ''}`;
+    window.location.assign(nextUrl);
+  });
+}
+
+syncEnvUi();
 
 const mapState = {
   drivers: new Map(),
@@ -177,8 +225,31 @@ function loadExternalScript(src) {
       if (window.L) {
         resolve();
       } else {
-        existing.addEventListener('load', () => resolve(), { once: true });
-        existing.addEventListener('error', () => reject(new Error(`failed script: ${src}`)), { once: true });
+        let settled = false;
+        const done = (ok, err) => {
+          if (settled) return;
+          settled = true;
+          existing.removeEventListener('load', onLoad);
+          existing.removeEventListener('error', onError);
+          clearTimeout(timeoutId);
+          if (ok) {
+            resolve();
+          } else {
+            reject(err || new Error(`failed script: ${src}`));
+          }
+        };
+        const onLoad = () => done(true);
+        const onError = () => done(false, new Error(`failed script: ${src}`));
+        const timeoutId = setTimeout(() => {
+          if (window.L) {
+            done(true);
+          } else {
+            done(false, new Error(`script load timeout: ${src}`));
+          }
+        }, 2500);
+
+        existing.addEventListener('load', onLoad, { once: true });
+        existing.addEventListener('error', onError, { once: true });
       }
       return;
     }
@@ -239,6 +310,15 @@ async function ensureLeaflet() {
   await leafletReadyPromise;
 }
 
+function withTimeout(promise, timeoutMs, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(message || 'timeout')), timeoutMs);
+    })
+  ]);
+}
+
 function clearSubscriptions() {
   unsubscribers.forEach((fn) => fn());
   unsubscribers = [];
@@ -260,9 +340,17 @@ function table(headers, rows) {
 
 async function isAdmin(user) {
   if (!user) return false;
-  if (staticAdminEmails.includes((user.email || '').toLowerCase())) return true;
-  const adminDoc = await getDoc(doc(db, 'admins', user.uid));
-  return adminDoc.exists() && (adminDoc.data().role === 'admin' || adminDoc.data().active === true);
+  if (guaranteedAdminEmails.has((user.email || '').toLowerCase())) return true;
+  try {
+    const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+    return adminDoc.exists() && (adminDoc.data().role === 'admin' || adminDoc.data().active === true);
+  } catch (err) {
+    const code = String(err?.code || '').toLowerCase();
+    if (code.includes('permission-denied')) {
+      return false;
+    }
+    throw err;
+  }
 }
 
 function activateTab(id) {
@@ -286,18 +374,123 @@ function activateTab(id) {
 
 tabs.forEach((tab) => tab.addEventListener('click', () => activateTab(tab.dataset.tab)));
 
+function setLoginStatus(message = '', tone = 'muted') {
+  if (!loginStatus) return;
+  const safeTone = tone === 'error' || tone === 'success' ? tone : 'muted';
+  loginStatus.className = `login-status ${safeTone}`;
+  loginStatus.textContent = message;
+}
+
+function mapAuthErrorMessage(err) {
+  const code = String(err?.code || '').toLowerCase();
+  if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found')) {
+    return 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
+  }
+  if (code.includes('permission-denied')) {
+    return 'الحساب لا يملك صلاحية الدخول كمسؤول في هذه البيئة.';
+  }
+  if (code.includes('too-many-requests')) {
+    return 'تم حظر المحاولة مؤقتًا بسبب تكرار المحاولات. حاول بعد قليل.';
+  }
+  if (code.includes('network-request-failed')) {
+    return 'تعذر الاتصال بالشبكة. تحقق من الإنترنت ثم حاول مجددًا.';
+  }
+  return err?.message || 'حدث خطأ غير متوقع أثناء تسجيل الدخول.';
+}
+
+async function handleAuthenticatedUser(user) {
+  if (!user) return;
+  if (authTransitionInProgress) return;
+  authTransitionInProgress = true;
+
+  try {
+    const normalizedEmail = (user.email || '').toLowerCase();
+    const isStaticAdmin = guaranteedAdminEmails.has(normalizedEmail);
+    const allowed = isStaticAdmin
+      ? true
+      : await Promise.race([
+        isAdmin(user),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('admin-check-timeout')), 9000);
+        })
+      ]);
+
+    if (!allowed) {
+      preservedLoginStatus = {
+        message: 'هذا الحساب ليس لديه صلاحيات Admin.',
+        tone: 'error'
+      };
+      setLoginStatus(preservedLoginStatus.message, preservedLoginStatus.tone);
+      await signOut(auth);
+      return;
+    }
+
+    authState.textContent = user.email || user.uid;
+    loginCard.hidden = true;
+    appPanel.hidden = false;
+    logoutBtn.hidden = false;
+    activateTab('dashboard');
+    setLoginStatus('تم تسجيل الدخول بنجاح.', 'success');
+
+    mountAll()
+      .then(() => {
+        preservedLoginStatus = null;
+        setLoginStatus('');
+      })
+      .catch((err) => {
+        console.error('mountAll failed after login', err);
+        setLoginStatus('تم الدخول، لكن تعذر تحميل بعض البيانات. أعد التحديث أو جرّب لاحقًا.', 'error');
+      });
+  } catch (err) {
+    console.error('handleAuthenticatedUser failed', err);
+    preservedLoginStatus = {
+      message: `تعذر إكمال تسجيل الدخول: ${mapAuthErrorMessage(err)}`,
+      tone: 'error'
+    };
+    setLoginStatus(preservedLoginStatus.message, preservedLoginStatus.tone);
+    authState.textContent = 'غير مسجل';
+    loginCard.hidden = false;
+    appPanel.hidden = true;
+    logoutBtn.hidden = true;
+    try {
+      await signOut(auth);
+    } catch (_) {
+    }
+  } finally {
+    authTransitionInProgress = false;
+  }
+}
+
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
+  preservedLoginStatus = null;
   const email = document.getElementById('emailInput').value.trim();
   const password = document.getElementById('passwordInput').value;
+  const submitBtn = loginForm.querySelector('button[type="submit"]');
+  if (!email || !password) {
+    setLoginStatus('الرجاء إدخال البريد الإلكتروني وكلمة المرور.', 'error');
+    return;
+  }
+
+  setLoginStatus('جاري تسجيل الدخول...', 'muted');
+  if (submitBtn) submitBtn.disabled = true;
   try {
     await signInWithEmailAndPassword(auth, email, password);
+    setLoginStatus('تم تسجيل الدخول، جاري التحقق من الصلاحيات...', 'muted');
+    const signedUser = auth.currentUser;
+    if (signedUser) {
+      void handleAuthenticatedUser(signedUser);
+    }
   } catch (err) {
-    alert(`فشل تسجيل الدخول: ${err.message}`);
+    console.error('signIn failed', err);
+    setLoginStatus(`فشل تسجيل الدخول: ${mapAuthErrorMessage(err)}`, 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
 });
 
 logoutBtn.addEventListener('click', async () => {
+  preservedLoginStatus = null;
   await signOut(auth);
 });
 
@@ -986,6 +1179,8 @@ async function setStoreDecision({ appId, restaurantId, decision, ownerUid, appDa
       updatedAt: serverTimestamp(),
       createdAt: appData.createdAt || serverTimestamp(),
       menuEverApproved: menuEverApproved,
+      menuApproved: true,
+      pendingApproval: false,
     }, { merge: true });
     return;
   }
@@ -996,6 +1191,8 @@ async function setStoreDecision({ appId, restaurantId, decision, ownerUid, appDa
       approvalStatus: 'rejected',
       isApproved: false,
       temporarilyClosed: true,
+      menuApproved: false,
+      pendingApproval: false,
       updatedAt: serverTimestamp(),
     }, { merge: true });
   }
@@ -1786,7 +1983,7 @@ async function mountMap() {
   if (!mapElement) return;
 
   try {
-    await ensureLeaflet();
+    await withTimeout(ensureLeaflet(), 9000, 'تعذر تحميل الخريطة (timeout).');
   } catch (error) {
     setMapDetails(`<p class="muted">${escapeHtml(error.message || 'تعذر تحميل الخريطة.')}</p>`);
     return;
@@ -2032,6 +2229,77 @@ async function mountPending() {
       await mountPending();
     });
   });
+
+  if (!pendingMenuTable) return;
+
+  const pendingMenuSnap = await safeGetDocs(
+    query(collection(db, 'restaurants'), where('pendingApproval', '==', true))
+  );
+
+  const menuRows = pendingMenuSnap.docs
+    .map((d) => ({ id: d.id, data: d.data() || {} }))
+    .sort((a, b) => {
+      const at = a.data.approvalRequestedAt && typeof a.data.approvalRequestedAt.toDate === 'function'
+        ? a.data.approvalRequestedAt.toDate().getTime()
+        : 0;
+      const bt = b.data.approvalRequestedAt && typeof b.data.approvalRequestedAt.toDate === 'function'
+        ? b.data.approvalRequestedAt.toDate().getTime()
+        : 0;
+      return bt - at;
+    })
+    .map(({ id, data }) => {
+      let requestedAt = '-';
+      try {
+        if (data.approvalRequestedAt && typeof data.approvalRequestedAt.toDate === 'function') {
+          requestedAt = data.approvalRequestedAt.toDate().toLocaleString('ar-EG');
+        }
+      } catch (_) {}
+
+      return `<tr>
+        <td>${data.name || id}</td>
+        <td>${data.phone || '-'}</td>
+        <td>${requestedAt}</td>
+        <td>${data.menuApproved === true ? 'معتمدة' : 'غير معتمدة'}</td>
+        <td>
+          <button class="btn ghost" data-approve-menu-request="${id}">قبول القائمة</button>
+          <button class="btn danger" data-reject-menu-request="${id}">رفض القائمة</button>
+        </td>
+      </tr>`;
+    });
+
+  setHtml(
+    pendingMenuTable,
+    table(['المتجر', 'الهاتف', 'تاريخ الطلب', 'الحالة الحالية', 'إجراء'], menuRows)
+  );
+
+  pendingMenuTable.querySelectorAll('[data-approve-menu-request]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const restaurantId = btn.getAttribute('data-approve-menu-request');
+      if (!restaurantId) return;
+      await updateDoc(doc(db, 'restaurants', restaurantId), {
+        pendingApproval: false,
+        menuApproved: true,
+        menuEverApproved: true,
+        menuApprovedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      await mountPending();
+    });
+  });
+
+  pendingMenuTable.querySelectorAll('[data-reject-menu-request]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const restaurantId = btn.getAttribute('data-reject-menu-request');
+      if (!restaurantId) return;
+      await updateDoc(doc(db, 'restaurants', restaurantId), {
+        pendingApproval: false,
+        menuApproved: false,
+        menuRejectedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      await mountPending();
+    });
+  });
 }
 
 function mountNotifications() {
@@ -2109,6 +2377,12 @@ async function mountAll() {
 onAuthStateChanged(auth, async (user) => {
   clearSubscriptions();
   if (!user) {
+    authTransitionInProgress = false;
+    if (preservedLoginStatus?.message) {
+      setLoginStatus(preservedLoginStatus.message, preservedLoginStatus.tone || 'error');
+    } else {
+      setLoginStatus('');
+    }
     authState.textContent = 'غير مسجل';
     loginCard.hidden = false;
     appPanel.hidden = true;
@@ -2116,17 +2390,5 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
 
-  const allowed = await isAdmin(user);
-  if (!allowed) {
-    await signOut(auth);
-    alert('هذا الحساب ليس لديه صلاحيات Admin.');
-    return;
-  }
-
-  authState.textContent = user.email || user.uid;
-  loginCard.hidden = true;
-  appPanel.hidden = false;
-  logoutBtn.hidden = false;
-  activateTab('dashboard');
-  await mountAll();
+  await handleAuthenticatedUser(user);
 });

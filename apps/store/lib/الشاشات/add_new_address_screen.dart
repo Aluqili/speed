@@ -33,6 +33,9 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
   LatLng? selectedLocation;
   final TextEditingController _addressNameController = TextEditingController();
   GoogleMapController? mapController;
+  bool _locationPermissionGranted = false;
+  bool _mapCreated = false;
+  String? _mapHint;
   bool _isSaving = false;
   bool _canSave = false;
   bool _firstSaveAttempt = true;
@@ -68,6 +71,20 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
+    if (!mounted) return;
+    setState(() {
+      _locationPermissionGranted = permission == LocationPermission.always ||
+          permission == LocationPermission.whileInUse;
+    });
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    mapController = controller;
+    if (!mounted) return;
+    setState(() {
+      _mapCreated = true;
+      _mapHint = null;
+    });
   }
 
   Future<void> _goToCurrentLocation() async {
@@ -167,8 +184,9 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
       final collectionPath = '${widget.userType}s';
       String? newAddressId;
       if (widget.editAddressId == null) {
-        final userDocRef =
-            FirebaseFirestore.instance.collection(collectionPath).doc(widget.userId);
+        final userDocRef = FirebaseFirestore.instance
+            .collection(collectionPath)
+            .doc(widget.userId);
 
         await userDocRef.set({
           'uid': widget.userId,
@@ -184,9 +202,8 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
             .timeout(const Duration(seconds: 12));
         newAddressId = docRef.id;
 
-        await userDocRef
-            .set({'defaultAddressId': newAddressId}, SetOptions(merge: true))
-            .timeout(const Duration(seconds: 12));
+        await userDocRef.set({'defaultAddressId': newAddressId},
+            SetOptions(merge: true)).timeout(const Duration(seconds: 12));
       } else {
         await FirebaseFirestore.instance
             .collection(collectionPath)
@@ -205,7 +222,8 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('انتهت مهلة الحفظ. تحقق من الإنترنت ثم أعد المحاولة.')),
+            content:
+                Text('انتهت مهلة الحفظ. تحقق من الإنترنت ثم أعد المحاولة.')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -225,7 +243,8 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final LatLng initialPosition = selectedLocation ?? const LatLng(15.5007, 32.5599);
+    final LatLng initialPosition =
+        selectedLocation ?? const LatLng(15.5007, 32.5599);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -234,7 +253,8 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          title: Text(widget.editAddressId != null ? 'تعديل العنوان' : 'إضافة عنوان',
+          title: Text(
+              widget.editAddressId != null ? 'تعديل العنوان' : 'إضافة عنوان',
               style: const TextStyle(color: Colors.black87)),
           iconTheme: const IconThemeData(color: Colors.black87),
           centerTitle: true,
@@ -256,10 +276,22 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
                               position: selectedLocation!,
                             )
                           },
-                    onMapCreated: (controller) => mapController = controller,
-                    myLocationEnabled: true,
+                    onMapCreated: _onMapCreated,
+                    myLocationEnabled: _locationPermissionGranted,
                     myLocationButtonEnabled: false,
                   ),
+                  if (!_mapCreated)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.grey.shade200,
+                        child: Center(
+                          child: Text(
+                            _mapHint ?? 'جاري تحميل الخريطة...',
+                            style: const TextStyle(color: Colors.black54),
+                          ),
+                        ),
+                      ),
+                    ),
                   Positioned(
                     right: 12,
                     top: 12,
@@ -267,7 +299,8 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
                       heroTag: 'current-location-btn',
                       backgroundColor: Colors.white,
                       onPressed: _goToCurrentLocation,
-                      child: const Icon(Icons.my_location, color: AppThemeArabic.clientPrimary),
+                      child: const Icon(Icons.my_location,
+                          color: AppThemeArabic.clientPrimary),
                     ),
                   ),
                 ],
@@ -337,5 +370,19 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_mapCreated && _mapHint == null) {
+      Future.delayed(const Duration(seconds: 7), () {
+        if (!mounted || _mapCreated) return;
+        setState(() {
+          _mapHint =
+              'تعذر إظهار الخريطة. تحقق من الإنترنت وخدمات Google Play ثم أعد المحاولة.';
+        });
+      });
+    }
   }
 }

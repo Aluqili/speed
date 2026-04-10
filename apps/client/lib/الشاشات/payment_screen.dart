@@ -292,7 +292,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               ),
                             ),
                             title: Text(
-                              item['name'] ?? 'غير متوفر',
+                              (() {
+                                final name = (item['name'] ?? 'غير متوفر').toString();
+                                final sizeLabel = (item['sizeLabel'] ?? '').toString().trim();
+                                if (sizeLabel.isEmpty) return name;
+                                return '$name - $sizeLabel';
+                              })(),
                               style: const TextStyle(
                                   fontFamily: 'Tajawal',
                                   fontWeight: FontWeight.bold),

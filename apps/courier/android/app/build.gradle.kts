@@ -13,9 +13,34 @@ val localProperties = Properties().apply {
 }
 
 val keyProperties = Properties().apply {
-    val file = rootProject.file("key.properties")
-    if (file.exists()) file.inputStream().use { load(it) }
+    var cursor: File? = project.projectDir
+    var keyFile: File? = null
+    while (cursor != null && keyFile == null) {
+        val candidate = File(cursor, "key.properties")
+        if (candidate.exists()) {
+            keyFile = candidate
+        } else {
+            cursor = cursor.parentFile
+        }
+    }
+    if (keyFile != null) keyFile.inputStream().use { load(it) }
 }
+
+fun signingProp(name: String): String? {
+    return keyProperties.getProperty(name)?.trim()
+        ?: keyProperties.getProperty("\uFEFF$name")?.trim()
+}
+
+val releaseStoreFileValue = localProperties.getProperty("SIGNING_STORE_FILE") ?: signingProp("storeFile")
+val releaseStorePassword = localProperties.getProperty("SIGNING_STORE_PASSWORD") ?: signingProp("storePassword")
+val releaseKeyAlias = localProperties.getProperty("SIGNING_KEY_ALIAS") ?: signingProp("keyAlias")
+val releaseKeyPassword = localProperties.getProperty("SIGNING_KEY_PASSWORD") ?: signingProp("keyPassword")
+val normalizedReleaseStorePath = releaseStoreFileValue?.replace('\\', '/')
+val releaseStoreFileResolved = if (normalizedReleaseStorePath.isNullOrBlank()) null else File(normalizedReleaseStorePath)
+val hasReleaseSigning = !normalizedReleaseStorePath.isNullOrBlank()
+    && !releaseStorePassword.isNullOrBlank()
+    && !releaseKeyAlias.isNullOrBlank()
+    && !releaseKeyPassword.isNullOrBlank()
 
 val mapsApiKeyDebug: String = localProperties.getProperty("MAPS_API_KEY_DEBUG")
     ?: (project.findProperty("MAPS_API_KEY_DEBUG") as String?)
@@ -50,13 +75,13 @@ android {
 
     signingConfigs {
         create("release") {
-            val releaseStoreFile = keyProperties.getProperty("storeFile")
-            if (!releaseStoreFile.isNullOrBlank()) {
-                storeFile = file(releaseStoreFile)
-                storePassword = keyProperties.getProperty("storePassword")
-                keyAlias = keyProperties.getProperty("keyAlias")
-                keyPassword = keyProperties.getProperty("keyPassword")
+            if (!hasReleaseSigning) {
+                throw GradleException("Release signing is not configured. Please verify android/key.properties and keystore path.")
             }
+            storeFile = releaseStoreFileResolved
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
         }
     }
 
@@ -74,11 +99,13 @@ android {
             manifestPlaceholders["MAPS_API_KEY"] = mapsApiKeyDebug
         }
         release {
-            signingConfig = if (keyProperties.getProperty("storeFile").isNullOrBlank()) {
-                signingConfigs.getByName("debug")
-            } else {
-                signingConfigs.getByName("release")
-            }
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             manifestPlaceholders["MAPS_API_KEY"] = mapsApiKeyRelease
         }
     }

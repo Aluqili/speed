@@ -4,6 +4,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'menu_item.dart';
 
 class StoreFullMenuController extends GetxController {
+  final String restaurantId;
+  final RxList<MenuItem> menuItems = <MenuItem>[].obs;
+  final RxBool isLoading = true.obs;
+  final List<StreamSubscription> _subscriptions = [];
+
+  StoreFullMenuController({required this.restaurantId});
+
+  String _categoryDocId(String category) {
+    return category.trim().replaceAll('/', '-');
+  }
+
   String _normalizeImageUrl(String value) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) return '';
@@ -37,8 +48,38 @@ class StoreFullMenuController extends GetxController {
     return (raw ?? '').toString().trim();
   }
 
+  Map<String, double> _extractSizes(Map<String, dynamic> data) {
+    final raw = data['sizes'];
+    if (raw is! Map) return const {};
+
+    final result = <String, double>{};
+    for (final entry in raw.entries) {
+      final key = entry.key.toString().trim().toLowerCase();
+      if (key.isEmpty) continue;
+      final value = entry.value;
+      final parsed = value is num
+          ? value.toDouble()
+          : double.tryParse(value.toString().trim().replaceAll(',', '.'));
+      if (parsed != null && parsed > 0) {
+        result[key] = parsed;
+      }
+    }
+    return result;
+  }
+
+  double _resolvePrice(Map<String, dynamic> data, Map<String, double> sizes) {
+    final directPrice = (data['price'] is num)
+        ? (data['price'] as num).toDouble()
+        : double.tryParse('${data['price']}');
+    if (directPrice != null && directPrice > 0) {
+      return directPrice;
+    }
+    return sizes['medium'] ?? sizes['small'] ?? sizes['large'] ?? 0;
+  }
+
   Future<void> _backfillMissingImages(List<MenuItem> items) async {
-    final missing = items.where((i) => (i.imageUrl ?? '').trim().isEmpty).toList();
+    final missing =
+        items.where((i) => (i.imageUrl ?? '').trim().isEmpty).toList();
     if (missing.isEmpty) return;
 
     for (final item in missing) {
@@ -50,7 +91,7 @@ class StoreFullMenuController extends GetxController {
             .collection('restaurants')
             .doc(restaurantId)
             .collection('menu')
-            .doc(category)
+          .doc(_categoryDocId(category))
             .collection('items')
             .doc(item.id)
             .get();
@@ -73,6 +114,7 @@ class StoreFullMenuController extends GetxController {
       }
     }
   }
+
   /// تحديث سعر صنف في القائمة الكاملة والقائمة المصنفة
   Future<void> updateMenuItemPrice(String itemId, double newPrice) async {
     try {
@@ -82,7 +124,11 @@ class StoreFullMenuController extends GetxController {
           .doc(restaurantId)
           .collection('full_menu')
           .doc(itemId)
-          .update({'price': newPrice});
+          .update({
+        'price': newPrice,
+        'sizes': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
       // تحديث في القسم المصنف إن وُجد
       final index = menuItems.indexWhere((i) => i.id == itemId);
@@ -93,16 +139,21 @@ class StoreFullMenuController extends GetxController {
               .collection('restaurants')
               .doc(restaurantId)
               .collection('menu')
-              .doc(old.category)
+              .doc(_categoryDocId(old.category!))
               .collection('items')
               .doc(itemId)
-              .update({'price': newPrice});
+              .update({
+            'price': newPrice,
+            'sizes': FieldValue.delete(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
         }
         // تحديث العنصر محلياً
         menuItems[index] = MenuItem(
           id: old.id,
           name: old.name,
           price: newPrice,
+          sizes: const {},
           imageUrl: old.imageUrl,
           description: old.description,
           category: old.category,
@@ -116,12 +167,6 @@ class StoreFullMenuController extends GetxController {
       Get.snackbar('خطأ', 'فشل في تحديث سعر الصنف');
     }
   }
-  final String restaurantId;
-  final RxList<MenuItem> menuItems = <MenuItem>[].obs;
-  final RxBool isLoading = true.obs;
-  final List<StreamSubscription> _subscriptions = [];
-
-  StoreFullMenuController({required this.restaurantId});
 
   @override
   void onInit() {
@@ -163,12 +208,12 @@ class StoreFullMenuController extends GetxController {
     final newItems = snapshot.docs.map((doc) {
       final data = doc.data() as Map<String, dynamic>;
       final ts = data['createdAt'] as Timestamp?;
+      final sizes = _extractSizes(data);
       return MenuItem(
         id: doc.id,
         name: data['name'] as String? ?? '',
-        price: (data['price'] is num)
-            ? (data['price'] as num).toDouble()
-            : double.tryParse('${data['price']}') ?? 0,
+        price: _resolvePrice(data, sizes),
+        sizes: sizes,
         imageUrl: _extractImageUrl(data),
         description: data['description'] as String? ?? '',
         category: _extractCategory(data),
@@ -207,16 +252,20 @@ class StoreFullMenuController extends GetxController {
               .collection('restaurants')
               .doc(restaurantId)
               .collection('menu')
-              .doc(old.category)
+              .doc(_categoryDocId(old.category!))
               .collection('items')
               .doc(itemId)
-              .update({'available': available});
+              .update({
+            'available': available,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
         }
         // استبدال العنصر المحلي بكائن جديد
         menuItems[index] = MenuItem(
           id: old.id,
           name: old.name,
           price: old.price,
+          sizes: old.sizes,
           imageUrl: old.imageUrl,
           description: old.description,
           category: old.category,
@@ -232,6 +281,75 @@ class StoreFullMenuController extends GetxController {
       );
     } catch (e) {
       Get.snackbar('خطأ', 'فشل في تحديث حالة الصنف');
+    }
+  }
+
+  Future<void> updateMenuItemSizes(
+    String itemId,
+    Map<String, double> sizes,
+  ) async {
+    try {
+      final normalized = <String, double>{};
+      for (final entry in sizes.entries) {
+        final key = entry.key.trim().toLowerCase();
+        if (key.isEmpty) continue;
+        if (entry.value > 0) {
+          normalized[key] = entry.value;
+        }
+      }
+      if (normalized.isEmpty) {
+        throw Exception('sizes invalid');
+      }
+
+      final fallbackPrice =
+          normalized['medium'] ?? normalized['small'] ?? normalized['large']!;
+
+      await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(restaurantId)
+          .collection('full_menu')
+          .doc(itemId)
+          .update({
+        'sizes': normalized,
+        'price': fallbackPrice,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      final index = menuItems.indexWhere((i) => i.id == itemId);
+      if (index != -1) {
+        final old = menuItems[index];
+        if ((old.category ?? '').isNotEmpty) {
+          await FirebaseFirestore.instance
+              .collection('restaurants')
+              .doc(restaurantId)
+              .collection('menu')
+              .doc(_categoryDocId(old.category!))
+              .collection('items')
+              .doc(itemId)
+              .set({
+            'sizes': normalized,
+            'price': fallbackPrice,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
+
+        menuItems[index] = MenuItem(
+          id: old.id,
+          name: old.name,
+          price: fallbackPrice,
+          sizes: normalized,
+          imageUrl: old.imageUrl,
+          description: old.description,
+          category: old.category,
+          isAvailable: old.isAvailable,
+          createdAt: old.createdAt,
+        );
+        menuItems.refresh();
+      }
+
+      Get.snackbar('نجاح', 'تم تحديث أحجام وسعر الصنف');
+    } catch (e) {
+      Get.snackbar('خطأ', 'فشل في تحديث أحجام الصنف');
     }
   }
 
@@ -272,7 +390,7 @@ class StoreFullMenuController extends GetxController {
               .collection('restaurants')
               .doc(restaurantId)
               .collection('menu')
-              .doc(old.category)
+            .doc(_categoryDocId(old.category!))
               .collection('items')
               .doc(itemId)
               .delete();

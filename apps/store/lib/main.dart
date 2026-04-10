@@ -8,6 +8,8 @@ import 'package:speedstar_core/src/config/remote_helpers.dart';
 import 'package:speedstar_core/speedstar_core.dart';
 import 'package:speedstar_core/src/auth/login_gate.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
+import 'firebase_options.dart' as dev_firebase;
+import 'firebase_options_prod.dart' as prod_firebase;
 import 'الشاشات/store_home_screen.dart';
 import 'الشاشات/store_link_request_screen.dart';
 
@@ -55,6 +57,9 @@ class _InitGate extends StatefulWidget {
 }
 
 class _InitGateState extends State<_InitGate> {
+  static const String _firebaseEnv =
+      String.fromEnvironment('FIREBASE_ENV', defaultValue: 'dev');
+
   late Future<void> _initFuture;
   bool _maintenanceMode = false;
   String _maintenanceMessage = 'التطبيق تحت الصيانة. حاول لاحقًا.';
@@ -67,7 +72,12 @@ class _InitGateState extends State<_InitGate> {
 
   Future<void> _safeInit() async {
     try {
-      await Firebase.initializeApp();
+      final firebaseOptions = _firebaseEnv == 'prod'
+          ? prod_firebase.DefaultFirebaseOptions.currentPlatform
+          : dev_firebase.DefaultFirebaseOptions.currentPlatform;
+      await Firebase.initializeApp(
+        options: firebaseOptions,
+      );
       final rc = FirebaseRemoteConfig.instance;
       await rc.setConfigSettings(
         RemoteConfigSettings(
@@ -201,20 +211,48 @@ class _StoreUnauthenticatedScreen extends StatelessWidget {
 class _StoreHomeByAuthUser extends StatelessWidget {
   const _StoreHomeByAuthUser();
 
+  Map<String, dynamic> _resolvedPayload(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data() ?? {};
+    final status = (data['approvalStatus'] ?? '').toString();
+    final isApproved = data['isApproved'] == true;
+    return {
+      'id': doc.id,
+      'approvalStatus': status,
+      'isApproved': isApproved,
+    };
+  }
+
+  Future<Map<String, dynamic>?> _resolveRestaurantById(String restaurantId) async {
+    final id = restaurantId.trim();
+    if (id.isEmpty) return null;
+    final doc = await FirebaseFirestore.instance
+        .collection('restaurants')
+        .doc(id)
+        .get();
+    if (!doc.exists) return null;
+    return _resolvedPayload(doc);
+  }
+
   Future<Map<String, dynamic>?> _resolveRestaurant(User user) async {
     final restaurants = FirebaseFirestore.instance.collection('restaurants');
     final applications = FirebaseFirestore.instance.collection('restaurantApplications');
 
     final direct = await restaurants.doc(user.uid).get();
     if (direct.exists) {
-      final data = direct.data() ?? {};
-      final status = (data['approvalStatus'] ?? '').toString();
-      final isApproved = data['isApproved'] == true;
-      return {
-        'id': user.uid,
-        'approvalStatus': status,
-        'isApproved': isApproved,
-      };
+      return _resolvedPayload(direct);
+    }
+
+    final appDoc = await applications.doc(user.uid).get();
+    if (appDoc.exists) {
+      final appData = appDoc.data() ?? {};
+      final appRestaurantId =
+          (appData['restaurantId'] ?? appData['ownerUid'] ?? '').toString();
+      final fromApp = await _resolveRestaurantById(appRestaurantId);
+      if (fromApp != null) {
+        return fromApp;
+      }
     }
 
     final candidates = <MapEntry<String, dynamic>>[
@@ -228,24 +266,21 @@ class _StoreHomeByAuthUser extends StatelessWidget {
     for (final candidate in candidates) {
       final query = await restaurants
           .where(candidate.key, isEqualTo: candidate.value)
-          .limit(1)
           .get();
-      if (query.docs.isNotEmpty) {
-        final matched = query.docs.first;
-        final data = matched.data();
-        final status = (data['approvalStatus'] ?? '').toString();
-        final isApproved = data['isApproved'] == true;
-        return {
-          'id': matched.id,
-          'approvalStatus': status,
-          'isApproved': isApproved,
-        };
+      if (query.docs.length == 1) {
+        return _resolvedPayload(query.docs.first);
+      }
+      if (query.docs.length > 1) {
+        final exactById = query.docs.where((doc) => doc.id == user.uid).toList();
+        if (exactById.length == 1) {
+          return _resolvedPayload(exactById.first);
+        }
+        return null;
       }
     }
 
-    final applicationDoc = await applications.doc(user.uid).get();
-    if (applicationDoc.exists) {
-      final data = applicationDoc.data() ?? {};
+    if (appDoc.exists) {
+      final data = appDoc.data() ?? {};
       return {
         'id': user.uid,
         'approvalStatus': data['approvalStatus'] ?? data['status'] ?? 'pending',
@@ -285,9 +320,9 @@ class _StoreHomeByAuthUser extends StatelessWidget {
         if (resolved == null) {
           return _MissingRestaurantScreen(
             user: user,
-            title: 'المتجر غير مربوط بهذا الحساب',
+            title: 'تعذر تحديد المتجر المرتبط بالحساب',
             message:
-                'لم يتم العثور على متجر مرتبط بالحساب الحالي.\nتأكد من ربط المطعم بحقل ownerUid أو email أو userId في مجموعة restaurants.',
+                'لم يتم العثور على ربط واضح لمتجر واحد فقط مع هذا الحساب.\nتأكد من أن لكل حساب متجر واحد محدد بمعرّف واضح (restaurantId/ownerUid) لتجنب فتح بيانات متجر آخر.',
           );
         }
 

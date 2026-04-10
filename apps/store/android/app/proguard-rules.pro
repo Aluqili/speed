@@ -1,0 +1,5 @@
+-keep class io.flutter.** { *; }
+-keep class io.flutter.plugins.** { *; }
+-keep class com.google.firebase.** { *; }
+-dontwarn io.flutter.**
+-dontwarn org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement

@@ -3,18 +3,161 @@ import 'package:get/get.dart';
 import 'menu_item.dart';
 import 'store_full_menu_controller.dart';
 
-class StoreFullMenuScreen extends StatelessWidget {
+class StoreFullMenuScreen extends StatefulWidget {
   final String restaurantId;
 
   const StoreFullMenuScreen({Key? key, required this.restaurantId})
       : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    final controller = Get.put(
-      StoreFullMenuController(restaurantId: restaurantId),
-    );
+  State<StoreFullMenuScreen> createState() => _StoreFullMenuScreenState();
+}
 
+class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
+  late final StoreFullMenuController controller;
+  late final String _controllerTag;
+
+  @override
+  void initState() {
+    super.initState();
+    _controllerTag = 'store_full_menu_${widget.restaurantId}';
+    if (Get.isRegistered<StoreFullMenuController>(tag: _controllerTag)) {
+      Get.delete<StoreFullMenuController>(tag: _controllerTag, force: true);
+    }
+    controller = Get.put(
+      StoreFullMenuController(restaurantId: widget.restaurantId),
+      tag: _controllerTag,
+    );
+  }
+
+  @override
+  void dispose() {
+    if (Get.isRegistered<StoreFullMenuController>(tag: _controllerTag)) {
+      Get.delete<StoreFullMenuController>(tag: _controllerTag, force: true);
+    }
+    super.dispose();
+  }
+
+  String _sizesSummary(Map<String, double> sizes) {
+    if (sizes.isEmpty) return '';
+    final small = sizes['small'];
+    final medium = sizes['medium'];
+    final large = sizes['large'];
+    final parts = <String>[];
+    if (small != null) parts.add('صغير ${small.toStringAsFixed(2)}');
+    if (medium != null) parts.add('وسط ${medium.toStringAsFixed(2)}');
+    if (large != null) parts.add('كبير ${large.toStringAsFixed(2)}');
+    return parts.join(' | ');
+  }
+
+  Future<Map<String, dynamic>?> _showEditDialog(MenuItem item) {
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) {
+        final singlePriceController =
+            TextEditingController(text: item.price.toString());
+        final smallController = TextEditingController(
+            text: item.sizes['small']?.toString() ?? '');
+        final mediumController = TextEditingController(
+            text: item.sizes['medium']?.toString() ?? '');
+        final largeController = TextEditingController(
+            text: item.sizes['large']?.toString() ?? '');
+
+        return AlertDialog(
+          title: const Text('تعديل السعر/الأحجام'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: singlePriceController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'سعر موحد (اختياري)',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: smallController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'سعر صغير'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: mediumController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'سعر وسط'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: largeController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'سعر كبير'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final smallText = smallController.text.trim();
+                final mediumText = mediumController.text.trim();
+                final largeText = largeController.text.trim();
+                final hasAnySize =
+                    smallText.isNotEmpty || mediumText.isNotEmpty || largeText.isNotEmpty;
+
+                if (hasAnySize) {
+                  final small =
+                      double.tryParse(smallText.replaceAll(',', '.'));
+                  final medium =
+                      double.tryParse(mediumText.replaceAll(',', '.'));
+                  final large =
+                      double.tryParse(largeText.replaceAll(',', '.'));
+                  if (small == null || medium == null || large == null) {
+                    return;
+                  }
+                  if (small <= 0 || medium <= 0 || large <= 0) {
+                    return;
+                  }
+                  Navigator.pop(context, {
+                    'mode': 'sizes',
+                    'sizes': {
+                      'small': small,
+                      'medium': medium,
+                      'large': large,
+                    },
+                  });
+                  return;
+                }
+
+                final single = double.tryParse(
+                    singlePriceController.text.trim().replaceAll(',', '.'));
+                if (single == null || single <= 0) {
+                  return;
+                }
+                Navigator.pop(context, {
+                  'mode': 'single',
+                  'price': single,
+                });
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('القائمة الكاملة'),
@@ -72,7 +215,9 @@ class StoreFullMenuScreen extends StatelessWidget {
                 ),
                 title: Text(item.name),
                 subtitle: Text(
-                  '${item.price.toStringAsFixed(2)} ر.س - ${item.category ?? 'غير محدد'}',
+                  item.hasSizes
+                      ? '${_sizesSummary(item.sizes)} - ${item.category ?? 'غير محدد'}'
+                      : '${item.price.toStringAsFixed(2)} ر.س - ${item.category ?? 'غير محدد'}',
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -95,40 +240,24 @@ class StoreFullMenuScreen extends StatelessWidget {
                       icon: const Icon(Icons.edit, color: Colors.blue),
                       tooltip: 'تعديل السعر',
                       onPressed: () async {
-                        final newPrice = await showDialog<double>(
-                          context: context,
-                          builder: (context) {
-                            final controllerPrice = TextEditingController(text: item.price.toString());
-                            return AlertDialog(
-                              title: const Text('تعديل سعر الصنف'),
-                              content: TextField(
-                                controller: controllerPrice,
-                                keyboardType: TextInputType.numberWithOptions(decimal: true),
-                                decoration: const InputDecoration(labelText: 'السعر الجديد'),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  child: const Text('إلغاء'),
-                                ),
-                                ElevatedButton(
-                                  onPressed: () {
-                                    final value = double.tryParse(controllerPrice.text);
-                                    if (value != null) {
-                                      Navigator.pop(context, value);
-                                    }
-                                  },
-                                  child: const Text('حفظ'),
-                                ),
-                              ],
-                            );
-                          },
-                        );
-                        if (newPrice != null && newPrice != item.price) {
-                          await controller.updateMenuItemPrice(item.id, newPrice);
+                        final result = await _showEditDialog(item);
+                        if (result == null) return;
+
+                        if (result['mode'] == 'sizes') {
+                          final sizes =
+                              Map<String, double>.from(result['sizes'] as Map);
+                          await controller.updateMenuItemSizes(item.id, sizes);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('تم تحديث السعر إلى $newPrice ج.س')),
+                            const SnackBar(content: Text('تم تحديث أسعار الأحجام')),
                           );
+                        } else if (result['mode'] == 'single') {
+                          final newPrice = result['price'] as double;
+                          if (newPrice != item.price) {
+                            await controller.updateMenuItemPrice(item.id, newPrice);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('تم تحديث السعر إلى $newPrice ج.س')),
+                            );
+                          }
                         }
                       },
                     ),

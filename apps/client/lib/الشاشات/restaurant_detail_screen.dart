@@ -141,6 +141,122 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     }
   }
 
+  Map<String, double> _extractSizes(Map<String, dynamic> data) {
+    final raw = data['sizes'];
+    if (raw is! Map) return const {};
+    final sizes = <String, double>{};
+    for (final entry in raw.entries) {
+      final key = entry.key.toString().trim().toLowerCase();
+      if (key.isEmpty) continue;
+      final value = entry.value;
+      final parsed = value is num
+          ? value.toDouble()
+          : double.tryParse(value.toString().trim().replaceAll(',', '.'));
+      if (parsed != null && parsed > 0) {
+        sizes[key] = parsed;
+      }
+    }
+    return sizes;
+  }
+
+  String _sizeLabel(String sizeKey) {
+    switch (sizeKey) {
+      case 'small':
+        return 'صغير';
+      case 'medium':
+        return 'وسط';
+      case 'large':
+        return 'كبير';
+      default:
+        return sizeKey;
+    }
+  }
+
+  String _sizesSummary(Map<String, double> sizes) {
+    final small = sizes['small'];
+    final medium = sizes['medium'];
+    final large = sizes['large'];
+    final parts = <String>[];
+    if (small != null) {
+      parts.add('صغير ${NumberFormat.decimalPattern().format(small)} ج.س');
+    }
+    if (medium != null) {
+      parts.add('وسط ${NumberFormat.decimalPattern().format(medium)} ج.س');
+    }
+    if (large != null) {
+      parts.add('كبير ${NumberFormat.decimalPattern().format(large)} ج.س');
+    }
+    return parts.join(' • ');
+  }
+
+  Future<void> _showSizePickerAndAddToCart({
+    required CartProvider cartProvider,
+    required String docId,
+    required String itemName,
+    required Map<String, double> sizes,
+  }) async {
+    final orderedKeys = ['small', 'medium', 'large']
+        .where((key) => sizes.containsKey(key))
+        .toList();
+    if (orderedKeys.isEmpty) return;
+
+    String selected = orderedKeys.contains('medium') ? 'medium' : orderedKeys.first;
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('اختر حجم $itemName'),
+        content: StatefulBuilder(
+          builder: (context, setInnerState) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: orderedKeys
+                  .map(
+                    (key) => RadioListTile<String>(
+                      value: key,
+                      groupValue: selected,
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setInnerState(() => selected = value);
+                      },
+                      title: Text(_sizeLabel(key)),
+                      subtitle: Text(
+                        '${NumberFormat.decimalPattern().format(sizes[key])} ج.س',
+                      ),
+                    ),
+                  )
+                  .toList(),
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, selected),
+            child: const Text('إضافة'),
+          ),
+        ],
+      ),
+    );
+
+    if (picked == null) return;
+    final price = sizes[picked];
+    if (price == null) return;
+
+    final variantId = '${widget.restaurantId}_${docId}_$picked';
+    await cartProvider.addToCartSimple(
+      widget.restaurantId,
+      variantId,
+      itemName,
+      price,
+      menuItemId: docId,
+      sizeKey: picked,
+      sizeLabel: _sizeLabel(picked),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cartProvider = Provider.of<CartProvider>(context);
@@ -319,12 +435,19 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                     itemBuilder: (context, index) {
                       final doc = filteredItems[index];
                       final data = doc.data() as Map<String, dynamic>;
-                      final itemId = '${widget.restaurantId}_${doc.id}';
+                        final itemId = '${widget.restaurantId}_${doc.id}';
                       final itemName = data['name'] ?? '';
+                        final sizes = _extractSizes(data);
+                        final hasSizes = sizes.isNotEmpty;
                       final itemPrice =
                           (data['price'] as num?)?.toDouble() ?? 0.0;
                       final itemImage = data['imageUrl'] ?? '';
-                      final quantity = cartProvider.getQuantity(itemId);
+                        final quantity = hasSizes
+                          ? cartProvider.getQuantityByMenuItem(
+                            widget.restaurantId,
+                            doc.id,
+                          )
+                          : cartProvider.getQuantity(itemId);
                       final imageProvider = (itemImage.isNotEmpty)
                           ? NetworkImage(itemImage)
                           : null;
@@ -401,12 +524,15 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                          '${NumberFormat.decimalPattern().format(itemPrice)} ج.س',
-                                          style: TextStyle(
-                                              color: textColorSecondary,
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w500,
-                                              letterSpacing: 0.2)),
+                                        hasSizes
+                                            ? _sizesSummary(sizes)
+                                            : '${NumberFormat.decimalPattern().format(itemPrice)} ج.س',
+                                        style: TextStyle(
+                                            color: textColorSecondary,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                            letterSpacing: 0.2),
+                                      ),
                                       const SizedBox(height: 8),
                                       // الأزرار تحت الاسم والسعر مباشرة
                                       Row(
@@ -419,12 +545,23 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                             onPressed: (isClosed ||
                                                     data['available'] == false)
                                                 ? null
-                                                : () {
-                                                    cartProvider
-                                                        .addToCartSimple(
-                                                            itemId,
-                                                            itemName,
-                                                            itemPrice);
+                                                : () async {
+                                                    if (hasSizes) {
+                                                      await _showSizePickerAndAddToCart(
+                                                        cartProvider: cartProvider,
+                                                        docId: doc.id,
+                                                        itemName: itemName,
+                                                        sizes: sizes,
+                                                      );
+                                                      return;
+                                                    }
+                                                    await cartProvider.addToCartSimple(
+                                                      widget.restaurantId,
+                                                      itemId,
+                                                      itemName,
+                                                      itemPrice,
+                                                      menuItemId: doc.id,
+                                                    );
                                                   },
                                             color: primaryColor,
                                             type: GFButtonType.outline,
@@ -442,23 +579,24 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                                     fontWeight: FontWeight.bold,
                                                     color: Colors.black)),
                                           ),
-                                          GFIconButton(
-                                            icon: const Icon(Icons.remove,
+                                            if (!hasSizes)
+                                            GFIconButton(
+                                              icon: const Icon(Icons.remove,
                                                 size: 18),
-                                            onPressed: (isClosed ||
-                                                    data['available'] == false)
+                                              onPressed: (isClosed ||
+                                                  data['available'] == false)
                                                 ? null
                                                 : () {
-                                                    cartProvider
-                                                        .removeOneItem(itemId);
-                                                  },
-                                            color: primaryColor,
-                                            type: GFButtonType.outline,
-                                            size: GFSize.SMALL,
-                                            shape: GFIconButtonShape.circle,
-                                            splashColor:
+                                                  cartProvider
+                                                    .removeOneItem(itemId);
+                                                },
+                                              color: primaryColor,
+                                              type: GFButtonType.outline,
+                                              size: GFSize.SMALL,
+                                              shape: GFIconButtonShape.circle,
+                                              splashColor:
                                                 closedColor.withOpacity(0.15),
-                                          ),
+                                            ),
                                         ],
                                       ),
                                     ],

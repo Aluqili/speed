@@ -11,7 +11,7 @@ const REGION = 'us-central1';
 
 const COURIER_OFFER_TIMEOUT_SECONDS = 40;
 const ASSIGNMENT_CYCLE_RESET_SECONDS = 120;
-const BOOTSTRAP_ADMIN_EMAILS = ['admin@speedstar.com'];
+const BOOTSTRAP_ADMIN_EMAILS = ['admin@speedstar.com', 'speedstarapp0@gmail.com'];
 const PRICING_RECALC_WINDOW_MINUTES = 180;
 const PRICING_RECALC_LIMIT = 250;
 const PRICING_REMOTE_CACHE_MS = 60 * 1000;
@@ -48,6 +48,16 @@ function isAdminAuth(auth) {
 
 async function isAdminUid(uid) {
   if (!uid) return false;
+
+  try {
+    const userRecord = await admin.auth().getUser(uid);
+    const email = String(userRecord.email || '').toLowerCase().trim();
+    if (isStaticAdminEmail(email)) {
+      return true;
+    }
+  } catch (_) {
+  }
+
   const adminSnap = await db.collection('admins').doc(uid).get();
   if (!adminSnap.exists) return false;
   const data = adminSnap.data() || {};

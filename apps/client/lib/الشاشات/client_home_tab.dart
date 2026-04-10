@@ -40,6 +40,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
   double? _clientLongitude;
   String? _clientStateId;
   bool _addressStateResolved = false;
+  bool _isAddressScreenOpening = false;
   final List<String> _recentSearches = [];
   static const double _defaultFallbackVisibleDistanceKm = 120;
 
@@ -249,6 +250,33 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         .map((snapshot) => snapshot.docs.isEmpty);
   }
 
+  void _openAddAddressScreenIfNeeded() {
+    if (_isAddressScreenOpening || !mounted) return;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+
+    _isAddressScreenOpening = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        _isAddressScreenOpening = false;
+        return;
+      }
+      try {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AddNewAddressScreen(
+              userId: widget.clientId,
+              userType: 'client',
+            ),
+          ),
+        );
+      } finally {
+        _isAddressScreenOpening = false;
+      }
+    });
+  }
+
   String _normalizeSearchText(String value) {
     return value
         .trim()
@@ -336,17 +364,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       stream: _hasNoAddressesStream,
       builder: (context, snapshot) {
         if (snapshot.hasData && snapshot.data == true) {
-          Future.microtask(() async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => AddNewAddressScreen(
-                  userId: widget.clientId,
-                  userType: 'client',
-                ),
-              ),
-            );
-          });
+          _openAddAddressScreenIfNeeded();
           return const Center(child: CircularProgressIndicator());
         }
         if (_isStateRolloutEnabled && !_addressStateResolved) {
@@ -434,6 +452,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                     'image': data['logoImageUrl'] ??
                         '', // تمرير شعار المطعم للحقل image
                   };
+                }).where((restaurant) {
+                  return restaurant['menuApproved'] != false;
                 }).where((restaurant) {
                   final clientState = _clientStateId;
                   if (clientState == null || clientState.isEmpty) {

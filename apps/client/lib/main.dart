@@ -8,6 +8,8 @@ import 'package:speedstar_core/src/config/remote_helpers.dart'
     as remote_helpers;
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:provider/provider.dart';
+import 'firebase_options.dart' as dev_firebase;
+import 'firebase_options_prod.dart' as prod_firebase;
 import 'الشاشات/client_home_screen.dart';
 import 'الشاشات/cart_provider.dart' as client_cart;
 
@@ -58,6 +60,9 @@ class _InitGateClient extends StatefulWidget {
 }
 
 class _InitGateClientState extends State<_InitGateClient> {
+  static const String _firebaseEnv =
+      String.fromEnvironment('FIREBASE_ENV', defaultValue: 'dev');
+
   late Future<void> _initFuture;
   bool _maintenanceMode = false;
   bool _clientPhoneSignInEnabled = false;
@@ -71,7 +76,12 @@ class _InitGateClientState extends State<_InitGateClient> {
 
   Future<void> _safeInit() async {
     try {
-      await Firebase.initializeApp();
+      final firebaseOptions = _firebaseEnv == 'prod'
+          ? prod_firebase.DefaultFirebaseOptions.currentPlatform
+          : dev_firebase.DefaultFirebaseOptions.currentPlatform;
+      await Firebase.initializeApp(
+        options: firebaseOptions,
+      );
       final rc = FirebaseRemoteConfig.instance;
       await rc.setConfigSettings(
         RemoteConfigSettings(

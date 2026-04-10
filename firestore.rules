@@ -9,6 +9,7 @@ service cloud.firestore {
       return isSignedIn()
         && (
           request.auth.token.email == 'admin@speedstar.com'
+          || request.auth.token.email == 'speedstarapp0@gmail.com'
           || (
             exists(/databases/$(database)/documents/admins/$(request.auth.uid))
             && (
@@ -28,6 +29,15 @@ service cloud.firestore {
         )
         && get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.approvalStatus == 'approved'
         && get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.isApproved == true;
+    }
+
+    function isRestaurantOwner(restaurantId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/restaurants/$(restaurantId))
+        && (
+          request.auth.uid == restaurantId
+          || get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.ownerUid == request.auth.uid
+        );
     }
 
     match /admins/{uid} {
@@ -129,8 +139,14 @@ service cloud.firestore {
     match /restaurants/{restaurantId} {
       allow read: if isSignedIn();
       allow create: if isAdmin();
-      allow update: if isAdmin() || isApprovedRestaurantOwner(restaurantId);
+      allow update: if isAdmin() || isRestaurantOwner(restaurantId);
       allow delete: if isAdmin();
+
+      match /addresses/{addressId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin() || isRestaurantOwner(restaurantId);
+      }
+
       match /full_menu/{itemId} {
         allow read: if isSignedIn()
           && get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.approvalStatus == 'approved'
@@ -170,6 +186,41 @@ service cloud.firestore {
           || resource.data.restaurantId == request.auth.uid
         ));
       allow create, update, delete: if isAdmin();
+    }
+
+    match /promocodes/{promoId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /favorites/{favoriteId} {
+      allow create: if isSignedIn() && request.resource.data.clientId == request.auth.uid;
+      allow read: if isAdmin() || (isSignedIn() && resource.data.clientId == request.auth.uid);
+      allow update: if isAdmin() || (isSignedIn() && resource.data.clientId == request.auth.uid);
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.clientId == request.auth.uid);
+    }
+
+    match /wallet_recharges/{rechargeId} {
+      allow create: if isSignedIn() && request.resource.data.clientId == request.auth.uid;
+      allow read: if isAdmin() || (isSignedIn() && resource.data.clientId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    match /chats/{chatId} {
+      allow read, write: if isSignedIn();
+      match /messages/{messageId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    match /supportChats/{chatId} {
+      allow read, write: if isSignedIn();
+      match /messages/{messageId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    match /messages/{messageId} {
+      allow read, write: if isSignedIn();
     }
 
     match /{document=**} {

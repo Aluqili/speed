@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speedstar_core/speedstar_core.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
+import 'firebase_options.dart' as dev_firebase;
+import 'firebase_options_prod.dart' as prod_firebase;
 import 'الشاشات/courier_main_screen.dart';
 import 'الشاشات/courier_link_request_screen.dart';
 
@@ -52,6 +54,9 @@ class _InitGateCourier extends StatefulWidget {
 }
 
 class _InitGateCourierState extends State<_InitGateCourier> {
+  static const String _firebaseEnv =
+      String.fromEnvironment('FIREBASE_ENV', defaultValue: 'dev');
+
   late Future<void> _initFuture;
   bool _maintenanceMode = false;
   String _maintenanceMessage = 'التطبيق تحت الصيانة. حاول لاحقًا.';
@@ -64,7 +69,12 @@ class _InitGateCourierState extends State<_InitGateCourier> {
 
   Future<void> _safeInit() async {
     try {
-      await Firebase.initializeApp();
+      final firebaseOptions = _firebaseEnv == 'prod'
+          ? prod_firebase.DefaultFirebaseOptions.currentPlatform
+          : dev_firebase.DefaultFirebaseOptions.currentPlatform;
+      await Firebase.initializeApp(
+        options: firebaseOptions,
+      );
       final rc = FirebaseRemoteConfig.instance;
       await rc.setConfigSettings(
         RemoteConfigSettings(

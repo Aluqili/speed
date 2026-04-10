@@ -5,6 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 class CartItem {
   final String id;
   final String restaurantId;
+  final String menuItemId;
+  final String? sizeKey;
+  final String? sizeLabel;
   final String name;
   final String description;
   int quantity;
@@ -13,6 +16,9 @@ class CartItem {
   CartItem({
     required this.id,
     required this.restaurantId,
+    this.menuItemId = '',
+    this.sizeKey,
+    this.sizeLabel,
     required this.name,
     required this.description,
     required this.quantity,
@@ -22,6 +28,9 @@ class CartItem {
   Map<String, dynamic> toMap() => {
         'id': id,
         'restaurantId': restaurantId,
+        'menuItemId': menuItemId,
+        'sizeKey': sizeKey,
+        'sizeLabel': sizeLabel,
         'name': name,
         'description': description,
         'quantity': quantity,
@@ -31,6 +40,9 @@ class CartItem {
   factory CartItem.fromMap(Map<String, dynamic> m) => CartItem(
         id: m['id'] ?? '',
         restaurantId: m['restaurantId'] ?? '',
+        menuItemId: m['menuItemId'] ?? '',
+        sizeKey: m['sizeKey']?.toString(),
+        sizeLabel: m['sizeLabel']?.toString(),
         name: m['name'] ?? '',
         description: m['description'] ?? '',
         quantity: (m['quantity'] as num?)?.toInt() ?? 1,
@@ -106,10 +118,15 @@ class CartProvider extends ChangeNotifier {
   }
 
   // دوال مساعدة لاستخدامها في restaurant_detail_screen.dart
-  Future<void> addToCartSimple(String itemId, String name, double price) =>
+  Future<void> addToCartSimple(
+          String restaurantId, String itemId, String name, double price,
+          {String? menuItemId, String? sizeKey, String? sizeLabel}) =>
       addToCart(CartItem(
         id: itemId,
-        restaurantId: _currentRestaurantId ?? '',
+        restaurantId: restaurantId,
+        menuItemId: (menuItemId ?? '').trim(),
+        sizeKey: sizeKey,
+        sizeLabel: sizeLabel,
         name: name,
         description: '',
         quantity: 1,
@@ -135,6 +152,15 @@ class CartProvider extends ChangeNotifier {
           id: '', restaurantId: '', name: '', description: '', quantity: 0, price: 0.0),
     );
     return item.quantity;
+  }
+
+  int getQuantityByMenuItem(String restaurantId, String menuItemId) {
+    if (menuItemId.trim().isEmpty) return 0;
+    return _cartItems
+        .where((i) =>
+            i.restaurantId == restaurantId &&
+            (i.menuItemId == menuItemId || i.id.contains('_$menuItemId')))
+        .fold<int>(0, (sum, i) => sum + i.quantity);
   }
 
   Future<void> _saveCart() async {

@@ -291,7 +291,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         throw Exception('إحداثيات عنوان العميل غير مكتملة');
       }
 
-      final restId = cart.cartItems.first.id.split('_').first;
+      final restId = cart.cartItems.first.restaurantId;
       final restDoc = await FirebaseFirestore.instance
           .collection('restaurants')
           .doc(restId)
@@ -489,13 +489,17 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
     final items = cart.cartItems
         .map((i) => {
+          'id': i.id,
+          'menuItemId': i.menuItemId,
               'name': i.name,
+          if ((i.sizeKey ?? '').isNotEmpty) 'sizeKey': i.sizeKey,
+          if ((i.sizeLabel ?? '').isNotEmpty) 'sizeLabel': i.sizeLabel,
               'description': i.description,
               'price': i.price,
               'quantity': i.quantity,
             })
         .toList();
-    final restaurantId = cart.cartItems.first.id.split('_').first;
+    final restaurantId = cart.cartItems.first.restaurantId;
 
     final restDoc = await FirebaseFirestore.instance
         .collection('restaurants')
@@ -779,6 +783,17 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                           fontSize: 16,
                           color: Color(0xFF1A1D26),
                           fontFamily: 'Tajawal')),
+                  if ((item.sizeLabel ?? '').isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'الحجم: ${item.sizeLabel}',
+                        style: const TextStyle(
+                          color: Color(0xFF6B7280),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
                   const SizedBox(height: 4),
                   Text('${item.price.toStringAsFixed(2)} ج.س',
                       style: const TextStyle(

@@ -2,6 +2,7 @@ class MenuItem {
   final String id;
   final String name;
   final double price;
+  final Map<String, double> sizes;
   final String? imageUrl;
   final String? description;
   final String? category;
@@ -12,10 +13,13 @@ class MenuItem {
     required this.id,
     required this.name,
     required this.price,
+    this.sizes = const {},
     this.imageUrl,
     this.description,
     this.category,
     this.isAvailable = true,
     this.createdAt,
   });
+
+  bool get hasSizes => sizes.isNotEmpty;
 }
