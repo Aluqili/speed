@@ -53,6 +53,8 @@ workflows:
     max_build_duration: 90
     instance_type: mac_mini_m2
     working_directory: apps/client
+    integrations:
+      app_store_connect: Speedstar-key
     environment:
       groups:
         - speedstar_client_ios
@@ -101,3 +103,6 @@ workflows:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
       - flutter_drive.log
+    publishing:
+      app_store_connect:
+        auth: integration
