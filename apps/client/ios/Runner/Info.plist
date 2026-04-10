@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Speedstar Client App</string>
+	<string>SpeedStar Client</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -47,5 +47,15 @@
 	<true/>
 	<key>GMSApiKey</key>
 	<string>$(MAPS_API_KEY)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>SpeedStar uses your camera to capture profile and order images.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SpeedStar uses your location to show nearby stores and accurate delivery addresses.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SpeedStar may continue using your location while a delivery is active to keep order tracking and address updates accurate.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>SpeedStar saves generated images to your photo library when requested.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SpeedStar lets you select photos from your library for profile and order images.</string>
 </dict>
 </plist>

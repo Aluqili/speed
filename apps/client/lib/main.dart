@@ -10,6 +10,7 @@ import 'package:speedstar_core/src/config/remote_helpers.dart'
     as remote_helpers;
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'firebase_options.dart' as dev_firebase;
 import 'firebase_options_prod.dart' as prod_firebase;
 import 'الشاشات/client_home_screen.dart';
@@ -70,6 +71,12 @@ class _InitGateClientState extends State<_InitGateClient> {
   bool _maintenanceMode = false;
   bool _clientPhoneSignInEnabled = false;
   String _maintenanceMessage = 'التطبيق تحت الصيانة. حاول لاحقًا.';
+  bool _forceUpdateRequired = false;
+  String _forceUpdateMessage =
+      'يتوفر إصدار أحدث من التطبيق لتحسين الأداء والاستقرار. الرجاء التحديث للمتابعة.';
+  String _updateUrl = '';
+  int _currentBuildNumber = 0;
+  int _minBuildNumber = 0;
 
   @override
   void initState() {
@@ -95,6 +102,7 @@ class _InitGateClientState extends State<_InitGateClient> {
       );
       final defaults = <String, Object>{
         ...OpsRuntimeConfig.defaultFlagsFor('client'),
+        ...AppUpdateConfig.defaultFlagsFor('client'),
         'accent_seed': 'E85D2A',
         'client_maintenance_mode': false,
         'client_maintenance_message': 'التطبيق تحت الصيانة. حاول لاحقًا.',
@@ -123,6 +131,15 @@ class _InitGateClientState extends State<_InitGateClient> {
       _maintenanceMode = rc.getBool('client_maintenance_mode');
       _clientPhoneSignInEnabled =
           rc.getBool('client_phone_signin_enabled_sudan');
+      final update = await AppUpdateConfig.fromRemoteConfig(
+        rc,
+        appKey: 'client',
+      );
+      _forceUpdateRequired = update.forceUpdateRequired;
+      _forceUpdateMessage = update.message;
+      _updateUrl = update.updateUrl;
+      _currentBuildNumber = update.currentBuildNumber;
+      _minBuildNumber = update.minBuildNumber;
       final maintenanceText = rc.getString('client_maintenance_message').trim();
       if (maintenanceText.isNotEmpty) {
         _maintenanceMessage = maintenanceText;
@@ -144,12 +161,28 @@ class _InitGateClientState extends State<_InitGateClient> {
       future: _initFuture,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+          return const _InitSplash(
+            title: 'SpeedStar',
+            subtitle: 'جاهزين نوصلك أسرع 🚀',
+            imageAsset: 'assets/branding/app_icon_client.png.jpeg',
+            accent: AppThemeArabic.clientPrimary,
           );
         }
         if (_maintenanceMode) {
           return _MaintenanceScreen(message: _maintenanceMessage);
+        }
+        if (_forceUpdateRequired) {
+          return _ForceUpdateScreen(
+            message: _forceUpdateMessage,
+            updateUrl: _updateUrl,
+            currentBuildNumber: _currentBuildNumber,
+            minBuildNumber: _minBuildNumber,
+            onRetry: () {
+              setState(() {
+                _initFuture = _safeInit();
+              });
+            },
+          );
         }
         return auth_gate.LoginGate(
           unauthenticatedBuilder: (_) => LoginScreenArabic(
@@ -161,6 +194,92 @@ class _InitGateClientState extends State<_InitGateClient> {
           signedIn: const _ClientHomeByAuthUser(),
         );
       },
+    );
+  }
+}
+
+class _InitSplash extends StatelessWidget {
+  const _InitSplash({
+    required this.title,
+    required this.subtitle,
+    required this.imageAsset,
+    required this.accent,
+  });
+
+  final String title;
+  final String subtitle;
+  final String imageAsset;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFFFF4EE), Colors.white],
+          ),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 180,
+                  height: 180,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(36),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.18),
+                        blurRadius: 30,
+                        offset: const Offset(0, 14),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Image.asset(imageAsset, fit: BoxFit.contain),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 34,
+                    fontWeight: FontWeight.w800,
+                    color: accent,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 26),
+                SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3.2,
+                    color: accent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -180,6 +299,103 @@ class _MaintenanceScreen extends StatelessWidget {
             message,
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 16),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ForceUpdateScreen extends StatelessWidget {
+  const _ForceUpdateScreen({
+    required this.message,
+    required this.updateUrl,
+    required this.currentBuildNumber,
+    required this.minBuildNumber,
+    required this.onRetry,
+  });
+
+  final String message;
+  final String updateUrl;
+  final int currentBuildNumber;
+  final int minBuildNumber;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.system_update_alt_rounded, size: 42),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'يلزم تحديث التطبيق',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 15),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'إصدارك الحالي: $currentBuildNumber • الحد الأدنى المطلوب: $minBuildNumber',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 13,
+                        ),
+                      ),
+                      if (updateUrl.trim().isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          updateUrl,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final uri = Uri.tryParse(updateUrl.trim());
+                            if (uri == null) return;
+                            await launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                            );
+                          },
+                          icon: const Icon(Icons.open_in_new_rounded),
+                          label: const Text('فتح رابط التحديث'),
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      FilledButton.icon(
+                        onPressed: onRetry,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('تحقق مرة أخرى'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),
