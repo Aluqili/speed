@@ -220,6 +220,37 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     }
   }
 
+  Future<Map<String, String>> _resolveSupportChatData() async {
+    var chatId = '${widget.clientId}-support';
+    var clientName = 'عميل';
+
+    try {
+      final clientDoc = await FirebaseFirestore.instance
+          .collection('clients')
+          .doc(widget.clientId)
+          .get();
+      final clientData = clientDoc.data() ?? <String, dynamic>{};
+      final savedChatId =
+          (clientData['lastSupportConversationId'] ?? '').toString().trim();
+      final savedClientName =
+          (clientData['name'] ?? clientData['fullName'] ?? '').toString().trim();
+
+      if (savedChatId.isNotEmpty) {
+        chatId = savedChatId;
+      }
+      if (savedClientName.isNotEmpty) {
+        clientName = savedClientName;
+      }
+    } catch (_) {
+      // Keep fallbacks.
+    }
+
+    return {
+      'chatId': chatId,
+      'clientName': clientName,
+    };
+  }
+
   // دالة لجلب جميع الوجبات من subcollection full_menu لكل مطعم
   Future<List<Map<String, dynamic>>> fetchAllMeals(
       List<Map<String, dynamic>> restaurants) async {
@@ -670,13 +701,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           icon: const Icon(Icons.support_agent, color: primaryColor, size: 28),
           tooltip: 'تواصل مع الدعم',
           onPressed: () async {
-            // جلب اسم العميل من قاعدة البيانات
-            final doc = await FirebaseFirestore.instance
-                .collection('clients')
-                .doc(widget.clientId)
-                .get();
-            final clientName = doc.data()?['name'] ?? 'عميل';
-            final chatId = '${widget.clientId}-support';
+            final supportChat = await _resolveSupportChatData();
+            if (!context.mounted) return;
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -684,8 +710,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   currentUserId: widget.clientId,
                   otherUserId: 'support',
                   currentUserRole: 'client',
-                  chatId: chatId,
-                  currentUserName: clientName,
+                  chatId: supportChat['chatId'] ?? '${widget.clientId}-support',
+                  currentUserName: supportChat['clientName'] ?? 'عميل',
                 ),
               ),
             );

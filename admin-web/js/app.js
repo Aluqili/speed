@@ -1391,11 +1391,23 @@ function mountFinance() {
         const txRef = String(data.transactionReference || '').trim();
         const duplicateCount = txRef ? Number(transactionRefs.get(txRef) || 0) : 0;
         const duplicateLabel = duplicateCount > 1 ? `<span class="badge open">مكرر ${duplicateCount}</span>` : '';
+        const totalBeforeWallet = toMoney(data.totalBeforeWallet || data.totalWithDelivery || data.total || 0);
+        const walletRequestedAmount = toMoney(data.walletRequestedAmount || 0);
+        const reviewAmount = toMoney(
+          data.externalPaidAmount
+          ?? data.amountDueAfterWallet
+          ?? data.totalWithDelivery
+          ?? data.total
+          ?? 0
+        );
+        const amountLabel = walletRequestedAmount > 0
+          ? `<div>${formatMoney(reviewAmount)}</div><div class="muted">الإجمالي ${formatMoney(totalBeforeWallet)} - المحفظة ${formatMoney(walletRequestedAmount)}</div>`
+          : formatMoney(reviewAmount);
         return `<tr>
           <td>${escapeHtml(formatUnifiedOrderCode(data.orderNumber, data.orderId, d.id))}</td>
           <td>${escapeHtml(String(data.clientName || data.clientId || '-'))}</td>
           <td>${escapeHtml(String(data.paymentMethod || '-'))}</td>
-          <td>${formatMoney(data.totalWithDelivery || data.total || 0)}</td>
+          <td>${amountLabel}</td>
           <td>${escapeHtml(txRef || '-')} ${duplicateLabel}</td>
           <td>${data.proofImageUrl ? `<a class="btn ghost" href="${escapeHtml(data.proofImageUrl)}" target="_blank" rel="noopener">عرض</a>` : '-'}</td>
           <td>${formatDateTimeCell(data.paymentReviewAutoFlaggedAt || data.updatedAt || data.paidAt)}</td>

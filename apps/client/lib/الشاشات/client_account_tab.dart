@@ -30,16 +30,23 @@ class ClientAccountTab extends StatelessWidget {
 
   Future<void> _openSupportChat(BuildContext context) async {
     String chatId = '${clientId}-support';
+    String clientName = 'عميل';
 
     try {
       final clientDoc = await FirebaseFirestore.instance
           .collection('clients')
           .doc(clientId)
           .get();
+      final clientData = clientDoc.data() ?? <String, dynamic>{};
       final savedChatId =
-          (clientDoc.data()?['lastSupportConversationId'] ?? '').toString().trim();
+          (clientData['lastSupportConversationId'] ?? '').toString().trim();
+      final savedClientName =
+          (clientData['name'] ?? clientData['fullName'] ?? '').toString().trim();
       if (savedChatId.isNotEmpty) {
         chatId = savedChatId;
+      }
+      if (savedClientName.isNotEmpty) {
+        clientName = savedClientName;
       }
     } catch (_) {
       // Fallback to the default support conversation id.
@@ -57,7 +64,7 @@ class ClientAccountTab extends StatelessWidget {
           otherUserId: 'support',
           currentUserRole: 'client',
           chatId: chatId,
-          currentUserName: 'عميل',
+          currentUserName: clientName,
         ),
       ),
     );

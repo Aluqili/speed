@@ -37,6 +37,20 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   static const Color textColorPrimary = Color(0xFF1A1D26);
   static const Color textColorSecondary = Color(0xFF6B7280);
   static const Color closedColor = Color(0xFFFF3B30);
+  static const List<String> _globalCategoryOrder = [
+    'الوجبات الرئيسية',
+    'المقبلات',
+    'الشوربات',
+    'السلطات',
+    'السندويتشات',
+    'البرغر',
+    'البيتزا',
+    'الفطور',
+    'المشروبات',
+    'الحلويات',
+    'الإضافات',
+    'أصناف أخرى',
+  ];
 
   String? _selectedCategory;
   bool isClosed = false;
@@ -294,6 +308,524 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     return parts.join(' • ');
   }
 
+  String _sanitizeCategoryToken(String input) {
+    return input
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[_\-]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll('أ', 'ا')
+        .replaceAll('إ', 'ا')
+        .replaceAll('آ', 'ا')
+        .replaceAll('ة', 'ه');
+  }
+
+  String _canonicalCategoryLabel(String rawCategory) {
+    final raw = rawCategory.trim();
+    if (raw.isEmpty) return 'أصناف أخرى';
+
+    final token = _sanitizeCategoryToken(raw);
+
+    bool containsAny(List<String> values) {
+      for (final value in values) {
+        if (token.contains(_sanitizeCategoryToken(value))) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (containsAny([
+      'all',
+      'all items',
+      'كل الاصناف',
+      'جميع الاصناف',
+    ])) {
+      return 'كل الأصناف';
+    }
+    if (containsAny([
+      'main',
+      'main course',
+      'main dish',
+      'الوجبات الرئيسية',
+      'وجبات رئيسية',
+      'الاطباق الرئيسية',
+      'اطباق رئيسية',
+    ])) {
+      return 'الوجبات الرئيسية';
+    }
+    if (containsAny(['appetizer', 'starter', 'مقبلات'])) {
+      return 'المقبلات';
+    }
+    if (containsAny(['soup', 'soups', 'شوربة', 'شوربات'])) {
+      return 'الشوربات';
+    }
+    if (containsAny(['salad', 'salads', 'سلطة', 'سلطات'])) {
+      return 'السلطات';
+    }
+    if (containsAny(['sandwich', 'sandwiches', 'wrap', 'ساندويتش', 'سندويتش'])) {
+      return 'السندويتشات';
+    }
+    if (containsAny(['burger', 'burgers', 'برغر', 'برجر'])) {
+      return 'البرغر';
+    }
+    if (containsAny(['pizza', 'pizzas', 'بيتزا'])) {
+      return 'البيتزا';
+    }
+    if (containsAny(['breakfast', 'فطور', 'افطار'])) {
+      return 'الفطور';
+    }
+    if (containsAny(['drink', 'drinks', 'beverage', 'juice', 'مشروب', 'مشروبات', 'عصير', 'عصائر'])) {
+      return 'المشروبات';
+    }
+    if (containsAny(['dessert', 'desserts', 'sweet', 'حلويات', 'تحلية'])) {
+      return 'الحلويات';
+    }
+    if (containsAny(['extra', 'extras', 'addon', 'add on', 'اضافة', 'اضافات'])) {
+      return 'الإضافات';
+    }
+
+    return raw;
+  }
+
+  int _categoryRank(String category) {
+    final canonical = _canonicalCategoryLabel(category);
+    final index = _globalCategoryOrder.indexOf(canonical);
+    return index >= 0 ? index : _globalCategoryOrder.length;
+  }
+
+  List<String> _sortedCategoriesFromDocs(List<QueryDocumentSnapshot> docs) {
+    final categories = <String>{};
+    for (final doc in docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      categories.add(_canonicalCategoryLabel((data['category'] ?? '').toString()));
+    }
+    final ordered = categories.where((value) => value.isNotEmpty).toList()
+      ..sort((a, b) {
+        final rankCompare = _categoryRank(a).compareTo(_categoryRank(b));
+        if (rankCompare != 0) return rankCompare;
+        return a.compareTo(b);
+      });
+    return ordered;
+  }
+
+  List<QueryDocumentSnapshot> _sortMenuDocs(List<QueryDocumentSnapshot> docs) {
+    final sorted = List<QueryDocumentSnapshot>.from(docs);
+    sorted.sort((a, b) {
+      final aData = a.data() as Map<String, dynamic>;
+      final bData = b.data() as Map<String, dynamic>;
+      final aCategory = _canonicalCategoryLabel((aData['category'] ?? '').toString());
+      final bCategory = _canonicalCategoryLabel((bData['category'] ?? '').toString());
+      final categoryCompare = _categoryRank(aCategory).compareTo(_categoryRank(bCategory));
+      if (categoryCompare != 0) return categoryCompare;
+      final labelCompare = aCategory.compareTo(bCategory);
+      if (labelCompare != 0) return labelCompare;
+      final aUnavailable = aData['available'] == false ? 1 : 0;
+      final bUnavailable = bData['available'] == false ? 1 : 0;
+      final availableCompare = aUnavailable.compareTo(bUnavailable);
+      if (availableCompare != 0) return availableCompare;
+      final aName = (aData['name'] ?? '').toString().trim();
+      final bName = (bData['name'] ?? '').toString().trim();
+      return aName.compareTo(bName);
+    });
+    return sorted;
+  }
+
+  List<_MenuSection> _buildMenuSections(List<QueryDocumentSnapshot> docs) {
+    final grouped = <String, List<QueryDocumentSnapshot>>{};
+    for (final doc in _sortMenuDocs(docs)) {
+      final data = doc.data() as Map<String, dynamic>;
+      final category = _canonicalCategoryLabel((data['category'] ?? '').toString());
+      if (_selectedCategory != null && category != _selectedCategory) {
+        continue;
+      }
+      grouped.putIfAbsent(category, () => <QueryDocumentSnapshot>[]).add(doc);
+    }
+
+    final categories = grouped.keys.toList()
+      ..sort((a, b) {
+        final rankCompare = _categoryRank(a).compareTo(_categoryRank(b));
+        if (rankCompare != 0) return rankCompare;
+        return a.compareTo(b);
+      });
+
+    return categories
+        .map((category) => _MenuSection(
+              title: category,
+              items: grouped[category] ?? const <QueryDocumentSnapshot>[],
+            ))
+        .where((section) => section.items.isNotEmpty)
+        .toList();
+  }
+
+  Widget _buildCategoryChip({
+    required String label,
+    required int count,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? primaryColor : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? primaryColor : const Color(0xFFE5E7EB),
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: primaryColor.withOpacity(0.18),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : const [],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: selected ? Colors.white.withOpacity(0.2) : const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                count.toString(),
+                style: TextStyle(
+                  color: selected ? Colors.white : textColorSecondary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : textColorPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuSectionHeader(_MenuSection section) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: primaryColor.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '${section.items.length} صنف',
+              style: const TextStyle(
+                color: primaryColor,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const Spacer(),
+          Text(
+            section.title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: textColorPrimary,
+            ),
+            textAlign: TextAlign.right,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuItemCard({
+    required QueryDocumentSnapshot doc,
+    required Map<String, dynamic> data,
+    required CartProvider cartProvider,
+  }) {
+    final itemId = '${widget.restaurantId}_${doc.id}';
+    final itemName = (data['name'] ?? '').toString();
+    final itemDescription = (data['description'] ?? data['details'] ?? '').toString().trim();
+    final categoryLabel = _canonicalCategoryLabel((data['category'] ?? '').toString());
+    final sizes = _extractSizes(data);
+    final hasSizes = sizes.isNotEmpty;
+    final itemPrice = (data['price'] as num?)?.toDouble() ?? 0.0;
+    final itemImage = (data['imageUrl'] ?? '').toString();
+    final quantity = hasSizes
+        ? cartProvider.getQuantityByMenuItem(widget.restaurantId, doc.id)
+        : cartProvider.getQuantity(itemId);
+    final imageProvider = itemImage.isNotEmpty ? NetworkImage(itemImage) : null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            textDirection: TextDirection.rtl,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: imageProvider != null
+                    ? Image(
+                        image: imageProvider,
+                        width: 104,
+                        height: 104,
+                        fit: BoxFit.cover,
+                      )
+                    : Container(
+                        width: 104,
+                        height: 104,
+                        color: const Color(0xFFF3F4F6),
+                        child: Icon(Icons.fastfood, color: Colors.grey[500], size: 34),
+                      ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Row(
+                      children: [
+                        if (data['available'] == false)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: closedColor.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Text(
+                              'غير متوفر',
+                              style: TextStyle(
+                                color: closedColor,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        const Spacer(),
+                        Flexible(
+                          child: Text(
+                            itemName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              color: textColorPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              height: 1.25,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.end,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: accentColor.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            categoryLabel,
+                            style: const TextStyle(
+                              color: primaryColor,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            hasSizes
+                                ? _sizesSummary(sizes)
+                                : '${NumberFormat.decimalPattern().format(itemPrice)} ج.س',
+                            style: const TextStyle(
+                              color: textColorSecondary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (itemDescription.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        itemDescription,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          color: textColorSecondary,
+                          fontSize: 13,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                    if (hasSizes) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.end,
+                        children: sizes.entries.map((entry) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  _sizeLabel(entry.key),
+                                  style: const TextStyle(
+                                    color: textColorPrimary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${NumberFormat.decimalPattern().format(entry.value)} ج.س',
+                                  style: const TextStyle(
+                                    color: primaryColor,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        GFIconButton(
+                          icon: const Icon(Icons.add, size: 18),
+                          onPressed: (isClosed || data['available'] == false)
+                              ? null
+                              : () async {
+                                  if (hasSizes) {
+                                    await _showSizePickerAndAddToCart(
+                                      cartProvider: cartProvider,
+                                      docId: doc.id,
+                                      itemName: itemName,
+                                      sizes: sizes,
+                                    );
+                                    return;
+                                  }
+                                  await cartProvider.addToCartSimple(
+                                    widget.restaurantId,
+                                    itemId,
+                                    itemName,
+                                    itemPrice,
+                                    menuItemId: doc.id,
+                                  );
+                                },
+                          color: primaryColor,
+                          type: GFButtonType.outline2x,
+                          size: GFSize.SMALL,
+                          shape: GFIconButtonShape.circle,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Text(
+                            quantity.toString(),
+                            style: const TextStyle(
+                              color: textColorPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        GFIconButton(
+                          icon: const Icon(Icons.remove, size: 18),
+                          onPressed: (isClosed || data['available'] == false || quantity <= 0)
+                              ? null
+                              : () async {
+                                  if (hasSizes) {
+                                    await _showSizePickerAndRemoveFromCart(
+                                      cartProvider: cartProvider,
+                                      restaurantId: widget.restaurantId,
+                                      docId: doc.id,
+                                      itemName: itemName,
+                                    );
+                                    return;
+                                  }
+                                  await cartProvider.removeOneItem(itemId);
+                                },
+                          color: primaryColor,
+                          type: GFButtonType.outline2x,
+                          size: GFSize.SMALL,
+                          shape: GFIconButtonShape.circle,
+                        ),
+                        const Spacer(),
+                        Text(
+                          quantity > 0 ? 'في السلة: $quantity' : 'أضف للسلة',
+                          style: TextStyle(
+                            color: quantity > 0 ? primaryColor : textColorSecondary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _showSizePickerAndRemoveFromCart({
     required CartProvider cartProvider,
     required String restaurantId,
@@ -473,20 +1005,6 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
               centerTitle: true,
               title: null,
             ),
-            if (statusText.isNotEmpty)
-              SliverToBoxAdapter(
-                child: Container(
-                  width: double.infinity,
-                  color: statusColor,
-                  padding: const EdgeInsets.all(12),
-                  child: Text(
-                    statusText,
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
             SliverToBoxAdapter(
               child: Padding(
                 padding:
@@ -494,16 +1012,26 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      'قائمة الأصناف',
+                    const Text(
+                      'استكشف الأصناف',
                       style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 22,
                         color: textColorPrimary,
                       ),
                       textAlign: TextAlign.right,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'القائمة مرتبة تلقائياً حسب التصنيف لسهولة التصفح.',
+                      style: TextStyle(
+                        color: textColorSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.right,
+                    ),
+                    const SizedBox(height: 14),
                     FutureBuilder<QuerySnapshot>(
                       future: FirebaseFirestore.instance
                           .collection('restaurants')
@@ -516,47 +1044,49 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                               child: CircularProgressIndicator());
                         }
                         final items = snapshot.data!.docs;
-                        // استخراج الفئات
-                        final Set<String> categories = {'كل الأصناف'};
+                        if (items.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        final categories = _sortedCategoriesFromDocs(items);
+                        final counts = <String, int>{};
                         for (var doc in items) {
                           final data = doc.data() as Map<String, dynamic>;
-                          if (data['category'] != null &&
-                              data['category'].toString().isNotEmpty) {
-                            categories.add(data['category']);
-                          }
+                          final category =
+                              _canonicalCategoryLabel((data['category'] ?? '').toString());
+                          counts[category] = (counts[category] ?? 0) + 1;
                         }
-                        final List<String> categoryList = categories.toList();
                         return SizedBox(
-                          height: 40,
+                          height: 52,
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             reverse: true,
-                            itemCount: categoryList.length,
+                            itemCount: categories.length + 1,
                             separatorBuilder: (_, __) =>
                                 const SizedBox(width: 8),
                             itemBuilder: (context, index) {
-                              final cat = categoryList[index];
-                              final selected = _selectedCategory == null
-                                  ? cat == 'كل الأصناف'
-                                  : _selectedCategory == cat;
-                              return ChoiceChip(
-                                label: Text(cat,
-                                    style:
-                                        TextStyle(fontWeight: FontWeight.bold)),
-                                selected: selected,
-                                onSelected: (val) {
+                              if (index == 0) {
+                                return _buildCategoryChip(
+                                  label: 'كل الأصناف',
+                                  count: items.length,
+                                  selected: _selectedCategory == null,
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedCategory = null;
+                                    });
+                                  },
+                                );
+                              }
+
+                              final cat = categories[index - 1];
+                              return _buildCategoryChip(
+                                label: cat,
+                                count: counts[cat] ?? 0,
+                                selected: _selectedCategory == cat,
+                                onTap: () {
                                   setState(() {
-                                    _selectedCategory =
-                                        cat == 'كل الأصناف' ? null : cat;
+                                    _selectedCategory = cat;
                                   });
                                 },
-                                selectedColor: primaryColor,
-                                backgroundColor: Colors.grey[200],
-                                labelStyle: TextStyle(
-                                  color: selected
-                                      ? Colors.white
-                                      : textColorPrimary,
-                                ),
                               );
                             },
                           ),
@@ -584,261 +1114,28 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                     return const Center(
                         child: Text('لا توجد أصناف متاحة حالياً.'));
                   }
-                  final items = snapshot.data!.docs;
-                  // تصفية حسب الفئة
-                  final filteredItems = _selectedCategory == null
-                      ? items
-                      : items.where((doc) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          return data['category'] == _selectedCategory;
-                        }).toList();
+                  final sections = _buildMenuSections(snapshot.data!.docs);
+                  if (sections.isEmpty) {
+                    return const Center(child: Text('لا توجد أصناف ضمن هذا التصنيف حالياً.'));
+                  }
                   return ListView.builder(
-                    itemCount: filteredItems.length,
+                    padding: const EdgeInsets.only(bottom: 88),
+                    itemCount: sections.length,
                     itemBuilder: (context, index) {
-                      final doc = filteredItems[index];
-                      final data = doc.data() as Map<String, dynamic>;
-                        final itemId = '${widget.restaurantId}_${doc.id}';
-                      final itemName = data['name'] ?? '';
-                        final sizes = _extractSizes(data);
-                        final hasSizes = sizes.isNotEmpty;
-                      final itemPrice =
-                          (data['price'] as num?)?.toDouble() ?? 0.0;
-                      final itemImage = data['imageUrl'] ?? '';
-                        final quantity = hasSizes
-                          ? cartProvider.getQuantityByMenuItem(
-                            widget.restaurantId,
-                            doc.id,
-                          )
-                          : cartProvider.getQuantity(itemId);
-                      final imageProvider = (itemImage.isNotEmpty)
-                          ? NetworkImage(itemImage)
-                          : null;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 0, vertical: 8),
-                        child: Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: cardColor,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.grey.withOpacity(0.08),
-                                spreadRadius: 1,
-                                blurRadius: 8,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            textDirection: TextDirection.rtl,
-                            children: [
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 12, horizontal: 0),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          // حالة التوفر: تظهر فقط إذا غير متوفر
-                                          if (data['available'] == false)
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: closedColor,
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                              ),
-                                              child: const Text(
-                                                'غير متوفر',
-                                                style: TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 12,
-                                                    fontWeight:
-                                                        FontWeight.bold),
-                                              ),
-                                            ),
-                                          // اسم الصنف
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                                right: 12),
-                                            child: Text(
-                                              itemName,
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 16,
-                                                  color: textColorPrimary,
-                                                  letterSpacing: 0.5,
-                                                  height: 1.2),
-                                              textAlign: TextAlign.right,
-                                              overflow: TextOverflow.ellipsis,
-                                              maxLines: 1,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        hasSizes
-                                            ? _sizesSummary(sizes)
-                                            : '${NumberFormat.decimalPattern().format(itemPrice)} ج.س',
-                                        style: TextStyle(
-                                            color: textColorSecondary,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                            letterSpacing: 0.2),
-                                      ),
-                                      if (hasSizes) ...[
-                                        const SizedBox(height: 8),
-                                        Wrap(
-                                          spacing: 8,
-                                          runSpacing: 8,
-                                          alignment: WrapAlignment.end,
-                                          children: sizes.entries.map((entry) {
-                                            return Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                  horizontal: 10, vertical: 8),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFF8FAFC),
-                                                borderRadius: BorderRadius.circular(12),
-                                                border: Border.all(
-                                                  color: const Color(0xFFE2E8F0),
-                                                ),
-                                              ),
-                                              child: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.end,
-                                                children: [
-                                                  Text(
-                                                    _sizeLabel(entry.key),
-                                                    style: const TextStyle(
-                                                      fontWeight: FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 2),
-                                                  Text(
-                                                    '${NumberFormat.decimalPattern().format(entry.value)} ج.س',
-                                                    style: const TextStyle(
-                                                      color: primaryColor,
-                                                      fontWeight: FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          }).toList(),
-                                        ),
-                                      ],
-                                      const SizedBox(height: 8),
-                                      // الأزرار تحت الاسم والسعر مباشرة
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.end,
-                                        children: [
-                                          GFIconButton(
-                                            icon:
-                                                const Icon(Icons.add, size: 18),
-                                            onPressed: (isClosed ||
-                                                    data['available'] == false)
-                                                ? null
-                                                : () async {
-                                                    if (hasSizes) {
-                                                      await _showSizePickerAndAddToCart(
-                                                        cartProvider: cartProvider,
-                                                        docId: doc.id,
-                                                        itemName: itemName,
-                                                        sizes: sizes,
-                                                      );
-                                                      return;
-                                                    }
-                                                    await cartProvider.addToCartSimple(
-                                                      widget.restaurantId,
-                                                      itemId,
-                                                      itemName,
-                                                      itemPrice,
-                                                      menuItemId: doc.id,
-                                                    );
-                                                  },
-                                            color: primaryColor,
-                                            type: GFButtonType.outline,
-                                            size: GFSize.SMALL,
-                                            shape: GFIconButtonShape.circle,
-                                            splashColor:
-                                                accentColor.withOpacity(0.2),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 8),
-                                            child: Text(quantity.toString(),
-                                                style: const TextStyle(
-                                                    fontSize: 15,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Colors.black)),
-                                          ),
-                                          GFIconButton(
-                                            icon: const Icon(Icons.remove,
-                                              size: 18),
-                                            onPressed: (isClosed ||
-                                                    data['available'] == false ||
-                                                    quantity <= 0)
-                                                ? null
-                                                : () async {
-                                                    if (hasSizes) {
-                                                      await _showSizePickerAndRemoveFromCart(
-                                                        cartProvider: cartProvider,
-                                                        restaurantId: widget.restaurantId,
-                                                        docId: doc.id,
-                                                        itemName: itemName,
-                                                      );
-                                                      return;
-                                                    }
-                                                    await cartProvider
-                                                        .removeOneItem(itemId);
-                                                  },
-                                            color: primaryColor,
-                                            type: GFButtonType.outline,
-                                            size: GFSize.SMALL,
-                                            shape: GFIconButtonShape.circle,
-                                            splashColor:
-                                                closedColor.withOpacity(0.15),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.all(10),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: imageProvider != null
-                                      ? Image(
-                                          image: imageProvider,
-                                          width: 95,
-                                          height: 95,
-                                          fit: BoxFit.cover,
-                                        )
-                                      : Container(
-                                          width: 95,
-                                          height: 95,
-                                          color: Colors.grey[200],
-                                          child: Icon(Icons.fastfood,
-                                              color: Colors.grey[500]),
-                                        ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                      final section = sections[index];
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildMenuSectionHeader(section),
+                          ...section.items.map((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            return _buildMenuItemCard(
+                              doc: doc,
+                              data: data,
+                              cartProvider: cartProvider,
+                            );
+                          }),
+                        ],
                       );
                     },
                   );
@@ -865,4 +1162,14 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       ),
     );
   }
+}
+
+class _MenuSection {
+  final String title;
+  final List<QueryDocumentSnapshot> items;
+
+  const _MenuSection({
+    required this.title,
+    required this.items,
+  });
 }

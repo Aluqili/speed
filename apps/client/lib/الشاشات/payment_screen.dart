@@ -184,11 +184,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
       'walletBalanceBeforePayment': walletBalance < 0 ? 0.0 : walletBalance,
       'walletBalanceAfterPreview': preview['walletBalanceAfterPreview']!,
       'amountDueAfterWallet': preview['amountDueAfterWallet']!,
+      'externalPaidAmount': preview['amountDueAfterWallet']!,
       'walletSettledAt': null,
       'walletUsedAmount': null,
       'walletBalanceBeforeDebit': null,
       'walletBalanceAfterDebit': null,
-      'externalPaidAmount': null,
     };
   }
 
@@ -308,6 +308,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
           (walletFields['walletRequestedAmount'] as num?)?.toDouble() ?? 0.0;
       final amountDueAfterWallet =
           (walletFields['amountDueAfterWallet'] as num?)?.toDouble() ?? 0.0;
+        final externalPaidAmount =
+          (walletFields['externalPaidAmount'] as num?)?.toDouble() ??
+            amountDueAfterWallet;
       final isWalletOnly = _selectedMethod == 'wallet';
 
       if (isWalletOnly && amountDueAfterWallet > 0) {
@@ -391,6 +394,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
         'status': isWalletOnly ? 'paid' : 'under_review',
         'walletRequestedAmount': walletRequestedAmount,
         'amountDueAfterWallet': amountDueAfterWallet,
+        'externalPaidAmount': externalPaidAmount,
+        'totalBeforeWallet': finalTotalAfterDiscount,
         if (redeemedPromo != null) ...{
           'promocode': redeemedPromo['code'],
           'discount': redeemedPromo['discountAmount'],
@@ -417,6 +422,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
         'paidAt':
             isWalletOnly ? FieldValue.serverTimestamp() : FieldValue.delete(),
         ...walletFields,
+        'externalPaidAmount': externalPaidAmount,
+        'totalBeforeWallet': finalTotalAfterDiscount,
         if (redeemedPromo != null) ...{
           'discountAmount': redeemedPromo['discountAmount'],
           'discountCode': redeemedPromo['code'],

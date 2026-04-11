@@ -180,20 +180,24 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     }
 
     final threshold = _largeItemThreshold;
-    final subtotal = cart.totalPrice;
-    if (subtotal <= threshold) {
-      return 0.0;
-    }
-
     final baseFee = _largeItemFeeBase;
     final stepAmount = _largeItemStepAmount;
     final stepFee = _largeItemStepFee;
     final cap = _largeItemFeeCapPerUnit;
 
-    final steps = ((subtotal - threshold) / stepAmount).floor() + 1;
-    double totalFee = baseFee + ((steps - 1) * stepFee);
-    if (cap > 0 && totalFee > cap) {
-      totalFee = cap;
+    double totalFee = 0.0;
+    for (final item in cart.cartItems) {
+      final itemPrice = item.price;
+      if (itemPrice <= threshold) {
+        continue;
+      }
+
+      final steps = ((itemPrice - threshold) / stepAmount).floor() + 1;
+      double unitFee = baseFee + ((steps - 1) * stepFee);
+      if (cap > 0 && unitFee > cap) {
+        unitFee = cap;
+      }
+      totalFee += unitFee * item.quantity;
     }
 
     return totalFee;
@@ -618,6 +622,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         .trim();
 
     final generatedOrderCode = 'ORD-${Random().nextInt(1000000)}';
+    final currentLargeOrderFee = _calculateLargeOrderFee(cart);
 
     final draftOrderData = {
       'orderId': generatedOrderCode,
@@ -647,8 +652,10 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       'items': items,
       'total': cart.totalPrice,
       'deliveryFee': _deliveryFee,
-      'largeOrderFee': _largeOrderFee,
-      'totalWithDelivery': cart.totalPrice + _deliveryFee + _largeOrderFee,
+      'largeOrderFee': currentLargeOrderFee,
+      'totalBeforeDiscount': cart.totalPrice + _deliveryFee + currentLargeOrderFee,
+      'totalWithDelivery':
+          cart.totalPrice + _deliveryFee + currentLargeOrderFee,
     };
 
     Navigator.pushReplacement(
@@ -830,7 +837,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       );
     }
     final total = cart.totalPrice;
-    final withDel = total + _deliveryFee + _largeOrderFee;
+    final displayLargeOrderFee = _calculateLargeOrderFee(cart);
+    final withDel = total + _deliveryFee + displayLargeOrderFee;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -852,9 +860,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
           ),
           automaticallyImplyLeading: true,
         ),
-        body: _loadingDelivery
-            ? const Center(child: CircularProgressIndicator())
-            : cart.cartItems.isEmpty
+        body: cart.cartItems.isEmpty
                 ? const Center(
                     child: Text('السلة فارغة',
                         style: TextStyle(fontSize: 18, color: Colors.grey)))
@@ -871,10 +877,15 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
               border: Border(top: BorderSide(color: Colors.grey))),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             _buildRow('قيمة الطلب', '${total.toStringAsFixed(2)} ج.س'),
-            _buildRow('رسوم التوصيل', '${_deliveryFee.toStringAsFixed(2)} ج.س'),
-            if (_largeOrderFee > 0)
+            _buildRow(
+              'رسوم التوصيل',
+              _loadingDelivery
+                  ? 'جاري الحساب...'
+                  : '${_deliveryFee.toStringAsFixed(2)} ج.س',
+            ),
+            if (displayLargeOrderFee > 0)
               _buildRow('رسوم الطلبات الكبيرة',
-                  '${_largeOrderFee.toStringAsFixed(2)} ج.س'),
+                  '${displayLargeOrderFee.toStringAsFixed(2)} ج.س'),
             const Divider(),
             _buildRow('الإجمالي النهائي', '${withDel.toStringAsFixed(2)} ج.س',
                 bold: true),
