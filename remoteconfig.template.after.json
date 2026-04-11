@@ -32,7 +32,7 @@
     },
     "client_min_build_android": {
       "defaultValue": {
-        "value": "8"
+        "value": "10"
       },
       "valueType": "NUMBER"
     },
