@@ -121,7 +121,7 @@ service cloud.firestore {
     }
 
     match /paymentSettings/{settingsId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || settingsId == 'default';
       allow create, update, delete: if isAdmin();
     }
 
@@ -152,7 +152,11 @@ service cloud.firestore {
     }
 
     match /restaurants/{restaurantId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn()
+        || (
+          resource.data.approvalStatus == 'approved'
+          && resource.data.menuEverApproved == true
+        );
       allow create: if isAdmin();
       allow update: if isAdmin() || isRestaurantOwner(restaurantId);
       allow delete: if isAdmin();
@@ -163,9 +167,12 @@ service cloud.firestore {
       }
 
       match /full_menu/{itemId} {
-        allow read: if isSignedIn()
-          && get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.approvalStatus == 'approved'
-          && get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.menuEverApproved == true;
+        allow read: if isAdmin()
+          || isRestaurantOwner(restaurantId)
+          || (
+            get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.approvalStatus == 'approved'
+            && get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.menuEverApproved == true
+          );
         allow write: if isAdmin() || isApprovedRestaurantOwner(restaurantId);
       }
       match /{document=**} {

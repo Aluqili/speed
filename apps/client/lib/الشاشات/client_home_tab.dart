@@ -1082,6 +1082,22 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   );
                 }
 
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                        'تعذر تحميل المطاعم حالياً. تحقق من الاتصال ثم حاول مرة أخرى.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: textColorSecondary,
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return Center(
                     child: Text(
