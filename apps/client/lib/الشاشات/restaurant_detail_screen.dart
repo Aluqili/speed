@@ -101,9 +101,16 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       return 'مطعم جديد';
     }
     if (_ratingCount > 0) {
-      return '${_ratingAverage!.toStringAsFixed(1)} من 5 · $_ratingCount تقييم';
+      return '${_formatRatingValue(_ratingAverage!)} · $_ratingCount تقييم';
     }
-    return '${_ratingAverage!.toStringAsFixed(1)} من 5';
+    return _formatRatingValue(_ratingAverage!);
+  }
+
+  String _formatRatingValue(double value) {
+    final normalized = value.toStringAsFixed(1);
+    return normalized.endsWith('.0')
+        ? normalized.substring(0, normalized.length - 2)
+        : normalized;
   }
 
   Map<String, dynamic> _resolveRestaurantStatus(Map<String, dynamic>? data) {

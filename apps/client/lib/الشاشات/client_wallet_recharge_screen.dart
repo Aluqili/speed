@@ -36,6 +36,8 @@ class _ClientWalletRechargeScreenState
   Map<String, String> _qrUrls = {};
   Map<String, String> _instructions = {};
   Map<String, String> _openUrls = {};
+  Map<String, String> _openUrlsAndroid = {};
+  Map<String, String> _openUrlsIos = {};
   List<String> _enabledMethods = const ['bankk', 'ocash', 'fawry'];
   bool _accountsLoading = true;
   final picker = ImagePicker();
@@ -78,6 +80,16 @@ class _ClientWalletRechargeScreenState
           'bankk': data['bankkInstructions'] ?? '',
           'ocash': data['ocashInstructions'] ?? '',
           'fawry': data['fawryInstructions'] ?? '',
+        };
+        _openUrlsAndroid = {
+          'bankk': data['bankkOpenUrlAndroid'] ?? '',
+          'ocash': data['ocashOpenUrlAndroid'] ?? '',
+          'fawry': data['fawryOpenUrlAndroid'] ?? '',
+        };
+        _openUrlsIos = {
+          'bankk': data['bankkOpenUrlIos'] ?? '',
+          'ocash': data['ocashOpenUrlIos'] ?? '',
+          'fawry': data['fawryOpenUrlIos'] ?? '',
         };
         _openUrls = {
           'bankk': data['bankkOpenUrl'] ?? '',
@@ -172,8 +184,13 @@ class _ClientWalletRechargeScreenState
   }
 
   Future<void> _launchPaymentApp() async {
-    final rawUrl = (_openUrls[_selectedMethod] ?? '').trim();
-    if (rawUrl.isEmpty) {
+    final candidates = <String>[
+      if (Platform.isAndroid) (_openUrlsAndroid[_selectedMethod] ?? '').trim(),
+      if (Platform.isIOS) (_openUrlsIos[_selectedMethod] ?? '').trim(),
+      (_openUrls[_selectedMethod] ?? '').trim(),
+    ].where((value) => value.isNotEmpty).toSet().toList();
+
+    if (candidates.isEmpty) {
       Get.snackbar(
         'تنبيه',
         'لا يوجد رابط فتح مباشر لهذه الطريقة حالياً.',
@@ -182,22 +199,25 @@ class _ClientWalletRechargeScreenState
       return;
     }
 
-    final uri = Uri.tryParse(rawUrl);
-    if (uri == null) {
-      Get.snackbar(
-        'خطأ',
-        'رابط فتح التطبيق غير صالح.',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
-      return;
+    var launched = false;
+    for (final rawUrl in candidates) {
+      final uri = Uri.tryParse(rawUrl);
+      if (uri == null) {
+        continue;
+      }
+      try {
+        launched = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+      } catch (_) {
+        launched = false;
+      }
+      if (launched) {
+        break;
+      }
     }
 
-    final launched = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
     if (!launched) {
       Get.snackbar(
         'تعذر الفتح',

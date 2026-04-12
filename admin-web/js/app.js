@@ -96,9 +96,21 @@ const fawryAccountHolderInput = document.getElementById('fawryAccountHolderInput
 const bankkQrUrlInput = document.getElementById('bankkQrUrlInput');
 const ocashQrUrlInput = document.getElementById('ocashQrUrlInput');
 const fawryQrUrlInput = document.getElementById('fawryQrUrlInput');
+const bankkQrFileInput = document.getElementById('bankkQrFileInput');
+const ocashQrFileInput = document.getElementById('ocashQrFileInput');
+const fawryQrFileInput = document.getElementById('fawryQrFileInput');
+const bankkQrPreview = document.getElementById('bankkQrPreview');
+const ocashQrPreview = document.getElementById('ocashQrPreview');
+const fawryQrPreview = document.getElementById('fawryQrPreview');
 const bankkInstructionsInput = document.getElementById('bankkInstructionsInput');
 const ocashInstructionsInput = document.getElementById('ocashInstructionsInput');
 const fawryInstructionsInput = document.getElementById('fawryInstructionsInput');
+const bankkOpenUrlAndroidInput = document.getElementById('bankkOpenUrlAndroidInput');
+const ocashOpenUrlAndroidInput = document.getElementById('ocashOpenUrlAndroidInput');
+const fawryOpenUrlAndroidInput = document.getElementById('fawryOpenUrlAndroidInput');
+const bankkOpenUrlIosInput = document.getElementById('bankkOpenUrlIosInput');
+const ocashOpenUrlIosInput = document.getElementById('ocashOpenUrlIosInput');
+const fawryOpenUrlIosInput = document.getElementById('fawryOpenUrlIosInput');
 const bankkOpenUrlInput = document.getElementById('bankkOpenUrlInput');
 const ocashOpenUrlInput = document.getElementById('ocashOpenUrlInput');
 const fawryOpenUrlInput = document.getElementById('fawryOpenUrlInput');
@@ -339,6 +351,47 @@ async function uploadImageToCloudinary(file) {
   } catch (_) {
     return null;
   }
+}
+
+function setQrPreview(img, src) {
+  if (!img) return;
+  const value = String(src || '').trim();
+  if (!value) {
+    img.hidden = true;
+    img.removeAttribute('src');
+    return;
+  }
+  img.src = value;
+  img.hidden = false;
+}
+
+function bindQrFilePreview(fileInput, previewImg) {
+  if (!fileInput || !previewImg || fileInput.dataset.previewBound === '1') {
+    return;
+  }
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files && fileInput.files.length ? fileInput.files[0] : null;
+    if (!file) return;
+    const objectUrl = URL.createObjectURL(file);
+    setQrPreview(previewImg, objectUrl);
+  });
+
+  fileInput.dataset.previewBound = '1';
+}
+
+async function resolveUploadedQrUrl({ fileInput, currentUrl, label }) {
+  const file = fileInput && fileInput.files && fileInput.files.length ? fileInput.files[0] : null;
+  if (!file) {
+    return String(currentUrl || '').trim();
+  }
+
+  const uploaded = await uploadImageToCloudinary(file);
+  if (!uploaded) {
+    throw new Error(`تعذر رفع صورة QR الخاصة بـ ${label}.`);
+  }
+
+  return uploaded;
 }
 
 function pickSingleImageFile() {
@@ -947,6 +1000,9 @@ function mountDashboard() {
 
 function mountFinance() {
   mountDiscountCodes();
+  bindQrFilePreview(bankkQrFileInput, bankkQrPreview);
+  bindQrFilePreview(ocashQrFileInput, ocashQrPreview);
+  bindQrFilePreview(fawryQrFileInput, fawryQrPreview);
 
   financeGrid.innerHTML = `
     <div class="stat"><h4>طلبات مدفوعة</h4><b id="paidOrders">...</b></div>
@@ -1031,32 +1087,56 @@ function mountFinance() {
         return;
       }
 
-      const payload = {
-        enabledMethods,
-        bankkAccount: String(bankkAccountInput?.value || '').trim(),
-        ocashAccount: String(ocashAccountInput?.value || '').trim(),
-        fawryAccount: String(fawryAccountInput?.value || '').trim(),
-        bankkAccountHolder: String(bankkAccountHolderInput?.value || '').trim(),
-        ocashAccountHolder: String(ocashAccountHolderInput?.value || '').trim(),
-        fawryAccountHolder: String(fawryAccountHolderInput?.value || '').trim(),
-        bankkQrUrl: String(bankkQrUrlInput?.value || '').trim(),
-        ocashQrUrl: String(ocashQrUrlInput?.value || '').trim(),
-        fawryQrUrl: String(fawryQrUrlInput?.value || '').trim(),
-        bankkInstructions: String(bankkInstructionsInput?.value || '').trim(),
-        ocashInstructions: String(ocashInstructionsInput?.value || '').trim(),
-        fawryInstructions: String(fawryInstructionsInput?.value || '').trim(),
-        bankkOpenUrl: String(bankkOpenUrlInput?.value || '').trim(),
-        ocashOpenUrl: String(ocashOpenUrlInput?.value || '').trim(),
-        fawryOpenUrl: String(fawryOpenUrlInput?.value || '').trim(),
-        updatedAt: serverTimestamp(),
-        updatedByAdminUid: auth.currentUser?.uid || '',
-      };
+      let bankkQrUrl = String(bankkQrUrlInput?.value || '').trim();
+      let ocashQrUrl = String(ocashQrUrlInput?.value || '').trim();
+      let fawryQrUrl = String(fawryQrUrlInput?.value || '').trim();
 
       if (savePaymentSettingsBtn) savePaymentSettingsBtn.disabled = true;
-      if (paymentSettingsResult) paymentSettingsResult.textContent = 'جارٍ حفظ الإعدادات...';
+      if (paymentSettingsResult) paymentSettingsResult.textContent = 'جارٍ رفع صور QR إن وجدت...';
 
       try {
+        bankkQrUrl = await resolveUploadedQrUrl({ fileInput: bankkQrFileInput, currentUrl: bankkQrUrl, label: 'بنكك' });
+        ocashQrUrl = await resolveUploadedQrUrl({ fileInput: ocashQrFileInput, currentUrl: ocashQrUrl, label: 'أوكاش' });
+        fawryQrUrl = await resolveUploadedQrUrl({ fileInput: fawryQrFileInput, currentUrl: fawryQrUrl, label: 'فوري' });
+
+        const payload = {
+          enabledMethods,
+          bankkAccount: String(bankkAccountInput?.value || '').trim(),
+          ocashAccount: String(ocashAccountInput?.value || '').trim(),
+          fawryAccount: String(fawryAccountInput?.value || '').trim(),
+          bankkAccountHolder: String(bankkAccountHolderInput?.value || '').trim(),
+          ocashAccountHolder: String(ocashAccountHolderInput?.value || '').trim(),
+          fawryAccountHolder: String(fawryAccountHolderInput?.value || '').trim(),
+          bankkQrUrl,
+          ocashQrUrl,
+          fawryQrUrl,
+          bankkInstructions: String(bankkInstructionsInput?.value || '').trim(),
+          ocashInstructions: String(ocashInstructionsInput?.value || '').trim(),
+          fawryInstructions: String(fawryInstructionsInput?.value || '').trim(),
+          bankkOpenUrlAndroid: String(bankkOpenUrlAndroidInput?.value || '').trim(),
+          ocashOpenUrlAndroid: String(ocashOpenUrlAndroidInput?.value || '').trim(),
+          fawryOpenUrlAndroid: String(fawryOpenUrlAndroidInput?.value || '').trim(),
+          bankkOpenUrlIos: String(bankkOpenUrlIosInput?.value || '').trim(),
+          ocashOpenUrlIos: String(ocashOpenUrlIosInput?.value || '').trim(),
+          fawryOpenUrlIos: String(fawryOpenUrlIosInput?.value || '').trim(),
+          bankkOpenUrl: String(bankkOpenUrlInput?.value || '').trim(),
+          ocashOpenUrl: String(ocashOpenUrlInput?.value || '').trim(),
+          fawryOpenUrl: String(fawryOpenUrlInput?.value || '').trim(),
+          updatedAt: serverTimestamp(),
+          updatedByAdminUid: auth.currentUser?.uid || '',
+        };
+
+        if (paymentSettingsResult) paymentSettingsResult.textContent = 'جارٍ حفظ الإعدادات...';
         await setDoc(doc(db, 'paymentSettings', 'default'), payload, { merge: true });
+        if (bankkQrUrlInput) bankkQrUrlInput.value = bankkQrUrl;
+        if (ocashQrUrlInput) ocashQrUrlInput.value = ocashQrUrl;
+        if (fawryQrUrlInput) fawryQrUrlInput.value = fawryQrUrl;
+        setQrPreview(bankkQrPreview, bankkQrUrl);
+        setQrPreview(ocashQrPreview, ocashQrUrl);
+        setQrPreview(fawryQrPreview, fawryQrUrl);
+        if (bankkQrFileInput) bankkQrFileInput.value = '';
+        if (ocashQrFileInput) ocashQrFileInput.value = '';
+        if (fawryQrFileInput) fawryQrFileInput.value = '';
         if (paymentSettingsResult) {
           paymentSettingsResult.textContent = '✅ تم حفظ إعدادات الدفع بنجاح.';
         }
@@ -1090,9 +1170,18 @@ function mountFinance() {
       if (bankkQrUrlInput) bankkQrUrlInput.value = String(data.bankkQrUrl || '');
       if (ocashQrUrlInput) ocashQrUrlInput.value = String(data.ocashQrUrl || '');
       if (fawryQrUrlInput) fawryQrUrlInput.value = String(data.fawryQrUrl || '');
+      setQrPreview(bankkQrPreview, String(data.bankkQrUrl || ''));
+      setQrPreview(ocashQrPreview, String(data.ocashQrUrl || ''));
+      setQrPreview(fawryQrPreview, String(data.fawryQrUrl || ''));
       if (bankkInstructionsInput) bankkInstructionsInput.value = String(data.bankkInstructions || '');
       if (ocashInstructionsInput) ocashInstructionsInput.value = String(data.ocashInstructions || '');
       if (fawryInstructionsInput) fawryInstructionsInput.value = String(data.fawryInstructions || '');
+      if (bankkOpenUrlAndroidInput) bankkOpenUrlAndroidInput.value = String(data.bankkOpenUrlAndroid || '');
+      if (ocashOpenUrlAndroidInput) ocashOpenUrlAndroidInput.value = String(data.ocashOpenUrlAndroid || '');
+      if (fawryOpenUrlAndroidInput) fawryOpenUrlAndroidInput.value = String(data.fawryOpenUrlAndroid || '');
+      if (bankkOpenUrlIosInput) bankkOpenUrlIosInput.value = String(data.bankkOpenUrlIos || '');
+      if (ocashOpenUrlIosInput) ocashOpenUrlIosInput.value = String(data.ocashOpenUrlIos || '');
+      if (fawryOpenUrlIosInput) fawryOpenUrlIosInput.value = String(data.fawryOpenUrlIos || '');
       if (bankkOpenUrlInput) bankkOpenUrlInput.value = String(data.bankkOpenUrl || '');
       if (ocashOpenUrlInput) ocashOpenUrlInput.value = String(data.ocashOpenUrl || '');
       if (fawryOpenUrlInput) fawryOpenUrlInput.value = String(data.fawryOpenUrl || '');

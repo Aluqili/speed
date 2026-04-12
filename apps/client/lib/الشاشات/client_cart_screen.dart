@@ -407,6 +407,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         builder: (_) => const LoginScreenArabic(
           allowRegister: true,
           allowGoogleSignIn: false,
+          allowPhoneSignIn: false,
           allowGuestSignIn: false,
         ),
       ),

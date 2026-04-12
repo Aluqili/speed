@@ -50,6 +50,8 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
   String? _saveWarning;
   final Color primaryColor = AppThemeArabic.clientPrimary;
 
+  bool get _isQuickLocationPicker => widget.resultOnly;
+
   @override
   void initState() {
     super.initState();
@@ -66,7 +68,11 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
       );
       _locationSelected = true;
     }
-    // منع الحفظ إلا بعد 10 ثوانٍ
+    if (_isQuickLocationPicker) {
+      _canSave = true;
+      _firstSaveAttempt = false;
+      return;
+    }
     Future.delayed(const Duration(seconds: 10), () {
       if (!mounted) return;
       setState(() {
@@ -200,7 +206,7 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
 
   Future<void> _saveAddress() async {
     if (!_canSave) return;
-    if (_firstSaveAttempt) {
+    if (_firstSaveAttempt && !_isQuickLocationPicker) {
       if (!mounted) return;
       setState(() {
         _saveWarning = 'تأكد من صحة العنوان واضغط مرة أخرى للحفظ';
@@ -208,10 +214,10 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
       });
       return;
     }
-    if (selectedLocation == null || _addressNameController.text.isEmpty) {
+    if (selectedLocation == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يرجى اختيار الموقع وكتابة اسم العنوان')),
+        const SnackBar(content: Text('يرجى اختيار الموقع على الخريطة')),
       );
       return;
     }
@@ -225,8 +231,12 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
       final city = geoMeta['city'] ?? 'غير معروف';
       final administrativeArea = geoMeta['administrativeArea'] ?? '';
       final stateId = geoMeta['stateId'] ?? '';
+      final trimmedName = _addressNameController.text.trim();
+      final addressName = trimmedName.isNotEmpty
+          ? trimmedName
+          : (city != 'غير معروف' ? 'موقع التوصيل - $city' : 'موقع التوصيل');
       final addressData = {
-        'addressName': _addressNameController.text,
+        'addressName': addressName,
         'latitude': selectedLocation!.latitude,
         'longitude': selectedLocation!.longitude,
         'city': city,
@@ -241,7 +251,7 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
           const SnackBar(content: Text('تم اختيار الموقع بنجاح ✅')),
         );
         Navigator.pop(context, {
-          'addressName': _addressNameController.text,
+          'addressName': addressName,
           'latitude': selectedLocation!.latitude,
           'longitude': selectedLocation!.longitude,
           'city': city,
@@ -292,7 +302,7 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
         const SnackBar(content: Text('تم حفظ العنوان بنجاح ✅')),
       );
       final savedAddress = {
-        'addressName': _addressNameController.text,
+        'addressName': addressName,
         'latitude': selectedLocation!.latitude,
         'longitude': selectedLocation!.longitude,
       };
@@ -399,15 +409,20 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
                 children: [
                   if (!_locationSelected)
                     Row(
-                      children: const [
-                        Icon(Icons.info, color: Colors.orange),
-                        SizedBox(width: 8),
+                      children: [
+                        const Icon(Icons.info, color: Colors.orange),
+                        const SizedBox(width: 8),
                         Expanded(
-                            child: Text(
-                                'يرجى الضغط على زر تحديد الموقع على الخريطة قبل الحفظ',
-                                style: TextStyle(
-                                    color: Colors.orange,
-                                    fontWeight: FontWeight.bold))),
+                          child: Text(
+                            _isQuickLocationPicker
+                                ? 'اختر نقطة على الخريطة ثم اضغط حفظ الموقع'
+                                : 'يرجى الضغط على زر تحديد الموقع على الخريطة قبل الحفظ',
+                            style: const TextStyle(
+                              color: Colors.orange,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   if (_saveWarning != null)
@@ -417,18 +432,19 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
                           style: const TextStyle(
                               color: Colors.red, fontWeight: FontWeight.bold)),
                     ),
-                  TextField(
-                    controller: _addressNameController,
-                    decoration: InputDecoration(
-                      labelText: 'اسم العنوان (مثلاً منزل، مكتب...)',
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
+                  if (!_isQuickLocationPicker)
+                    TextField(
+                      controller: _addressNameController,
+                      decoration: InputDecoration(
+                        labelText: 'اسم العنوان (مثلاً منزل، مكتب...)',
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
-                  ),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,

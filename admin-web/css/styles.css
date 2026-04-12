@@ -112,6 +112,26 @@ textarea {
   resize: vertical;
 }
 
+.field-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.qr-preview {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  max-height: 220px;
+  margin-top: 10px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: #fff;
+  object-fit: contain;
+  padding: 8px;
+}
+
 .btn {
   border: 0;
   border-radius: 10px;

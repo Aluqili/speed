@@ -1112,6 +1112,15 @@ exports.submitOrderRatings = onCall({ region: REGION }, async (request) => {
       throw new HttpsError('not-found', 'المطعم المرتبط بالطلب غير موجود.');
     }
 
+    let driverRef = null;
+    let driverReviewRef = null;
+    let driverSnap = null;
+    if (driverId && courierRating != null) {
+      driverRef = db.collection('drivers').doc(driverId);
+      driverReviewRef = driverRef.collection('reviews').doc(orderId);
+      driverSnap = await tx.get(driverRef);
+    }
+
     const restaurantData = restaurantSnap.data() || {};
     const restaurantRatingCount = Number(
       restaurantData.ratingCount
@@ -1161,11 +1170,7 @@ exports.submitOrderRatings = onCall({ region: REGION }, async (request) => {
     let nextCourierAverage = null;
     let nextCourierCount = 0;
 
-    if (driverId && courierRating != null) {
-      const driverRef = db.collection('drivers').doc(driverId);
-      const driverReviewRef = driverRef.collection('reviews').doc(orderId);
-      const driverSnap = await tx.get(driverRef);
-      if (driverSnap.exists) {
+    if (driverSnap?.exists) {
         const driverData = driverSnap.data() || {};
         const courierRatingCount = Number(
           driverData.deliveryRatingCount
@@ -1199,7 +1204,6 @@ exports.submitOrderRatings = onCall({ region: REGION }, async (request) => {
           createdAt: nowTs,
           updatedAt: nowTs,
         }, { merge: true });
-      }
     }
 
     return {

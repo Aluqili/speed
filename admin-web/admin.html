@@ -138,12 +138,26 @@
                 <input id="bankkQrUrlInput" type="url" placeholder="https://..." />
               </label>
               <label>
+                رفع صورة QR بنكك
+                <input id="bankkQrFileInput" type="file" accept="image/*" />
+                <span class="field-hint">اختياري: ارفع صورة الرمز مباشرة وسيتم حفظ رابطها تلقائيًا عند الحفظ.</span>
+                <img id="bankkQrPreview" class="qr-preview" alt="معاينة QR بنكك" hidden />
+              </label>
+              <label>
                 تعليمات بنكك
                 <textarea id="bankkInstructionsInput" rows="3" placeholder="تعليمات إضافية للعميل عند الدفع عبر بنكك"></textarea>
               </label>
               <label>
-                رابط فتح تطبيق بنكك
-                <input id="bankkOpenUrlInput" type="text" placeholder="bankak://... أو https://..." />
+                رابط فتح بنكك على Android
+                <input id="bankkOpenUrlAndroidInput" type="text" placeholder="bankak:// أو intent://..." />
+              </label>
+              <label>
+                رابط فتح بنكك على iOS
+                <input id="bankkOpenUrlIosInput" type="text" placeholder="bankak:// أو universal link" />
+              </label>
+              <label>
+                رابط بديل لبنكك
+                <input id="bankkOpenUrlInput" type="text" placeholder="رابط متجر أو موقع إذا لم يفتح التطبيق" />
               </label>
 
               <label class="payment-method-row">
@@ -163,12 +177,26 @@
                 <input id="ocashQrUrlInput" type="url" placeholder="https://..." />
               </label>
               <label>
+                رفع صورة QR أوكاش
+                <input id="ocashQrFileInput" type="file" accept="image/*" />
+                <span class="field-hint">اختياري: ارفع صورة الرمز مباشرة وسيتم حفظ رابطها تلقائيًا عند الحفظ.</span>
+                <img id="ocashQrPreview" class="qr-preview" alt="معاينة QR أوكاش" hidden />
+              </label>
+              <label>
                 تعليمات أوكاش
                 <textarea id="ocashInstructionsInput" rows="3" placeholder="تعليمات إضافية للعميل عند الدفع عبر أوكاش"></textarea>
               </label>
               <label>
-                رابط فتح تطبيق أوكاش
-                <input id="ocashOpenUrlInput" type="text" placeholder="ocash://... أو https://..." />
+                رابط فتح أوكاش على Android
+                <input id="ocashOpenUrlAndroidInput" type="text" placeholder="ocash:// أو intent://..." />
+              </label>
+              <label>
+                رابط فتح أوكاش على iOS
+                <input id="ocashOpenUrlIosInput" type="text" placeholder="ocash:// أو universal link" />
+              </label>
+              <label>
+                رابط بديل لأوكاش
+                <input id="ocashOpenUrlInput" type="text" placeholder="رابط متجر أو موقع إذا لم يفتح التطبيق" />
               </label>
 
               <label class="payment-method-row">
@@ -188,12 +216,26 @@
                 <input id="fawryQrUrlInput" type="url" placeholder="https://..." />
               </label>
               <label>
+                رفع صورة QR فوري
+                <input id="fawryQrFileInput" type="file" accept="image/*" />
+                <span class="field-hint">اختياري: ارفع صورة الرمز مباشرة وسيتم حفظ رابطها تلقائيًا عند الحفظ.</span>
+                <img id="fawryQrPreview" class="qr-preview" alt="معاينة QR فوري" hidden />
+              </label>
+              <label>
                 تعليمات فوري
                 <textarea id="fawryInstructionsInput" rows="3" placeholder="تعليمات إضافية للعميل عند الدفع عبر فوري"></textarea>
               </label>
               <label>
-                رابط فتح تطبيق فوري
-                <input id="fawryOpenUrlInput" type="text" placeholder="fawry://... أو https://..." />
+                رابط فتح فوري على Android
+                <input id="fawryOpenUrlAndroidInput" type="text" placeholder="fawry:// أو intent://..." />
+              </label>
+              <label>
+                رابط فتح فوري على iOS
+                <input id="fawryOpenUrlIosInput" type="text" placeholder="fawry:// أو universal link" />
+              </label>
+              <label>
+                رابط بديل لفوري
+                <input id="fawryOpenUrlInput" type="text" placeholder="رابط متجر أو موقع إذا لم يفتح التطبيق" />
               </label>
 
               <button id="savePaymentSettingsBtn" type="submit" class="btn primary">حفظ إعدادات الدفع</button>

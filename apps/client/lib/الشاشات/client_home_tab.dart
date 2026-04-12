@@ -45,13 +45,17 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
   String? _clientStateId;
   bool _addressStateResolved = false;
   bool _isAddressScreenOpening = false;
+  bool _didAttemptInitialLocationSelection = false;
+  bool _initialLocationSelectionDismissed = false;
   final List<String> _recentSearches = [];
   String? _selectedMealCategory;
   final PageController _featuredMealsController =
       PageController(viewportFraction: 0.9);
+  final ValueNotifier<int> _featuredMealsPageNotifier = ValueNotifier<int>(0);
   Timer? _featuredMealsTimer;
+  Future<List<Map<String, dynamic>>>? _cachedMealsFuture;
+  String _cachedMealsKey = '';
   int _featuredMealsCount = 0;
-  int _featuredMealsPage = 0;
   static const double _defaultFallbackVisibleDistanceKm = 120;
   static const List<String> _globalMealCategoryOrder = [
     'الوجبات الرئيسية',
@@ -92,6 +96,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
   void dispose() {
     _featuredMealsTimer?.cancel();
     _featuredMealsController.dispose();
+    _featuredMealsPageNotifier.dispose();
     super.dispose();
   }
 
@@ -153,7 +158,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
 
     _featuredMealsCount = count;
     _featuredMealsTimer?.cancel();
-    _featuredMealsPage = 0;
+    _featuredMealsPageNotifier.value = 0;
 
     if (_featuredMealsController.hasClients) {
       _featuredMealsController.jumpToPage(0);
@@ -167,9 +172,10 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       if (!mounted || !_featuredMealsController.hasClients || count <= 1) {
         return;
       }
-      _featuredMealsPage = (_featuredMealsPage + 1) % count;
+      final nextPage = (_featuredMealsPageNotifier.value + 1) % count;
+      _featuredMealsPageNotifier.value = nextPage;
       _featuredMealsController.animateToPage(
-        _featuredMealsPage,
+        nextPage,
         duration: const Duration(milliseconds: 550),
         curve: Curves.easeOutCubic,
       );
@@ -273,6 +279,52 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       _clientLongitude = guestLocation.longitude;
       _clientStateId = guestLocation.stateId;
       _addressStateResolved = true;
+    });
+  }
+
+  Future<void> _openInitialMapPickerIfNeeded() async {
+    if (!_addressStateResolved) return;
+    if (_clientLatitude != null && _clientLongitude != null) return;
+    if (_isAddressScreenOpening || _didAttemptInitialLocationSelection) return;
+    if (!mounted) return;
+
+    _didAttemptInitialLocationSelection = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      _isAddressScreenOpening = true;
+      try {
+        final selected = await Navigator.push<Map<String, dynamic>>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AddNewAddressScreen(
+              userId: widget.clientId.isEmpty ? 'guest' : widget.clientId,
+              userType: 'client',
+              existingName: _currentDisplayedLocation,
+              existingLatitude: _clientLatitude,
+              existingLongitude: _clientLongitude,
+              resultOnly: true,
+              customTitle: 'حدد موقع التوصيل',
+              customSaveLabel: 'حفظ الموقع',
+            ),
+          ),
+        );
+
+        if (selected == null) {
+          if (!mounted) return;
+          setState(() {
+            _initialLocationSelectionDismissed = true;
+          });
+          return;
+        }
+
+        await _saveGuestLocationFromSelection(selected);
+        if (!mounted) return;
+        setState(() {
+          _initialLocationSelectionDismissed = false;
+        });
+      } finally {
+        _isAddressScreenOpening = false;
+      }
     });
   }
 
@@ -431,6 +483,22 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     return allMeals;
   }
 
+  Future<List<Map<String, dynamic>>> _resolveMealsFuture(
+    List<Map<String, dynamic>> restaurants,
+  ) {
+    final ids = restaurants
+        .map((restaurant) => (restaurant['id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toList()
+      ..sort();
+    final nextKey = ids.join('|');
+    if (_cachedMealsFuture == null || _cachedMealsKey != nextKey) {
+      _cachedMealsKey = nextKey;
+      _cachedMealsFuture = fetchAllMeals(restaurants);
+    }
+    return _cachedMealsFuture!;
+  }
+
   // مراقبة حذف جميع العناوين أثناء الاستخدام
   Stream<bool> get _hasNoAddressesStream {
     if (_isGuest) {
@@ -508,6 +576,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         builder: (_) => const LoginScreenArabic(
           allowRegister: true,
           allowGoogleSignIn: false,
+          allowPhoneSignIn: false,
           allowGuestSignIn: false,
         ),
       ),
@@ -571,23 +640,14 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         longitude: position.longitude,
       );
 
-      await GuestLocationService.save(
-        GuestLocationData(
-          addressName: addressName,
-          latitude: position.latitude,
-          longitude: position.longitude,
-          stateId: stateId,
-        ),
+      await _persistBrowsingLocation(
+        addressName: addressName,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        stateId: stateId,
+        city: rawState,
+        administrativeArea: rawState,
       );
-
-      if (!mounted) return;
-      setState(() {
-        _currentDisplayedLocation = addressName;
-        _clientLatitude = position.latitude;
-        _clientLongitude = position.longitude;
-        _clientStateId = stateId;
-        _addressStateResolved = true;
-      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم تحديث موقع التصفح بنجاح')),
       );
@@ -597,6 +657,68 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         SnackBar(content: Text('تعذر تحديد الموقع: $e')),
       );
     }
+  }
+
+  Future<void> _persistBrowsingLocation({
+    required String addressName,
+    required double latitude,
+    required double longitude,
+    required String stateId,
+    String? city,
+    String? state,
+    String? administrativeArea,
+  }) async {
+    final normalizedAddressName =
+        addressName.trim().isEmpty ? 'موقع محدد يدويًا' : addressName.trim();
+
+    if (_isGuest) {
+      await GuestLocationService.save(
+        GuestLocationData(
+          addressName: normalizedAddressName,
+          latitude: latitude,
+          longitude: longitude,
+          stateId: stateId,
+        ),
+      );
+    } else {
+      final userDocRef =
+          FirebaseFirestore.instance.collection('clients').doc(widget.clientId);
+      final addressDocRef =
+          userDocRef.collection('addresses').doc('quick_browsing_location');
+
+      await userDocRef.set({
+        'uid': widget.clientId,
+        'role': 'client',
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await addressDocRef.set({
+        'addressName': normalizedAddressName,
+        'latitude': latitude,
+        'longitude': longitude,
+        'city': (city ?? '').toString().trim(),
+        'state': (state ?? city ?? '').toString().trim(),
+        'administrativeArea': (administrativeArea ?? '').toString().trim(),
+        'stateId': stateId,
+        'isQuickBrowsingLocation': true,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await userDocRef.set({
+        'defaultAddressId': addressDocRef.id,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _currentDisplayedLocation = normalizedAddressName;
+      _clientLatitude = latitude;
+      _clientLongitude = longitude;
+      _clientStateId = stateId;
+      _addressStateResolved = true;
+    });
   }
 
   Future<void> _saveGuestLocationFromSelection(
@@ -620,24 +742,16 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       longitude: longitude,
     );
 
-    await GuestLocationService.save(
-      GuestLocationData(
-        addressName: addressName.isEmpty ? 'موقع محدد يدويًا' : addressName,
-        latitude: latitude,
-        longitude: longitude,
-        stateId: stateId,
-      ),
+    await _persistBrowsingLocation(
+      addressName: addressName,
+      latitude: latitude,
+      longitude: longitude,
+      stateId: stateId,
+      city: (selectedLocation['city'] ?? '').toString(),
+      state: (selectedLocation['state'] ?? '').toString(),
+      administrativeArea:
+          (selectedLocation['administrativeArea'] ?? '').toString(),
     );
-
-    if (!mounted) return;
-    setState(() {
-      _currentDisplayedLocation =
-          addressName.isEmpty ? 'موقع محدد يدويًا' : addressName;
-      _clientLatitude = latitude;
-      _clientLongitude = longitude;
-      _clientStateId = stateId;
-      _addressStateResolved = true;
-    });
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('تم تحديث موقع التصفح من الخريطة')),
@@ -645,6 +759,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
   }
 
   Future<void> _pickTemporaryLocationFromMap() async {
+    _didAttemptInitialLocationSelection = true;
     final selected = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
@@ -656,16 +771,25 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           existingLongitude: _clientLongitude,
           resultOnly: true,
           customTitle: 'تحديد الموقع على الخريطة',
-          customSaveLabel: 'اعتماد هذا الموقع',
+          customSaveLabel: 'حفظ الموقع',
         ),
       ),
     );
 
     if (selected == null) {
+      if (mounted) {
+        setState(() {
+          _initialLocationSelectionDismissed = true;
+        });
+      }
       return;
     }
 
     await _saveGuestLocationFromSelection(selected);
+    if (!mounted) return;
+    setState(() {
+      _initialLocationSelectionDismissed = false;
+    });
   }
 
   Future<void> _showGuestLocationOptions() async {
@@ -753,7 +877,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 460),
+              constraints: const BoxConstraints(maxWidth: 360),
               child: Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
@@ -771,78 +895,49 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const CircleAvatar(
-                      radius: 34,
+                      radius: 30,
                       backgroundColor: Color(0xFFFFF0E8),
                       child: Icon(
-                        Icons.my_location_rounded,
+                        Icons.map_rounded,
                         color: primaryColor,
-                        size: 34,
+                        size: 30,
                       ),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 16),
                     Text(
-                      _isGuest
-                          ? 'حدد موقع التوصيل لتظهر لك المطاعم المناسبة'
-                          : 'حدد موقعك أو اختر عنوانًا أو نقطة من الخريطة للمتابعة',
+                      _initialLocationSelectionDismissed
+                          ? 'حدد موقعك من الخريطة'
+                          : 'جاري فتح الخريطة لتحديد موقعك',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                        fontSize: 21,
+                        fontSize: 20,
                         fontWeight: FontWeight.w800,
                         color: textColorPrimary,
                       ),
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      _isGuest
-                          ? 'لن نطلب إنشاء حساب الآن. يمكنك استخدام GPS أو تحديد نقطة يدويًا على الخريطة لنعرض المطاعم القريبة منك.'
-                          : 'يمكنك التصفح باستخدام موقعك الحالي، أو اختيار عنوان محفوظ، أو تحديد نقطة يدويًا على الخريطة.',
+                      _initialLocationSelectionDismissed
+                          ? 'اختر نقطة التوصيل واضغط حفظ، ثم ستظهر لك المطاعم مباشرة.'
+                          : 'بعد حفظ الموقع سنعرض المطاعم المناسبة مباشرة.',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: textColorSecondary,
                         height: 1.6,
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: _pickTemporaryLocation,
-                        icon: const Icon(Icons.near_me_rounded),
-                        label: const Text('استخدام موقعي الحالي'),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _pickTemporaryLocationFromMap,
-                        icon: const Icon(Icons.map_rounded),
-                        label: const Text('اختيار يدوي من الخريطة'),
-                      ),
-                    ),
-                    if (!_isGuest) ...[
-                      const SizedBox(height: 10),
+                    const SizedBox(height: 18),
+                    if (!_initialLocationSelectionDismissed)
+                      const CircularProgressIndicator(color: primaryColor),
+                    if (_initialLocationSelectionDismissed)
                       SizedBox(
                         width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () async {
-                            await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => AddressSelectionScreen(
-                                  userId: widget.clientId,
-                                  userType: 'client',
-                                  isSelecting: true,
-                                ),
-                              ),
-                            );
-                            await _refreshDefaultAddress();
-                          },
-                          icon: const Icon(Icons.location_on_outlined),
-                          label: const Text('اختيار عنوان محفوظ'),
+                        child: FilledButton.icon(
+                          onPressed: _pickTemporaryLocationFromMap,
+                          icon: const Icon(Icons.map_rounded),
+                          label: const Text('فتح الخريطة'),
                         ),
                       ),
-                    ],
                   ],
                 ),
               ),
@@ -921,9 +1016,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     return StreamBuilder<bool>(
       stream: _hasNoAddressesStream,
       builder: (context, snapshot) {
-        if (snapshot.hasData && snapshot.data == true) {
-          return _buildLocationRequiredState();
-        }
         if (_isStateRolloutEnabled && !_addressStateResolved) {
           return const Directionality(
             textDirection: TextDirection.rtl,
@@ -934,6 +1026,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         }
 
         if (_clientLatitude == null || _clientLongitude == null) {
+          _openInitialMapPickerIfNeeded();
           return _buildLocationRequiredState();
         }
 
@@ -1016,18 +1109,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                 }).where((restaurant) {
                   return restaurant['menuApproved'] != false;
                 }).where((restaurant) {
-                  final clientState = _clientStateId;
-                  if (clientState == null || clientState.isEmpty) {
-                    return true;
-                  }
-                  final restaurantState =
-                      (restaurant['stateId'] as String?)?.trim() ?? '';
-                  if (restaurantState.isEmpty) {
-                    final distanceKm = restaurant['distanceKm'] as double?;
-                    return distanceKm != null &&
-                        distanceKm <= _fallbackVisibleDistanceKm;
-                  }
-                  return restaurantState == clientState;
+                  return _shouldShowRestaurantForClient(restaurant);
                 }).toList();
 
                 restaurants.sort((a, b) {
@@ -1039,7 +1121,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   return da.compareTo(db);
                 });
 
-                final mealsFuture = fetchAllMeals(restaurants);
+                final mealsFuture = _resolveMealsFuture(restaurants);
 
                 return SafeArea(
                   child: CustomScrollView(
@@ -1428,14 +1510,31 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
 
     _rememberSearch((selected['label'] ?? '').toString());
     final restaurant = selected['restaurant'] as Map<String, dynamic>?;
-    if (restaurant != null) {
-      _openRestaurantDetail(context, restaurant);
+    final restaurantId = (restaurant?['id'] ?? '').toString().trim();
+    if (restaurant != null && restaurantId.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        Navigator.of(context, rootNavigator: true).push(
+          MaterialPageRoute(
+            builder: (_) => RestaurantDetailScreen(
+              restaurantId: restaurantId,
+              name: restaurant['name']?.toString() ?? '',
+              image: restaurant['image']?.toString() ?? '',
+              offers: restaurant['offers']?.toString() ?? '',
+              clientId: widget.clientId,
+            ),
+          ),
+        );
+      });
     }
   }
 
   Widget _buildSectionHeader(IconData icon, String title, Color color) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.start, // محاذاة لليمين العربي
+      mainAxisSize: MainAxisSize.min,
+      textDirection: TextDirection.rtl,
       children: [
         Icon(icon, color: primaryColor, size: 24),
         const SizedBox(width: 8),
@@ -1468,6 +1567,29 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       ),
       child: Row(
         children: [
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _buildSectionHeader(Icons.local_fire_department_rounded,
+                      'عروضنا لك', textColorPrimary),
+                  const SizedBox(height: 4),
+                  Text(
+                    'اختيارات سريعة من المطاعم الأقرب والأكثر جاذبية',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: textColorSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
@@ -1483,24 +1605,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
               ),
             ),
           ),
-          const Spacer(),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _buildSectionHeader(Icons.local_fire_department_rounded,
-                  'عروضنا لك', textColorPrimary),
-              const SizedBox(height: 4),
-              Text(
-                'اختيارات سريعة من المطاعم الأقرب والأكثر جاذبية',
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  color: textColorSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );
@@ -1511,6 +1615,32 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       padding: const EdgeInsets.only(top: 6),
       child: Row(
         children: [
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _buildSectionHeader(
+                    Icons.storefront_rounded,
+                    'المطاعم',
+                    textColorPrimary,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'المطاعم القريبة والمتاحة للطلب',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: textColorSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
@@ -1526,27 +1656,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                 fontSize: 12,
               ),
             ),
-          ),
-          const Spacer(),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _buildSectionHeader(
-                Icons.storefront_rounded,
-                'المطاعم',
-                textColorPrimary,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'واجهة أنظف للمطاعم القريبة والمتاحة للطلب',
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  color: textColorSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -1713,9 +1822,32 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
             children: [
               Row(
                 children: [
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          _buildSectionHeader(Icons.grid_view_rounded,
+                              'تصفح الأصناف', textColorPrimary),
+                          const SizedBox(height: 4),
+                          Text(
+                            'تصفح كامل للأصناف من زر واحد.',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              color: textColorSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
                   TextButton.icon(
                     onPressed: () {
-                      _showCategoryMealsSheet(context, selected, selectedMeals);
+                      _showBrowseCategoriesSheet(context, allMeals, selected);
                     },
                     style: TextButton.styleFrom(
                       foregroundColor: primaryColor,
@@ -1725,25 +1857,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                       ),
                     ),
                     icon: const Icon(Icons.open_in_full_rounded, size: 18),
-                    label: const Text('عرض كل العناصر'),
-                  ),
-                  const Spacer(),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      _buildSectionHeader(Icons.grid_view_rounded,
-                          'تصفح الأصناف', textColorPrimary),
-                      const SizedBox(height: 4),
-                      Text(
-                        'اختر الصنف وستظهر عناصره مباشرة أسفل القسم',
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                          color: textColorSecondary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+                    label: const Text('تصفح الأصناف'),
                   ),
                 ],
               ),
@@ -1760,7 +1874,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: _buildCategoryStatCard(
-                      label: 'عناصر',
+                      label: 'أطباق',
                       value: selectedMeals.length.toString(),
                       icon: Icons.fastfood_rounded,
                     ),
@@ -1776,59 +1890,26 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                 ],
               ),
               const SizedBox(height: 14),
-              Wrap(
-                alignment: WrapAlignment.end,
-                runSpacing: 10,
-                spacing: 10,
-                children: categories.map((category) {
-                  final isSelected = category == selected;
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedMealCategory = category;
-                        _featuredMealsPage = 0;
-                      });
-                      if (_featuredMealsController.hasClients) {
-                        _featuredMealsController.jumpToPage(0);
-                      }
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 220),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            isSelected ? primaryColor : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: isSelected
-                              ? primaryColor
-                              : Colors.grey.withOpacity(0.18),
-                        ),
-                        boxShadow: isSelected
-                            ? [
-                                BoxShadow(
-                                  color: primaryColor.withOpacity(0.22),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 8),
-                                ),
-                              ]
-                            : const [],
-                      ),
-                      child: Text(
-                        category,
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                          color: isSelected ? Colors.white : textColorPrimary,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                        ),
-                      ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: primaryColor.withOpacity(0.08)),
+                  ),
+                  child: Text(
+                    'الصنف الحالي: $selected',
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: textColorPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
                     ),
-                  );
-                }).toList(),
+                  ),
+                ),
               ),
               if (featuredMeals.isNotEmpty) ...[
                 const SizedBox(height: 18),
@@ -1836,12 +1917,10 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   height: 210,
                   child: PageView.builder(
                     controller: _featuredMealsController,
+                    reverse: true,
                     itemCount: featuredMeals.length,
                     onPageChanged: (page) {
-                      if (!mounted) return;
-                      setState(() {
-                        _featuredMealsPage = page;
-                      });
+                      _featuredMealsPageNotifier.value = page;
                     },
                     itemBuilder: (context, index) {
                       return _buildFeaturedMealCard(
@@ -1851,53 +1930,218 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                 ),
                 if (featuredMeals.length > 1) ...[
                   const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(featuredMeals.length, (index) {
-                      final isActive = index == _featuredMealsPage;
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
-                        width: isActive ? 22 : 8,
-                        height: 8,
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? primaryColor
-                              : primaryColor.withOpacity(0.18),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      );
-                    }),
+                  ValueListenableBuilder<int>(
+                    valueListenable: _featuredMealsPageNotifier,
+                    builder: (context, featuredMealsPage, _) => Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(featuredMeals.length, (index) {
+                        final isActive = index == featuredMealsPage;
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+                          width: isActive ? 22 : 8,
+                          height: 8,
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          decoration: BoxDecoration(
+                            color: isActive
+                                ? primaryColor
+                                : primaryColor.withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        );
+                      }),
+                    ),
                   ),
                 ],
               ],
-              if (previewMeals.isNotEmpty) ...[
-                const SizedBox(height: 18),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 240),
-                  child: GridView.builder(
-                    key: ValueKey<String>(selected),
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: previewMeals.length,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.96,
-                    ),
-                    itemBuilder: (context, index) {
-                      return _buildCompactMealCard(
-                          context, previewMeals[index]);
-                    },
+              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'لعرض كل الأصناف أو اختيار صنف محدد، اضغط على تصفح الأصناف.',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    color: textColorSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              ],
+              ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _showBrowseCategoriesSheet(
+    BuildContext context,
+    List<Map<String, dynamic>> allMeals,
+    String initialCategory,
+  ) async {
+    final categories = _extractMealCategories(allMeals);
+    if (categories.isEmpty) {
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        String selectedCategory = categories.contains(initialCategory)
+            ? initialCategory
+            : categories.first;
+
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final selectedMeals = _mealsForCategory(allMeals, selectedCategory);
+
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: Container(
+                height: MediaQuery.of(sheetContext).size.height * 0.86,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 56,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  _buildSectionHeader(
+                                    Icons.grid_view_rounded,
+                                    'تصفح الأصناف',
+                                    textColorPrimary,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'اختر صنفًا ثم تصفح عناصره مباشرة.',
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      color: textColorSecondary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            '${selectedMeals.length} عنصر',
+                            style: TextStyle(color: textColorSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      height: 54,
+                      child: ListView.separated(
+                        reverse: true,
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: categories.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final category = categories[index];
+                          final isSelected = category == selectedCategory;
+                          return GestureDetector(
+                            onTap: () {
+                              setSheetState(() {
+                                selectedCategory = category;
+                              });
+                              setState(() {
+                                _selectedMealCategory = category;
+                              });
+                              _featuredMealsPageNotifier.value = 0;
+                              if (_featuredMealsController.hasClients) {
+                                _featuredMealsController.jumpToPage(0);
+                              }
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? primaryColor
+                                    : const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? primaryColor
+                                      : Colors.grey.withOpacity(0.18),
+                                ),
+                              ),
+                              child: Text(
+                                category,
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? Colors.white
+                                      : textColorPrimary,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: selectedMeals.isEmpty
+                          ? Center(
+                              child: Text(
+                                'لا توجد عناصر ضمن هذا الصنف حالياً',
+                                style: TextStyle(color: textColorSecondary),
+                              ),
+                            )
+                          : GridView.builder(
+                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                              itemCount: selectedMeals.length,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                                childAspectRatio: 0.96,
+                              ),
+                              itemBuilder: (context, index) {
+                                return _buildCompactMealCard(
+                                  sheetContext,
+                                  selectedMeals[index],
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -2903,6 +3147,26 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     return '${distanceKm.toStringAsFixed(1)} كم';
   }
 
+  bool _shouldShowRestaurantForClient(Map<String, dynamic> restaurant) {
+    final clientState = (_clientStateId ?? '').trim();
+    final restaurantState = (restaurant['stateId'] as String?)?.trim() ?? '';
+    final distanceKm = restaurant['distanceKm'] as double?;
+
+    if (clientState.isEmpty) {
+      return true;
+    }
+
+    if (restaurantState.isNotEmpty && restaurantState == clientState) {
+      return true;
+    }
+
+    if (distanceKm != null && distanceKm <= _fallbackVisibleDistanceKm) {
+      return true;
+    }
+
+    return false;
+  }
+
   double? _restaurantRatingValue(Map<String, dynamic> restaurantData) {
     final rawAverage = (restaurantData['ratingAverage'] ??
         restaurantData['averageRating']) as num?;
@@ -2919,6 +3183,13 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     return rawCount?.toInt() ?? 0;
   }
 
+  String _formatRatingValue(double value) {
+    final normalized = value.toStringAsFixed(1);
+    return normalized.endsWith('.0')
+        ? normalized.substring(0, normalized.length - 2)
+        : normalized;
+  }
+
   String _restaurantRatingLabel(Map<String, dynamic> restaurantData) {
     final ratingValue = _restaurantRatingValue(restaurantData);
     if (ratingValue == null) {
@@ -2926,9 +3197,9 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     }
     final ratingCount = _restaurantRatingCount(restaurantData);
     if (ratingCount > 0) {
-      return '${ratingValue.toStringAsFixed(1)} · $ratingCount';
+      return '${_formatRatingValue(ratingValue)} · $ratingCount';
     }
-    return ratingValue.toStringAsFixed(1);
+    return _formatRatingValue(ratingValue);
   }
 
   String _restaurantStateId(Map<String, dynamic> restaurantData) {

@@ -29,6 +29,7 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
         builder: (_) => const LoginScreenArabic(
           allowRegister: true,
           allowGoogleSignIn: false,
+          allowPhoneSignIn: false,
           allowGuestSignIn: false,
         ),
       ),
@@ -45,7 +46,12 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
 
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (_) => const LoginScreenArabic(),
+        builder: (_) => const LoginScreenArabic(
+          allowRegister: true,
+          allowGoogleSignIn: false,
+          allowPhoneSignIn: false,
+          allowGuestSignIn: false,
+        ),
       ),
       (route) => false,
     );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:getwidget/getwidget.dart';
@@ -121,6 +122,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
               'bankkInstructions': '',
               'ocashInstructions': '',
               'fawryInstructions': '',
+              'bankkOpenUrlAndroid': '',
+              'ocashOpenUrlAndroid': '',
+              'fawryOpenUrlAndroid': '',
+              'bankkOpenUrlIos': '',
+              'ocashOpenUrlIos': '',
+              'fawryOpenUrlIos': '',
               'bankkOpenUrl': '',
               'ocashOpenUrl': '',
               'fawryOpenUrl': '',
@@ -145,6 +152,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
           'bankkInstructions': '',
           'ocashInstructions': '',
           'fawryInstructions': '',
+          'bankkOpenUrlAndroid': '',
+          'ocashOpenUrlAndroid': '',
+          'fawryOpenUrlAndroid': '',
+          'bankkOpenUrlIos': '',
+          'ocashOpenUrlIos': '',
+          'fawryOpenUrlIos': '',
           'bankkOpenUrl': '',
           'ocashOpenUrl': '',
           'fawryOpenUrl': '',
@@ -160,7 +173,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final methods = List<String>.from(
       settings['enabledMethods'] ?? _defaultPaymentMethods,
     );
-    return methods.isEmpty ? List<String>.from(_defaultPaymentMethods) : methods;
+    return methods.isEmpty
+        ? List<String>.from(_defaultPaymentMethods)
+        : methods;
   }
 
   String _paymentAccountValue(String method) {
@@ -189,25 +204,56 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return (_settings?['${method}OpenUrl'] ?? '').toString().trim();
   }
 
+  String _paymentOpenUrlAndroid(String method) {
+    return (_settings?['${method}OpenUrlAndroid'] ?? '').toString().trim();
+  }
+
+  String _paymentOpenUrlIos(String method) {
+    return (_settings?['${method}OpenUrlIos'] ?? '').toString().trim();
+  }
+
+  List<String> _paymentOpenUrlCandidates(String method) {
+    final candidates = <String>[];
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      candidates.add(_paymentOpenUrlAndroid(method));
+    }
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      candidates.add(_paymentOpenUrlIos(method));
+    }
+    candidates.add(_paymentOpenUrl(method));
+    return candidates
+        .where((value) => value.trim().isNotEmpty)
+        .toSet()
+        .toList();
+  }
+
   Future<void> _launchPaymentApp(String method) async {
-    final rawUrl = _paymentOpenUrl(method);
-    if (rawUrl.isEmpty) {
+    final candidates = _paymentOpenUrlCandidates(method);
+    if (candidates.isEmpty) {
       if (!mounted) return;
-      GFToast.showToast('لا يوجد رابط فتح مباشر مضبوط لهذه الطريقة حالياً.', context);
+      GFToast.showToast(
+          'لا يوجد رابط فتح مباشر مضبوط لهذه الطريقة حالياً.', context);
       return;
     }
 
-    final uri = Uri.tryParse(rawUrl);
-    if (uri == null) {
-      if (!mounted) return;
-      GFToast.showToast('رابط فتح التطبيق غير صالح.', context);
-      return;
+    var launched = false;
+    for (final rawUrl in candidates) {
+      final uri = Uri.tryParse(rawUrl);
+      if (uri == null) {
+        continue;
+      }
+      try {
+        launched = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+      } catch (_) {
+        launched = false;
+      }
+      if (launched) {
+        break;
+      }
     }
-
-    final launched = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
 
     if (!launched && mounted) {
       GFToast.showToast('تعذر فتح التطبيق مباشرة على هذا الجهاز.', context);
@@ -371,7 +417,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
               const SizedBox(height: 6),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(14),
@@ -391,7 +438,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                     const SizedBox(width: 8),
                     TextButton.icon(
-                      onPressed: account.isEmpty ? null : () => _copyPaymentAccount(method),
+                      onPressed: account.isEmpty
+                          ? null
+                          : () => _copyPaymentAccount(method),
                       icon: const Icon(Icons.copy_rounded, size: 18),
                       label: const Text('نسخ'),
                     ),
@@ -447,7 +496,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: const Color(0xFFE5E7EB)),
               boxShadow: const [
-                BoxShadow(color: Color(0x12000000), blurRadius: 12, offset: Offset(0, 4)),
+                BoxShadow(
+                    color: Color(0x12000000),
+                    blurRadius: 12,
+                    offset: Offset(0, 4)),
               ],
             ),
             child: Column(
@@ -524,7 +576,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -538,7 +591,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: primaryColor,
                     side: const BorderSide(color: primaryColor),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -551,7 +605,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   label: const Text('تكبير QR'),
                   style: TextButton.styleFrom(
                     foregroundColor: primaryColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 14),
                   ),
                 ),
             ],
@@ -743,9 +798,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
           (walletFields['walletRequestedAmount'] as num?)?.toDouble() ?? 0.0;
       final amountDueAfterWallet =
           (walletFields['amountDueAfterWallet'] as num?)?.toDouble() ?? 0.0;
-        final externalPaidAmount =
+      final externalPaidAmount =
           (walletFields['externalPaidAmount'] as num?)?.toDouble() ??
-            amountDueAfterWallet;
+              amountDueAfterWallet;
       final isWalletOnly = _selectedMethod == 'wallet';
 
       if (isWalletOnly && amountDueAfterWallet > 0) {
