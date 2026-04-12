@@ -10,6 +10,7 @@ import 'package:speedstar_core/speedstar_core.dart'
 import 'client_track_driver_screen.dart';
 import 'chat_screen.dart';
 import 'payment_screen.dart';
+import 'order_rating_sheet.dart';
 
 class AppColors {
   static const Color primaryColor = AppThemeArabic.clientPrimary;
@@ -26,18 +27,18 @@ const List<String> _allSteps = [
 ];
 
 class ClientOrderDetailsScreen extends StatelessWidget {
-    String _displayOrderNumber(Map<String, dynamic> data) {
-      final candidates = [
-        data['orderNumber'],
-        data['orderId'],
-        orderId,
-      ];
-      for (final candidate in candidates) {
-        final value = (candidate ?? '').toString().trim();
-        if (value.isNotEmpty) return value;
-      }
-      return orderId;
+  String _displayOrderNumber(Map<String, dynamic> data) {
+    final candidates = [
+      data['orderNumber'],
+      data['orderId'],
+      orderId,
+    ];
+    for (final candidate in candidates) {
+      final value = (candidate ?? '').toString().trim();
+      if (value.isNotEmpty) return value;
     }
+    return orderId;
+  }
 
   final String orderId;
   const ClientOrderDetailsScreen({Key? key, required this.orderId})
@@ -219,8 +220,17 @@ class ClientOrderDetailsScreen extends StatelessWidget {
             final clientName =
                 (data['clientName'] ?? data['name'] ?? 'العميل').toString();
             final restaurantName =
-              (data['restaurantName'] ?? 'غير معروف').toString().trim();
+                (data['restaurantName'] ?? 'غير معروف').toString().trim();
             final displayOrderNumber = _displayOrderNumber(data);
+            final canRateOrder = canSubmitOrderRating(data);
+            final restaurantRating =
+                ((data['restaurantRating'] as num?)?.toDouble() ?? 0).round();
+            final courierRating =
+                ((data['courierRating'] as num?)?.toDouble() ?? 0).round();
+            final restaurantComment =
+                (data['restaurantComment'] ?? '').toString().trim();
+            final courierComment =
+                (data['courierComment'] ?? '').toString().trim();
 
             int currentStep = _allSteps.indexOf(orderStatus);
             if (currentStep < 0) currentStep = 0;
@@ -624,6 +634,25 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                         },
                       ),
                     ],
+
+                    const SizedBox(height: 24),
+
+                    if (canRateOrder)
+                      _buildRatingActionCard(
+                        context,
+                        orderId: orderId,
+                        orderData: data,
+                      )
+                    else if (restaurantRating > 0)
+                      _buildSubmittedRatingCard(
+                        restaurantName: restaurantName,
+                        restaurantRating: restaurantRating,
+                        restaurantComment: restaurantComment,
+                        courierRating: courierRating,
+                        courierComment: courierComment,
+                        courierName:
+                            (data['driverName'] ?? 'المندوب').toString().trim(),
+                      ),
                   ]),
             );
           },
@@ -647,4 +676,123 @@ class ClientOrderDetailsScreen extends StatelessWidget {
           ),
         ]),
       );
+
+  Widget _buildRatingActionCard(
+    BuildContext context, {
+    required String orderId,
+    required Map<String, dynamic> orderData,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primaryColor.withOpacity(0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '⭐ قيّم الطلب',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'يمكنك الآن تقييم المطعم والمندوب، وسيظهر تقييم المطعم لبقية العملاء.',
+            style: TextStyle(color: Colors.black54, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                showOrderRatingSheet(
+                  context,
+                  orderId: orderId,
+                  orderData: orderData,
+                );
+              },
+              icon: const Icon(Icons.star_rate_rounded),
+              label: const Text('تقييم الآن'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubmittedRatingCard({
+    required String restaurantName,
+    required int restaurantRating,
+    required String restaurantComment,
+    required int courierRating,
+    required String courierComment,
+    required String courierName,
+  }) {
+    Widget ratingLine(String title, int value, String comment) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, color: Colors.black87)),
+              const Spacer(),
+              ...List.generate(
+                5,
+                (index) => Icon(
+                  index < value
+                      ? Icons.star_rounded
+                      : Icons.star_border_rounded,
+                  color: Colors.amber,
+                  size: 18,
+                ),
+              ),
+            ],
+          ),
+          if (comment.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(comment, style: const TextStyle(color: Colors.black54)),
+          ],
+        ],
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.amber.withOpacity(0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '✅ تم إرسال تقييمك',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          ratingLine(restaurantName.isEmpty ? 'المطعم' : restaurantName,
+              restaurantRating, restaurantComment),
+          if (courierRating > 0) ...[
+            const SizedBox(height: 12),
+            ratingLine(courierName.isEmpty ? 'المندوب' : courierName,
+                courierRating, courierComment),
+          ],
+        ],
+      ),
+    );
+  }
 }

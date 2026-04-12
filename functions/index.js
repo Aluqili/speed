@@ -1044,6 +1044,181 @@ exports.reviewOrderPaymentEvidence = onCall({ region: REGION }, async (request) 
   };
 });
 
+exports.submitOrderRatings = onCall({ region: REGION }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+  }
+
+  const orderId = String(request.data?.orderId || '').trim();
+  const restaurantRating = Number(request.data?.restaurantRating || 0);
+  const courierRatingRaw = request.data?.courierRating;
+  const courierRating = courierRatingRaw == null || courierRatingRaw === ''
+    ? null
+    : Number(courierRatingRaw);
+  const restaurantComment = String(request.data?.restaurantComment || '').trim().slice(0, 500);
+  const courierComment = String(request.data?.courierComment || '').trim().slice(0, 500);
+
+  if (!orderId) {
+    throw new HttpsError('invalid-argument', 'orderId مطلوب.');
+  }
+
+  if (!Number.isInteger(restaurantRating) || restaurantRating < 1 || restaurantRating > 5) {
+    throw new HttpsError('invalid-argument', 'تقييم المطعم يجب أن يكون بين 1 و 5.');
+  }
+
+  if (courierRating != null && (!Number.isInteger(courierRating) || courierRating < 1 || courierRating > 5)) {
+    throw new HttpsError('invalid-argument', 'تقييم المندوب يجب أن يكون بين 1 و 5.');
+  }
+
+  const orderRef = db.collection('orders').doc(orderId);
+  const nowTs = admin.firestore.FieldValue.serverTimestamp();
+
+  const result = await db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) {
+      throw new HttpsError('not-found', 'الطلب غير موجود.');
+    }
+
+    const order = orderSnap.data() || {};
+    const clientId = String(order.clientId || '').trim();
+    const restaurantId = String(order.restaurantId || '').trim();
+    const driverId = String(order.assignedDriverId || '').trim();
+    const orderStatus = String(order.orderStatus || order.status || '').trim().toLowerCase();
+
+    if (!clientId || clientId !== request.auth.uid) {
+      throw new HttpsError('permission-denied', 'لا يمكنك تقييم هذا الطلب.');
+    }
+
+    if (!restaurantId) {
+      throw new HttpsError('failed-precondition', 'الطلب لا يحتوي على مطعم صالح.');
+    }
+
+    if (!['delivered', 'تم التوصيل'].includes(orderStatus)) {
+      throw new HttpsError('failed-precondition', 'لا يمكن التقييم قبل اكتمال التوصيل.');
+    }
+
+    if (order.hasClientRating === true || Number(order.restaurantRating || 0) > 0) {
+      throw new HttpsError('already-exists', 'تم إرسال التقييم لهذا الطلب مسبقاً.');
+    }
+
+    if (driverId && courierRating == null) {
+      throw new HttpsError('invalid-argument', 'تقييم المندوب مطلوب لهذا الطلب.');
+    }
+
+    const restaurantRef = db.collection('restaurants').doc(restaurantId);
+    const restaurantReviewRef = restaurantRef.collection('reviews').doc(orderId);
+    const restaurantSnap = await tx.get(restaurantRef);
+    if (!restaurantSnap.exists) {
+      throw new HttpsError('not-found', 'المطعم المرتبط بالطلب غير موجود.');
+    }
+
+    const restaurantData = restaurantSnap.data() || {};
+    const restaurantRatingCount = Number(
+      restaurantData.ratingCount
+      ?? restaurantData.reviewCount
+      ?? 0
+    ) || 0;
+    const restaurantRatingTotal = Number(
+      restaurantData.ratingTotal
+      ?? ((Number(restaurantData.ratingAverage ?? restaurantData.averageRating ?? 0) || 0) * restaurantRatingCount)
+    ) || 0;
+    const nextRestaurantCount = restaurantRatingCount + 1;
+    const nextRestaurantTotal = restaurantRatingTotal + restaurantRating;
+    const nextRestaurantAverage = Number((nextRestaurantTotal / nextRestaurantCount).toFixed(2));
+
+    tx.set(orderRef, {
+      hasClientRating: true,
+      restaurantRating,
+      restaurantComment,
+      courierRating: courierRating ?? admin.firestore.FieldValue.delete(),
+      courierComment: courierComment || admin.firestore.FieldValue.delete(),
+      ratedAt: nowTs,
+      ratedByClientId: request.auth.uid,
+      updatedAt: nowTs,
+    }, { merge: true });
+
+    tx.set(restaurantRef, {
+      ratingAverage: nextRestaurantAverage,
+      averageRating: nextRestaurantAverage,
+      ratingCount: nextRestaurantCount,
+      reviewCount: nextRestaurantCount,
+      ratingTotal: nextRestaurantTotal,
+      lastRatedAt: nowTs,
+      updatedAt: nowTs,
+    }, { merge: true });
+
+    tx.set(restaurantReviewRef, {
+      orderId,
+      clientId,
+      restaurantId,
+      restaurantName: String(order.restaurantName || restaurantData.name || ''),
+      rating: restaurantRating,
+      comment: restaurantComment,
+      createdAt: nowTs,
+      updatedAt: nowTs,
+    }, { merge: true });
+
+    let nextCourierAverage = null;
+    let nextCourierCount = 0;
+
+    if (driverId && courierRating != null) {
+      const driverRef = db.collection('drivers').doc(driverId);
+      const driverReviewRef = driverRef.collection('reviews').doc(orderId);
+      const driverSnap = await tx.get(driverRef);
+      if (driverSnap.exists) {
+        const driverData = driverSnap.data() || {};
+        const courierRatingCount = Number(
+          driverData.deliveryRatingCount
+          ?? driverData.ratingCount
+          ?? 0
+        ) || 0;
+        const courierRatingTotal = Number(
+          driverData.deliveryRatingTotal
+          ?? ((Number(driverData.deliveryRatingAverage ?? driverData.ratingAverage ?? 0) || 0) * courierRatingCount)
+        ) || 0;
+
+        nextCourierCount = courierRatingCount + 1;
+        const nextCourierTotal = courierRatingTotal + courierRating;
+        nextCourierAverage = Number((nextCourierTotal / nextCourierCount).toFixed(2));
+
+        tx.set(driverRef, {
+          deliveryRatingAverage: nextCourierAverage,
+          deliveryRatingCount: nextCourierCount,
+          deliveryRatingTotal: nextCourierTotal,
+          lastRatedAt: nowTs,
+          updatedAt: nowTs,
+        }, { merge: true });
+
+        tx.set(driverReviewRef, {
+          orderId,
+          clientId,
+          driverId,
+          driverName: String(order.driverName || driverData.name || ''),
+          rating: courierRating,
+          comment: courierComment,
+          createdAt: nowTs,
+          updatedAt: nowTs,
+        }, { merge: true });
+      }
+    }
+
+    return {
+      orderId,
+      restaurantId,
+      restaurantRatingAverage: nextRestaurantAverage,
+      restaurantRatingCount: nextRestaurantCount,
+      driverId,
+      courierRatingAverage: nextCourierAverage,
+      courierRatingCount: nextCourierCount,
+    };
+  });
+
+  return {
+    ok: true,
+    ...result,
+  };
+});
+
 async function dispatchOrderStatusNotifications(orderId, afterData) {
   const afterStatus = normalizeOrderStatusForNotification(afterData.orderStatus || afterData.status);
   if (!afterStatus) return { sent: 0, status: '' };

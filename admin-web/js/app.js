@@ -93,6 +93,15 @@ const fawryAccountInput = document.getElementById('fawryAccountInput');
 const bankkAccountHolderInput = document.getElementById('bankkAccountHolderInput');
 const ocashAccountHolderInput = document.getElementById('ocashAccountHolderInput');
 const fawryAccountHolderInput = document.getElementById('fawryAccountHolderInput');
+const bankkQrUrlInput = document.getElementById('bankkQrUrlInput');
+const ocashQrUrlInput = document.getElementById('ocashQrUrlInput');
+const fawryQrUrlInput = document.getElementById('fawryQrUrlInput');
+const bankkInstructionsInput = document.getElementById('bankkInstructionsInput');
+const ocashInstructionsInput = document.getElementById('ocashInstructionsInput');
+const fawryInstructionsInput = document.getElementById('fawryInstructionsInput');
+const bankkOpenUrlInput = document.getElementById('bankkOpenUrlInput');
+const ocashOpenUrlInput = document.getElementById('ocashOpenUrlInput');
+const fawryOpenUrlInput = document.getElementById('fawryOpenUrlInput');
 const savePaymentSettingsBtn = document.getElementById('savePaymentSettingsBtn');
 const paymentSettingsResult = document.getElementById('paymentSettingsResult');
 const restaurantsTable = document.getElementById('restaurantsTable');
@@ -1030,6 +1039,15 @@ function mountFinance() {
         bankkAccountHolder: String(bankkAccountHolderInput?.value || '').trim(),
         ocashAccountHolder: String(ocashAccountHolderInput?.value || '').trim(),
         fawryAccountHolder: String(fawryAccountHolderInput?.value || '').trim(),
+        bankkQrUrl: String(bankkQrUrlInput?.value || '').trim(),
+        ocashQrUrl: String(ocashQrUrlInput?.value || '').trim(),
+        fawryQrUrl: String(fawryQrUrlInput?.value || '').trim(),
+        bankkInstructions: String(bankkInstructionsInput?.value || '').trim(),
+        ocashInstructions: String(ocashInstructionsInput?.value || '').trim(),
+        fawryInstructions: String(fawryInstructionsInput?.value || '').trim(),
+        bankkOpenUrl: String(bankkOpenUrlInput?.value || '').trim(),
+        ocashOpenUrl: String(ocashOpenUrlInput?.value || '').trim(),
+        fawryOpenUrl: String(fawryOpenUrlInput?.value || '').trim(),
         updatedAt: serverTimestamp(),
         updatedByAdminUid: auth.currentUser?.uid || '',
       };
@@ -1069,6 +1087,15 @@ function mountFinance() {
       if (bankkAccountHolderInput) bankkAccountHolderInput.value = String(data.bankkAccountHolder || '');
       if (ocashAccountHolderInput) ocashAccountHolderInput.value = String(data.ocashAccountHolder || '');
       if (fawryAccountHolderInput) fawryAccountHolderInput.value = String(data.fawryAccountHolder || '');
+      if (bankkQrUrlInput) bankkQrUrlInput.value = String(data.bankkQrUrl || '');
+      if (ocashQrUrlInput) ocashQrUrlInput.value = String(data.ocashQrUrl || '');
+      if (fawryQrUrlInput) fawryQrUrlInput.value = String(data.fawryQrUrl || '');
+      if (bankkInstructionsInput) bankkInstructionsInput.value = String(data.bankkInstructions || '');
+      if (ocashInstructionsInput) ocashInstructionsInput.value = String(data.ocashInstructions || '');
+      if (fawryInstructionsInput) fawryInstructionsInput.value = String(data.fawryInstructions || '');
+      if (bankkOpenUrlInput) bankkOpenUrlInput.value = String(data.bankkOpenUrl || '');
+      if (ocashOpenUrlInput) ocashOpenUrlInput.value = String(data.ocashOpenUrl || '');
+      if (fawryOpenUrlInput) fawryOpenUrlInput.value = String(data.fawryOpenUrl || '');
 
       if (paymentSettingsResult && !paymentSettingsResult.textContent.includes('✅')) {
         paymentSettingsResult.textContent = 'الإعدادات الحالية محمّلة من Firebase.';

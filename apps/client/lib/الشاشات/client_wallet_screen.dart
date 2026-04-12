@@ -54,11 +54,18 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
               stream: FirebaseFirestore.instance
                   .collection('wallet_recharges')
                   .where('clientId', isEqualTo: widget.clientId)
-                  .orderBy('createdAt', descending: true)
                   .limit(5)
                   .snapshots(),
               builder: (context, rechargeSnapshot) {
-                final rechargeDocs = rechargeSnapshot.data?.docs ?? const [];
+                final rechargeDocs = List<QueryDocumentSnapshot>.from(
+                  rechargeSnapshot.data?.docs ?? const [],
+                )
+                  ..sort((a, b) {
+                    final aTs = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+                    final bTs = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+                    return (bTs?.millisecondsSinceEpoch ?? 0)
+                        .compareTo(aTs?.millisecondsSinceEpoch ?? 0);
+                  });
                 final pendingCount = rechargeDocs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
                   final status = (data['status'] ?? '').toString().toLowerCase();
@@ -192,7 +199,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                     if (rechargeDocs.isEmpty)
                       const Center(child: Text('لا يوجد سجل شحن حتى الآن'))
                     else
-                      ...rechargeDocs.map((doc) {
+                      ...rechargeDocs.take(5).map((doc) {
                         final data = doc.data() as Map<String, dynamic>;
                         final createdAt = data['createdAt'] as Timestamp?;
                         final createdText = createdAt == null

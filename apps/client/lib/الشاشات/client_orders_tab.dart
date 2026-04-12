@@ -6,6 +6,7 @@ import 'package:speedstar_core/speedstar_core.dart' show OrderStatusPalette;
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'client_order_details_screen.dart';
 import 'client_track_driver_screen.dart';
+import 'order_rating_sheet.dart';
 
 class ClientOrdersTab extends StatefulWidget {
   final String clientId;
@@ -166,9 +167,9 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
     final total = (data['totalWithDelivery'] as num? ?? 0).toStringAsFixed(2);
     final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
     final restaurantName = (data['restaurantName'] ?? 'غير معروف').toString();
-    final displayOrderNumber = ((data['orderNumber'] ?? data['orderId'] ?? orderId)
-        .toString())
-      .trim();
+    final displayOrderNumber =
+        ((data['orderNumber'] ?? data['orderId'] ?? orderId).toString()).trim();
+    final canRateOrder = canSubmitOrderRating(data);
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -199,7 +200,8 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
               Expanded(
                 child: Text(
                   restaurantName.isEmpty ? 'غير معروف' : restaurantName,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -241,12 +243,27 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
                 label: const Text('تفاصيل'),
               ),
             ),
-            const SizedBox(width: 12),
-            if (orderStatus == 'courier_assigned' ||
+            if (canRateOrder) ...[
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    showOrderRatingSheet(
+                      context,
+                      orderId: orderId,
+                      orderData: data,
+                    );
+                  },
+                  icon: const Icon(Icons.star_rate_rounded),
+                  label: const Text('قيّم'),
+                ),
+              ),
+            ] else if (orderStatus == 'courier_assigned' ||
                 orderStatus == 'pickup_ready' ||
                 orderStatus == 'قيد التوصيل' ||
                 orderStatus == 'picked_up' ||
-                orderStatus == 'arrived_to_client')
+                orderStatus == 'arrived_to_client') ...[
+              const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () {
@@ -264,11 +281,13 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
                     foregroundColor: primaryColor,
                     side: BorderSide(color: primaryColor),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 10),
                   ),
                 ),
               ),
+            ],
           ]),
         ]),
       ),

@@ -1,32 +1,41 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:get/get.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:intl/intl.dart';
 
 class ClientWalletRechargeScreen extends StatefulWidget {
   final String clientId;
 
-  const ClientWalletRechargeScreen({Key? key, required this.clientId}) : super(key: key);
+  const ClientWalletRechargeScreen({Key? key, required this.clientId})
+      : super(key: key);
 
   @override
-  State<ClientWalletRechargeScreen> createState() => _ClientWalletRechargeScreenState();
+  State<ClientWalletRechargeScreen> createState() =>
+      _ClientWalletRechargeScreenState();
 }
 
-class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen> {
+class _ClientWalletRechargeScreenState
+    extends State<ClientWalletRechargeScreen> {
   // المتغيرات الخاصة بالحالة
   final TextEditingController _amountController = TextEditingController();
-  final TextEditingController _transactionRefController = TextEditingController();
+  final TextEditingController _transactionRefController =
+      TextEditingController();
   File? _pickedImage;
   bool _uploading = false;
   String _selectedMethod = 'bankk';
   Map<String, String> _accounts = {};
   Map<String, String> _accountHolders = {};
+  Map<String, String> _qrUrls = {};
+  Map<String, String> _instructions = {};
+  Map<String, String> _openUrls = {};
   List<String> _enabledMethods = const ['bankk', 'ocash', 'fawry'];
   bool _accountsLoading = true;
   final picker = ImagePicker();
@@ -41,11 +50,15 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
   }
 
   Future<void> _loadAccounts() async {
-    final doc = await FirebaseFirestore.instance.collection('paymentSettings').doc('default').get();
+    final doc = await FirebaseFirestore.instance
+        .collection('paymentSettings')
+        .doc('default')
+        .get();
     if (doc.exists) {
       final data = doc.data()!;
       setState(() {
-        _enabledMethods = List<String>.from(data['enabledMethods'] ?? const ['bankk', 'ocash', 'fawry']);
+        _enabledMethods = List<String>.from(
+            data['enabledMethods'] ?? const ['bankk', 'ocash', 'fawry']);
         _accounts = {
           'bankk': data['bankkAccount'] ?? '',
           'ocash': data['ocashAccount'] ?? '',
@@ -56,7 +69,23 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
           'ocash': data['ocashAccountHolder'] ?? '',
           'fawry': data['fawryAccountHolder'] ?? '',
         };
-        if (!_enabledMethods.contains(_selectedMethod) && _enabledMethods.isNotEmpty) {
+        _qrUrls = {
+          'bankk': data['bankkQrUrl'] ?? '',
+          'ocash': data['ocashQrUrl'] ?? '',
+          'fawry': data['fawryQrUrl'] ?? '',
+        };
+        _instructions = {
+          'bankk': data['bankkInstructions'] ?? '',
+          'ocash': data['ocashInstructions'] ?? '',
+          'fawry': data['fawryInstructions'] ?? '',
+        };
+        _openUrls = {
+          'bankk': data['bankkOpenUrl'] ?? '',
+          'ocash': data['ocashOpenUrl'] ?? '',
+          'fawry': data['fawryOpenUrl'] ?? '',
+        };
+        if (!_enabledMethods.contains(_selectedMethod) &&
+            _enabledMethods.isNotEmpty) {
           _selectedMethod = _enabledMethods.first;
         }
         _accountsLoading = false;
@@ -81,8 +110,11 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
     final transactionReference = _transactionRefController.text.trim();
     final amount = double.tryParse(amountText) ?? 0.0;
     if (amount <= 0 || _pickedImage == null || transactionReference.isEmpty) {
-      Get.snackbar('خطأ', 'الرجاء إدخال المبلغ والرقم المرجعي واختيار صورة الإيصال.',
-          snackPosition: SnackPosition.BOTTOM, backgroundColor: Colors.red, colorText: Colors.white);
+      Get.snackbar(
+          'خطأ', 'الرجاء إدخال المبلغ والرقم المرجعي واختيار صورة الإيصال.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white);
       return;
     }
 
@@ -93,7 +125,8 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
     try {
       // رفع الصورة إلى Cloudinary
       final res = await _cloudinary.uploadFile(
-        CloudinaryFile.fromFile(_pickedImage!.path, resourceType: CloudinaryResourceType.Image),
+        CloudinaryFile.fromFile(_pickedImage!.path,
+            resourceType: CloudinaryResourceType.Image),
       );
       final imageUrl = res.secureUrl;
       final clientDoc = await FirebaseFirestore.instance
@@ -104,8 +137,10 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
 
       await FirebaseFirestore.instance.collection('wallet_recharges').add({
         'clientId': widget.clientId,
-        'clientName': (clientData['name'] ?? clientData['fullName'] ?? 'عميل').toString(),
-        'clientPhone': (clientData['phone'] ?? clientData['phoneNumber'] ?? '').toString(),
+        'clientName':
+            (clientData['name'] ?? clientData['fullName'] ?? 'عميل').toString(),
+        'clientPhone':
+            (clientData['phone'] ?? clientData['phoneNumber'] ?? '').toString(),
         'amount': amount,
         'imageUrl': imageUrl,
         'proofImageUrl': imageUrl,
@@ -119,16 +154,130 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
       });
 
       Get.snackbar('نجاح', 'تم إرسال طلب الشحن بنجاح!',
-          snackPosition: SnackPosition.BOTTOM, backgroundColor: Colors.green, colorText: Colors.white);
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.green,
+          colorText: Colors.white);
 
       Navigator.pop(context);
     } catch (e) {
       Get.snackbar('خطأ', 'حدث خطأ أثناء رفع الطلب: $e',
-          snackPosition: SnackPosition.BOTTOM, backgroundColor: Colors.red, colorText: Colors.white);
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white);
     } finally {
       setState(() {
         _uploading = false;
       });
+    }
+  }
+
+  Future<void> _launchPaymentApp() async {
+    final rawUrl = (_openUrls[_selectedMethod] ?? '').trim();
+    if (rawUrl.isEmpty) {
+      Get.snackbar(
+        'تنبيه',
+        'لا يوجد رابط فتح مباشر لهذه الطريقة حالياً.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+
+    final uri = Uri.tryParse(rawUrl);
+    if (uri == null) {
+      Get.snackbar(
+        'خطأ',
+        'رابط فتح التطبيق غير صالح.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    final launched = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!launched) {
+      Get.snackbar(
+        'تعذر الفتح',
+        'تعذر فتح التطبيق مباشرة على هذا الجهاز.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    }
+  }
+
+  Future<void> _copySelectedAccount() async {
+    final account = (_accounts[_selectedMethod] ?? '').trim();
+    if (account.isEmpty) {
+      Get.snackbar(
+        'تنبيه',
+        'رقم الحساب غير متوفر لهذه الطريقة.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: account));
+    Get.snackbar(
+      'تم',
+      'تم نسخ رقم الحساب.',
+      snackPosition: SnackPosition.BOTTOM,
+    );
+  }
+
+  void _showQrPreview(String qrUrl) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          insetPadding: const EdgeInsets.all(20),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'رمز ${_methodLabel(_selectedMethod)}',
+                  style: const TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Image.network(
+                    qrUrl,
+                    height: 320,
+                    width: 320,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('إغلاق'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _methodLabel(String method) {
+    switch (method) {
+      case 'bankk':
+        return 'بنكك';
+      case 'ocash':
+        return 'أوكاش';
+      case 'fawry':
+        return 'فوري';
+      default:
+        return method;
     }
   }
 
@@ -145,7 +294,12 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
       child: Scaffold(
         backgroundColor: backgroundColor,
         appBar: AppBar(
-          title: const Text('شحن المحفظة', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
+          title: const Text('شحن المحفظة',
+              style: TextStyle(
+                  color: AppThemeArabic.clientPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  fontFamily: 'Tajawal')),
           backgroundColor: Colors.white,
           centerTitle: true,
           iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
@@ -160,15 +314,21 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
             child: Card(
               color: Colors.white,
               elevation: 3,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: const EdgeInsets.all(18),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('شحن المحفظة', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Tajawal', fontSize: 20)),
+                    const Text('شحن المحفظة',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Tajawal',
+                            fontSize: 20)),
                     const SizedBox(height: 18),
-                    const Text('1. اختر طريقة الدفع', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('1. اختر طريقة الدفع',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     if (_accountsLoading)
                       const Center(child: CircularProgressIndicator())
@@ -200,72 +360,283 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
                           if (_accounts[_selectedMethod]?.isNotEmpty == true)
                             Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.all(12),
+                              padding: const EdgeInsets.all(14),
                               margin: const EdgeInsets.only(bottom: 8),
                               decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: Colors.grey[300]!),
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(18),
+                                border:
+                                    Border.all(color: const Color(0xFFE5E7EB)),
                               ),
-                              child: Row(
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Icon(Icons.info_outline, color: primaryColor, size: 20),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'اسم صاحب الحساب: ${_accountHolders[_selectedMethod] ?? 'غير متوفر'}',
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Tajawal'),
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: primaryColor.withValues(
+                                              alpha: 0.10),
+                                          borderRadius:
+                                              BorderRadius.circular(999),
                                         ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'رقم الحساب: ${_accounts[_selectedMethod]}',
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Tajawal'),
+                                        child: Text(
+                                          _methodLabel(_selectedMethod),
+                                          style: TextStyle(
+                                            fontFamily: 'Tajawal',
+                                            fontWeight: FontWeight.bold,
+                                            color: primaryColor,
+                                          ),
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      Icon(
+                                          Icons.account_balance_wallet_outlined,
+                                          color: primaryColor),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Text(
+                                    'اسم صاحب الحساب: ${_accountHolders[_selectedMethod] ?? 'غير متوفر'}',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: 'Tajawal'),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                          color: const Color(0xFFE5E7EB)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            _accounts[_selectedMethod] ?? '',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontFamily: 'Tajawal',
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                        ),
+                                        TextButton.icon(
+                                          onPressed: _copySelectedAccount,
+                                          icon: const Icon(Icons.copy_rounded,
+                                              size: 18),
+                                          label: const Text('نسخ'),
                                         ),
                                       ],
                                     ),
                                   ),
+                                  if ((_instructions[_selectedMethod] ?? '')
+                                      .trim()
+                                      .isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF7ED),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                            color: const Color(0xFFFED7AA)),
+                                      ),
+                                      child: Text(
+                                        'التعليمات: ${_instructions[_selectedMethod]}',
+                                        style: const TextStyle(
+                                            fontFamily: 'Tajawal'),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
+                            ),
+                          if ((_qrUrls[_selectedMethod] ?? '')
+                              .trim()
+                              .isNotEmpty)
+                            Container(
+                              width: double.infinity,
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                border:
+                                    Border.all(color: const Color(0xFFE5E7EB)),
+                                boxShadow: const [
+                                  BoxShadow(
+                                      color: Color(0x12000000),
+                                      blurRadius: 12,
+                                      offset: Offset(0, 4)),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'رمز QR للدفع',
+                                    style: TextStyle(
+                                      fontFamily: 'Tajawal',
+                                      fontWeight: FontWeight.bold,
+                                      color: AppThemeArabic.clientPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  InkWell(
+                                    onTap: () => _showQrPreview(
+                                        _qrUrls[_selectedMethod]!),
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF8FAFC),
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.network(
+                                          _qrUrls[_selectedMethod]!,
+                                          height: 220,
+                                          width: double.infinity,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (_, __, ___) =>
+                                              Container(
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[100],
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: const Text(
+                                                'تعذر تحميل رمز QR لهذه الطريقة حالياً'),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'اضغط على الرمز لتكبيره.',
+                                    style: TextStyle(
+                                        fontFamily: 'Tajawal',
+                                        color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          if ((_openUrls[_selectedMethod] ?? '').trim().isNotEmpty ||
+                              (_accounts[_selectedMethod] ?? '')
+                                  .trim()
+                                  .isNotEmpty ||
+                              (_qrUrls[_selectedMethod] ?? '')
+                                  .trim()
+                                  .isNotEmpty)
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                if ((_openUrls[_selectedMethod] ?? '')
+                                    .trim()
+                                    .isNotEmpty)
+                                  ElevatedButton.icon(
+                                    onPressed: _launchPaymentApp,
+                                    icon: const Icon(Icons.open_in_new),
+                                    label: Text(
+                                        'فتح ${_methodLabel(_selectedMethod)}'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: primaryColor,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 14),
+                                    ),
+                                  ),
+                                if ((_accounts[_selectedMethod] ?? '')
+                                    .trim()
+                                    .isNotEmpty)
+                                  OutlinedButton.icon(
+                                    onPressed: _copySelectedAccount,
+                                    icon: const Icon(Icons.copy_rounded),
+                                    label: const Text('نسخ الرقم'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: primaryColor,
+                                      side: BorderSide(color: primaryColor),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 14),
+                                    ),
+                                  ),
+                                if ((_qrUrls[_selectedMethod] ?? '')
+                                    .trim()
+                                    .isNotEmpty)
+                                  TextButton.icon(
+                                    onPressed: () => _showQrPreview(
+                                        _qrUrls[_selectedMethod]!),
+                                    icon: const Icon(Icons.zoom_in_rounded),
+                                    label: const Text('تكبير QR'),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: primaryColor,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 14),
+                                    ),
+                                  ),
+                              ],
                             ),
                         ],
                       ),
                     const SizedBox(height: 18),
-                    const Text('2. أدخل مبلغ الشحن', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('2. أدخل مبلغ الشحن',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _amountController,
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
                         hintText: 'المبلغ...',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
                         filled: true,
                         fillColor: AppThemeArabic.clientBackground,
                       ),
                     ),
                     const SizedBox(height: 18),
-                    const Text('3. أدخل الرقم المرجعي للتحويل', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('3. أدخل الرقم المرجعي للتحويل',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _transactionRefController,
                       decoration: InputDecoration(
                         hintText: 'الرقم المرجعي...',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
                         filled: true,
                         fillColor: AppThemeArabic.clientBackground,
-                        prefixIcon: const Icon(Icons.confirmation_number_outlined),
+                        prefixIcon:
+                            const Icon(Icons.confirmation_number_outlined),
                       ),
                     ),
                     const SizedBox(height: 18),
-                    const Text('4. ارفع صورة الإيصال', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('4. ارفع صورة الإيصال',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     _pickedImage != null
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: Image.file(_pickedImage!, height: 180, fit: BoxFit.cover),
+                            child: Image.file(_pickedImage!,
+                                height: 180, fit: BoxFit.cover),
                           )
                         : Container(
                             height: 120,
@@ -274,7 +645,8 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(color: Colors.grey),
                             ),
-                            child: const Center(child: Text('لم يتم اختيار صورة بعد')),
+                            child: const Center(
+                                child: Text('لم يتم اختيار صورة بعد')),
                           ),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(
@@ -283,7 +655,8 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
                       label: const Text('اختيار صورة الإيصال'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: primaryColor,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         textStyle: const TextStyle(fontWeight: FontWeight.bold),
                       ),
@@ -303,7 +676,8 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
                     ),
                     const SizedBox(height: 20),
                     _uploading
-                        ? const Center(child: GFLoader(type: GFLoaderType.circle))
+                        ? const Center(
+                            child: GFLoader(type: GFLoaderType.circle))
                         : SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
@@ -311,9 +685,12 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
                               child: const Text('إرسال طلب الشحن'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                textStyle: const TextStyle(
+                                    fontWeight: FontWeight.bold),
                               ),
                             ),
                           ),
@@ -327,24 +704,32 @@ class _ClientWalletRechargeScreenState extends State<ClientWalletRechargeScreen>
     );
   }
 
-  Widget _buildMethodButton(String label, String value, IconData icon) {
-    final selected = _selectedMethod == value;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedMethod = value),
-      child: Container(
-        height: 48,
-        margin: const EdgeInsets.symmetric(horizontal: 4),
+  Widget _buildMethodButton(String label, String method, IconData icon) {
+    final selected = _selectedMethod == method;
+    return InkWell(
+      onTap: () => setState(() => _selectedMethod = method),
+      borderRadius: BorderRadius.circular(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         decoration: BoxDecoration(
-          color: selected ? primaryColor : Colors.grey[200],
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: selected ? primaryColor : Colors.grey[300]!),
+          color: selected ? primaryColor.withValues(alpha: 0.12) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? primaryColor : Colors.grey.shade300,
+            width: selected ? 2 : 1,
+          ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: selected ? Colors.white : primaryColor),
-            const SizedBox(width: 6),
-            Text(label, style: TextStyle(color: selected ? Colors.white : primaryColor, fontWeight: FontWeight.bold)),
+            Icon(icon, color: primaryColor),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                  fontFamily: 'Tajawal', fontWeight: FontWeight.bold),
+            ),
           ],
         ),
       ),

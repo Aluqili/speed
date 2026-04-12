@@ -15,6 +15,9 @@ class AddNewAddressScreen extends StatefulWidget {
   final String? existingName;
   final double? existingLatitude;
   final double? existingLongitude;
+  final bool resultOnly;
+  final String? customTitle;
+  final String? customSaveLabel;
 
   const AddNewAddressScreen({
     Key? key,
@@ -24,6 +27,9 @@ class AddNewAddressScreen extends StatefulWidget {
     this.existingName,
     this.existingLatitude,
     this.existingLongitude,
+    this.resultOnly = false,
+    this.customTitle,
+    this.customSaveLabel,
   }) : super(key: key);
 
   @override
@@ -48,8 +54,12 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
   void initState() {
     super.initState();
     _checkLocationPermission();
-    if (widget.editAddressId != null) {
-      _addressNameController.text = widget.existingName ?? '';
+    final hasSeedLocation =
+        widget.existingLatitude != null && widget.existingLongitude != null;
+    if ((widget.existingName ?? '').trim().isNotEmpty) {
+      _addressNameController.text = widget.existingName!.trim();
+    }
+    if (widget.editAddressId != null || hasSeedLocation) {
       selectedLocation = LatLng(
         widget.existingLatitude ?? 15.5007,
         widget.existingLongitude ?? 32.5599,
@@ -225,6 +235,23 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
         'stateId': stateId,
         'createdAt': FieldValue.serverTimestamp(),
       };
+      if (widget.resultOnly) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم اختيار الموقع بنجاح ✅')),
+        );
+        Navigator.pop(context, {
+          'addressName': _addressNameController.text,
+          'latitude': selectedLocation!.latitude,
+          'longitude': selectedLocation!.longitude,
+          'city': city,
+          'state': administrativeArea.isNotEmpty ? administrativeArea : city,
+          'administrativeArea': administrativeArea,
+          'stateId': stateId,
+        });
+        return;
+      }
+
       final collectionPath = '${widget.userType}s';
       String? newAddressId;
       if (widget.editAddressId == null) {
@@ -264,8 +291,14 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم حفظ العنوان بنجاح ✅')),
       );
-      // بعد الحفظ، انتقل مباشرة إلى شاشة العميل الرئيسية
-      if (widget.userType == 'client') {
+      final savedAddress = {
+        'addressName': _addressNameController.text,
+        'latitude': selectedLocation!.latitude,
+        'longitude': selectedLocation!.longitude,
+      };
+      if (Navigator.of(context).canPop()) {
+        Navigator.pop(context, savedAddress);
+      } else if (widget.userType == 'client') {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
             builder: (_) => ClientHomeTab(clientId: widget.userId),
@@ -311,7 +344,10 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           title: Text(
-              widget.editAddressId != null ? 'تعديل العنوان' : 'إضافة عنوان',
+              widget.customTitle ??
+                  (widget.editAddressId != null
+                      ? 'تعديل العنوان'
+                      : 'إضافة عنوان'),
               style: const TextStyle(color: Colors.black87)),
           iconTheme: const IconThemeData(color: Colors.black87),
           centerTitle: true,
@@ -401,7 +437,7 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
                       icon: const Icon(Icons.save),
                       label: _isSaving
                           ? const Text('جارٍ الحفظ...')
-                          : const Text('حفظ العنوان'),
+                          : Text(widget.customSaveLabel ?? 'حفظ العنوان'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: primaryColor,
                         shape: RoundedRectangleBorder(

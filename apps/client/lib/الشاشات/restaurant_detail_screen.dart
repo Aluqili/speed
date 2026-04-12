@@ -56,6 +56,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   bool isClosed = false;
   String statusText = '';
   Color statusColor = Colors.green;
+  double? _ratingAverage;
+  int _ratingCount = 0;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _restaurantSubscription;
 
@@ -83,8 +85,25 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         isClosed = resolved['isClosed'] as bool;
         statusText = resolved['text'] as String;
         statusColor = resolved['color'] as Color;
+        _ratingAverage = ((doc.data()?['ratingAverage'] ??
+                doc.data()?['averageRating']) as num?)
+            ?.toDouble();
+        _ratingCount =
+            ((doc.data()?['ratingCount'] ?? doc.data()?['reviewCount']) as num?)
+                    ?.toInt() ??
+                0;
       });
     });
+  }
+
+  String _restaurantRatingText() {
+    if (_ratingAverage == null || _ratingAverage! <= 0) {
+      return 'مطعم جديد';
+    }
+    if (_ratingCount > 0) {
+      return '${_ratingAverage!.toStringAsFixed(1)} من 5 · $_ratingCount تقييم';
+    }
+    return '${_ratingAverage!.toStringAsFixed(1)} من 5';
   }
 
   Map<String, dynamic> _resolveRestaurantStatus(Map<String, dynamic>? data) {
@@ -363,7 +382,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     if (containsAny(['salad', 'salads', 'سلطة', 'سلطات'])) {
       return 'السلطات';
     }
-    if (containsAny(['sandwich', 'sandwiches', 'wrap', 'ساندويتش', 'سندويتش'])) {
+    if (containsAny(
+        ['sandwich', 'sandwiches', 'wrap', 'ساندويتش', 'سندويتش'])) {
       return 'السندويتشات';
     }
     if (containsAny(['burger', 'burgers', 'برغر', 'برجر'])) {
@@ -375,13 +395,23 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     if (containsAny(['breakfast', 'فطور', 'افطار'])) {
       return 'الفطور';
     }
-    if (containsAny(['drink', 'drinks', 'beverage', 'juice', 'مشروب', 'مشروبات', 'عصير', 'عصائر'])) {
+    if (containsAny([
+      'drink',
+      'drinks',
+      'beverage',
+      'juice',
+      'مشروب',
+      'مشروبات',
+      'عصير',
+      'عصائر'
+    ])) {
       return 'المشروبات';
     }
     if (containsAny(['dessert', 'desserts', 'sweet', 'حلويات', 'تحلية'])) {
       return 'الحلويات';
     }
-    if (containsAny(['extra', 'extras', 'addon', 'add on', 'اضافة', 'اضافات'])) {
+    if (containsAny(
+        ['extra', 'extras', 'addon', 'add on', 'اضافة', 'اضافات'])) {
       return 'الإضافات';
     }
 
@@ -398,7 +428,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     final categories = <String>{};
     for (final doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
-      categories.add(_canonicalCategoryLabel((data['category'] ?? '').toString()));
+      categories
+          .add(_canonicalCategoryLabel((data['category'] ?? '').toString()));
     }
     final ordered = categories.where((value) => value.isNotEmpty).toList()
       ..sort((a, b) {
@@ -414,9 +445,12 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     sorted.sort((a, b) {
       final aData = a.data() as Map<String, dynamic>;
       final bData = b.data() as Map<String, dynamic>;
-      final aCategory = _canonicalCategoryLabel((aData['category'] ?? '').toString());
-      final bCategory = _canonicalCategoryLabel((bData['category'] ?? '').toString());
-      final categoryCompare = _categoryRank(aCategory).compareTo(_categoryRank(bCategory));
+      final aCategory =
+          _canonicalCategoryLabel((aData['category'] ?? '').toString());
+      final bCategory =
+          _canonicalCategoryLabel((bData['category'] ?? '').toString());
+      final categoryCompare =
+          _categoryRank(aCategory).compareTo(_categoryRank(bCategory));
       if (categoryCompare != 0) return categoryCompare;
       final labelCompare = aCategory.compareTo(bCategory);
       if (labelCompare != 0) return labelCompare;
@@ -435,7 +469,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     final grouped = <String, List<QueryDocumentSnapshot>>{};
     for (final doc in _sortMenuDocs(docs)) {
       final data = doc.data() as Map<String, dynamic>;
-      final category = _canonicalCategoryLabel((data['category'] ?? '').toString());
+      final category =
+          _canonicalCategoryLabel((data['category'] ?? '').toString());
       if (_selectedCategory != null && category != _selectedCategory) {
         continue;
       }
@@ -492,7 +527,9 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: selected ? Colors.white.withOpacity(0.2) : const Color(0xFFF3F4F6),
+                color: selected
+                    ? Colors.white.withOpacity(0.2)
+                    : const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -561,8 +598,10 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   }) {
     final itemId = '${widget.restaurantId}_${doc.id}';
     final itemName = (data['name'] ?? '').toString();
-    final itemDescription = (data['description'] ?? data['details'] ?? '').toString().trim();
-    final categoryLabel = _canonicalCategoryLabel((data['category'] ?? '').toString());
+    final itemDescription =
+        (data['description'] ?? data['details'] ?? '').toString().trim();
+    final categoryLabel =
+        _canonicalCategoryLabel((data['category'] ?? '').toString());
     final sizes = _extractSizes(data);
     final hasSizes = sizes.isNotEmpty;
     final itemPrice = (data['price'] as num?)?.toDouble() ?? 0.0;
@@ -605,7 +644,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                         width: 104,
                         height: 104,
                         color: const Color(0xFFF3F4F6),
-                        child: Icon(Icons.fastfood, color: Colors.grey[500], size: 34),
+                        child: Icon(Icons.fastfood,
+                            color: Colors.grey[500], size: 34),
                       ),
               ),
               const SizedBox(width: 12),
@@ -617,7 +657,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                       children: [
                         if (data['available'] == false)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: closedColor.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(999),
@@ -655,7 +696,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                       alignment: WrapAlignment.end,
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
                             color: accentColor.withOpacity(0.12),
                             borderRadius: BorderRadius.circular(999),
@@ -670,7 +712,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
                             color: const Color(0xFFF8FAFC),
                             borderRadius: BorderRadius.circular(999),
@@ -710,11 +753,13 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                         alignment: WrapAlignment.end,
                         children: sizes.entries.map((entry) {
                           return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
                             decoration: BoxDecoration(
                               color: const Color(0xFFF8FAFC),
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                              border:
+                                  Border.all(color: const Color(0xFFE5E7EB)),
                             ),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -786,7 +831,9 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                         ),
                         GFIconButton(
                           icon: const Icon(Icons.remove, size: 18),
-                          onPressed: (isClosed || data['available'] == false || quantity <= 0)
+                          onPressed: (isClosed ||
+                                  data['available'] == false ||
+                                  quantity <= 0)
                               ? null
                               : () async {
                                   if (hasSizes) {
@@ -809,7 +856,9 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                         Text(
                           quantity > 0 ? 'في السلة: $quantity' : 'أضف للسلة',
                           style: TextStyle(
-                            color: quantity > 0 ? primaryColor : textColorSecondary,
+                            color: quantity > 0
+                                ? primaryColor
+                                : textColorSecondary,
                             fontWeight: FontWeight.w700,
                             fontSize: 12,
                           ),
@@ -843,12 +892,13 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     final aggregated = <String, Map<String, dynamic>>{};
     for (final variant in variants) {
       final key = variant.sizeKey ?? variant.id;
-      final current = aggregated[key] ?? {
-        'id': variant.id,
-        'sizeLabel': variant.sizeLabel ?? 'حجم غير محدد',
-        'price': variant.price,
-        'quantity': 0,
-      };
+      final current = aggregated[key] ??
+          {
+            'id': variant.id,
+            'sizeLabel': variant.sizeLabel ?? 'حجم غير محدد',
+            'price': variant.price,
+            'quantity': 0,
+          };
       current['quantity'] = (current['quantity'] as int) + variant.quantity;
       aggregated[key] = current;
     }
@@ -894,7 +944,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         .toList();
     if (orderedKeys.isEmpty) return;
 
-    String selected = orderedKeys.contains('medium') ? 'medium' : orderedKeys.first;
+    String selected =
+        orderedKeys.contains('medium') ? 'medium' : orderedKeys.first;
     final picked = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -982,20 +1033,53 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                       alignment: Alignment.bottomRight,
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
-                        child: Text(
-                          widget.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 24,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black54,
-                                blurRadius: 4,
-                                offset: Offset(1, 1),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 7,
                               ),
-                            ],
-                          ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.16),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    _restaurantRatingText(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.star_rounded,
+                                      color: accentColor, size: 18),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              widget.name,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 24,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black54,
+                                    blurRadius: 4,
+                                    offset: Offset(1, 1),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -1051,8 +1135,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                         final counts = <String, int>{};
                         for (var doc in items) {
                           final data = doc.data() as Map<String, dynamic>;
-                          final category =
-                              _canonicalCategoryLabel((data['category'] ?? '').toString());
+                          final category = _canonicalCategoryLabel(
+                              (data['category'] ?? '').toString());
                           counts[category] = (counts[category] ?? 0) + 1;
                         }
                         return SizedBox(
@@ -1116,7 +1200,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                   }
                   final sections = _buildMenuSections(snapshot.data!.docs);
                   if (sections.isEmpty) {
-                    return const Center(child: Text('لا توجد أصناف ضمن هذا التصنيف حالياً.'));
+                    return const Center(
+                        child: Text('لا توجد أصناف ضمن هذا التصنيف حالياً.'));
                   }
                   return ListView.builder(
                     padding: const EdgeInsets.only(bottom: 88),

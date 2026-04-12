@@ -9,6 +9,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart'
     show formatUnifiedOrderCode, OrderStatusPalette;
+import 'order_rating_sheet.dart';
 
 class ClientOrderTrackingScreen extends StatefulWidget {
   final String orderId;
@@ -27,6 +28,7 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
   LatLng? _driverLocation;
   String? _driverName;
   bool _hasNotifiedArrival = false;
+  bool _hasPromptedForRating = false;
   GoogleMapController? _mapController;
 
   static const Color primaryColor = AppThemeArabic.clientPrimary;
@@ -64,6 +66,20 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
       if (orderStatus == 'delivered' && !_hasNotifiedArrival) {
         _hasNotifiedArrival = true;
         _showArrivalNotification();
+      }
+
+      if (orderStatus == 'delivered' &&
+          canSubmitOrderRating(data) &&
+          !_hasPromptedForRating) {
+        _hasPromptedForRating = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (!mounted) return;
+          await showOrderRatingSheet(
+            context,
+            orderId: widget.orderId,
+            orderData: data,
+          );
+        });
       }
 
       final clientLoc = data['clientLocation'];
@@ -177,6 +193,9 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
             final total =
                 (data['totalWithDelivery'] as num?)?.toDouble() ?? 0.0;
             final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+            final canRateOrder = canSubmitOrderRating(data);
+            final restaurantRating =
+                ((data['restaurantRating'] as num?)?.toDouble() ?? 0).round();
             int currentStep = _statusSteps.indexOf(orderStatus);
             if (currentStep < 0) currentStep = 0;
 
@@ -293,6 +312,25 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
                       subtitle:
                           Text('x${item['quantity']} — ${item['price']} ج.س'),
                     )),
+                const SizedBox(height: 20),
+                if (canRateOrder)
+                  _buildRateOrderCard(context, widget.orderId, data)
+                else if (restaurantRating > 0)
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.amber.withOpacity(0.28)),
+                    ),
+                    child: const Text(
+                      'تم إرسال تقييم هذا الطلب مسبقاً.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
               ],
             );
           },
@@ -300,6 +338,57 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
       ),
     );
   }
+}
+
+Widget _buildRateOrderCard(
+  BuildContext context,
+  String orderId,
+  Map<String, dynamic> data,
+) {
+  return Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(
+          color:
+              _ClientOrderTrackingScreenState.primaryColor.withOpacity(0.12)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '⭐ قيّم هذه التجربة',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'بعد اكتمال التسليم يمكنك تقييم المطعم والمندوب، ويظهر تقييم المطعم بشكل حقيقي لبقية العملاء.',
+          style: TextStyle(color: Colors.black54, height: 1.4),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () {
+              showOrderRatingSheet(
+                context,
+                orderId: orderId,
+                orderData: data,
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _ClientOrderTrackingScreenState.primaryColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            icon: const Icon(Icons.star_rate_rounded),
+            label: const Text('إرسال تقييم'),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 const List<String> _statusSteps = [

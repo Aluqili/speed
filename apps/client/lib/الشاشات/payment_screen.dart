@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 
@@ -47,6 +49,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Map<String, dynamic>? _promoData;
   String? _promoError;
   num _discount = 0;
+
+  static const List<String> _defaultPaymentMethods = [
+    'bankk',
+    'ocash',
+    'fawry',
+  ];
 
   String _promoReasonMessage(String? reason) {
     switch ((reason ?? '').trim()) {
@@ -100,30 +108,457 @@ class _PaymentScreenState extends State<PaymentScreen> {
       setState(() {
         _settings = data ??
             {
-              'enabledMethods': ['bankk', 'ocash', 'fawry'],
+              'enabledMethods': _defaultPaymentMethods,
               'bankkAccount': '',
               'ocashAccount': '',
               'fawryAccount': '',
               'bankkAccountHolder': '',
               'ocashAccountHolder': '',
               'fawryAccountHolder': '',
+              'bankkQrUrl': '',
+              'ocashQrUrl': '',
+              'fawryQrUrl': '',
+              'bankkInstructions': '',
+              'ocashInstructions': '',
+              'fawryInstructions': '',
+              'bankkOpenUrl': '',
+              'ocashOpenUrl': '',
+              'fawryOpenUrl': '',
             };
+        final methods = _resolveAvailableMethods(_settings!);
+        _selectedMethod ??= methods.isNotEmpty ? methods.first : null;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _settings = {
-          'enabledMethods': ['bankk', 'ocash', 'fawry'],
+          'enabledMethods': _defaultPaymentMethods,
           'bankkAccount': '',
           'ocashAccount': '',
           'fawryAccount': '',
           'bankkAccountHolder': '',
           'ocashAccountHolder': '',
           'fawryAccountHolder': '',
+          'bankkQrUrl': '',
+          'ocashQrUrl': '',
+          'fawryQrUrl': '',
+          'bankkInstructions': '',
+          'ocashInstructions': '',
+          'fawryInstructions': '',
+          'bankkOpenUrl': '',
+          'ocashOpenUrl': '',
+          'fawryOpenUrl': '',
         };
+        final methods = _resolveAvailableMethods(_settings!);
+        _selectedMethod ??= methods.isNotEmpty ? methods.first : null;
       });
       debugPrint('paymentSettings fallback used: $e');
     }
+  }
+
+  List<String> _resolveAvailableMethods(Map<String, dynamic> settings) {
+    final methods = List<String>.from(
+      settings['enabledMethods'] ?? _defaultPaymentMethods,
+    );
+    return methods.isEmpty ? List<String>.from(_defaultPaymentMethods) : methods;
+  }
+
+  String _paymentAccountValue(String method) {
+    final value = (_settings?['${method}Account'] ?? '').toString().trim();
+    return value;
+  }
+
+  String _paymentAccountHolderValue(String method) {
+    final value = (_settings?['${method}AccountHolder'] ??
+            _settings?['${method}Holder'] ??
+            '')
+        .toString()
+        .trim();
+    return value;
+  }
+
+  String _paymentQrUrl(String method) {
+    return (_settings?['${method}QrUrl'] ?? '').toString().trim();
+  }
+
+  String _paymentInstructions(String method) {
+    return (_settings?['${method}Instructions'] ?? '').toString().trim();
+  }
+
+  String _paymentOpenUrl(String method) {
+    return (_settings?['${method}OpenUrl'] ?? '').toString().trim();
+  }
+
+  Future<void> _launchPaymentApp(String method) async {
+    final rawUrl = _paymentOpenUrl(method);
+    if (rawUrl.isEmpty) {
+      if (!mounted) return;
+      GFToast.showToast('لا يوجد رابط فتح مباشر مضبوط لهذه الطريقة حالياً.', context);
+      return;
+    }
+
+    final uri = Uri.tryParse(rawUrl);
+    if (uri == null) {
+      if (!mounted) return;
+      GFToast.showToast('رابط فتح التطبيق غير صالح.', context);
+      return;
+    }
+
+    final launched = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!launched && mounted) {
+      GFToast.showToast('تعذر فتح التطبيق مباشرة على هذا الجهاز.', context);
+    }
+  }
+
+  Future<void> _copyPaymentAccount(String method) async {
+    final account = _paymentAccountValue(method);
+    if (account.isEmpty) {
+      if (!mounted) return;
+      GFToast.showToast('رقم الحساب غير متوفر لهذه الطريقة.', context);
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: account));
+    if (!mounted) return;
+    GFToast.showToast('تم نسخ رقم الحساب.', context);
+  }
+
+  void _showQrPreview(String method, String qrUrl) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          insetPadding: const EdgeInsets.all(20),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'رمز ${_paymentMethodLabel(method)}',
+                  style: const TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Image.network(
+                    qrUrl,
+                    height: 320,
+                    width: 320,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('إغلاق'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSelectedMethodDetails({
+    required String method,
+    required double walletBalance,
+    required double walletRequestedAmount,
+    required double amountDueAfterWallet,
+  }) {
+    if (method == 'wallet') {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            amountDueAfterWallet > 0
+                ? 'المحفظة ستغطي ${walletRequestedAmount.toStringAsFixed(2)} ج.س ويتبقى ${amountDueAfterWallet.toStringAsFixed(2)} ج.س، لذلك يلزمك اختيار طريقة أخرى لباقي المبلغ.'
+                : 'سيتم سداد الطلب كاملًا من المحفظة وخصم ${walletRequestedAmount.toStringAsFixed(2)} ج.س عند تأكيد الطلب.',
+            style: const TextStyle(
+              fontFamily: 'Tajawal',
+              fontWeight: FontWeight.bold,
+              color: primaryColor,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'الرصيد بعد الخصم: ${(walletBalance - walletRequestedAmount).toStringAsFixed(2)} ج.س',
+            style: const TextStyle(
+              fontFamily: 'Tajawal',
+              fontSize: 15,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final accountHolder = _paymentAccountHolderValue(method);
+    final account = _paymentAccountValue(method);
+    final qrUrl = _paymentQrUrl(method);
+    final instructions = _paymentInstructions(method);
+    final openUrl = _paymentOpenUrl(method);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      _paymentMethodLabel(method),
+                      style: const TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontWeight: FontWeight.bold,
+                        color: primaryColor,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  const Icon(Icons.payments_outlined, color: primaryColor),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'اسم صاحب الحساب',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontWeight: FontWeight.bold,
+                  color: primaryColor,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                accountHolder.isEmpty ? 'غير متوفر' : accountHolder,
+                style: const TextStyle(fontFamily: 'Tajawal', fontSize: 15),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'رقم الحساب',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontWeight: FontWeight.bold,
+                  color: primaryColor,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        account.isEmpty ? 'غير متوفر' : account,
+                        style: const TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      onPressed: account.isEmpty ? null : () => _copyPaymentAccount(method),
+                      icon: const Icon(Icons.copy_rounded, size: 18),
+                      label: const Text('نسخ'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (instructions.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFFED7AA)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: primaryColor, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      'تعليمات الدفع',
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontWeight: FontWeight.bold,
+                        color: primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  instructions,
+                  style: const TextStyle(fontFamily: 'Tajawal', fontSize: 15),
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (qrUrl.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+              boxShadow: const [
+                BoxShadow(color: Color(0x12000000), blurRadius: 12, offset: Offset(0, 4)),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'رمز QR للدفع',
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontWeight: FontWeight.bold,
+                    color: primaryColor,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                InkWell(
+                  onTap: () => _showQrPreview(method, qrUrl),
+                  borderRadius: BorderRadius.circular(18),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Image.network(
+                        qrUrl,
+                        height: 240,
+                        width: double.infinity,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3E0),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            'تعذر تحميل رمز QR لهذه الطريقة حالياً.',
+                            style: TextStyle(fontFamily: 'Tajawal'),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'اضغط على الرمز لتكبيره.',
+                  style: TextStyle(fontFamily: 'Tajawal', color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (openUrl.isNotEmpty || account.isNotEmpty || qrUrl.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              if (openUrl.isNotEmpty)
+                ElevatedButton.icon(
+                  onPressed: () => _launchPaymentApp(method),
+                  icon: const Icon(Icons.open_in_new, color: Colors.white),
+                  label: Text(
+                    'فتح ${_paymentMethodLabel(method)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontFamily: 'Tajawal',
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              if (account.isNotEmpty)
+                OutlinedButton.icon(
+                  onPressed: () => _copyPaymentAccount(method),
+                  icon: const Icon(Icons.copy_rounded),
+                  label: const Text('نسخ الرقم'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: primaryColor,
+                    side: const BorderSide(color: primaryColor),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              if (qrUrl.isNotEmpty)
+                TextButton.icon(
+                  onPressed: () => _showQrPreview(method, qrUrl),
+                  icon: const Icon(Icons.zoom_in_rounded),
+                  label: const Text('تكبير QR'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: primaryColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 
   Future<Map<String, dynamic>> _loadOrder() async {
@@ -513,10 +948,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
             final amountDueAfterWallet =
                 walletPreview['amountDueAfterWallet'] ??
                     totalWithDelivery.toDouble();
-            final methods =
-                List<String>.from(_settings!['enabledMethods'] ?? []);
+            final methods = _resolveAvailableMethods(_settings!);
             if (walletBalance > 0 && !methods.contains('wallet')) {
               methods.insert(0, 'wallet');
+            }
+            if (_selectedMethod == null || !methods.contains(_selectedMethod)) {
+              _selectedMethod = methods.isNotEmpty ? methods.first : null;
             }
 
             return Directionality(
@@ -962,70 +1399,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (_selectedMethod == 'wallet') ...[
-                                Text(
-                                  amountDueAfterWallet > 0
-                                      ? 'المحفظة ستغطي ${walletRequestedAmount.toStringAsFixed(2)} ج.س ويتبقى ${amountDueAfterWallet.toStringAsFixed(2)} ج.س، لذلك يلزمك اختيار طريقة أخرى لباقي المبلغ.'
-                                      : 'سيتم سداد الطلب كاملًا من المحفظة وخصم ${walletRequestedAmount.toStringAsFixed(2)} ج.س عند تأكيد الطلب.',
-                                  style: const TextStyle(
-                                    fontFamily: 'Tajawal',
-                                    fontWeight: FontWeight.bold,
-                                    color: primaryColor,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'الرصيد بعد الخصم: ${(walletBalance - walletRequestedAmount).toStringAsFixed(2)} ج.س',
-                                  style: const TextStyle(
-                                    fontFamily: 'Tajawal',
-                                    fontSize: 15,
-                                  ),
-                                ),
-                              ] else ...[
-                                Text(
-                                  'اسم صاحب الحساب:',
-                                  style: const TextStyle(
-                                      fontFamily: 'Tajawal',
-                                      fontWeight: FontWeight.bold,
-                                      color: primaryColor),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                    ((_settings!['${_selectedMethod}AccountHolder'] ??
-                                                _settings![
-                                                    '${_selectedMethod}Holder'] ??
-                                                '')
-                                            .toString()
-                                            .trim()
-                                            .isEmpty)
-                                        ? 'غير متوفر'
-                                        : (_settings![
-                                                    '${_selectedMethod}AccountHolder'] ??
-                                                _settings![
-                                                    '${_selectedMethod}Holder'] ??
-                                                '')
-                                            .toString(),
-                                    style: const TextStyle(
-                                        fontFamily: 'Tajawal', fontSize: 15)),
-                                const SizedBox(height: 10),
-                                Text(
-                                  _selectedMethod == 'bankk'
-                                      ? 'رقم الحساب:'
-                                      : _selectedMethod == 'ocash'
-                                          ? 'رقم الحساب:'
-                                          : 'رقم الحساب:',
-                                  style: const TextStyle(
-                                      fontFamily: 'Tajawal',
-                                      fontWeight: FontWeight.bold,
-                                      color: primaryColor),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                    _settings!['${_selectedMethod}Account'] ??
-                                        '',
-                                    style: const TextStyle(
-                                        fontFamily: 'Tajawal', fontSize: 15)),
-                              ],
+                              _buildSelectedMethodDetails(
+                                method: _selectedMethod!,
+                                walletBalance: walletBalance,
+                                walletRequestedAmount: walletRequestedAmount,
+                                amountDueAfterWallet: amountDueAfterWallet,
+                              ),
                             ],
                           ),
                         ),

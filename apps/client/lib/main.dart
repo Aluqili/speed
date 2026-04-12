@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:speedstar_core/speedstar_core.dart';
-import 'package:speedstar_core/src/auth/login_gate.dart' as auth_gate;
-import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 import 'package:speedstar_core/src/config/remote_helpers.dart'
     as remote_helpers;
 import 'package:firebase_remote_config/firebase_remote_config.dart';
@@ -184,15 +182,7 @@ class _InitGateClientState extends State<_InitGateClient> {
             },
           );
         }
-        return auth_gate.LoginGate(
-          unauthenticatedBuilder: (_) => LoginScreenArabic(
-            allowRegister: true,
-            allowGoogleSignIn: false,
-            allowGuestSignIn: false,
-            allowPhoneSignIn: _clientPhoneSignInEnabled,
-          ),
-          signedIn: const _ClientHomeByAuthUser(),
-        );
+        return const _ClientHomeEntryPoint();
       },
     );
   }
@@ -433,17 +423,29 @@ class _ModeBannerState extends State<_ModeBanner> {
   Widget build(BuildContext context) => widget.child;
 }
 
-class _ClientHomeByAuthUser extends StatelessWidget {
-  const _ClientHomeByAuthUser();
+class _ClientHomeEntryPoint extends StatelessWidget {
+  const _ClientHomeEntryPoint();
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    unawaited(PushNotificationService.instance.bindClient(user.uid));
-    return ClientHomeScreen(clientId: user.uid);
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final user = snapshot.data;
+        final isSignedIn = user != null && !user.isAnonymous;
+        if (isSignedIn) {
+          unawaited(PushNotificationService.instance.bindClient(user.uid));
+        }
+
+        return ClientHomeScreen(clientId: isSignedIn ? user!.uid : '');
+      },
+    );
   }
 }
 

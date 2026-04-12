@@ -133,6 +133,18 @@
                 اسم صاحب حساب بنكك
                 <input id="bankkAccountHolderInput" type="text" placeholder="أدخل اسم صاحب حساب بنكك" />
               </label>
+              <label>
+                رابط QR بنكك
+                <input id="bankkQrUrlInput" type="url" placeholder="https://..." />
+              </label>
+              <label>
+                تعليمات بنكك
+                <textarea id="bankkInstructionsInput" rows="3" placeholder="تعليمات إضافية للعميل عند الدفع عبر بنكك"></textarea>
+              </label>
+              <label>
+                رابط فتح تطبيق بنكك
+                <input id="bankkOpenUrlInput" type="text" placeholder="bankak://... أو https://..." />
+              </label>
 
               <label class="payment-method-row">
                 <input id="enableOcash" type="checkbox" />
@@ -146,6 +158,18 @@
                 اسم صاحب حساب أوكاش
                 <input id="ocashAccountHolderInput" type="text" placeholder="أدخل اسم صاحب حساب أوكاش" />
               </label>
+              <label>
+                رابط QR أوكاش
+                <input id="ocashQrUrlInput" type="url" placeholder="https://..." />
+              </label>
+              <label>
+                تعليمات أوكاش
+                <textarea id="ocashInstructionsInput" rows="3" placeholder="تعليمات إضافية للعميل عند الدفع عبر أوكاش"></textarea>
+              </label>
+              <label>
+                رابط فتح تطبيق أوكاش
+                <input id="ocashOpenUrlInput" type="text" placeholder="ocash://... أو https://..." />
+              </label>
 
               <label class="payment-method-row">
                 <input id="enableFawry" type="checkbox" />
@@ -158,6 +182,18 @@
               <label>
                 اسم صاحب حساب فوري
                 <input id="fawryAccountHolderInput" type="text" placeholder="أدخل اسم صاحب حساب فوري" />
+              </label>
+              <label>
+                رابط QR فوري
+                <input id="fawryQrUrlInput" type="url" placeholder="https://..." />
+              </label>
+              <label>
+                تعليمات فوري
+                <textarea id="fawryInstructionsInput" rows="3" placeholder="تعليمات إضافية للعميل عند الدفع عبر فوري"></textarea>
+              </label>
+              <label>
+                رابط فتح تطبيق فوري
+                <input id="fawryOpenUrlInput" type="text" placeholder="fawry://... أو https://..." />
               </label>
 
               <button id="savePaymentSettingsBtn" type="submit" class="btn primary">حفظ إعدادات الدفع</button>

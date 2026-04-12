@@ -27,6 +27,12 @@ class ClientWalletHistoryScreen extends StatefulWidget {
 }
 
 class _ClientWalletHistoryScreenState extends State<ClientWalletHistoryScreen> {
+  Query<Map<String, dynamic>> _historyQuery() {
+    return FirebaseFirestore.instance
+        .collection('wallet_recharges')
+      .where('clientId', isEqualTo: widget.clientId);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -39,20 +45,52 @@ class _ClientWalletHistoryScreenState extends State<ClientWalletHistoryScreen> {
           iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
           elevation: 1,
         ),
-        body: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('wallet_recharges')
-              .where('clientId', isEqualTo: widget.clientId)
-              .orderBy('createdAt', descending: true)
-              .snapshots(),
+        body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: _historyQuery().snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.history_toggle_off,
+                        size: 44,
+                        color: AppThemeArabic.clientPrimary,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'تعذر تحميل سجل الشحن الآن.',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${snapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
               return const Center(child: Text('لا يوجد عمليات شحن حتى الآن'));
             }
-            final docs = snapshot.data!.docs;
+            final docs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
+              snapshot.data!.docs,
+            )
+              ..sort((a, b) {
+                final aTs = a.data()['createdAt'] as Timestamp?;
+                final bTs = b.data()['createdAt'] as Timestamp?;
+                return (bTs?.millisecondsSinceEpoch ?? 0)
+                    .compareTo(aTs?.millisecondsSinceEpoch ?? 0);
+              });
             return ListView.builder(
               itemCount: docs.length,
               itemBuilder: (context, index) {
@@ -65,7 +103,7 @@ class _ClientWalletHistoryScreenState extends State<ClientWalletHistoryScreen> {
                     title: Text('المبلغ: ${data['amount']} ج.س', style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(
                       'الحالة: ${_walletStatusText((data['status'] ?? '').toString())}\n'
-                      'الطريقة: ${(data['paymentMethod'] ?? '').toString()}',
+                      'الطريقة: ${_walletMethodLabel((data['paymentMethod'] ?? '').toString())}',
                       style: const TextStyle(color: Colors.grey),
                     ),
                     trailing: Text(
@@ -82,5 +120,18 @@ class _ClientWalletHistoryScreenState extends State<ClientWalletHistoryScreen> {
         ),
       ),
     );
+  }
+}
+
+String _walletMethodLabel(String method) {
+  switch (method.trim().toLowerCase()) {
+    case 'bankk':
+      return 'بنكك';
+    case 'ocash':
+      return 'أوكاش';
+    case 'fawry':
+      return 'فوري';
+    default:
+      return method;
   }
 }

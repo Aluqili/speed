@@ -1,10 +1,10 @@
-import 'address_selection_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:badges/badges.dart' as badges;
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 
 import 'client_home_tab.dart';
 import 'client_orders_tab.dart';
@@ -25,11 +25,12 @@ class ClientHomeScreen extends StatefulWidget {
 class _ClientHomeScreenState extends State<ClientHomeScreen> {
   int _selectedIndex = 0;
   DateTime? _lastBackPressed;
-  bool _openAddressOnStart = true;
   bool _showFavoritesTab = true;
   bool _showCartBadge = true;
   Color _accentColor = AppThemeArabic.clientPrimary;
   bool _startupHandled = false;
+
+  bool get _isGuest => widget.clientId.trim().isEmpty;
 
   @override
   void initState() {
@@ -43,19 +44,6 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
 
     Provider.of<CartProvider>(context, listen: false).initialize();
     await _loadRemoteConfig();
-    if (!mounted) return;
-
-    if (_openAddressOnStart) {
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => AddressSelectionScreen(
-            userId: widget.clientId,
-            userType: 'client',
-            isSelecting: true,
-          ),
-        ),
-      );
-    }
   }
 
   Future<void> _loadRemoteConfig() async {
@@ -63,7 +51,6 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
       final rc = FirebaseRemoteConfig.instance;
       await rc.fetchAndActivate();
       setState(() {
-        _openAddressOnStart = rc.getBool('client_home_open_address_on_start');
         _showFavoritesTab = true;
         _showCartBadge = rc.getBool('client_home_show_cart_badge');
         final hex = rc.getString('client_home_nav_accent_hex');
@@ -100,10 +87,23 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final List<Widget> pages = [
-      // تأكد أن كل تبويب ملفوف بـ SafeArea لمنع أي overflow
       SafeArea(child: ClientHomeTab(clientId: widget.clientId)),
-      SafeArea(child: ClientOrdersTab(clientId: widget.clientId)),
-      SafeArea(child: ClientFavoritesTab(clientId: widget.clientId)),
+      SafeArea(
+        child: _isGuest
+            ? const _GuestLockedTab(
+                title: 'طلباتك تحتاج تسجيل الدخول',
+                subtitle: 'سجل دخولك لمتابعة الطلبات الحالية والسابقة.',
+              )
+            : ClientOrdersTab(clientId: widget.clientId),
+      ),
+      SafeArea(
+        child: _isGuest
+            ? const _GuestLockedTab(
+                title: 'المفضلة مرتبطة بحسابك',
+                subtitle: 'سجل دخولك للاحتفاظ بالمطاعم والوجبات المفضلة.',
+              )
+            : ClientFavoritesTab(clientId: widget.clientId),
+      ),
       SafeArea(child: ClientAccountTab(clientId: widget.clientId)),
     ];
 
@@ -248,6 +248,94 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _GuestLockedTab extends StatelessWidget {
+  const _GuestLockedTab({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: Colors.grey[100],
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircleAvatar(
+                      radius: 34,
+                      backgroundColor: Color(0xFFFFF0E8),
+                      child: Icon(
+                        Icons.lock_person_rounded,
+                        color: AppThemeArabic.clientPrimary,
+                        size: 34,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      subtitle,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.grey[700],
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const LoginScreenArabic(
+                              allowRegister: true,
+                              allowGoogleSignIn: false,
+                              allowGuestSignIn: false,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.login_rounded),
+                      label: const Text('تسجيل الدخول'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

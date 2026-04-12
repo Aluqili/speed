@@ -8,7 +8,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 
+import '../الخدمات/guest_location_service.dart';
+import 'add_new_address_screen.dart';
 import 'cart_provider.dart';
 import 'payment_screen.dart';
 
@@ -227,6 +230,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     final cart = Provider.of<CartProvider?>(context, listen: false);
     final estimatedLargeOrderFee =
         cart == null ? 0.0 : _calculateLargeOrderFee(cart);
+    final user = FirebaseAuth.instance.currentUser;
 
     if (!mounted) {
       return;
@@ -252,7 +256,14 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         });
         return;
       }
-      final user = FirebaseAuth.instance.currentUser!;
+      if (user == null || user.isAnonymous) {
+        setState(() {
+          _deliveryFee = 0.0;
+          _largeOrderFee = estimatedLargeOrderFee;
+          _loadingDelivery = false;
+        });
+        return;
+      }
       final clientDoc = await FirebaseFirestore.instance
           .collection('clients')
           .doc(user.uid)
@@ -384,9 +395,73 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     }
   }
 
+  Future<User?> _ensureSignedInBeforeCheckout() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null && !currentUser.isAnonymous) {
+      return currentUser;
+    }
+
+    final loggedIn = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LoginScreenArabic(
+          allowRegister: true,
+          allowGoogleSignIn: false,
+          allowGuestSignIn: false,
+        ),
+      ),
+    );
+
+    if (loggedIn != true) {
+      return null;
+    }
+
+    return FirebaseAuth.instance.currentUser;
+  }
+
+  Future<void> _seedAddressFromGuestLocation(String clientId) async {
+    final clientDoc = await FirebaseFirestore.instance
+        .collection('clients')
+        .doc(clientId)
+        .get();
+    final defaultAddressId = clientDoc.data()?['defaultAddressId'];
+    if (defaultAddressId != null) {
+      return;
+    }
+
+    final guestLocation = await GuestLocationService.load();
+    if (!mounted || guestLocation == null) {
+      return;
+    }
+
+    final saved = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddNewAddressScreen(
+          userId: clientId,
+          userType: 'client',
+          existingName: guestLocation.addressName,
+          existingLatitude: guestLocation.latitude,
+          existingLongitude: guestLocation.longitude,
+        ),
+      ),
+    );
+
+    if (saved != null) {
+      await GuestLocationService.clear();
+    }
+  }
+
   Future<void> _onCheckoutPressed(CartProvider cart) async {
-    final user = FirebaseAuth.instance.currentUser!;
+    final user = await _ensureSignedInBeforeCheckout();
+    if (!mounted || user == null || user.isAnonymous) {
+      return;
+    }
     await _calculateDeliveryFee();
+    if (!mounted) {
+      return;
+    }
+    await _seedAddressFromGuestLocation(user.uid);
     if (!mounted) {
       return;
     }
@@ -653,7 +728,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       'total': cart.totalPrice,
       'deliveryFee': _deliveryFee,
       'largeOrderFee': currentLargeOrderFee,
-      'totalBeforeDiscount': cart.totalPrice + _deliveryFee + currentLargeOrderFee,
+      'totalBeforeDiscount':
+          cart.totalPrice + _deliveryFee + currentLargeOrderFee,
       'totalWithDelivery':
           cart.totalPrice + _deliveryFee + currentLargeOrderFee,
     };
@@ -861,15 +937,14 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
           automaticallyImplyLeading: true,
         ),
         body: cart.cartItems.isEmpty
-                ? const Center(
-                    child: Text('السلة فارغة',
-                        style: TextStyle(fontSize: 18, color: Colors.grey)))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: cart.cartItems.length,
-                    itemBuilder: (_, i) =>
-                        _buildCartItem(cart, cart.cartItems[i]),
-                  ),
+            ? const Center(
+                child: Text('السلة فارغة',
+                    style: TextStyle(fontSize: 18, color: Colors.grey)))
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: cart.cartItems.length,
+                itemBuilder: (_, i) => _buildCartItem(cart, cart.cartItems[i]),
+              ),
         bottomNavigationBar: Container(
           padding: const EdgeInsets.all(16),
           decoration: const BoxDecoration(
