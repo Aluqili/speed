@@ -1,14 +1,15 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
-import 'package:speedstar_core/src/config/remote_helpers.dart';
 import 'package:speedstar_core/speedstar_core.dart';
-import 'package:speedstar_core/src/auth/login_gate.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'firebase_options.dart' as dev_firebase;
@@ -19,8 +20,28 @@ import 'الشاشات/store_notifications_screen.dart';
 import 'الشاشات/store_order_details_screen.dart';
 import 'الخدمات/push_notification_service.dart';
 
+const String _firebaseEnv =
+    String.fromEnvironment('FIREBASE_ENV', defaultValue: 'dev');
+
+FirebaseOptions _resolveFirebaseOptions() {
+  return _firebaseEnv == 'prod'
+      ? prod_firebase.DefaultFirebaseOptions.currentPlatform
+      : dev_firebase.DefaultFirebaseOptions.currentPlatform;
+}
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: _resolveFirebaseOptions());
+  if (message.notification != null) {
+    return;
+  }
+  await PushNotificationService.instance.showRemoteMessageAsLocal(message);
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   runApp(const StoreApp());
 }
 
@@ -63,9 +84,6 @@ class _InitGate extends StatefulWidget {
 }
 
 class _InitGateState extends State<_InitGate> {
-  static const String _firebaseEnv =
-      String.fromEnvironment('FIREBASE_ENV', defaultValue: 'dev');
-
   late Future<void> _initFuture;
   bool _maintenanceMode = false;
   String _maintenanceMessage = 'التطبيق تحت الصيانة. حاول لاحقًا.';
@@ -84,11 +102,8 @@ class _InitGateState extends State<_InitGate> {
 
   Future<void> _safeInit() async {
     try {
-      final firebaseOptions = _firebaseEnv == 'prod'
-          ? prod_firebase.DefaultFirebaseOptions.currentPlatform
-          : dev_firebase.DefaultFirebaseOptions.currentPlatform;
       await Firebase.initializeApp(
-        options: firebaseOptions,
+        options: _resolveFirebaseOptions(),
       );
       await PushNotificationService.instance.initialize();
       final rc = FirebaseRemoteConfig.instance;
@@ -162,14 +177,262 @@ class _InitGateState extends State<_InitGate> {
             },
           );
         }
-        return LoginGate(
-          unauthenticatedBuilder: (_) => const _StoreUnauthenticatedScreen(),
-          signedIn: ChangeNotifierProvider(
-            create: (_) => CartProvider(),
-            child: const _StoreHomeByAuthUser(),
+        return _NotificationPermissionGate(
+          child: LoginGate(
+            unauthenticatedBuilder: (_) => const _StoreUnauthenticatedScreen(),
+            signedIn: ChangeNotifierProvider(
+              create: (_) => CartProvider(),
+              child: const _StoreHomeByAuthUser(),
+            ),
           ),
         );
       },
+    );
+  }
+}
+
+class _NotificationPermissionGate extends StatefulWidget {
+  const _NotificationPermissionGate({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_NotificationPermissionGate> createState() =>
+      _NotificationPermissionGateState();
+}
+
+class _NotificationPermissionGateState
+    extends State<_NotificationPermissionGate> with WidgetsBindingObserver {
+  bool _checking = true;
+  bool _requesting = false;
+  bool _notificationsAllowed = false;
+
+  bool get _mustEnforce {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshStatus();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshStatus();
+    }
+  }
+
+  Future<void> _refreshStatus() async {
+    if (!_mustEnforce) {
+      if (!mounted) return;
+      setState(() {
+        _notificationsAllowed = true;
+        _checking = false;
+      });
+      return;
+    }
+
+    final settings =
+        await PushNotificationService.instance.getNotificationSettings();
+    if (!mounted) return;
+    setState(() {
+      _notificationsAllowed =
+          settings.authorizationStatus == AuthorizationStatus.authorized;
+      _checking = false;
+    });
+  }
+
+  Future<void> _requestNotifications() async {
+    if (_requesting) return;
+    setState(() => _requesting = true);
+    try {
+      final settings =
+          await PushNotificationService.instance.requestPermission();
+      if (!mounted) return;
+      final isAuthorized =
+          settings.authorizationStatus == AuthorizationStatus.authorized;
+      setState(() {
+        _notificationsAllowed = isAuthorized;
+      });
+      if (!isAuthorized) {
+        await openAppSettings();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _requesting = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_checking) {
+      return const _InitSplash(
+        title: 'SpeedStar Store',
+        subtitle: 'جارٍ التحقق من إعدادات التنبيهات',
+        imageAsset: 'assets/branding/app_icon_store.png.jpeg',
+        accent: Color(0xFFE85D2A),
+      );
+    }
+
+    if (_notificationsAllowed) {
+      return widget.child;
+    }
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFFFF3EC), Colors.white],
+            ),
+          ),
+          child: SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(28),
+                      boxShadow: [
+                        BoxShadow(
+                          color:
+                              const Color(0xFFE85D2A).withValues(alpha: 0.12),
+                          blurRadius: 30,
+                          offset: const Offset(0, 14),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 68,
+                          height: 68,
+                          decoration: BoxDecoration(
+                            color:
+                                const Color(0xFFE85D2A).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(22),
+                          ),
+                          child: const Icon(
+                            Icons.notifications_active_rounded,
+                            color: Color(0xFFE85D2A),
+                            size: 34,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          'تفعيل الإشعارات مطلوب',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'لا يمكن استخدام تطبيق المتجر بدون إشعارات الطلبات. فعّل الإشعارات حتى تصلك الطلبات الجديدة والتنبيهات الحرجة فورًا.',
+                          style: TextStyle(
+                            height: 1.7,
+                            color: Colors.black87,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF7F2),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline_rounded,
+                                color: Color(0xFFE85D2A),
+                              ),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'إذا كنت قد رفضت الإذن سابقًا، سيفتح التطبيق الإعدادات لتفعيله يدويًا ثم ارجع هنا مباشرة.',
+                                  style: TextStyle(height: 1.6),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed:
+                                _requesting ? null : _requestNotifications,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFE85D2A),
+                              minimumSize: const Size.fromHeight(54),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                            ),
+                            icon: _requesting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.notifications_outlined),
+                            label: Text(
+                              _requesting
+                                  ? 'جارٍ فتح الإذن أو الإعدادات...'
+                                  : 'تفعيل الإشعارات الآن',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _refreshStatus,
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(50),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('تحقق مرة أخرى'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -509,7 +772,8 @@ class _StoreSignedInShellState extends State<_StoreSignedInShell> {
     _tapSubscription = PushNotificationService.instance.notificationTapStream
         .listen(_handleNotificationPayload);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final pending = PushNotificationService.instance.consumePendingTapPayload();
+      final pending =
+          PushNotificationService.instance.consumePendingTapPayload();
       if (pending != null) {
         _handleNotificationPayload(pending);
       }

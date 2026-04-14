@@ -6,10 +6,31 @@ import 'package:getwidget/getwidget.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class StoreAddMenuItemScreen extends StatefulWidget {
   final String restaurantId;
-  const StoreAddMenuItemScreen({super.key, required this.restaurantId});
+  final String? itemId;
+  final String? initialName;
+  final double? initialPrice;
+  final Map<String, double>? initialSizes;
+  final String? initialCategory;
+  final String? initialImageUrl;
+  final bool initialAvailable;
+
+  const StoreAddMenuItemScreen({
+    super.key,
+    required this.restaurantId,
+    this.itemId,
+    this.initialName,
+    this.initialPrice,
+    this.initialSizes,
+    this.initialCategory,
+    this.initialImageUrl,
+    this.initialAvailable = true,
+  });
+
+  bool get isEditing => itemId != null && itemId!.trim().isNotEmpty;
 
   @override
   State<StoreAddMenuItemScreen> createState() => _StoreAddMenuItemScreenState();
@@ -75,7 +96,31 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
   final TextEditingController _largePriceController = TextEditingController();
   String? _selectedCategory;
   File? _imageFile;
+  String? _existingImageUrl;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _itemNameController.text = widget.initialName?.trim() ?? '';
+    _selectedCategory = widget.initialCategory?.trim().isNotEmpty == true
+        ? widget.initialCategory!.trim()
+        : null;
+    _existingImageUrl = widget.initialImageUrl?.trim();
+
+    final initialSizes = widget.initialSizes ?? const <String, double>{};
+    if (initialSizes.isNotEmpty) {
+      _smallPriceController.text =
+          initialSizes['small']?.toStringAsFixed(2).replaceAll('.00', '') ?? '';
+      _mediumPriceController.text =
+          initialSizes['medium']?.toStringAsFixed(2).replaceAll('.00', '') ?? '';
+      _largePriceController.text =
+          initialSizes['large']?.toStringAsFixed(2).replaceAll('.00', '') ?? '';
+    } else if (widget.initialPrice != null && widget.initialPrice! > 0) {
+      _itemPriceController.text =
+          widget.initialPrice!.toStringAsFixed(2).replaceAll('.00', '');
+    }
+  }
 
   @override
   void dispose() {
@@ -117,6 +162,49 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
     }
   }
 
+  String _categoryDocId(String category) => category.replaceAll('/', '-');
+
+  Widget _buildSectionCard({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 14),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: AppThemeArabic.storePrimary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: AppThemeArabic.storePrimary),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     if (_isLoading) return;
     final messenger = ScaffoldMessenger.of(context);
@@ -124,7 +212,7 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
-    if (_imageFile == null) {
+    if (_imageFile == null && (_existingImageUrl == null || _existingImageUrl!.isEmpty)) {
       messenger.showSnackBar(
         const SnackBar(content: Text('الرجاء اختيار صورة للصنف')),
       );
@@ -197,59 +285,86 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
       return;
     }
 
-    final categoryDocId = category.replaceAll('/', '-');
+    final categoryDocId = _categoryDocId(category);
+    final previousCategory = widget.initialCategory?.trim() ?? '';
+    final previousCategoryDocId =
+        previousCategory.isEmpty ? '' : _categoryDocId(previousCategory);
 
     try {
-      final imageUrl = await _uploadImageToCloudinary(_imageFile!);
-      if (imageUrl == null) {
+      String imageUrl = _existingImageUrl?.trim() ?? '';
+      if (_imageFile != null) {
+        final uploadedImageUrl = await _uploadImageToCloudinary(_imageFile!);
+        if (uploadedImageUrl == null) {
+          setState(() => _isLoading = false);
+          messenger.showSnackBar(
+            const SnackBar(content: Text('فشل رفع الصورة')),
+          );
+          return;
+        }
+        imageUrl = uploadedImageUrl;
+      }
+
+      if (imageUrl.isEmpty) {
         setState(() => _isLoading = false);
         messenger.showSnackBar(
-          const SnackBar(content: Text('فشل رفع الصورة')),
+          const SnackBar(content: Text('تعذر تحديد صورة الصنف')),
         );
         return;
       }
 
-      final menuItemRef = FirebaseFirestore.instance
+      final restaurantsRef = FirebaseFirestore.instance
           .collection('restaurants')
-          .doc(widget.restaurantId)
+          .doc(widget.restaurantId);
+      final menuItemRef = restaurantsRef
           .collection('menu')
           .doc(categoryDocId)
           .collection('items')
-          .doc();
+          .doc(widget.itemId);
+      final fullMenuRef = restaurantsRef
+          .collection('full_menu')
+          .doc(widget.itemId ?? menuItemRef.id);
 
-      await menuItemRef.set({
+      final payload = <String, dynamic>{
         'name': itemName,
         'price': price,
-        if (sizes.isNotEmpty) 'sizes': sizes,
         'imageUrl': imageUrl,
         'category': category,
-        'available': true,
-        'createdAt': FieldValue.serverTimestamp(),
+        'available': widget.isEditing ? widget.initialAvailable : true,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+      if (sizes.isNotEmpty) {
+        payload['sizes'] = sizes;
+      }
+      if (!widget.isEditing) {
+        payload['createdAt'] = FieldValue.serverTimestamp();
+      }
+
+      await menuItemRef.set(payload, SetOptions(merge: true));
+      await fullMenuRef.set(payload, SetOptions(merge: true));
+
+      if (widget.isEditing && sizes.isEmpty) {
+        try {
+          await menuItemRef.update({'sizes': FieldValue.delete()});
+        } catch (_) {}
+        try {
+          await fullMenuRef.update({'sizes': FieldValue.delete()});
+        } catch (_) {}
+      }
+
+      if (widget.isEditing &&
+          previousCategory.isNotEmpty &&
+          previousCategoryDocId != categoryDocId) {
+        try {
+          await restaurantsRef
+              .collection('menu')
+              .doc(previousCategoryDocId)
+              .collection('items')
+              .doc(widget.itemId)
+              .delete();
+        } catch (_) {}
+      }
 
       String? warningMessage;
-      try {
-        await FirebaseFirestore.instance
-            .collection('restaurants')
-            .doc(widget.restaurantId)
-            .collection('full_menu')
-            .doc(menuItemRef.id)
-            .set({
-          'name': itemName,
-          'price': price,
-          if (sizes.isNotEmpty) 'sizes': sizes,
-          'imageUrl': imageUrl,
-          'category': category,
-          'available': true,
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      } on FirebaseException catch (e) {
-        warningMessage = e.code == 'permission-denied'
-            ? 'تمت إضافة الصنف لكن تعذرت مزامنته في القائمة الكاملة بسبب الصلاحيات.'
-            : 'تمت إضافة الصنف لكن تعذرت مزامنته في القائمة الكاملة.';
-      }
 
       if (!mounted) return;
       setState(() {
@@ -261,18 +376,25 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
         _largePriceController.clear();
         _selectedCategory = null;
         _imageFile = null;
+        _existingImageUrl = null;
       });
 
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          title: const Text('تمت الإضافة'),
+          title: Text(widget.isEditing ? 'تم التعديل' : 'تمت الإضافة'),
           content: Text(
-            warningMessage ?? 'تمت إضافة الصنف بنجاح ✅',
+            warningMessage ??
+                (widget.isEditing
+                    ? 'تم تعديل الصنف بنجاح ✅'
+                    : 'تمت إضافة الصنف بنجاح ✅'),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).maybePop(true);
+              },
               child: const Text('حسنًا'),
             ),
           ],
@@ -282,8 +404,10 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
       if (!mounted) return;
       setState(() => _isLoading = false);
       final message = e.code == 'permission-denied'
-          ? 'لا تملك صلاحية إضافة صنف. تأكد أن المتجر معتمد وحسابك يطابق صاحب المتجر.'
-          : 'تعذر إضافة الصنف: ${e.message ?? e.code}';
+          ? (widget.isEditing
+              ? 'لا تملك صلاحية تعديل الصنف. تأكد أن المتجر معتمد وحسابك يطابق صاحب المتجر.'
+              : 'لا تملك صلاحية إضافة صنف. تأكد أن المتجر معتمد وحسابك يطابق صاحب المتجر.')
+          : 'تعذر ${widget.isEditing ? 'تعديل' : 'إضافة'} الصنف: ${e.message ?? e.code}';
       messenger.showSnackBar(
         SnackBar(content: Text(message)),
       );
@@ -291,7 +415,7 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
       if (!mounted) return;
       setState(() => _isLoading = false);
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر إضافة الصنف: $e')),
+        SnackBar(content: Text('تعذر ${widget.isEditing ? 'تعديل' : 'إضافة'} الصنف: $e')),
       );
     }
   }
@@ -300,7 +424,7 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: GFAppBar(
-        title: const Text("إضافة صنف جديد"),
+        title: Text(widget.isEditing ? "تعديل الصنف" : "إضافة صنف جديد"),
         centerTitle: true,
       ),
       body: Padding(
@@ -309,122 +433,208 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
           key: _formKey,
           child: ListView(
             children: [
-              TextFormField(
-                controller: _itemNameController,
-                decoration: const InputDecoration(labelText: 'اسم الصنف'),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'الرجاء إدخال اسم الصنف';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _itemPriceController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'السعر الأساسي (اختياري عند إدخال الأحجام)',
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppThemeArabic.storePrimary, Color(0xFF16A085)],
+                    begin: Alignment.topRight,
+                    end: Alignment.bottomLeft,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
                 ),
-                validator: (value) {
-                  final small = _smallPriceController.text.trim();
-                  final medium = _mediumPriceController.text.trim();
-                  final large = _largePriceController.text.trim();
-                  final hasAnySize =
-                      small.isNotEmpty || medium.isNotEmpty || large.isNotEmpty;
-
-                  if (!hasAnySize && (value == null || value.isEmpty)) {
-                    return 'الرجاء إدخال السعر أو إدخال أسعار الأحجام';
-                  }
-                  if (value == null || value.trim().isEmpty) {
-                    return null;
-                  }
-                  final parsed =
-                      double.tryParse(value.trim().replaceAll(',', '.'));
-                  if (parsed == null) {
-                    return 'الرجاء إدخال سعر صالح';
-                  }
-                  if (parsed <= 0) {
-                    return 'السعر يجب أن يكون أكبر من صفر';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _smallPriceController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'سعر الحجم الصغير'),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _mediumPriceController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'سعر الحجم الوسط'),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _largePriceController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'سعر الحجم الكبير'),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _selectedCategory,
-                decoration: const InputDecoration(labelText: 'فئة الصنف'),
-                items: _categoryOptions
-                    .map(
-                      (category) => DropdownMenuItem<String>(
-                        value: category,
-                        child: Text(category),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.16),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  setState(() => _selectedCategory = value);
-                },
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'الرجاء اختيار فئة من القائمة';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              _imageFile == null
-                  ? const Text('لم يتم اختيار صورة بعد')
-                  : GFImageOverlay(
-                      height: 150,
-                      width: double.infinity,
-                      image: FileImage(_imageFile!),
-                      boxFit: BoxFit.cover,
+                      child: Icon(
+                        widget.isEditing ? Icons.edit_note_rounded : Icons.add_box_rounded,
+                        color: Colors.white,
+                      ),
                     ),
-              const SizedBox(height: 8),
-              GFButton(
-                onPressed: _pickImage,
-                text: 'اختيار صورة',
-                icon: const Icon(Icons.image),
-                fullWidthButton: true,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.isEditing ? 'تحديث بيانات الصنف' : 'أضف صنفًا جديدًا للقائمة',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 18,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'يمكنك إدارة الاسم والفئة والصورة والسعر من شاشة واحدة.',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _buildSectionCard(
+                title: 'البيانات الأساسية',
+                icon: Icons.inventory_2_outlined,
+                children: [
+                  TextFormField(
+                    controller: _itemNameController,
+                    decoration: const InputDecoration(labelText: 'اسم الصنف'),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'الرجاء إدخال اسم الصنف';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: _selectedCategory,
+                    decoration: const InputDecoration(labelText: 'فئة الصنف'),
+                    items: _categoryOptions
+                        .map(
+                          (category) => DropdownMenuItem<String>(
+                            value: category,
+                            child: Text(category),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() => _selectedCategory = value);
+                    },
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'الرجاء اختيار فئة من القائمة';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+              _buildSectionCard(
+                title: 'التسعير',
+                icon: Icons.sell_outlined,
+                children: [
+                  TextFormField(
+                    controller: _itemPriceController,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'السعر الأساسي (اختياري عند إدخال الأحجام)',
+                    ),
+                    validator: (value) {
+                      final small = _smallPriceController.text.trim();
+                      final medium = _mediumPriceController.text.trim();
+                      final large = _largePriceController.text.trim();
+                      final hasAnySize =
+                          small.isNotEmpty || medium.isNotEmpty || large.isNotEmpty;
+
+                      if (!hasAnySize && (value == null || value.isEmpty)) {
+                        return 'الرجاء إدخال السعر أو إدخال أسعار الأحجام';
+                      }
+                      if (value == null || value.trim().isEmpty) {
+                        return null;
+                      }
+                      final parsed =
+                          double.tryParse(value.trim().replaceAll(',', '.'));
+                      if (parsed == null) {
+                        return 'الرجاء إدخال سعر صالح';
+                      }
+                      if (parsed <= 0) {
+                        return 'السعر يجب أن يكون أكبر من صفر';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _smallPriceController,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'سعر الحجم الصغير'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _mediumPriceController,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'سعر الحجم الوسط'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _largePriceController,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'سعر الحجم الكبير'),
+                  ),
+                ],
+              ),
+              _buildSectionCard(
+                title: 'الصورة والهوية البصرية',
+                icon: Icons.image_outlined,
+                children: [
+                  _imageFile == null
+                      ? (_existingImageUrl?.isNotEmpty == true
+                          ? GFImageOverlay(
+                              height: 170,
+                              width: double.infinity,
+                              image: NetworkImage(_existingImageUrl!),
+                              boxFit: BoxFit.cover,
+                            )
+                          : Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: AppThemeArabic.storeBackground,
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(color: AppThemeArabic.storePrimary.withOpacity(0.12)),
+                              ),
+                              child: const Text(
+                                'لم يتم اختيار صورة بعد',
+                                textAlign: TextAlign.center,
+                              ),
+                            ))
+                      : GFImageOverlay(
+                          height: 170,
+                          width: double.infinity,
+                          image: FileImage(_imageFile!),
+                          boxFit: BoxFit.cover,
+                        ),
+                  const SizedBox(height: 10),
+                  GFButton(
+                    onPressed: _pickImage,
+                    text: widget.isEditing ? 'تغيير الصورة' : 'اختيار صورة',
+                    icon: const Icon(Icons.image),
+                    fullWidthButton: true,
+                  ),
+                ],
               ),
               const SizedBox(height: 24),
               _isLoading
-                  ? const Center(
+                  ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          CircularProgressIndicator(),
-                          SizedBox(height: 8),
-                          Text('جاري إضافة الصنف...')
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: 8),
+                          Text(widget.isEditing
+                              ? 'جاري تعديل الصنف...'
+                              : 'جاري إضافة الصنف...')
                         ],
                       ),
                     )
                   : GFButton(
                       onPressed: _submit,
-                      text: 'إضافة الصنف',
+                      text: widget.isEditing ? 'حفظ التعديلات' : 'إضافة الصنف',
                       color: GFColors.SUCCESS,
                       fullWidthButton: true,
                     ),

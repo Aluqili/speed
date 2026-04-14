@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,9 +18,12 @@ import 'store_full_menu_screen.dart';
 import 'store_working_hours_screen.dart';
 import 'store_wallet_screen.dart';
 import 'store_change_requests_screen.dart';
-import 'chat_screen.dart';
 import 'store_current_orders_screen.dart';
 import 'store_notifications_screen.dart';
+import 'store_order_details_screen.dart';
+import 'store_promocode_screen.dart';
+import 'chat_screen.dart';
+import '../الخدمات/push_notification_service.dart';
 
 const Color primaryColor = AppThemeArabic.clientPrimary;
 const Color backgroundColor = AppThemeArabic.clientBackground;
@@ -66,6 +70,11 @@ class StoreDashboardScreen extends StatefulWidget {
 }
 
 class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
+  bool get _usesNativePersistentAlert {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android;
+  }
+
   // إعادة تحميل بيانات المطعم عند فتح القائمة الجانبية
   void _onDrawerChanged(bool isOpened) {
     if (isOpened) {
@@ -79,6 +88,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
   double _ringtoneVolume = 1.0;
   final Set<String> _notifiedOrders = <String>{};
   StreamSubscription<QuerySnapshot>? _ordersSubscription;
+  StreamSubscription<Map<String, dynamic>>? _pushOrderAlertSubscription;
   Timer? _storeRingtoneTimer;
   bool _hasPendingStoreOrders = false;
   final AudioPlayer _ringtonePlayer = AudioPlayer();
@@ -95,6 +105,18 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
   Future<void> _openPage(Widget page) async {
     if (!mounted) return;
     await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  }
+
+  void _openOrderDetails(String orderId, Map<String, dynamic> data) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StoreOrderDetailsScreen(orderData: {
+          'docId': orderId,
+          ...data,
+        }),
+      ),
+    );
   }
 
   String _getOrderStatus(Map<String, dynamic> data) {
@@ -160,8 +182,41 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     }
   }
 
-  Color _orderStatusBackground(String status) {
-    return _orderStatusColor(status).withOpacity(0.12);
+  String _formatAmount(num value) {
+    return value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toStringAsFixed(2);
+  }
+
+  Map<String, dynamic> _promoDetails(Map<String, dynamic> data) {
+    final promo = data['promocode'];
+    if (promo is Map<String, dynamic>) return promo;
+    if (promo is Map) {
+      return promo.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return const {};
+  }
+
+  num _resolveStoreDiscount(Map<String, dynamic> data) {
+    final restaurantId = (data['restaurantId'] ?? '').toString().trim();
+    final promo = _promoDetails(data);
+    final promoRestaurantId = (promo['restaurantId'] ?? '').toString().trim();
+    final discountScope = (promo['discountScope'] ?? '').toString().trim();
+    final discountAmount = (data['discountAmount'] as num?) ?? 0;
+    if (restaurantId.isEmpty || promoRestaurantId != restaurantId) return 0;
+    if (discountScope == 'delivery_fee' || discountAmount <= 0) return 0;
+    return discountAmount;
+  }
+
+  bool _hasStoreAppliedDiscount(Map<String, dynamic> data) {
+    return _resolveStoreDiscount(data) > 0;
+  }
+
+  num _resolveStoreReceivable(Map<String, dynamic> data) {
+    final subtotal = (data['total'] as num?) ?? 0;
+    final storeDiscount = _resolveStoreDiscount(data);
+    final receivable = subtotal - storeDiscount;
+    return receivable < 0 ? 0 : receivable;
   }
 
   Future<void> _setOrderStatus(String orderId, String status,
@@ -191,6 +246,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     _loadAutoAccept();
     _loadOpsRuntimeConfig();
     _loadRestaurantInfo();
+    _listenForPushOrderAlerts();
     _listenForIncomingStoreOrders();
   }
 
@@ -332,6 +388,12 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
 
   void _startStoreRingtoneLoop() {
     if (!_ringtoneEnabled) return;
+    if (_usesNativePersistentAlert) {
+      unawaited(
+        PushNotificationService.instance.startPersistentOrderAlert(),
+      );
+      return;
+    }
     _storeRingtoneTimer ??= Timer.periodic(const Duration(seconds: 6), (_) {
       if (!_hasPendingStoreOrders || !_ringtoneEnabled) return;
       _playIncomingOrderTone();
@@ -339,6 +401,9 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
   }
 
   void _stopStoreRingtoneLoop() {
+    if (_usesNativePersistentAlert) {
+      unawaited(PushNotificationService.instance.stopPersistentOrderAlert());
+    }
     _storeRingtoneTimer?.cancel();
     _storeRingtoneTimer = null;
     _ringtonePlayer.stop();
@@ -371,7 +436,9 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
         final orderId = doc.id;
         if (_notifiedOrders.contains(orderId)) continue;
         _notifiedOrders.add(orderId);
-        _playIncomingOrderTone();
+        if (!_usesNativePersistentAlert) {
+          _playIncomingOrderTone();
+        }
 
         if (autoAcceptOrders && !temporarilyClosed) {
           _setOrderStatus(orderId, 'courier_searching');
@@ -385,9 +452,35 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     });
   }
 
+  void _listenForPushOrderAlerts() {
+    _pushOrderAlertSubscription?.cancel();
+    _pushOrderAlertSubscription =
+        PushNotificationService.instance.orderAlertStream.listen((payload) {
+      final orderId = (payload['orderId'] ?? '').toString().trim();
+      if (orderId.isNotEmpty && _notifiedOrders.contains(orderId)) {
+        return;
+      }
+      if (orderId.isNotEmpty) {
+        _notifiedOrders.add(orderId);
+      }
+      if (_usesNativePersistentAlert) {
+        unawaited(
+          PushNotificationService.instance.startPersistentOrderAlert(
+            title: payload['title']?.toString(),
+            body: payload['body']?.toString(),
+            orderId: orderId,
+          ),
+        );
+      } else {
+        _playIncomingOrderTone();
+      }
+    });
+  }
+
   @override
   void dispose() {
     _ordersSubscription?.cancel();
+    _pushOrderAlertSubscription?.cancel();
     _stopStoreRingtoneLoop();
     _ringtonePlayer.dispose();
     super.dispose();
@@ -500,148 +593,211 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
           ),
         ),
         drawer: Drawer(
-          child: Container(
-            color: Colors.white,
+          backgroundColor: AppThemeArabic.storeBackground,
+          child: SafeArea(
             child: ListView(
-              padding: EdgeInsets.zero,
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
               children: [
                 Container(
-                  decoration: const BoxDecoration(
-                    color: primaryColor,
-                    borderRadius:
-                        BorderRadius.vertical(bottom: Radius.circular(24)),
-                  ),
-                  child: DrawerHeader(
-                    margin: EdgeInsets.zero,
-                    padding: EdgeInsets.zero,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        logoUrl != null && logoUrl!.isNotEmpty
-                            ? CircleAvatar(
-                                radius: 44,
-                                backgroundColor: Colors.white,
-                                backgroundImage: NetworkImage(logoUrl!),
-                              )
-                            : CircleAvatar(
-                                radius: 44,
-                                backgroundColor: Colors.white,
-                                child: Icon(Icons.restaurant,
-                                    color: primaryColor, size: 48),
-                              ),
-                        const SizedBox(height: 12),
-                        Text(
-                          restaurantName != null && restaurantName!.isNotEmpty
-                              ? restaurantName!
-                              : 'اسم المطعم غير متوفر',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontFamily: 'Tajawal',
-                            fontSize: 20,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'معرف: ${widget.restaurantId}',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontFamily: 'Tajawal',
-                            fontSize: 13,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppThemeArabic.storePrimary, Color(0xFF14B8A6)],
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
                     ),
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppThemeArabic.storePrimary.withOpacity(0.18),
+                        blurRadius: 22,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          logoUrl != null && logoUrl!.isNotEmpty
+                              ? CircleAvatar(
+                                  radius: 34,
+                                  backgroundColor: Colors.white,
+                                  backgroundImage: NetworkImage(logoUrl!),
+                                )
+                              : Container(
+                                  width: 68,
+                                  height: 68,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.18),
+                                    borderRadius: BorderRadius.circular(22),
+                                  ),
+                                  child: const Icon(
+                                    Icons.storefront_rounded,
+                                    color: Colors.white,
+                                    size: 34,
+                                  ),
+                                ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  restaurantName != null &&
+                                          restaurantName!.isNotEmpty
+                                      ? restaurantName!
+                                      : 'اسم المطعم غير متوفر',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    fontFamily: 'Tajawal',
+                                    fontSize: 20,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  temporarilyClosed
+                                      ? 'التطبيق في وضع الإيقاف المؤقت'
+                                      : 'جاهز لاستقبال الطلبات وإدارتها',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontFamily: 'Tajawal',
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.badge_outlined,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'معرف المتجر: ${widget.restaurantId}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontFamily: 'Tajawal',
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 18),
+                _drawerSectionLabel('التشغيل اليومي'),
                 _drawerTile(
                   icon: Icons.add,
                   iconBg: Colors.orange.shade50,
-                  text: ' إضافة عنصر جديد',
+                  text: 'إضافة عنصر جديد',
                   onTap: () async {
                     Navigator.pop(context);
                     await _openPage(StoreAddMenuItemScreen(
                         restaurantId: widget.restaurantId));
                   },
                 ),
-                const SizedBox(height: 2),
                 _drawerTile(
                   icon: Icons.menu_book,
                   iconBg: Colors.blue.shade50,
-                  text: ' القائمة الكاملة',
+                  text: 'القائمة الكاملة',
                   onTap: () async {
                     Navigator.pop(context);
                     await _openPage(
                         StoreFullMenuScreen(restaurantId: widget.restaurantId));
                   },
                 ),
-                const SizedBox(height: 2),
                 _drawerTile(
                   icon: Icons.receipt_long,
                   iconBg: Colors.purple.shade50,
-                  text: ' الطلبات الحالية',
+                  text: 'الطلبات الحالية',
                   onTap: () async {
                     Navigator.pop(context);
                     await _openPage(StoreCurrentOrdersScreen(
                         restaurantId: widget.restaurantId));
                   },
                 ),
-                const SizedBox(height: 2),
                 _drawerTile(
                   icon: Icons.access_time,
                   iconBg: Colors.green.shade50,
-                  text: ' أوقات الدوام',
+                  text: 'أوقات الدوام',
                   onTap: () async {
                     Navigator.pop(context);
                     await _openPage(StoreWorkingHoursScreen(
                         restaurantId: widget.restaurantId));
                   },
                 ),
-                const SizedBox(height: 2),
                 _drawerTile(
                   icon: Icons.account_balance_wallet,
                   iconBg: Colors.amber.shade50,
-                  text: ' محفظتي',
+                  text: 'محفظتي',
                   onTap: () async {
                     Navigator.pop(context);
                     await _openPage(
                         StoreWalletScreen(restaurantId: widget.restaurantId));
                   },
                 ),
-                const SizedBox(height: 2),
+                _drawerTile(
+                  icon: Icons.local_offer_outlined,
+                  iconBg: Colors.deepOrange.shade50,
+                  iconColor: Colors.deepOrange,
+                  text: 'العروض والخصومات',
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _openPage(StorePromocodeScreen(
+                        restaurantId: widget.restaurantId));
+                  },
+                ),
                 Card(
                   elevation: 0,
                   color: Colors.red.shade50,
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  margin: const EdgeInsets.symmetric(vertical: 8),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(18),
                     side: BorderSide(color: Colors.red.shade100),
                   ),
                   child: SwitchListTile(
-                    title: const Text(' إيقاف مؤقت لاستقبال الطلبات',
+                    title: const Text('إيقاف مؤقت لاستقبال الطلبات',
                         style: TextStyle(fontFamily: 'Tajawal')),
                     value: temporarilyClosed,
                     onChanged: _toggleTemporaryClosure,
                     secondary: const Icon(Icons.pause_circle_filled,
                         color: Colors.red),
                     activeColor: primaryColor,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                        borderRadius: BorderRadius.circular(18)),
                   ),
                 ),
-                const Divider(indent: 18, endIndent: 18, height: 24),
+                const SizedBox(height: 8),
+                _drawerSectionLabel('الإدارة والإعدادات'),
                 _drawerTile(
                   icon: Icons.settings,
                   iconBg: Colors.grey.shade200,
-                  text: ' الإعدادات',
+                  text: 'الإعدادات',
                   iconColor: Colors.grey,
                   onTap: () async {
                     Navigator.pop(context);
@@ -661,8 +817,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                         restaurantId: widget.restaurantId));
                   },
                 ),
-                const SizedBox(height: 10),
-                // زر تسجيل الخروج
+                const SizedBox(height: 14),
                 _drawerTile(
                   icon: Icons.logout,
                   iconBg: Colors.red.shade100,
@@ -747,829 +902,39 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
 
             final showNewHeader = newDocs.isNotEmpty;
             final showFinishedHeader = finishedDocs.isNotEmpty;
-            final totalItems = (showNewHeader ? 1 : 0) +
-                newDocs.length +
-                (showFinishedHeader ? 1 : 0) +
-                finishedDocs.length;
-
-            return ListView.builder(
+            return ListView(
               padding: const EdgeInsets.all(14),
-              itemCount: totalItems + 1,
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return _buildDashboardStatsCard(
-                    totalCount: docs.length,
-                    newCount: newDocs.length,
-                    finishedCount: finishedDocs.length,
-                  );
-                }
-
-                final effectiveIndex = index - 1;
-                var cursor = 0;
-                if (showNewHeader) {
-                  if (effectiveIndex == cursor) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
-                        children: const [
-                          Icon(Icons.fiber_new, color: primaryColor),
-                          SizedBox(width: 8),
-                          Text(
-                            'الطلبات الجديدة',
-                            style: TextStyle(
-                              fontFamily: 'Tajawal',
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                  cursor += 1;
-                }
-
-                if (effectiveIndex < cursor + newDocs.length) {
-                  final doc = newDocs[effectiveIndex - cursor];
-                  final data = doc.data() as Map<String, dynamic>;
-                  final docId = doc.id;
-                  final status = _getOrderStatus(data);
-                  final unifiedOrderCode = formatUnifiedOrderCode(
-                    orderNumber: data['orderNumber'],
-                    orderId: data['orderId'],
-                    docId: docId,
-                  );
-
-                  Widget orderDetails = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 8),
-                      Text('👤 العميل: ${data['clientName'] ?? 'غير متوفر'}',
-                          style: const TextStyle(fontFamily: 'Tajawal')),
-                      Text('💰 الإجمالي: ${data['total'] ?? 0} ج.س',
-                          style: const TextStyle(fontFamily: 'Tajawal')),
-                      if (data['items'] != null && data['items'] is List)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('تفاصيل الطلب:',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontFamily: 'Tajawal')),
-                              ...List.generate((data['items'] as List).length,
-                                  (i) {
-                                final item = (data['items'] as List)[i];
-                                return Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 2),
-                                  child: Row(
-                                    children: [
-                                      if (item['imageUrl'] != null &&
-                                          item['imageUrl']
-                                              .toString()
-                                              .isNotEmpty)
-                                        ClipRRect(
-                                          borderRadius:
-                                              BorderRadius.circular(6),
-                                          child: Image.network(
-                                            item['imageUrl'],
-                                            width: 32,
-                                            height: 32,
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          '${item['name']} × ${item['quantity']}',
-                                          style: const TextStyle(
-                                              fontFamily: 'Tajawal'),
-                                        ),
-                                      ),
-                                      Text('${item['price']} ج.س',
-                                          style: const TextStyle(
-                                              fontFamily: 'Tajawal',
-                                              color: Colors.grey)),
-                                    ],
-                                  ),
-                                );
-                              }),
-                            ],
-                          ),
-                        ),
-                    ],
-                  );
-
-                  if (status == 'store_pending' || status == 'قيد المراجعة') {
-                    return Card(
-                      elevation: 1.5,
-                      margin: const EdgeInsets.only(bottom: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: BorderSide(color: primaryColor.withOpacity(0.16)),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const SizedBox(width: 8),
-                                Text(
-                                  '📦 رقم الطلب: $unifiedOrderCode',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontFamily: 'Tajawal',
-                                      fontSize: 16),
-                                ),
-                                const SizedBox(width: 10),
-                                const Text('🆕 جديد',
-                                    style: TextStyle(
-                                        color: Colors.red,
-                                        fontWeight: FontWeight.bold,
-                                        fontFamily: 'Tajawal')),
-                              ],
-                            ),
-                            orderDetails,
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: ElevatedButton(
-                                    onPressed: () async {
-                                      await _setOrderStatus(
-                                          docId, 'courier_searching',
-                                          extra: {
-                                            'assignedDriverId': null,
-                                            'candidateDrivers': [],
-                                            'driverResponded': false,
-                                            'driverResponseTime': null
-                                          });
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.green),
-                                    child: const Text('قبول الطلب',
-                                        style: TextStyle(color: Colors.white)),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: ElevatedButton(
-                                    onPressed: () async {
-                                      await _setOrderStatus(
-                                          docId, 'store_rejected');
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.red),
-                                    child: const Text('رفض الطلب',
-                                        style: TextStyle(color: Colors.white)),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  } else {
-                    return Card(
-                      elevation: 1,
-                      margin: const EdgeInsets.only(bottom: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        side: BorderSide(color: Colors.grey.withOpacity(0.18)),
-                      ),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(14),
-                        onTap: () {
-                          showModalBottomSheet(
-                            context: context,
-                            backgroundColor: Colors.white,
-                            shape: const RoundedRectangleBorder(
-                              borderRadius: BorderRadius.vertical(
-                                  top: Radius.circular(18)),
-                            ),
-                            builder: (_) => Padding(
-                              padding: const EdgeInsets.all(18),
-                              child: SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (data['items'] != null &&
-                                        data['items'] is List)
-                                      Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const Text('تفاصيل الطلب:',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontFamily: 'Tajawal',
-                                                  fontSize: 16)),
-                                          const SizedBox(height: 8),
-                                          ...List.generate(
-                                              (data['items'] as List).length,
-                                              (i) {
-                                            final item =
-                                                (data['items'] as List)[i];
-                                            return Card(
-                                              margin:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 4),
-                                              elevation: 0,
-                                              color: backgroundColor,
-                                              child: Padding(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                        vertical: 8,
-                                                        horizontal: 6),
-                                                child: Row(
-                                                  children: [
-                                                    if (item['imageUrl'] !=
-                                                            null &&
-                                                        item['imageUrl']
-                                                            .toString()
-                                                            .isNotEmpty)
-                                                      ClipRRect(
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(6),
-                                                        child: Image.network(
-                                                          item['imageUrl'],
-                                                          width: 38,
-                                                          height: 38,
-                                                          fit: BoxFit.cover,
-                                                        ),
-                                                      ),
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: Text(
-                                                        '${item['name']} × ${item['quantity']}',
-                                                        style: const TextStyle(
-                                                            fontFamily:
-                                                                'Tajawal',
-                                                            fontWeight:
-                                                                FontWeight.w500,
-                                                            color:
-                                                                primaryColor),
-                                                      ),
-                                                    ),
-                                                    Text('${item['price']} ج.س',
-                                                        style: const TextStyle(
-                                                            fontFamily:
-                                                                'Tajawal',
-                                                            color:
-                                                                primaryColor)),
-                                                  ],
-                                                ),
-                                              ),
-                                            );
-                                          }),
-                                        ],
-                                      ),
-                                    const Divider(height: 24),
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text('رقم الطلب:',
-                                            style: TextStyle(
-                                                fontFamily: 'Tajawal',
-                                                color: Colors.grey.shade700)),
-                                        Text(unifiedOrderCode,
-                                            style: TextStyle(
-                                                fontFamily: 'Tajawal',
-                                                fontWeight: FontWeight.bold)),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text('الحالة:',
-                                            style: TextStyle(
-                                                fontFamily: 'Tajawal',
-                                                color: Colors.grey.shade700)),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 10, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                _orderStatusBackground(status),
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                          ),
-                                          child: Text(
-                                            _displayOrderStatus(status),
-                                            style: TextStyle(
-                                              color: _orderStatusColor(status),
-                                              fontWeight: FontWeight.bold,
-                                              fontFamily: 'Tajawal',
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text('الإجمالي:',
-                                            style: TextStyle(
-                                                fontFamily: 'Tajawal',
-                                                color: Colors.grey.shade700)),
-                                        Text('${data['total'] ?? 0} ج.س',
-                                            style: TextStyle(
-                                                fontFamily: 'Tajawal',
-                                                fontWeight: FontWeight.bold)),
-                                      ],
-                                    ),
-                                    const Divider(height: 24),
-                                    if (status == 'courier_searching' ||
-                                        status == 'courier_offer_pending' ||
-                                        status == 'courier_assigned' ||
-                                        status == 'قيد التجهيز')
-                                      _actionButton(' جاهز', () async {
-                                        final hasAssignedDriver =
-                                            ((data['assignedDriverId'] ?? '')
-                                                .toString()
-                                                .trim()
-                                                .isNotEmpty);
-                                        await _setOrderStatus(
-                                          docId,
-                                          hasAssignedDriver
-                                              ? 'pickup_ready'
-                                              : 'courier_searching',
-                                          extra: {
-                                            'readyByRestaurant': true,
-                                          },
-                                        );
-                                        setState(() {});
-                                        _showErrorMessage(hasAssignedDriver
-                                            ? 'تم تحديث حالة الطلب إلى جاهز للاستلام'
-                                            : 'تم تجهيز الطلب وسيتم البحث عن مندوب تلقائيًا');
-                                      }),
-                                    if (status == 'pickup_ready' ||
-                                        status == 'قيد التوصيل')
-                                      Padding(
-                                        padding: EdgeInsets.only(top: 10),
-                                        child: Text('📦 بانتظار استلام المندوب',
-                                            style: TextStyle(
-                                                color: _orderStatusColor(
-                                                    'pickup_ready'),
-                                                fontFamily: 'Tajawal',
-                                                fontWeight: FontWeight.bold)),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Row(
-                            children: [
-                              Icon(
-                                status == 'courier_searching' ||
-                                        status == 'courier_offer_pending' ||
-                                        status == 'courier_assigned'
-                                    ? Icons.kitchen
-                                    : Icons.delivery_dining,
-                                color: _orderStatusColor(status),
-                                size: 26,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '📦 رقم الطلب: $unifiedOrderCode',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontFamily: 'Tajawal',
-                                      fontSize: 16),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _displayOrderStatus(status),
-                                style: TextStyle(
-                                  color: _orderStatusColor(status),
-                                  fontWeight: FontWeight.bold,
-                                  fontFamily: 'Tajawal',
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                }
-
-                cursor += newDocs.length;
-                if (showFinishedHeader) {
-                  if (effectiveIndex == cursor) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8, bottom: 10),
-                      child: Row(
-                        children: const [
-                          Icon(Icons.check_circle_outline, color: primaryColor),
-                          SizedBox(width: 8),
-                          Text(
-                            'الطلبات المنتهية من منظور المتجر',
-                            style: TextStyle(
-                              fontFamily: 'Tajawal',
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                  cursor += 1;
-                }
-
-                final doc = finishedDocs[effectiveIndex - cursor];
-                final data = doc.data() as Map<String, dynamic>;
-                final docId = doc.id;
-                final status = _getOrderStatus(data);
-                final unifiedOrderCode = formatUnifiedOrderCode(
-                  orderNumber: data['orderNumber'],
-                  orderId: data['orderId'],
-                  docId: docId,
-                );
-
-                Widget orderDetails = Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 8),
-                    Text('👤 العميل: ${data['clientName'] ?? 'غير متوفر'}',
-                        style: const TextStyle(fontFamily: 'Tajawal')),
-                    Text('💰 الإجمالي: ${data['total'] ?? 0} ج.س',
-                        style: const TextStyle(fontFamily: 'Tajawal')),
-                    if (data['items'] != null && data['items'] is List)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('تفاصيل الطلب:',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontFamily: 'Tajawal')),
-                            ...List.generate((data['items'] as List).length,
-                                (i) {
-                              final item = (data['items'] as List)[i];
-                              return Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 2),
-                                child: Row(
-                                  children: [
-                                    if (item['imageUrl'] != null &&
-                                        item['imageUrl'].toString().isNotEmpty)
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(6),
-                                        child: Image.network(
-                                          item['imageUrl'],
-                                          width: 32,
-                                          height: 32,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        '${item['name']} × ${item['quantity']}',
-                                        style: const TextStyle(
-                                            fontFamily: 'Tajawal'),
-                                      ),
-                                    ),
-                                    Text('${item['price']} ج.س',
-                                        style: const TextStyle(
-                                            fontFamily: 'Tajawal',
-                                            color: Colors.grey)),
-                                  ],
-                                ),
-                              );
-                            }),
-                          ],
-                        ),
-                      ),
-                  ],
-                );
-
-                if (status == 'store_pending' || status == 'قيد المراجعة') {
-                  // الطلب الجديد: التفاصيل تظهر مباشرة
-                  return Card(
-                    elevation: 1.5,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: primaryColor.withOpacity(0.16)),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const SizedBox(width: 8),
-                              Text(
-                                '📦 رقم الطلب: $unifiedOrderCode',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontFamily: 'Tajawal',
-                                    fontSize: 16),
-                              ),
-                              const SizedBox(width: 10),
-                              const Text('🆕 جديد',
-                                  style: TextStyle(
-                                      color: Colors.red,
-                                      fontWeight: FontWeight.bold,
-                                      fontFamily: 'Tajawal')),
-                            ],
-                          ),
-                          orderDetails,
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () async {
-                                    await _setOrderStatus(
-                                        docId, 'courier_searching',
-                                        extra: {
-                                          'assignedDriverId': null,
-                                          'candidateDrivers': [],
-                                          'driverResponded': false,
-                                          'driverResponseTime': null
-                                        });
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.green),
-                                  child: const Text('قبول الطلب',
-                                      style: TextStyle(color: Colors.white)),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () async {
-                                    await _setOrderStatus(
-                                        docId, 'store_rejected');
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.red),
-                                  child: const Text('رفض الطلب',
-                                      style: TextStyle(color: Colors.white)),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                } else {
-                  // الطلبات الأخرى: التفاصيل تظهر عند الضغط
-                  return Card(
-                    elevation: 1,
-                    margin: const EdgeInsets.only(bottom: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: BorderSide(color: Colors.grey.withOpacity(0.18)),
-                    ),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(14),
-                      onTap: () {
-                        showModalBottomSheet(
-                          context: context,
-                          backgroundColor: Colors.white,
-                          shape: const RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.vertical(top: Radius.circular(18)),
-                          ),
-                          builder: (_) => Padding(
-                            padding: const EdgeInsets.all(18),
-                            child: SingleChildScrollView(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (data['items'] != null &&
-                                      data['items'] is List)
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text('تفاصيل الطلب:',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontFamily: 'Tajawal',
-                                                fontSize: 16)),
-                                        const SizedBox(height: 8),
-                                        ...List.generate(
-                                            (data['items'] as List).length,
-                                            (i) {
-                                          final item =
-                                              (data['items'] as List)[i];
-                                          return Card(
-                                            margin: const EdgeInsets.symmetric(
-                                                vertical: 4),
-                                            elevation: 0,
-                                            color: backgroundColor,
-                                            child: Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 8,
-                                                      horizontal: 6),
-                                              child: Row(
-                                                children: [
-                                                  if (item['imageUrl'] !=
-                                                          null &&
-                                                      item['imageUrl']
-                                                          .toString()
-                                                          .isNotEmpty)
-                                                    ClipRRect(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                              6),
-                                                      child: Image.network(
-                                                        item['imageUrl'],
-                                                        width: 38,
-                                                        height: 38,
-                                                        fit: BoxFit.cover,
-                                                      ),
-                                                    ),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: Text(
-                                                      '${item['name']} × ${item['quantity']}',
-                                                      style: const TextStyle(
-                                                          fontFamily: 'Tajawal',
-                                                          fontWeight:
-                                                              FontWeight.w500,
-                                                          color: primaryColor),
-                                                    ),
-                                                  ),
-                                                  Text('${item['price']} ج.س',
-                                                      style: const TextStyle(
-                                                          fontFamily: 'Tajawal',
-                                                          color: primaryColor)),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        }),
-                                      ],
-                                    ),
-                                  const Divider(height: 24),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text('رقم الطلب:',
-                                          style: TextStyle(
-                                              fontFamily: 'Tajawal',
-                                              color: Colors.grey.shade700)),
-                                      Text(unifiedOrderCode,
-                                          style: TextStyle(
-                                              fontFamily: 'Tajawal',
-                                              fontWeight: FontWeight.bold)),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text('الحالة:',
-                                          style: TextStyle(
-                                              fontFamily: 'Tajawal',
-                                              color: Colors.grey.shade700)),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: _orderStatusBackground(status),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          _displayOrderStatus(status),
-                                          style: TextStyle(
-                                            color: _orderStatusColor(status),
-                                            fontWeight: FontWeight.bold,
-                                            fontFamily: 'Tajawal',
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text('الإجمالي:',
-                                          style: TextStyle(
-                                              fontFamily: 'Tajawal',
-                                              color: Colors.grey.shade700)),
-                                      Text('${data['total'] ?? 0} ج.س',
-                                          style: TextStyle(
-                                              fontFamily: 'Tajawal',
-                                              fontWeight: FontWeight.bold)),
-                                    ],
-                                  ),
-                                  const Divider(height: 24),
-                                  if (status == 'courier_searching' ||
-                                      status == 'courier_offer_pending' ||
-                                      status == 'courier_assigned' ||
-                                      status == 'قيد التجهيز')
-                                    _actionButton(' جاهز', () async {
-                                      final hasAssignedDriver =
-                                          ((data['assignedDriverId'] ?? '')
-                                              .toString()
-                                              .trim()
-                                              .isNotEmpty);
-                                      await _setOrderStatus(
-                                        docId,
-                                        hasAssignedDriver
-                                            ? 'pickup_ready'
-                                            : 'courier_searching',
-                                        extra: {
-                                          'readyByRestaurant': true,
-                                        },
-                                      );
-                                      setState(() {});
-                                      _showErrorMessage(hasAssignedDriver
-                                          ? 'تم تحديث حالة الطلب إلى جاهز للاستلام'
-                                          : 'تم تجهيز الطلب وسيتم البحث عن مندوب تلقائيًا');
-                                    }),
-                                  if (status == 'pickup_ready' ||
-                                      status == 'قيد التوصيل')
-                                    Padding(
-                                      padding: EdgeInsets.only(top: 10),
-                                      child: Text('📦 بانتظار استلام المندوب',
-                                          style: TextStyle(
-                                              color: _orderStatusColor(
-                                                  'pickup_ready'),
-                                              fontFamily: 'Tajawal',
-                                              fontWeight: FontWeight.bold)),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Icon(
-                              status == 'courier_searching' ||
-                                      status == 'courier_offer_pending' ||
-                                      status == 'courier_assigned'
-                                  ? Icons.kitchen
-                                  : Icons.delivery_dining,
-                              color: _orderStatusColor(status),
-                              size: 26,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                '📦 رقم الطلب: $unifiedOrderCode',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontFamily: 'Tajawal',
-                                    fontSize: 16),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _displayOrderStatus(status),
-                              style: TextStyle(
-                                color: _orderStatusColor(status),
-                                fontWeight: FontWeight.bold,
-                                fontFamily: 'Tajawal',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }
-              },
+              children: [
+                _buildStoreHeroCard(
+                  restaurantName: restaurantName,
+                  totalCount: docs.length,
+                  newCount: newDocs.length,
+                  finishedCount: finishedDocs.length,
+                ),
+                const SizedBox(height: 14),
+                _buildQuickActionsPanel(),
+                const SizedBox(height: 16),
+                if (showNewHeader) ...[
+                  _buildSectionTitle(
+                      'الطلبات الجديدة', Icons.local_fire_department_outlined),
+                  const SizedBox(height: 10),
+                  ...newDocs.map((doc) => _buildOrderPreviewCard(
+                        doc.id,
+                        doc.data() as Map<String, dynamic>,
+                        highlight: true,
+                      )),
+                  const SizedBox(height: 12),
+                ],
+                if (showFinishedHeader) ...[
+                  _buildSectionTitle(
+                      'متابعة الطلبات', Icons.track_changes_outlined),
+                  const SizedBox(height: 10),
+                  ...finishedDocs.map((doc) => _buildOrderPreviewCard(
+                        doc.id,
+                        doc.data() as Map<String, dynamic>,
+                      )),
+                ],
+              ],
             );
           },
         ),
@@ -1585,30 +950,37 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     required VoidCallback onTap,
   }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Material(
-        color: AppThemeArabic.clientSurface,
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(18),
           onTap: onTap,
           splashColor: primaryColor.withOpacity(0.10),
           highlightColor: primaryColor.withOpacity(0.06),
           child: Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.withOpacity(0.14)),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: primaryColor.withOpacity(0.08)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.025),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
             child: Row(
               children: [
                 Container(
                   decoration: BoxDecoration(
                     color: iconBg ?? primaryColor.withOpacity(0.09),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  padding: const EdgeInsets.all(7),
-                  child: Icon(icon, color: iconColor ?? primaryColor, size: 24),
+                  padding: const EdgeInsets.all(10),
+                  child: Icon(icon, color: iconColor ?? primaryColor, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1619,10 +991,14 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                     style: const TextStyle(
                       fontFamily: 'Tajawal',
                       fontSize: 15,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w700,
                       color: Colors.black87,
                     ),
                   ),
+                ),
+                Icon(
+                  Icons.chevron_left_rounded,
+                  color: Colors.black.withOpacity(0.35),
                 ),
               ],
             ),
@@ -1632,22 +1008,16 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     );
   }
 
-  Widget _actionButton(String label, VoidCallback onPressed) {
+  Widget _drawerSectionLabel(String title) {
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: SizedBox(
-        width: double.infinity,
-        child: ElevatedButton(
-          onPressed: onPressed,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: primaryColor,
-            minimumSize: const Size.fromHeight(48),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          child: Text(label,
-              style:
-                  const TextStyle(color: Colors.white, fontFamily: 'Tajawal')),
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontFamily: 'Tajawal',
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+          color: AppThemeArabic.storeTextSecondary,
         ),
       ),
     );
@@ -1726,6 +1096,357 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
             value: finishedCount,
             color: Colors.green,
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStoreHeroCard({
+    required String? restaurantName,
+    required int totalCount,
+    required int newCount,
+    required int finishedCount,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [AppThemeArabic.storePrimary, Color(0xFF14B8A6)],
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+        ),
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 28,
+                backgroundColor: Colors.white.withOpacity(0.16),
+                backgroundImage:
+                    (logoUrl ?? '').isNotEmpty ? NetworkImage(logoUrl!) : null,
+                child: (logoUrl ?? '').isEmpty
+                    ? const Icon(Icons.storefront_rounded, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      (restaurantName ?? '').trim().isEmpty
+                          ? 'لوحة المطعم'
+                          : restaurantName!.trim(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      temporarilyClosed
+                          ? 'استقبال الطلبات متوقف مؤقتًا'
+                          : 'جاهز لمتابعة الطلبات والعمليات اليومية',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildDashboardStatsCard(
+            totalCount: totalCount,
+            newCount: newCount,
+            finishedCount: finishedCount,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActionsPanel() {
+    Widget quickAction({
+      required String label,
+      required IconData icon,
+      required VoidCallback onTap,
+      Color? color,
+    }) {
+      final resolvedColor = color ?? AppThemeArabic.storePrimary;
+      return Expanded(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+            decoration: BoxDecoration(
+              color: resolvedColor.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Column(
+              children: [
+                Icon(icon, color: resolvedColor),
+                const SizedBox(height: 8),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('إجراءات سريعة', Icons.dashboard_customize_outlined),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            quickAction(
+              label: 'إضافة صنف',
+              icon: Icons.add_box_outlined,
+              onTap: () => _openPage(
+                  StoreAddMenuItemScreen(restaurantId: widget.restaurantId)),
+            ),
+            const SizedBox(width: 10),
+            quickAction(
+              label: 'القائمة الكاملة',
+              icon: Icons.menu_book_outlined,
+              onTap: () => _openPage(
+                  StoreFullMenuScreen(restaurantId: widget.restaurantId)),
+            ),
+            const SizedBox(width: 10),
+            quickAction(
+              label: 'الطلبات',
+              icon: Icons.receipt_long_outlined,
+              onTap: () => _openPage(
+                  StoreCurrentOrdersScreen(restaurantId: widget.restaurantId)),
+            ),
+            const SizedBox(width: 10),
+            quickAction(
+              label: 'المحفظة',
+              icon: Icons.account_balance_wallet_outlined,
+              onTap: () => _openPage(
+                  StoreWalletScreen(restaurantId: widget.restaurantId)),
+              color: Colors.orange,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionTitle(String title, IconData icon) {
+    return Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: AppThemeArabic.storePrimary.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: AppThemeArabic.storePrimary),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOrderPreviewCard(
+    String docId,
+    Map<String, dynamic> data, {
+    bool highlight = false,
+  }) {
+    final status = _getOrderStatus(data);
+    final unifiedOrderCode = formatUnifiedOrderCode(
+      orderNumber: data['orderNumber'],
+      orderId: data['orderId'],
+      docId: docId,
+    );
+    final receivable = _resolveStoreReceivable(data);
+    final itemCount =
+        (data['items'] is List) ? (data['items'] as List).length : 0;
+    final statusColor = _orderStatusColor(status);
+    final isAwaitingStoreDecision =
+        status == 'store_pending' || status == 'قيد المراجعة';
+    final hasStoreDiscount = _hasStoreAppliedDiscount(data);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border:
+            Border.all(color: statusColor.withOpacity(highlight ? 0.24 : 0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: () => _openOrderDetails(docId, data),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      highlight
+                          ? Icons.priority_high_rounded
+                          : Icons.receipt_long_rounded,
+                      color: statusColor,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          unifiedOrderCode,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w800, fontSize: 16),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          hasStoreDiscount
+                              ? 'صافي المتجر بعد خصم ممول من المتجر'
+                              : 'مستحق المتجر من الطلب',
+                          style: const TextStyle(
+                              color: AppThemeArabic.clientTextSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      _displayOrderStatus(status),
+                      style: TextStyle(
+                          color: statusColor, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                      child: _buildOrderMetaChip(
+                          Icons.shopping_bag_outlined, '$itemCount أصناف')),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: _buildOrderMetaChip(Icons.payments_outlined,
+                          '${_formatAmount(receivable)} ج.س')),
+                ],
+              ),
+              if (isAwaitingStoreDecision) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () async {
+                            await _setOrderStatus(docId, 'courier_searching',
+                                extra: {
+                                  'assignedDriverId': null,
+                                  'candidateDrivers': [],
+                                  'driverResponded': false,
+                                  'driverResponseTime': null,
+                                });
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF0F9D58),
+                            minimumSize: const Size.fromHeight(50),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          icon: const Icon(Icons.check_circle_outline_rounded),
+                          label: const Text('قبول'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            await _setOrderStatus(docId, 'store_rejected');
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red.shade700,
+                            backgroundColor: Colors.red.shade50,
+                            side: BorderSide(color: Colors.red.shade200),
+                            minimumSize: const Size.fromHeight(50),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          icon: const Icon(Icons.close_rounded),
+                          label: const Text('رفض'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOrderMetaChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppThemeArabic.storeBackground,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppThemeArabic.storePrimary),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
         ],
       ),
     );

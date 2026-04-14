@@ -10,7 +10,6 @@ import 'client_wallet_screen.dart';
 import 'client_settings_screen.dart';
 import 'chat_screen.dart';
 import 'address_selection_screen.dart';
-import 'add_new_address_screen.dart';
 
 class ClientAccountTab extends StatefulWidget {
   final String clientId;
@@ -34,6 +33,12 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
         ),
       ),
     );
+
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null && !currentUser.isAnonymous) {
+      await GuestLocationService.saveAsClientAddress(currentUser.uid);
+    }
+
     if (mounted) {
       setState(() {});
     }
@@ -102,29 +107,22 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
   }
 
   Future<void> _saveGuestLocationToAddresses(BuildContext context) async {
-    final guestLocation = await GuestLocationService.load();
-    if (!context.mounted || guestLocation == null) {
+    final savedAddressId = await GuestLocationService.saveAsClientAddress(
+      widget.clientId,
+    );
+    if (!context.mounted || savedAddressId == null) {
       return;
     }
 
-    final saved = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AddNewAddressScreen(
-          userId: widget.clientId,
-          userType: 'client',
-          existingName: guestLocation.addressName,
-          existingLatitude: guestLocation.latitude,
-          existingLongitude: guestLocation.longitude,
-        ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+            'تمت إضافة موقع التصفح الحالي إلى عناوينك واعتماده افتراضيًا.'),
       ),
     );
 
-    if (saved != null) {
-      await GuestLocationService.clear();
-      if (mounted) {
-        setState(() {});
-      }
+    if (mounted) {
+      setState(() {});
     }
   }
 

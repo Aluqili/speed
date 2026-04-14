@@ -220,6 +220,13 @@ service cloud.firestore {
       allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
     }
 
+    match /storeOffers/{offerId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && resource.data.restaurantId == request.auth.uid)
+        || (isSignedIn() && resource.data.status == 'approved' && resource.data.isActive == true);
+      allow create, update, delete: if isAdmin();
+    }
+
     match /favorites/{favoriteId} {
       allow create: if isSignedIn() && request.resource.data.clientId == request.auth.uid;
       allow read: if isAdmin() || (isSignedIn() && resource.data.clientId == request.auth.uid);

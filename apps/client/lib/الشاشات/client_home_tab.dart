@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
@@ -219,6 +220,21 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         }
       }
 
+      if ((addressDoc == null || !addressDoc.exists) && mounted) {
+        final importedAddressId =
+            await GuestLocationService.saveAsClientAddress(
+          widget.clientId,
+        );
+        if (importedAddressId != null) {
+          addressDoc = await FirebaseFirestore.instance
+              .collection('clients')
+              .doc(widget.clientId)
+              .collection('addresses')
+              .doc(importedAddressId)
+              .get();
+        }
+      }
+
       if (!mounted) return;
       if (addressDoc == null || !addressDoc.exists) {
         await _loadStoredTemporaryLocation();
@@ -385,39 +401,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     return enabledStates.contains(clientState);
   }
 
-  // التحقق من وجود عنوان وإجبار المستخدم على إضافة عنوان إذا لم يوجد
-  Future<void> _checkAndForceAddress() async {
-    if (_isGuest) {
-      return;
-    }
-    try {
-      final addressesSnapshot = await FirebaseFirestore.instance
-          .collection('clients')
-          .doc(widget.clientId)
-          .collection('addresses')
-          .limit(1)
-          .get();
-      if (addressesSnapshot.docs.isEmpty && mounted) {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AddNewAddressScreen(
-              userId: widget.clientId,
-              userType: 'client',
-            ),
-          ),
-        );
-        if (!mounted) return;
-        // بعد إضافة العنوان، أعد التحقق (في حال أغلق المستخدم الشاشة بدون إضافة)
-        _checkAndForceAddress();
-      }
-    } on FirebaseException catch (e) {
-      debugPrint('تعذر التحقق من العناوين: ${e.code} - ${e.message}');
-    } catch (e) {
-      debugPrint('تعذر التحقق من العناوين: $e');
-    }
-  }
-
   Future<Map<String, String>> _resolveSupportChatData() async {
     var chatId = '${widget.clientId}-support';
     var clientName = 'عميل';
@@ -471,7 +454,10 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                 'type': 'meal',
                 'name': data['name'].toString(),
                 'restaurant': r,
-                'meal': data,
+                'meal': {
+                  ...data,
+                  'id': doc.id,
+                },
               });
             }
           }
@@ -510,34 +496,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         .collection('addresses')
         .snapshots()
         .map((snapshot) => snapshot.docs.isEmpty);
-  }
-
-  void _openAddAddressScreenIfNeeded() {
-    if (_isGuest) return;
-    if (_isAddressScreenOpening || !mounted) return;
-    final route = ModalRoute.of(context);
-    if (route != null && !route.isCurrent) return;
-
-    _isAddressScreenOpening = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) {
-        _isAddressScreenOpening = false;
-        return;
-      }
-      try {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AddNewAddressScreen(
-              userId: widget.clientId,
-              userType: 'client',
-            ),
-          ),
-        );
-      } finally {
-        _isAddressScreenOpening = false;
-      }
-    });
   }
 
   String _normalizeSearchText(String value) {
@@ -581,6 +539,12 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         ),
       ),
     );
+
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null && !currentUser.isAnonymous) {
+      await GuestLocationService.saveAsClientAddress(currentUser.uid);
+      await _refreshDefaultAddress();
+    }
   }
 
   Future<void> _pickTemporaryLocation() async {
@@ -1009,6 +973,179 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     }
   }
 
+  String? _restaurantFavoriteDocId(Map<String, dynamic> restaurant) {
+    final restaurantId = (restaurant['id'] ?? '').toString().trim();
+    if (_isGuest || restaurantId.isEmpty) {
+      return null;
+    }
+    return 'restaurant_${widget.clientId}_$restaurantId';
+  }
+
+  String? _mealFavoriteDocId(Map<String, dynamic> entry) {
+    final restaurant =
+        (entry['restaurant'] as Map<String, dynamic>?) ?? const {};
+    final meal = (entry['meal'] as Map<String, dynamic>?) ?? const {};
+    final restaurantId = (restaurant['id'] ?? '').toString().trim();
+    final mealId = (meal['id'] ?? meal['name'] ?? '').toString().trim();
+    if (_isGuest || restaurantId.isEmpty || mealId.isEmpty) {
+      return null;
+    }
+    return 'meal_${widget.clientId}_${restaurantId}_$mealId';
+  }
+
+  Future<void> _toggleFavorite({
+    required String docId,
+    required Map<String, dynamic> payload,
+    required String addMessage,
+    required String removeMessage,
+  }) async {
+    if (_isGuest) {
+      await _openLoginScreen();
+      return;
+    }
+
+    final ref = FirebaseFirestore.instance.collection('favorites').doc(docId);
+    final snapshot = await ref.get();
+
+    if (snapshot.exists) {
+      await ref.delete();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(removeMessage)),
+      );
+      return;
+    }
+
+    await ref.set({
+      ...payload,
+      'clientId': widget.clientId,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(addMessage)),
+    );
+  }
+
+  Widget _buildFavoriteIconButton({
+    required bool isFavorite,
+    required VoidCallback onTap,
+    Color backgroundColor = Colors.white,
+    Color activeColor = const Color(0xFFE11D48),
+  }) {
+    return Material(
+      color: backgroundColor,
+      shape: const CircleBorder(),
+      elevation: 2,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(9),
+          child: Icon(
+            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            color: isFavorite ? activeColor : textColorPrimary,
+            size: 20,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRestaurantFavoriteButton(Map<String, dynamic> restaurant) {
+    final docId = _restaurantFavoriteDocId(restaurant);
+    final restaurantId = (restaurant['id'] ?? '').toString().trim();
+
+    if (docId == null || restaurantId.isEmpty) {
+      return _buildFavoriteIconButton(
+        isFavorite: false,
+        onTap: _openLoginScreen,
+      );
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('favorites')
+          .doc(docId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final isFavorite = snapshot.data?.exists == true;
+        return _buildFavoriteIconButton(
+          isFavorite: isFavorite,
+          onTap: () {
+            _toggleFavorite(
+              docId: docId,
+              addMessage: 'تمت إضافة المطعم إلى المفضلة',
+              removeMessage: 'تمت إزالة المطعم من المفضلة',
+              payload: {
+                'type': 'restaurant',
+                'restaurantId': restaurantId,
+                'restaurantName': (restaurant['name'] ?? '').toString(),
+                'restaurantImage': (restaurant['image'] ?? '').toString(),
+                'offers': (restaurant['offers'] ?? '').toString(),
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildMealFavoriteButton(Map<String, dynamic> entry) {
+    final docId = _mealFavoriteDocId(entry);
+    final restaurant =
+        (entry['restaurant'] as Map<String, dynamic>?) ?? const {};
+    final meal = (entry['meal'] as Map<String, dynamic>?) ?? const {};
+    final restaurantId = (restaurant['id'] ?? '').toString().trim();
+    final mealId = (meal['id'] ?? meal['name'] ?? '').toString().trim();
+
+    if (docId == null || restaurantId.isEmpty || mealId.isEmpty) {
+      return _buildFavoriteIconButton(
+        isFavorite: false,
+        onTap: _openLoginScreen,
+        backgroundColor: Colors.white.withOpacity(0.92),
+      );
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('favorites')
+          .doc(docId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final isFavorite = snapshot.data?.exists == true;
+        return _buildFavoriteIconButton(
+          isFavorite: isFavorite,
+          backgroundColor: Colors.white.withOpacity(0.92),
+          onTap: () {
+            _toggleFavorite(
+              docId: docId,
+              addMessage: 'تمت إضافة الصنف إلى المفضلة',
+              removeMessage: 'تمت إزالة الصنف من المفضلة',
+              payload: {
+                'type': 'meal',
+                'restaurantId': restaurantId,
+                'restaurantName': (restaurant['name'] ?? '').toString(),
+                'restaurantImage': (restaurant['image'] ?? '').toString(),
+                'mealId': mealId,
+                'mealName': (meal['name'] ?? '').toString(),
+                'mealImage': (meal['imageUrl'] ??
+                        meal['image'] ??
+                        meal['photoUrl'] ??
+                        '')
+                    .toString(),
+                'mealPrice': meal['price'],
+                'category': (meal['category'] ?? '').toString(),
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final double topPadding = MediaQuery.of(context).padding.top;
@@ -1137,6 +1274,14 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   return da.compareTo(db);
                 });
 
+                final featuredRestaurants = restaurants.where((restaurant) {
+                  final offerText =
+                      (restaurant['offers'] ?? '').toString().trim();
+                  final hasOfferText =
+                      offerText.isNotEmpty && offerText != 'null';
+                  return restaurant['hasOffers'] == true || hasOfferText;
+                }).toList();
+
                 final mealsFuture = _resolveMealsFuture(restaurants);
 
                 return SafeArea(
@@ -1201,37 +1346,40 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                           },
                         ),
                       ),
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16.0, vertical: 4),
-                          child: _buildOfferSectionHeader(restaurants),
+                      if (featuredRestaurants.isNotEmpty)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16.0, vertical: 4),
+                            child: _buildOfferSectionHeader(),
+                          ),
                         ),
-                      ),
-                      SliverPadding(
-                        padding: const EdgeInsets.only(
-                            left: 16, right: 16, bottom: 20),
-                        sliver: SliverToBoxAdapter(
-                          child: SizedBox(
-                            height: 236,
-                            child: ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: restaurants.length,
-                              reverse: true,
-                              physics: BouncingScrollPhysics(),
-                              itemBuilder: (ctx, idx) {
-                                final r = restaurants[idx];
-                                final imageProvider =
-                                    (r['image']?.toString().isNotEmpty ?? false)
-                                        ? NetworkImage(r['image'].toString())
-                                        : null;
-                                return _buildRestaurantCard(
-                                    context, r, imageProvider);
-                              },
+                      if (featuredRestaurants.isNotEmpty)
+                        SliverPadding(
+                          padding: const EdgeInsets.only(
+                              left: 16, right: 16, bottom: 20),
+                          sliver: SliverToBoxAdapter(
+                            child: SizedBox(
+                              height: 236,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: featuredRestaurants.length,
+                                reverse: true,
+                                physics: BouncingScrollPhysics(),
+                                itemBuilder: (ctx, idx) {
+                                  final r = featuredRestaurants[idx];
+                                  final imageProvider =
+                                      (r['image']?.toString().isNotEmpty ??
+                                              false)
+                                          ? NetworkImage(r['image'].toString())
+                                          : null;
+                                  return _buildRestaurantCard(
+                                      context, r, imageProvider);
+                                },
+                              ),
                             ),
                           ),
                         ),
-                      ),
                       SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -1252,7 +1400,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                       SliverPadding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         sliver: SliverToBoxAdapter(
-                          child: _buildRestaurantSectionHeader(restaurants),
+                          child: _buildRestaurantSectionHeader(),
                         ),
                       ),
                       SliverPadding(
@@ -1455,31 +1603,18 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      'ابحث عن مطعم أو صنف',
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: textColorPrimary.withOpacity(0.95),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _recentSearches.isEmpty
-                          ? 'نتائج مرتبة بدون خطوط مزعجة أو قوائم مربكة'
-                          : 'آخر بحث: ${_recentSearches.first}',
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: textColorSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  _recentSearches.isEmpty
+                      ? 'ابحث عن مطعم أو صنف'
+                      : _recentSearches.first,
+                  textAlign: TextAlign.right,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: textColorPrimary.withOpacity(0.95),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1567,9 +1702,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     );
   }
 
-  Widget _buildOfferSectionHeader(List<Map<String, dynamic>> restaurants) {
-    final offersCount = restaurants.where((r) => r['hasOffers'] == true).length;
-
+  Widget _buildOfferSectionHeader() {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -1591,33 +1724,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                 children: [
                   _buildSectionHeader(Icons.local_fire_department_rounded,
                       'عروضنا لك', textColorPrimary),
-                  const SizedBox(height: 4),
-                  Text(
-                    'اختيارات سريعة من المطاعم الأقرب والأكثر جاذبية',
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      color: textColorSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
                 ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              '$offersCount عرض',
-              style: const TextStyle(
-                color: textColorPrimary,
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
               ),
             ),
           ),
@@ -1626,7 +1733,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     );
   }
 
-  Widget _buildRestaurantSectionHeader(List<Map<String, dynamic>> restaurants) {
+  Widget _buildRestaurantSectionHeader() {
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
@@ -1642,34 +1749,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                     'المطاعم',
                     textColorPrimary,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'المطاعم القريبة والمتاحة للطلب',
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      color: textColorSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
                 ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: primaryColor.withOpacity(0.1)),
-            ),
-            child: Text(
-              '${restaurants.length} مطعم',
-              style: const TextStyle(
-                color: textColorPrimary,
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
               ),
             ),
           ),
@@ -1805,14 +1885,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         : categories.first;
     final selectedMeals = _mealsForCategory(allMeals, selected);
     final featuredMeals = selectedMeals.take(5).toList();
-    final previewMeals = selectedMeals.take(6).toList();
-    final restaurantsInSelected = selectedMeals
-        .map((entry) =>
-            ((entry['restaurant'] as Map<String, dynamic>?)?['id'] ?? '')
-                .toString())
-        .where((id) => id.isNotEmpty)
-        .toSet()
-        .length;
 
     _syncFeaturedMealsAutoplay(featuredMeals.length);
 
@@ -1846,16 +1918,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                         children: [
                           _buildSectionHeader(Icons.grid_view_rounded,
                               'تصفح الأصناف', textColorPrimary),
-                          const SizedBox(height: 4),
-                          Text(
-                            'تصفح كامل للأصناف من زر واحد.',
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                              color: textColorSecondary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -1874,34 +1936,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                     ),
                     icon: const Icon(Icons.open_in_full_rounded, size: 18),
                     label: const Text('تصفح الأصناف'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildCategoryStatCard(
-                      label: 'أصناف',
-                      value: categories.length.toString(),
-                      icon: Icons.category_rounded,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildCategoryStatCard(
-                      label: 'أطباق',
-                      value: selectedMeals.length.toString(),
-                      icon: Icons.fastfood_rounded,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildCategoryStatCard(
-                      label: 'مطاعم',
-                      value: restaurantsInSelected.toString(),
-                      icon: Icons.storefront_rounded,
-                    ),
                   ),
                 ],
               ),
@@ -1969,19 +2003,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   ),
                 ],
               ],
-              const SizedBox(height: 14),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  'لعرض كل الأصناف أو اختيار صنف محدد، اضغط على تصفح الأصناف.',
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    color: textColorSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
             ],
           ),
         ),
@@ -2046,24 +2067,9 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                                     'تصفح الأصناف',
                                     textColorPrimary,
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'اختر صنفًا ثم تصفح عناصره مباشرة.',
-                                    textAlign: TextAlign.right,
-                                    style: TextStyle(
-                                      color: textColorSecondary,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
                                 ],
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            '${selectedMeals.length} عنصر',
-                            style: TextStyle(color: textColorSecondary),
                           ),
                         ],
                       ),
@@ -2161,173 +2167,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     );
   }
 
-  Widget _buildCategoryStatCard({
-    required String label,
-    required String value,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: primaryColor.withOpacity(0.12)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: primaryColor, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: textColorSecondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMealPreviewCard(
-    BuildContext context,
-    Map<String, dynamic> entry,
-  ) {
-    final meal = (entry['meal'] as Map<String, dynamic>?) ?? const {};
-    final restaurant =
-        (entry['restaurant'] as Map<String, dynamic>?) ?? const {};
-
-    final mealName = (meal['name'] ?? 'وجبة').toString();
-    final restaurantName = (restaurant['name'] ?? 'مطعم').toString();
-    final category = (meal['category'] ?? '').toString();
-    final price = (meal['price'] ?? '').toString();
-    final imageUrl =
-        (meal['imageUrl'] ?? meal['image'] ?? meal['photoUrl'] ?? '')
-            .toString();
-    final imageProvider = imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null;
-
-    return InkWell(
-      onTap: () {
-        if (restaurant.isNotEmpty) {
-          _openRestaurantDetail(context, restaurant);
-        }
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        width: 230,
-        margin: const EdgeInsets.only(left: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius:
-                  const BorderRadius.horizontal(left: Radius.circular(16)),
-              child: imageProvider != null
-                  ? Image(
-                      image: imageProvider,
-                      width: 74,
-                      height: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        width: 74,
-                        color: Colors.grey.shade200,
-                        child: Icon(Icons.image_not_supported_outlined,
-                            color: Colors.grey.shade500),
-                      ),
-                    )
-                  : Container(
-                      width: 74,
-                      color: Colors.grey.shade100,
-                      child: Icon(Icons.fastfood_rounded,
-                          color: Colors.grey.shade500),
-                    ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      mealName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      restaurantName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: textColorSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (category.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        category,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
-                        style: TextStyle(color: primaryColor, fontSize: 11),
-                      ),
-                    ],
-                    if (price.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        '$price ج.س',
-                        style: TextStyle(
-                          color: primaryColor,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildFeaturedMealCard(
     BuildContext context,
     Map<String, dynamic> entry,
@@ -2372,6 +2211,11 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           ),
           child: Stack(
             children: [
+              Positioned(
+                top: 14,
+                left: 14,
+                child: _buildMealFavoriteButton(entry),
+              ),
               Positioned.fill(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
@@ -2468,7 +2312,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                                   size: 14, color: primaryColor),
                               SizedBox(width: 6),
                               Text(
-                                'افتح المطعم',
+                                'الدخول إلى المطعم',
                                 style: TextStyle(
                                   color: primaryColor,
                                   fontWeight: FontWeight.w800,
@@ -2531,29 +2375,40 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(
-              child: ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(18)),
-                child: imageProvider != null
-                    ? Image(
-                        image: imageProvider,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: Colors.grey.shade200,
-                          child: Icon(
-                            Icons.fastfood_rounded,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                      )
-                    : Container(
-                        color: Colors.grey.shade200,
-                        child: Icon(
-                          Icons.fastfood_rounded,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(18)),
+                      child: imageProvider != null
+                          ? Image(
+                              image: imageProvider,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: Colors.grey.shade200,
+                                child: Icon(
+                                  Icons.fastfood_rounded,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                            )
+                          : Container(
+                              color: Colors.grey.shade200,
+                              child: Icon(
+                                Icons.fastfood_rounded,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    child: _buildMealFavoriteButton(entry),
+                  ),
+                ],
               ),
             ),
             Padding(
@@ -2597,7 +2452,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: const Text(
-                          'افتح',
+                          'الدخول',
                           style: TextStyle(
                             color: primaryColor,
                             fontWeight: FontWeight.w800,
@@ -2625,151 +2480,13 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     );
   }
 
-  void _showCategoryMealsSheet(
-    BuildContext context,
-    String category,
-    List<Map<String, dynamic>> meals,
-  ) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: Container(
-            height: MediaQuery.of(ctx).size.height * 0.82,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: Column(
-              children: [
-                const SizedBox(height: 10),
-                Container(
-                  width: 56,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    children: [
-                      Text(
-                        '${meals.length} عنصر',
-                        style: TextStyle(color: textColorSecondary),
-                      ),
-                      const Spacer(),
-                      Text(
-                        category,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: meals.isEmpty
-                      ? Center(
-                          child: Text(
-                            'لا توجد عناصر في هذا الصنف',
-                            style: TextStyle(color: textColorSecondary),
-                          ),
-                        )
-                      : ListView.separated(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: meals.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 10),
-                          itemBuilder: (context, index) {
-                            final entry = meals[index];
-                            final meal =
-                                (entry['meal'] as Map<String, dynamic>?) ??
-                                    const {};
-                            final restaurant = (entry['restaurant']
-                                    as Map<String, dynamic>?) ??
-                                const {};
-                            final mealName =
-                                (meal['name'] ?? 'وجبة').toString();
-                            final restaurantName =
-                                (restaurant['name'] ?? 'مطعم').toString();
-                            final price = (meal['price'] ?? '').toString();
-
-                            return InkWell(
-                              onTap: () {
-                                Navigator.pop(context);
-                                if (restaurant.isNotEmpty) {
-                                  _openRestaurantDetail(context, restaurant);
-                                }
-                              },
-                              borderRadius: BorderRadius.circular(14),
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: AppThemeArabic.clientSurface,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: Colors.grey.withOpacity(0.16),
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      mealName,
-                                      textAlign: TextAlign.right,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'يتبع لمطعم: $restaurantName',
-                                      textAlign: TextAlign.right,
-                                      style: TextStyle(
-                                        color: textColorSecondary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    if (price.isNotEmpty) ...[
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        '$price ج.س',
-                                        style: TextStyle(
-                                          color: primaryColor,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildRestaurantCard(
     BuildContext context,
     Map<String, dynamic> r,
     ImageProvider? imageProvider,
   ) {
     final status = getRestaurantStatus(r);
+    final hoursSummary = getRestaurantHoursSummary(r);
     final isOpen = status.contains('مفتوح');
     final offerText = (r['offers'] ?? '').toString().trim();
     final hasOfferText = offerText.isNotEmpty && offerText != 'null';
@@ -2823,7 +2540,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                         icon: isOpen
                             ? Icons.check_circle_rounded
                             : Icons.pause_circle_rounded,
-                        text: isOpen ? 'متاح الآن' : 'غير متاح',
+                        text: isOpen ? 'مفتوح الآن' : 'مغلق الآن',
                         backgroundColor: isOpen
                             ? openColor.withOpacity(0.18)
                             : closedColor.withOpacity(0.18),
@@ -2841,6 +2558,11 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                           foregroundColor: textColorPrimary,
                         ),
                       ),
+                    Positioned(
+                      top: hasOfferText || r['hasOffers'] == true ? 58 : 14,
+                      left: 14,
+                      child: _buildRestaurantFavoriteButton(r),
+                    ),
                     Positioned(
                       right: 16,
                       left: 16,
@@ -2874,6 +2596,34 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                               ),
                             ),
                           ],
+                          const SizedBox(height: 6),
+                          Text(
+                            status,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              color: isOpen
+                                  ? Colors.white.withOpacity(0.94)
+                                  : const Color(0xFFFFE2E2),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (hoursSummary.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              hoursSummary,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.84),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -2891,6 +2641,14 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      _buildInfoPill(
+                        icon: Icons.access_time_rounded,
+                        text: status,
+                        backgroundColor: isOpen
+                            ? openColor.withOpacity(0.12)
+                            : closedColor.withOpacity(0.12),
+                        foregroundColor: isOpen ? openColor : closedColor,
+                      ),
                       _buildInfoPill(
                         icon: Icons.near_me_rounded,
                         text: _distanceText(r['distanceKm'] as double?),
@@ -2920,21 +2678,13 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                             size: 16, color: primaryColor),
                         const SizedBox(width: 8),
                         const Text(
-                          'ادخل للمطعم',
+                          'الدخول إلى المطعم',
                           style: TextStyle(
                             color: primaryColor,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
                         const Spacer(),
-                        Text(
-                          'عرض التفاصيل',
-                          style: TextStyle(
-                            color: textColorSecondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -2953,6 +2703,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     ImageProvider? imageProvider,
   ) {
     final status = getRestaurantStatus(r);
+    final hoursSummary = getRestaurantHoursSummary(r);
     final isOpen = status.contains('مفتوح');
     final offerText = (r['offers'] ?? '').toString().trim();
     final hasOfferText = offerText.isNotEmpty && offerText != 'null';
@@ -2983,11 +2734,13 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                 children: [
                   Row(
                     children: [
+                      _buildRestaurantFavoriteButton(r),
+                      const SizedBox(width: 8),
                       _buildInfoPill(
                         icon: isOpen
                             ? Icons.check_circle_rounded
                             : Icons.pause_circle_rounded,
-                        text: isOpen ? 'متاح' : 'مغلق',
+                        text: isOpen ? 'مفتوح الآن' : 'مغلق الآن',
                         backgroundColor: isOpen
                             ? openColor.withOpacity(0.14)
                             : closedColor.withOpacity(0.14),
@@ -3018,7 +2771,9 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    hasOfferText ? offerText : 'طلبات سريعة وخيارات واضحة',
+                    hasOfferText
+                        ? offerText
+                        : (hoursSummary.isNotEmpty ? hoursSummary : status),
                     style: TextStyle(
                       color: textColorSecondary,
                       fontSize: 13,
@@ -3036,6 +2791,14 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                     runSpacing: 8,
                     children: [
                       _buildInfoPill(
+                        icon: Icons.access_time_rounded,
+                        text: status,
+                        backgroundColor: isOpen
+                            ? openColor.withOpacity(0.12)
+                            : closedColor.withOpacity(0.12),
+                        foregroundColor: isOpen ? openColor : closedColor,
+                      ),
+                      _buildInfoPill(
                         icon: Icons.near_me_rounded,
                         text: _distanceText(r['distanceKm'] as double?),
                       ),
@@ -3044,10 +2807,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                         text: _restaurantRatingLabel(r),
                         backgroundColor: accentColor.withOpacity(0.18),
                         foregroundColor: textColorPrimary,
-                      ),
-                      _buildInfoPill(
-                        icon: Icons.access_time_rounded,
-                        text: '30-45 دقيقة',
                       ),
                     ],
                   ),
@@ -3067,21 +2826,13 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                             size: 16, color: primaryColor),
                         const SizedBox(width: 8),
                         const Text(
-                          'استعرض المنيو',
+                          'تصفح القائمة',
                           style: TextStyle(
                             color: primaryColor,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
                         const Spacer(),
-                        Text(
-                          'الدخول للمطعم',
-                          style: TextStyle(
-                            color: textColorSecondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -3382,36 +3133,136 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
 
     if (temporarilyClosed) return 'مغلق مؤقتًا';
 
-    final now = DateTime.now();
-    final todayKey = _getDayKey(now.weekday);
-    final todayHours = workingHours?[todayKey];
+    final todayKey = _getDayKey(DateTime.now().weekday);
+    final todayHours = workingHours?[todayKey] as Map<String, dynamic>?;
 
     if (todayHours == null) return 'مغلق اليوم';
 
-    final openStr = todayHours['open'] ?? '';
-    final closeStr = todayHours['close'] ?? '';
+    final status = (todayHours['status'] ?? '').toString().trim();
+    if (status == 'مغلق') return 'مغلق اليوم';
 
-    if (openStr.isEmpty || closeStr.isEmpty) return 'مغلق';
+    final ranges = _extractWorkingTimeRanges(todayHours, status);
+    if (ranges.isEmpty) return 'مغلق - وقت غير معروف';
 
-    final open = _parseArabicTime(openStr);
-    final close = _parseArabicTime(closeStr);
-
-    if (open == null || close == null) return 'مغلق - خطأ في الوقت';
-
+    final now = DateTime.now();
     final nowMinutes = now.hour * 60 + now.minute;
-    final openMinutes = open.hour * 60 + open.minute;
-    int closeMinutesAdjusted = close.hour * 60 + close.minute;
-    if (closeMinutesAdjusted < openMinutes) {
-      closeMinutesAdjusted += 24 * 60;
+    for (final range in ranges) {
+      final open = range['open'] as TimeOfDay;
+      final close = range['close'] as TimeOfDay;
+      if (_isWithinRestaurantTimeRange(nowMinutes, open, close)) {
+        return 'مفتوح الآن';
+      }
     }
 
-    if (nowMinutes >= openMinutes && nowMinutes < closeMinutesAdjusted) {
-      return 'مفتوح الآن';
-    } else if (nowMinutes < openMinutes) {
-      return 'مغلق الآن - يفتح الساعة $openStr';
-    } else {
-      return 'مغلق الآن - يغلق الساعة $closeStr';
+    final nextOpening = _findNextRestaurantOpening(nowMinutes, ranges);
+    if (nextOpening != null) {
+      return 'مغلق الآن - يفتح الساعة ${nextOpening['label']}';
     }
+
+    return 'مغلق الآن';
+  }
+
+  String getRestaurantHoursSummary(Map<String, dynamic> data) {
+    final workingHours = data['workingHours'] as Map<String, dynamic>?;
+    final todayKey = _getDayKey(DateTime.now().weekday);
+    final todayHours = workingHours?[todayKey] as Map<String, dynamic>?;
+    if (todayHours == null) return '';
+
+    final status = (todayHours['status'] ?? '').toString().trim();
+    if (status == 'مغلق') return 'مغلق اليوم';
+
+    final ranges = _extractWorkingTimeRanges(todayHours, status);
+    if (ranges.isEmpty) return '';
+
+    final labels = ranges
+        .map((range) {
+          final openLabel = (range['label'] ?? '').toString().trim();
+          final close = range['close'] as TimeOfDay;
+          final closeLabel = _formatTimeOfDay(close);
+          if (openLabel.isEmpty) {
+            return closeLabel.isEmpty ? '' : 'حتى $closeLabel';
+          }
+          return '$openLabel - $closeLabel';
+        })
+        .where((label) => label.isNotEmpty)
+        .toList();
+
+    if (labels.isEmpty) return '';
+    return labels.length == 1
+        ? 'ساعات العمل اليوم: ${labels.first}'
+        : 'ساعات العمل اليوم: ${labels.join(' • ')}';
+  }
+
+  String _formatTimeOfDay(TimeOfDay value) {
+    final period = value.hour >= 12 ? 'م' : 'ص';
+    final hour = value.hourOfPeriod == 0 ? 12 : value.hourOfPeriod;
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '$hour:$minute $period';
+  }
+
+  List<Map<String, dynamic>> _extractWorkingTimeRanges(
+    Map<String, dynamic> dayData,
+    String status,
+  ) {
+    final ranges = <Map<String, dynamic>>[];
+
+    void addRange(dynamic openValue, dynamic closeValue) {
+      final openText = openValue?.toString().trim() ?? '';
+      final closeText = closeValue?.toString().trim() ?? '';
+      final open = _parseArabicTime(openText);
+      final close = _parseArabicTime(closeText);
+      if (open == null || close == null) return;
+      ranges.add({
+        'label': openText,
+        'open': open,
+        'close': close,
+      });
+    }
+
+    if (status == 'صباحي ومسائي' ||
+        (dayData['morning'] is Map && dayData['evening'] is Map)) {
+      final morning = dayData['morning'] as Map<String, dynamic>?;
+      final evening = dayData['evening'] as Map<String, dynamic>?;
+      addRange(morning?['open'], morning?['close']);
+      addRange(evening?['open'], evening?['close']);
+      return ranges;
+    }
+
+    addRange(dayData['open'], dayData['close']);
+    return ranges;
+  }
+
+  bool _isWithinRestaurantTimeRange(
+    int nowMinutes,
+    TimeOfDay open,
+    TimeOfDay close,
+  ) {
+    final openMinutes = open.hour * 60 + open.minute;
+    final closeMinutes = close.hour * 60 + close.minute;
+    if (closeMinutes >= openMinutes) {
+      return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
+    }
+    return nowMinutes >= openMinutes || nowMinutes <= closeMinutes;
+  }
+
+  Map<String, dynamic>? _findNextRestaurantOpening(
+    int nowMinutes,
+    List<Map<String, dynamic>> ranges,
+  ) {
+    Map<String, dynamic>? nearest;
+    var bestDelta = 1 << 30;
+    for (final range in ranges) {
+      final open = range['open'] as TimeOfDay;
+      final openMinutes = open.hour * 60 + open.minute;
+      final delta = openMinutes >= nowMinutes
+          ? openMinutes - nowMinutes
+          : (24 * 60 - nowMinutes) + openMinutes;
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        nearest = range;
+      }
+    }
+    return nearest;
   }
 
   TimeOfDay? _parseArabicTime(String time) {

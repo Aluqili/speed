@@ -11,7 +11,6 @@ import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 
 import '../الخدمات/guest_location_service.dart';
-import 'add_new_address_screen.dart';
 import 'cart_provider.dart';
 import 'payment_screen.dart';
 
@@ -33,6 +32,9 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
   static const double _defaultLargeItemStepAmount = 5000;
   static const double _defaultLargeItemStepFee = 500;
   static const double _defaultLargeItemFeeCapPerUnit = 2500;
+  static const double _defaultClientDeliveryBaseFee = 5000;
+  static const double _defaultClientDeliveryBaseDistanceKm = 6;
+  static const double _defaultClientDeliveryExtraPerKm = 700;
   static const double _defaultDeliveryPlatformMarginFixed = 700;
   static const double _defaultDeliveryPlatformMinMargin = 300;
 
@@ -164,6 +166,50 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     }
   }
 
+  double get _clientDeliveryBaseFee {
+    try {
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('pricing_client_delivery_base_fee');
+      return value >= 0 ? value : _defaultClientDeliveryBaseFee;
+    } catch (_) {
+      return _defaultClientDeliveryBaseFee;
+    }
+  }
+
+  double get _clientDeliveryBaseDistanceKm {
+    try {
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('pricing_client_delivery_base_distance_km');
+      return value >= 0 ? value : _defaultClientDeliveryBaseDistanceKm;
+    } catch (_) {
+      return _defaultClientDeliveryBaseDistanceKm;
+    }
+  }
+
+  double get _clientDeliveryExtraPerKm {
+    try {
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('pricing_client_delivery_extra_per_km');
+      return value >= 0 ? value : _defaultClientDeliveryExtraPerKm;
+    } catch (_) {
+      return _defaultClientDeliveryExtraPerKm;
+    }
+  }
+
+  double _clientFeeByDistance(double distanceKm) {
+    final safeDistance = distanceKm < 0 ? 0.0 : distanceKm;
+    final baseDistance = _clientDeliveryBaseDistanceKm;
+    final baseFee = _clientDeliveryBaseFee;
+    final extraPerKm = _clientDeliveryExtraPerKm;
+
+    if (safeDistance <= baseDistance) {
+      return baseFee;
+    }
+
+    final extraKm = (safeDistance - baseDistance).ceil();
+    return baseFee + (extraKm * extraPerKm);
+  }
+
   double _driverFeeByDistance(double distanceKm) {
     if (distanceKm < 2) {
       return 2000;
@@ -214,6 +260,12 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
   }
 
   @override
+  void dispose() {
+    _prevCart?.removeListener(_handleCartChanged);
+    super.dispose();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final cart = Provider.of<CartProvider?>(context);
@@ -221,9 +273,16 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       return;
     }
     if (_prevCart != cart) {
+      _prevCart?.removeListener(_handleCartChanged);
       _prevCart = cart;
+      cart.addListener(_handleCartChanged);
       _calculateDeliveryFee();
     }
+  }
+
+  void _handleCartChanged() {
+    if (!mounted) return;
+    _calculateDeliveryFee();
   }
 
   Future<void> _calculateDeliveryFee() async {
@@ -350,13 +409,14 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
           cos(toRad(clientLat)) * cos(toRad(restLat)) * pow(sin(dLng / 2), 2);
       final distance = 2 * asin(sqrt(a)) * 6371;
 
-      final driverFee = _driverFeeByDistance(distance);
-      final minimumMargin = _deliveryPlatformMinMargin;
-      final targetMargin = _deliveryPlatformMarginFixed;
-      final fee = max(
-        driverFee + minimumMargin,
-        driverFee + targetMargin,
-      );
+      final hasNewPricingKeys =
+          _clientDeliveryBaseFee > 0 && _clientDeliveryBaseDistanceKm >= 0;
+      final fee = hasNewPricingKeys
+          ? _clientFeeByDistance(distance)
+          : max(
+              _driverFeeByDistance(distance) + _deliveryPlatformMinMargin,
+              _driverFeeByDistance(distance) + _deliveryPlatformMarginFixed,
+            );
 
       setState(() {
         _deliveryFee = fee;
@@ -430,27 +490,18 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       return;
     }
 
-    final guestLocation = await GuestLocationService.load();
-    if (!mounted || guestLocation == null) {
+    final savedAddressId = await GuestLocationService.saveAsClientAddress(
+      clientId,
+    );
+    if (!mounted || savedAddressId == null) {
       return;
     }
 
-    final saved = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AddNewAddressScreen(
-          userId: clientId,
-          userType: 'client',
-          existingName: guestLocation.addressName,
-          existingLatitude: guestLocation.latitude,
-          existingLongitude: guestLocation.longitude,
-        ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('تم اعتماد موقع التصفح الحالي كعنوان التوصيل الافتراضي.'),
       ),
     );
-
-    if (saved != null) {
-      await GuestLocationService.clear();
-    }
   }
 
   Future<void> _onCheckoutPressed(CartProvider cart) async {
@@ -698,7 +749,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         .trim();
 
     final generatedOrderCode = 'ORD-${Random().nextInt(1000000)}';
-    final currentLargeOrderFee = _calculateLargeOrderFee(cart);
+    final currentLargeOrderFee = _largeOrderFee;
 
     final draftOrderData = {
       'orderId': generatedOrderCode,
@@ -914,7 +965,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       );
     }
     final total = cart.totalPrice;
-    final displayLargeOrderFee = _calculateLargeOrderFee(cart);
+    final displayLargeOrderFee = _largeOrderFee;
     final withDel = total + _deliveryFee + displayLargeOrderFee;
 
     return Directionality(

@@ -1,0 +1,142 @@
+{
+  "parameters": {
+    "ops_force_update_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "ops_min_build_android": {
+      "defaultValue": {
+        "value": "0"
+      },
+      "valueType": "NUMBER"
+    },
+    "ops_update_message": {
+      "defaultValue": {
+        "value": "يوجد تحديث جديد مهم لتحسين الأداء. الرجاء التحديث الآن."
+      },
+      "valueType": "STRING"
+    },
+    "ops_update_url_android": {
+      "defaultValue": {
+        "value": "``"
+      },
+      "valueType": "STRING"
+    },
+    "client_force_update_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "client_min_build_android": {
+      "defaultValue": {
+        "value": "10"
+      },
+      "valueType": "NUMBER"
+    },
+    "client_update_message": {
+      "defaultValue": {
+        "value": "يرجى تحديث تطبيق العميل للاستمرار."
+      },
+      "valueType": "STRING"
+    },
+    "client_update_url_android": {
+      "defaultValue": {
+        "value": "https://speedstarapp.web.app/downloads/client-android.apk"
+      },
+      "valueType": "STRING"
+    },
+    "store_force_update_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "store_min_build_android": {
+      "defaultValue": {
+        "value": "4"
+      },
+      "valueType": "NUMBER"
+    },
+    "store_update_message": {
+      "defaultValue": {
+        "value": "يرجى تحديث تطبيق المتجر للاستمرار."
+      },
+      "valueType": "STRING"
+    },
+    "store_update_url_android": {
+      "defaultValue": {
+        "value": "https://speedstarapp.web.app/downloads/store-android.apk"
+      },
+      "valueType": "STRING"
+    },
+    "courier_force_update_enabled": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "courier_min_build_android": {
+      "defaultValue": {
+        "value": "1"
+      },
+      "valueType": "NUMBER"
+    },
+    "courier_update_message": {
+      "defaultValue": {
+        "value": "يرجى تحديث تطبيق المندوب للاستمرار."
+      },
+      "valueType": "STRING"
+    },
+    "courier_update_url_android": {
+      "defaultValue": {
+        "value": "https://github.com/Aluqili/speed/releases/download/android-v20260314-195221/SpeedStar-corier.apk"
+      },
+      "valueType": "STRING"
+    },
+    "client_root_url": {
+      "defaultValue": {
+        "value": "https://speedstar-prod-4c7c5.web.app/sdui/client/index.json"
+      },
+      "valueType": "STRING"
+    },
+    "store_root_url": {
+      "defaultValue": {
+        "value": "https://speedstar-prod-4c7c5.web.app/sdui/courier/index.json"
+      },
+      "valueType": "STRING"
+    },
+    "courier_root_url": {
+      "defaultValue": {
+        "value": "https://speedstar-prod-4c7c5.web.app/sdui/courier/index.json"
+      },
+      "valueType": "STRING"
+    },
+    "client_state_guard_distance_km": {
+      "defaultValue": {
+        "value": "120"
+      },
+      "valueType": "NUMBER"
+    },
+    "client_state_rollout_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "client_enabled_states_csv": {
+      "defaultValue": {
+        "value": "khartoum"
+      },
+      "valueType": "STRING"
+    },
+    "client_state_rollout_block_message": {
+      "defaultValue": {
+        "value": "لسه ما جيناكم في الولاية يا غالي\nتابعنا على منصات التواصل عشان تعرف حنجيكم متين\nوقريبا حنصلكم.. انتظرونا!"
+      },
+      "valueType": "STRING"
+    }
+  }
+}

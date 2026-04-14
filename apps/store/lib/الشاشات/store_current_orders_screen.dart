@@ -78,32 +78,97 @@ Color _statusColor(String status) {
   return AppThemeArabic.clientPrimary;
 }
 
+num _safeNum(dynamic value) {
+  if (value is num) return value;
+  return num.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+String _formatAmount(num value) {
+  return value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toStringAsFixed(2);
+}
+
+Map<String, dynamic> _promoDetails(Map<String, dynamic> data) {
+  final promo = data['promocode'];
+  if (promo is Map<String, dynamic>) return promo;
+  if (promo is Map) {
+    return promo.map((key, value) => MapEntry(key.toString(), value));
+  }
+  return const {};
+}
+
+num _storeDiscountAmount(Map<String, dynamic> data) {
+  final restaurantId = (data['restaurantId'] ?? '').toString().trim();
+  final promo = _promoDetails(data);
+  final promoRestaurantId = (promo['restaurantId'] ?? '').toString().trim();
+  final scope = (promo['discountScope'] ?? '').toString().trim();
+  final discountAmount = _safeNum(data['discountAmount']);
+  if (restaurantId.isEmpty || promoRestaurantId != restaurantId) return 0;
+  if (scope == 'delivery_fee' || discountAmount <= 0) return 0;
+  return discountAmount;
+}
+
+num _storeReceivable(Map<String, dynamic> data) {
+  final subtotal = _safeNum(data['total']);
+  final discountAmount = _storeDiscountAmount(data);
+  final net = subtotal - discountAmount;
+  return net < 0 ? 0 : net;
+}
+
 class StoreCurrentOrdersScreen extends StatelessWidget {
   final String restaurantId;
   const StoreCurrentOrdersScreen({super.key, required this.restaurantId});
 
-  num _resolveDisplayedTotal(Map<String, dynamic> data) {
-    final total = (data['total'] as num?) ?? 0;
-    final deliveryFee = (data['deliveryFee'] as num?) ?? 0;
-    final largeOrderFee = (data['largeOrderFee'] as num?) ?? 0;
-    return (data['totalWithDelivery'] as num?) ??
-        (total + deliveryFee + largeOrderFee);
+  Widget _sectionHeader(String title, int count, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppThemeArabic.storePrimary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: AppThemeArabic.storePrimary),
+          const SizedBox(width: 8),
+          Text(
+            '$title ($count)',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontFamily: 'Tajawal',
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
-  Widget _sectionHeader(String title, int count, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, color: AppThemeArabic.clientPrimary),
-        const SizedBox(width: 8),
-        Text(
-          '$title ($count)',
-          style: const TextStyle(
-            fontWeight: FontWeight.w800,
-            fontFamily: 'Tajawal',
-            fontSize: 16,
-          ),
+  Widget _summaryCard(String label, String value, Color color, IconData icon) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(18),
         ),
-      ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(height: 10),
+            Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(color: color, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -111,8 +176,8 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
     final data = doc.data() as Map<String, dynamic>;
     final orderId = doc.id;
     final status = _getOrderStatus(data);
-    final clientName = data['clientName'] ?? 'عميل';
-    final total = _resolveDisplayedTotal(data);
+    final receivable = _storeReceivable(data);
+    final hasStoreDiscount = _storeDiscountAmount(data) > 0;
     final unifiedOrderCode = formatUnifiedOrderCode(
       orderNumber: data['orderNumber'],
       orderId: data['orderId'],
@@ -120,39 +185,21 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
     );
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _statusColor(status).withValues(alpha: 0.14)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
-      child: ListTile(
-        title: Text(
-          unifiedOrderCode,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontFamily: 'Tajawal',
-          ),
-        ),
-        subtitle: Text(
-          'العميل: $clientName • الإجمالي: $total ج.س',
-          style: const TextStyle(fontFamily: 'Tajawal'),
-        ),
-        trailing: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: _statusColor(status).withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            _displayOrderStatus(status),
-            style: TextStyle(
-              color: _statusColor(status),
-              fontWeight: FontWeight.bold,
-              fontFamily: 'Tajawal',
-            ),
-          ),
-        ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
         onTap: () {
           Navigator.push(
             context,
@@ -164,6 +211,85 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
             ),
           );
         },
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: _statusColor(status).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child:
+                        Icon(Icons.receipt_long, color: _statusColor(status)),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          unifiedOrderCode,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Tajawal',
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          hasStoreDiscount
+                              ? 'صافي المتجر بعد الخصم'
+                              : 'مستحق المتجر من هذا الطلب',
+                          style: const TextStyle(
+                              color: AppThemeArabic.clientTextSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _statusColor(status).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      _displayOrderStatus(status),
+                      style: TextStyle(
+                        color: _statusColor(status),
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'Tajawal',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppThemeArabic.storeBackground,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.payments_outlined, size: 18),
+                    const SizedBox(width: 8),
+                    Text('المستحق ${_formatAmount(receivable)} ج.س'),
+                    const Spacer(),
+                    const Icon(Icons.chevron_left),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -227,6 +353,22 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
               padding: const EdgeInsets.all(12),
               child: Column(
                 children: [
+                  Row(
+                    children: [
+                      _summaryCard(
+                          'طلبات جديدة',
+                          '${newDocs.length}',
+                          AppThemeArabic.storePrimary,
+                          Icons.local_fire_department_outlined),
+                      const SizedBox(width: 10),
+                      _summaryCard('منتهية', '${finishedDocs.length}',
+                          Colors.green, Icons.check_circle_outline),
+                      const SizedBox(width: 10),
+                      _summaryCard('كل الطلبات', '${allDocs.length}',
+                          Colors.orange, Icons.receipt_long),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   _sectionHeader(
                       'الطلبات الجديدة', newDocs.length, Icons.fiber_new),
                   const SizedBox(height: 8),

@@ -53,6 +53,8 @@ const reviewOrderPaymentEvidence = httpsCallable(fns, 'reviewOrderPaymentEvidenc
 const reviewClientWalletRecharge = httpsCallable(fns, 'reviewClientWalletRecharge');
 const getAdminRemoteConfigSettings = httpsCallable(fns, 'getAdminRemoteConfigSettings');
 const updateAdminRemoteConfigSettings = httpsCallable(fns, 'updateAdminRemoteConfigSettings');
+const reviewStoreOfferRequest = httpsCallable(fns, 'reviewStoreOfferRequest');
+const adminManageOrder = httpsCallable(fns, 'adminManageOrder');
 
 const loginCard = document.getElementById('loginCard');
 const appPanel = document.getElementById('appPanel');
@@ -62,12 +64,18 @@ const loginStatus = document.getElementById('loginStatus');
 const logoutBtn = document.getElementById('logoutBtn');
 const authState = document.getElementById('authState');
 const envBadge = document.getElementById('envBadge');
-const envSelect = document.getElementById('envSelect');
 const adminQuickTab = document.getElementById('adminQuickTab');
 const adminGlobalSearch = document.getElementById('adminGlobalSearch');
+const adminSearchMeta = document.getElementById('adminSearchMeta');
+const adminSearchResults = document.getElementById('adminSearchResults');
 const dashboardQuickActions = document.getElementById('dashboardQuickActions');
+const activePortalEyebrow = document.getElementById('activePortalEyebrow');
+const activePortalTitle = document.getElementById('activePortalTitle');
+const activePortalSummary = document.getElementById('activePortalSummary');
 
 const statsGrid = document.getElementById('statsGrid');
+const opsPriorityGrid = document.getElementById('opsPriorityGrid');
+const opsAlertFeed = document.getElementById('opsAlertFeed');
 const publicMetricsTotalGrid = document.getElementById('publicMetricsTotalGrid');
 const publicMetricsTodayGrid = document.getElementById('publicMetricsTodayGrid');
 const publicMetricsUpdatedAt = document.getElementById('publicMetricsUpdatedAt');
@@ -126,6 +134,8 @@ const supportMessagesPane = document.getElementById('supportMessagesPane');
 const supportReplyInput = document.getElementById('supportReplyInput');
 const supportSendBtn = document.getElementById('supportSendBtn');
 const supportToggleStatusBtn = document.getElementById('supportToggleStatusBtn');
+const supportMarkReadBtn = document.getElementById('supportMarkReadBtn');
+const supportMarkAllReadBtn = document.getElementById('supportMarkAllReadBtn');
 const supportSearchInput = document.getElementById('supportSearchInput');
 const supportAppFilter = document.getElementById('supportAppFilter');
 const supportStatusFilter = document.getElementById('supportStatusFilter');
@@ -142,6 +152,12 @@ const pendingTable = document.getElementById('pendingTable');
 const pendingMenuTable = document.getElementById('pendingMenuTable');
 const storeDetailsPanel = document.getElementById('storeDetailsPanel');
 const courierDetailsPanel = document.getElementById('courierDetailsPanel');
+const operationsOrderSummary = document.getElementById('operationsOrderSummary');
+const operationsOrdersTable = document.getElementById('operationsOrdersTable');
+const operationsOrderDetails = document.getElementById('operationsOrderDetails');
+const clientsTable = document.getElementById('clientsTable');
+const orderStatusFilter = document.getElementById('orderStatusFilter');
+const orderSearchInput = document.getElementById('orderSearchInput');
 const addAdminForm = document.getElementById('addAdminForm');
 const adminEmailInput = document.getElementById('adminEmailInput');
 const normalizeStateForm = document.getElementById('normalizeStateForm');
@@ -167,6 +183,16 @@ const remoteConfigTable = document.getElementById('remoteConfigTable');
 const reloadRemoteConfigBulkBtn = document.getElementById('reloadRemoteConfigBulkBtn');
 const saveRemoteConfigBulkBtn = document.getElementById('saveRemoteConfigBulkBtn');
 const remoteConfigBulkResult = document.getElementById('remoteConfigBulkResult');
+const pricingConfigForm = document.getElementById('pricingConfigForm');
+const pricingClientBaseFeeInput = document.getElementById('pricingClientBaseFeeInput');
+const pricingClientBaseDistanceInput = document.getElementById('pricingClientBaseDistanceInput');
+const pricingClientExtraPerKmInput = document.getElementById('pricingClientExtraPerKmInput');
+const pricingDriverBaseFeeInput = document.getElementById('pricingDriverBaseFeeInput');
+const pricingDriverBaseDistanceInput = document.getElementById('pricingDriverBaseDistanceInput');
+const pricingDriverExtraPerKmInput = document.getElementById('pricingDriverExtraPerKmInput');
+const reloadPricingConfigBtn = document.getElementById('reloadPricingConfigBtn');
+const savePricingConfigBtn = document.getElementById('savePricingConfigBtn');
+const pricingConfigResult = document.getElementById('pricingConfigResult');
 const discountForm = document.getElementById('discountForm');
 const discountCode = document.getElementById('discountCode');
 const discountType = document.getElementById('discountType');
@@ -183,17 +209,90 @@ const discountOnlyNewOrders = document.getElementById('discountOnlyNewOrders');
 const discountSaveBtn = document.getElementById('discountSaveBtn');
 const discountResult = document.getElementById('discountResult');
 const discountsTable = document.getElementById('discountsTable');
+const storeOffersSummary = document.getElementById('storeOffersSummary');
+const storeOffersPendingTable = document.getElementById('storeOffersPendingTable');
+const storeOffersApprovedTable = document.getElementById('storeOffersApprovedTable');
 const mapDetails = document.getElementById('mapDetails');
 const mapLegendBar = document.getElementById('mapLegendBar');
+const mapMetrics = document.getElementById('mapMetrics');
+const mapSearchInput = document.getElementById('mapSearchInput');
+const mapSearchResults = document.getElementById('mapSearchResults');
+const mapResetViewBtn = document.getElementById('mapResetViewBtn');
+const mapFocusButtons = Array.from(document.querySelectorAll('[data-map-focus]'));
 
 const tabs = Array.from(document.querySelectorAll('.tab'));
 const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
+const portalSubtabs = Array.from(document.querySelectorAll('[data-subtab]'));
+const portalSubpanels = Array.from(document.querySelectorAll('[data-subpanel]'));
+
+const PORTAL_META = {
+  dashboard: {
+    eyebrow: 'بوابة القيادة',
+    title: 'لوحة القيادة التنفيذية',
+    summary: 'نقطة البداية لمتابعة مؤشرات المنصة، الوصول السريع، وآخر الطلبات القابلة للفحص فورًا.'
+  },
+  finance: {
+    eyebrow: 'بوابة المالية',
+    title: 'المسارات المالية والتحصيلات',
+    summary: 'فصل واضح بين إعدادات الدفع، أكواد الخصم، المراجعات، وتحويلات المتاجر والمندوبين.'
+  },
+  map: {
+    eyebrow: 'بوابة الخريطة',
+    title: 'الخريطة الحية للعمليات الميدانية',
+    summary: 'عرض حي للحركة التشغيلية مع بحث مباشر وتمركز سريع على الطلبات والمندوبين والمطاعم.'
+  },
+  management: {
+    eyebrow: 'بوابة التشغيل',
+    title: 'إدارة المتاجر والمندوبين',
+    summary: 'منطقة تشغيلية لفحص الجداول الأساسية وفتح التفاصيل المرتبطة بالأداء اليومي.'
+  },
+  admins: {
+    eyebrow: 'بوابة التحكم',
+    title: 'التحكم الإداري والتوسع',
+    summary: 'صلاحيات، تشغيل المدن، ومفاتيح Remote Config ضمن بوابة مستقلة للتحكم العميق.'
+  },
+  notifications: {
+    eyebrow: 'بوابة الإشعارات',
+    title: 'التواصل والتنبيهات اليدوية',
+    summary: 'إرسال إشعارات دقيقة للفئات أو المستخدمين المحددين بدون تشتيت بقية أدوات الإدارة.'
+  },
+  support: {
+    eyebrow: 'بوابة الدعم',
+    title: 'إدارة المحادثات والدعم الفني',
+    summary: 'مركز موحد للفرز والرد وإدارة الحالات المفتوحة والمغلقة عبر التطبيقات المختلفة.'
+  },
+  pending: {
+    eyebrow: 'بوابة الاعتمادات',
+    title: 'الطلبات المعلقة والاعتمادات الجديدة',
+    summary: 'مراجعة التسجيلات واعتماد القوائم في واجهة سريعة مخصصة للمهام المؤجلة.'
+  }
+};
+
+const SUBPANEL_META = {
+  finance: {
+    'finance-overview': { title: 'الملخص والتسويات', summary: 'ملخص المدفوعات والمراجعات والتحويلات المالية.' },
+    'finance-payments': { title: 'إعدادات الدفع', summary: 'إدارة الحسابات وروابط الدفع وتعليمات التحويل.' },
+    'finance-discounts': { title: 'أكواد الخصم', summary: 'إنشاء الأكواد ومراجعة الخصومات النشطة والمنتهية.' },
+    'finance-offers': { title: 'عروض المطاعم', summary: 'اعتماد عروض المتاجر ومتابعة حالتها.' },
+  },
+  management: {
+    'management-stores': { title: 'المتاجر', summary: 'متابعة المتاجر المعتمدة وتفاصيل تشغيلها.' },
+    'management-couriers': { title: 'المندوبون', summary: 'متابعة حالة المندوبين والدخول إلى تفاصيلهم.' },
+    'management-orders': { title: 'الطلبات والتحكم', summary: 'واجهة تشغيلية للتحكم الفعلي في الطلبات والعملاء.' },
+  },
+  admins: {
+    'admins-access': { title: 'الصلاحيات', summary: 'إدارة المسؤولين وتوحيد بيانات الولايات.' },
+    'admins-rollout': { title: 'تشغيل المدن', summary: 'التحكم في المدن والولايات المفعّلة داخل التطبيق.' },
+    'admins-remote-config': { title: 'Remote Config', summary: 'تحرير مفاتيح Remote Config والبحث فيها.' },
+  },
+};
 
 let unsubscribers = [];
 let addAdminFormBound = false;
 let normalizeStateFormBound = false;
 let rolloutConfigFormBound = false;
 let remoteConfigBulkFormBound = false;
+let pricingConfigFormBound = false;
 let discountFormBound = false;
 let liveMap = null;
 let mapBootstrapped = false;
@@ -212,6 +311,262 @@ let financeRangeFilterBound = false;
 let paymentSettingsFormBound = false;
 let rolloutSelectedCityIds = new Set();
 let remoteConfigParametersCache = [];
+let operationsOrdersBound = false;
+let operationsOrderDocsCache = [];
+let courierDirectoryCache = [];
+let clientDirectoryCache = [];
+const activeSubpanelByPortal = {};
+
+const opsCenterState = {
+  activeOrders: 0,
+  paymentReviews: 0,
+  walletRecharges: 0,
+  supportUnread: 0,
+  pendingApprovals: 0,
+  alerts: [],
+  seenKeys: new Set(),
+  paymentReviewIds: new Set(),
+  walletRechargeIds: new Set(),
+  supportUnreadKeys: new Set(),
+  bootstrapped: {
+    paymentReviews: false,
+    walletRecharges: false,
+    support: false,
+  },
+};
+
+const WORKING_DAY_OPTIONS = [
+  { key: 'saturday', label: 'السبت' },
+  { key: 'sunday', label: 'الأحد' },
+  { key: 'monday', label: 'الإثنين' },
+  { key: 'tuesday', label: 'الثلاثاء' },
+  { key: 'wednesday', label: 'الأربعاء' },
+  { key: 'thursday', label: 'الخميس' },
+  { key: 'friday', label: 'الجمعة' },
+];
+
+const REMOTE_CONFIG_METADATA = {
+  pricing_client_delivery_base_fee: {
+    label: 'سعر العميل الأساسي',
+    description: 'سعر التوصيل للعميل حتى المسافة الأساسية.',
+    valueType: 'NUMBER',
+  },
+  pricing_client_delivery_base_distance_km: {
+    label: 'المسافة الأساسية للعميل',
+    description: 'عدد الكيلومترات المشمولة في السعر الأساسي للعميل.',
+    valueType: 'NUMBER',
+  },
+  pricing_client_delivery_extra_per_km: {
+    label: 'زيادة العميل لكل كم زائد',
+    description: 'الرسم الإضافي لكل كيلومتر زائد بعد المسافة الأساسية للعميل.',
+    valueType: 'NUMBER',
+  },
+  pricing_driver_delivery_base_fee: {
+    label: 'أجر المندوب الأساسي',
+    description: 'أجر المندوب حتى المسافة الأساسية.',
+    valueType: 'NUMBER',
+  },
+  pricing_driver_delivery_base_distance_km: {
+    label: 'المسافة الأساسية للمندوب',
+    description: 'عدد الكيلومترات المشمولة في أجر المندوب الأساسي.',
+    valueType: 'NUMBER',
+  },
+  pricing_driver_delivery_extra_per_km: {
+    label: 'زيادة المندوب لكل كم زائد',
+    description: 'أجر كل كيلومتر زائد بعد المسافة الأساسية للمندوب.',
+    valueType: 'NUMBER',
+  },
+  pricing_large_item_fee_enabled: {
+    label: 'تفعيل رسوم الطلبات الكبيرة',
+    description: 'تشغيل أو إيقاف رسوم الطلبات الكبيرة.',
+    valueType: 'BOOLEAN',
+  },
+  pricing_large_item_threshold: {
+    label: 'حد سعر الوجبة الكبيرة',
+    description: 'السعر الذي تبدأ بعده رسوم الطلبات الكبيرة.',
+    valueType: 'NUMBER',
+  },
+  pricing_large_item_fee_base: {
+    label: 'الرسم الأساسي للطلب الكبير',
+    description: 'الرسم الأساسي لكل وجبة تتجاوز الحد.',
+    valueType: 'NUMBER',
+  },
+  pricing_large_item_step_amount: {
+    label: 'شريحة الزيادة للطلب الكبير',
+    description: 'مقدار الزيادة في سعر الوجبة لكل شريحة إضافية.',
+    valueType: 'NUMBER',
+  },
+  pricing_large_item_step_fee: {
+    label: 'زيادة رسم الطلب الكبير',
+    description: 'الزيادة في الرسم لكل شريحة إضافية.',
+    valueType: 'NUMBER',
+  },
+  pricing_large_item_fee_cap_per_unit: {
+    label: 'سقف رسم الطلب الكبير',
+    description: 'الحد الأقصى للرسم لكل وجبة.',
+    valueType: 'NUMBER',
+  },
+};
+
+const PRICING_REMOTE_KEYS = [
+  'pricing_client_delivery_base_fee',
+  'pricing_client_delivery_base_distance_km',
+  'pricing_client_delivery_extra_per_km',
+  'pricing_driver_delivery_base_fee',
+  'pricing_driver_delivery_base_distance_km',
+  'pricing_driver_delivery_extra_per_km',
+];
+
+function getPortalSubpanelMeta(portalId, subpanelId) {
+  return SUBPANEL_META[portalId]?.[subpanelId] || { title: '', summary: '' };
+}
+
+function getPortalSubpanelNodes(portalId) {
+  return portalSubpanels.filter((panel) => panel.dataset.subpanel?.startsWith(`${portalId}-`));
+}
+
+function getPortalSubtabButtons(portalId) {
+  return portalSubtabs.filter((button) => button.dataset.subtab?.startsWith(`${portalId}-`));
+}
+
+function activateSubpanel(portalId, subpanelId, options = {}) {
+  const { scroll = false } = options;
+  const portalPanels = getPortalSubpanelNodes(portalId);
+  if (!portalPanels.length) return;
+
+  const nextSubpanelId = portalPanels.some((panel) => panel.dataset.subpanel === subpanelId)
+    ? subpanelId
+    : portalPanels[0].dataset.subpanel;
+
+  activeSubpanelByPortal[portalId] = nextSubpanelId;
+
+  getPortalSubtabButtons(portalId).forEach((button) => {
+    const isActive = button.dataset.subtab === nextSubpanelId;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+
+  portalPanels.forEach((panel) => {
+    panel.classList.toggle('active', panel.dataset.subpanel === nextSubpanelId);
+  });
+
+  if (scroll) {
+    const targetPanel = portalPanels.find((panel) => panel.dataset.subpanel === nextSubpanelId);
+    targetPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function ensurePortalSubpanel(portalId) {
+  const portalPanels = getPortalSubpanelNodes(portalId);
+  if (!portalPanels.length) return;
+  activateSubpanel(portalId, activeSubpanelByPortal[portalId] || portalPanels[0].dataset.subpanel);
+}
+
+function syncPortalPresentation(id) {
+  const meta = PORTAL_META[id] || PORTAL_META.dashboard;
+  if (activePortalEyebrow) {
+    activePortalEyebrow.textContent = meta.eyebrow;
+  }
+  if (activePortalTitle) {
+    activePortalTitle.textContent = meta.title;
+  }
+  if (activePortalSummary) {
+    activePortalSummary.textContent = meta.summary;
+  }
+  tabs.forEach((tab) => {
+    const isActive = tab.dataset.tab === id;
+    tab.setAttribute('aria-current', isActive ? 'page' : 'false');
+  });
+}
+
+function summarizeSearchPreview(row) {
+  const cells = Array.from(row.querySelectorAll('td'))
+    .map((cell) => String(cell.textContent || '').trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  if (cells.length) return cells.join(' - ');
+  return String(row.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function renderAdminSearchResults(stats = {}) {
+  if (!adminSearchResults || !adminSearchMeta) return;
+
+  const query = String(adminGlobalSearch?.value || '').trim().toLowerCase();
+  if (!query) {
+    adminSearchMeta.textContent = 'اكتب أي كلمة للبحث داخل الجداول والبوابات.';
+    adminSearchResults.innerHTML = '';
+    return;
+  }
+
+  const matches = tabPanels
+    .flatMap((panel) => {
+      const scopes = Array.from(panel.querySelectorAll('[data-subpanel]'));
+      const searchScopes = scopes.length ? scopes : [panel];
+
+      return searchScopes.map((scope) => {
+        const rows = Array.from(scope.querySelectorAll('table tbody tr'));
+        const matchedRows = rows.filter((row) => String(row.textContent || '').toLowerCase().includes(query));
+        const scopeText = String(scope.textContent || '').toLowerCase();
+        if (!matchedRows.length && !scopeText.includes(query)) {
+          return null;
+        }
+
+        const samples = matchedRows.slice(0, 2).map((row) => summarizeSearchPreview(row));
+        const meta = PORTAL_META[panel.id] || PORTAL_META.dashboard;
+        const subpanelId = scope.getAttribute('data-subpanel') || '';
+        const subMeta = getPortalSubpanelMeta(panel.id, subpanelId);
+        return {
+          id: panel.id,
+          subpanelId,
+          title: meta.title,
+          eyebrow: meta.eyebrow,
+          subTitle: subMeta.title,
+          count: matchedRows.length,
+          sample: samples.join(' | ') || subMeta.summary || meta.summary,
+        };
+      });
+    })
+    .filter(Boolean)
+    .slice(0, 8);
+
+  const visibleRows = Number(stats.visibleRows || 0);
+  const totalRows = Number(stats.totalRows || 0);
+  adminSearchMeta.textContent = matches.length
+    ? `تم العثور على ${matches.length} بوابة مطابقة${totalRows ? `، والصفوف الظاهرة في البوابة الحالية ${visibleRows}/${totalRows}` : ''}.`
+    : 'لا توجد نتائج مطابقة داخل البوابات الحالية.';
+
+  if (!matches.length) {
+    adminSearchResults.innerHTML = '';
+    return;
+  }
+
+  setHtml(
+    adminSearchResults,
+    matches.map((match) => `
+      <div class="search-result-item">
+        <div>
+          <b>${escapeHtml(match.eyebrow)} - ${escapeHtml(match.title)}${match.subTitle ? ` / ${escapeHtml(match.subTitle)}` : ''}</b>
+          <span>${escapeHtml(match.sample || 'مطابقة داخل هذه البوابة')} ${match.count ? `(${match.count})` : ''}</span>
+        </div>
+        <button class="btn ghost" type="button" data-search-tab="${escapeHtml(match.id)}" data-search-subpanel="${escapeHtml(match.subpanelId || '')}">فتح</button>
+      </div>
+    `).join('')
+  );
+
+  adminSearchResults.querySelectorAll('[data-search-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const targetTab = button.getAttribute('data-search-tab');
+      const targetSubpanel = button.getAttribute('data-search-subpanel');
+      if (!targetTab) return;
+      activateTab(targetTab);
+      if (targetSubpanel) {
+        activateSubpanel(targetTab, targetSubpanel, { scroll: true });
+      }
+    });
+  });
+}
+
+syncPortalPresentation('dashboard');
 
 const guaranteedAdminEmails = new Set([
   'speedstarapp0@gmail.com',
@@ -280,34 +635,182 @@ function setToCsv(setValues) {
 
 function syncEnvUi() {
   if (envBadge) {
-    const envLabel = activeEnv === 'prod' ? 'ENV: PROD' : 'ENV: DEV';
-    envBadge.textContent = `${envLabel} | ${firebaseConfig.projectId}`;
+    envBadge.textContent = `ENV: PROD | ${firebaseConfig.projectId}`;
   }
-  if (envSelect) {
-    envSelect.value = activeEnv;
-  }
-
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('env') !== activeEnv) {
-    params.set('env', activeEnv);
-    const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash || ''}`;
-    window.history.replaceState({}, '', nextUrl);
-  }
-}
-
-if (envSelect) {
-  envSelect.addEventListener('change', () => {
-    const selected = String(envSelect.value || 'dev').toLowerCase();
-    const targetEnv = selected === 'prod' ? 'prod' : 'dev';
-    localStorage.setItem('speedstar_admin_env', targetEnv);
-    const params = new URLSearchParams(window.location.search);
-    params.set('env', targetEnv);
-    const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash || ''}`;
-    window.location.assign(nextUrl);
-  });
 }
 
 syncEnvUi();
+
+function formatOpsTime(value) {
+  const date = value instanceof Date ? value : new Date();
+  try {
+    return date.toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit' });
+  } catch (_) {
+    return '-';
+  }
+}
+
+function maybeNotifyBrowser(title, body) {
+  if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+    return;
+  }
+  if (Notification.permission !== 'granted') return;
+  try {
+    new Notification(title, { body });
+  } catch (_) {
+  }
+}
+
+function renderOpsAlertFeed() {
+  if (!opsAlertFeed) return;
+  if (!opsCenterState.alerts.length) {
+    opsAlertFeed.innerHTML = '<div class="muted">لا توجد تنبيهات تشغيلية جديدة حاليًا.</div>';
+    return;
+  }
+
+  opsAlertFeed.innerHTML = opsCenterState.alerts
+    .slice(0, 10)
+    .map((item) => `
+      <article class="ops-alert-card ${escapeHtml(item.level || 'info')}">
+        <div>
+          <strong>${escapeHtml(item.title)}</strong>
+          <p>${escapeHtml(item.body)}</p>
+        </div>
+        <time>${escapeHtml(item.timeLabel)}</time>
+      </article>
+    `)
+    .join('');
+}
+
+function renderOpsPriorityCards() {
+  if (!opsPriorityGrid) return;
+  opsPriorityGrid.innerHTML = `
+    <div class="stat accent-danger"><h4>إيصالات بانتظار المراجعة</h4><b>${Number(opsCenterState.paymentReviews || 0).toLocaleString('ar-EG')}</b></div>
+    <div class="stat accent-amber"><h4>شحن محافظ بانتظار المراجعة</h4><b>${Number(opsCenterState.walletRecharges || 0).toLocaleString('ar-EG')}</b></div>
+    <div class="stat accent-blue"><h4>محادثات دعم غير مقروءة</h4><b>${Number(opsCenterState.supportUnread || 0).toLocaleString('ar-EG')}</b></div>
+    <div class="stat accent-green"><h4>طلبات نشطة قابلة للتحكم</h4><b>${Number(opsCenterState.activeOrders || 0).toLocaleString('ar-EG')}</b></div>
+    <div class="stat"><h4>اعتمادات معلقة</h4><b>${Number(opsCenterState.pendingApprovals || 0).toLocaleString('ar-EG')}</b></div>
+  `;
+}
+
+function pushOpsAlert(key, title, body, level = 'info') {
+  if (!key || opsCenterState.seenKeys.has(key)) return;
+  opsCenterState.seenKeys.add(key);
+  const entry = {
+    key,
+    title,
+    body,
+    level,
+    createdAt: Date.now(),
+    timeLabel: formatOpsTime(new Date()),
+  };
+  opsCenterState.alerts.unshift(entry);
+  opsCenterState.alerts = opsCenterState.alerts.slice(0, 20);
+  renderOpsAlertFeed();
+  maybeNotifyBrowser(title, body);
+}
+
+function syncOpsCollectionState(kind, nextIds, payloadBuilder) {
+  const stateMap = {
+    paymentReviews: 'paymentReviewIds',
+    walletRecharges: 'walletRechargeIds',
+    supportUnread: 'supportUnreadKeys',
+  };
+  const keyName = stateMap[kind];
+  if (!keyName) return;
+
+  const prev = opsCenterState[keyName];
+  nextIds.forEach((id) => {
+    if (!prev.has(id) && opsCenterState.bootstrapped[kind]) {
+      const payload = payloadBuilder(id) || {};
+      pushOpsAlert(`${kind}:${id}`, payload.title || 'تنبيه جديد', payload.body || 'يوجد عنصر جديد يحتاج المراجعة.', payload.level || 'info');
+    }
+  });
+  opsCenterState[keyName] = nextIds;
+  opsCenterState.bootstrapped[kind] = true;
+  renderOpsPriorityCards();
+}
+
+function getOrderLifecycleStatus(order) {
+  return String(order?.orderStatus || order?.status || '').trim().toLowerCase();
+}
+
+function isActiveOrderStatus(status) {
+  return [
+    'pending',
+    'store_pending',
+    'courier_searching',
+    'courier_assigned',
+    'accepted',
+    'pickup_ready',
+    'picked_up',
+    'arrived_to_client',
+  ].includes(String(status || '').trim().toLowerCase());
+}
+
+function buildWorkingHoursEditorMarkup(workingHours) {
+  return `
+    <div class="working-hours-editor">
+      ${WORKING_DAY_OPTIONS.map(({ key, label }) => {
+        const entry = workingHours?.[key] || {};
+        const status = String(entry.status || '').trim() === 'مغلق' ? 'مغلق' : 'مفتوح';
+        const open = String(entry.open || '08:00 ص').trim();
+        const close = String(entry.close || '11:00 م').trim();
+        return `
+          <div class="working-hour-row" data-working-day="${escapeHtml(key)}">
+            <strong>${escapeHtml(label)}</strong>
+            <select data-working-status="${escapeHtml(key)}">
+              <option value="مفتوح" ${status === 'مفتوح' ? 'selected' : ''}>مفتوح</option>
+              <option value="مغلق" ${status === 'مغلق' ? 'selected' : ''}>مغلق</option>
+            </select>
+            <input data-working-open="${escapeHtml(key)}" type="text" value="${escapeHtml(open)}" placeholder="08:00 ص" />
+            <input data-working-close="${escapeHtml(key)}" type="text" value="${escapeHtml(close)}" placeholder="11:00 م" />
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function collectWorkingHoursFromPanel(storeId) {
+  const result = {};
+  WORKING_DAY_OPTIONS.forEach(({ key }) => {
+    const status = document.querySelector(`[data-working-status="${key}"]`)?.value || 'مفتوح';
+    const open = document.querySelector(`[data-working-open="${key}"]`)?.value || '08:00 ص';
+    const close = document.querySelector(`[data-working-close="${key}"]`)?.value || '11:00 م';
+    result[key] = {
+      status: String(status).trim() === 'مغلق' ? 'مغلق' : 'مفتوح',
+      open: String(open).trim() || '08:00 ص',
+      close: String(close).trim() || '11:00 م',
+    };
+  });
+  return result;
+}
+
+async function markSupportConversationRead(conversationId) {
+  if (!conversationId) return;
+  const q = query(collection(db, 'supportMessages'), where('conversationId', '==', conversationId));
+  const result = await getDocs(q);
+  if (!result.docs.length) return;
+  const batch = writeBatch(db);
+  result.docs.forEach((docSnap) => {
+    batch.set(doc(db, 'supportMessages', docSnap.id), {
+      adminReadAt: serverTimestamp(),
+      adminUnread: false,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  });
+  await batch.commit();
+}
+
+async function markAllSupportConversationsRead() {
+  const unreadConversations = supportConversations.filter((item) => item.unreadCount > 0);
+  for (const convo of unreadConversations) {
+    await markSupportConversationRead(convo.id);
+  }
+}
 
 const mapState = {
   drivers: new Map(),
@@ -562,6 +1065,8 @@ async function isAdmin(user) {
 function activateTab(id) {
   tabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === id));
   tabPanels.forEach((p) => p.classList.toggle('active', p.id === id));
+  syncPortalPresentation(id);
+  ensurePortalSubpanel(id);
   if (adminQuickTab) {
     adminQuickTab.value = id;
   }
@@ -570,6 +1075,7 @@ function activateTab(id) {
     // Re-enable auto-fit whenever map tab is reopened, unless user moves map again.
     mapAutoFitted = false;
     mountMap().finally(() => {
+      renderMapSearchResults();
       if (liveMap) {
         setTimeout(() => {
           liveMap.invalidateSize();
@@ -585,6 +1091,16 @@ function activateTab(id) {
 }
 
 tabs.forEach((tab) => tab.addEventListener('click', () => activateTab(tab.dataset.tab)));
+portalSubtabs.forEach((button) => {
+  button.addEventListener('click', () => {
+    const subpanelId = button.dataset.subtab;
+    if (!subpanelId) return;
+    const [portalId] = subpanelId.split('-');
+    if (!portalId) return;
+    activateSubpanel(portalId, subpanelId);
+    applyAdminGlobalFilter();
+  });
+});
 
 function applyAdminGlobalFilter() {
   const query = String(adminGlobalSearch?.value || '').trim().toLowerCase();
@@ -592,11 +1108,22 @@ function applyAdminGlobalFilter() {
   if (!activePanel) return;
 
   const rows = activePanel.querySelectorAll('table tbody tr');
+  let visibleRows = 0;
   rows.forEach((row) => {
     const text = String(row.textContent || '').toLowerCase();
     const visible = !query || text.includes(query);
     row.style.display = visible ? '' : 'none';
+    if (visible) visibleRows += 1;
   });
+
+  const supportItems = activePanel.querySelectorAll('.support-item');
+  supportItems.forEach((item) => {
+    const text = String(item.textContent || '').toLowerCase();
+    const visible = !query || text.includes(query);
+    item.style.display = visible ? '' : 'none';
+  });
+
+  renderAdminSearchResults({ visibleRows, totalRows: rows.length });
 }
 
 if (adminQuickTab) {
@@ -610,6 +1137,30 @@ if (adminGlobalSearch) {
     applyAdminGlobalFilter();
   });
 }
+
+if (mapResetViewBtn) {
+  mapResetViewBtn.addEventListener('click', () => {
+    selectedOrderOnMapId = '';
+    mapAutoFitted = false;
+    refreshMapLayers();
+    if (liveMap) {
+      liveMap.invalidateSize();
+    }
+  });
+}
+
+if (mapSearchInput) {
+  mapSearchInput.addEventListener('input', () => {
+    renderMapSearchResults();
+  });
+}
+
+mapFocusButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const scope = String(button.getAttribute('data-map-focus') || 'all');
+    fitMapByScope(scope);
+  });
+});
 
 if (dashboardQuickActions) {
   dashboardQuickActions.querySelectorAll('[data-quick-tab]').forEach((btn) => {
@@ -772,6 +1323,9 @@ logoutBtn.addEventListener('click', async () => {
 });
 
 function mountDashboard() {
+  renderOpsPriorityCards();
+  renderOpsAlertFeed();
+
   const publicMetricDefs = [
     ['زيارات الصفحة', 'page_view'],
     ['تحميل العميل', 'download_client_android'],
@@ -925,7 +1479,8 @@ function mountDashboard() {
 
     dashboardOrderDetails.querySelector('[data-open-order-management]')?.addEventListener('click', () => {
       activateTab('management');
-      setMapDetails(`<p class="muted">الطلب ${escapeHtml(formatUnifiedOrderCode(data.orderNumber, data.orderId, orderId))} مفتوح من لوحة الإدارة. يمكنك فحص المتجر والمندوب مباشرة.</p>`);
+      activateSubpanel('management', 'management-orders');
+      renderOperationsOrderDetails(orderId);
     });
   };
 
@@ -954,6 +1509,9 @@ function mountDashboard() {
   const latestOrdersQ = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(20));
   unsubscribers.push(
     onSnapshot(latestOrdersQ, (snap) => {
+      opsCenterState.activeOrders = snap.docs.filter((docSnap) => isActiveOrderStatus(getOrderLifecycleStatus(docSnap.data() || {}))).length;
+      renderOpsPriorityCards();
+
       const rows = snap.docs.map((d) => {
         const data = d.data();
         const financial = computeFinancial(data);
@@ -1000,6 +1558,7 @@ function mountDashboard() {
 
 function mountFinance() {
   mountDiscountCodes();
+  mountStoreOffersReview();
   bindQrFilePreview(bankkQrFileInput, bankkQrPreview);
   bindQrFilePreview(ocashQrFileInput, ocashQrPreview);
   bindQrFilePreview(fawryQrFileInput, fawryQrPreview);
@@ -1482,6 +2041,21 @@ function mountFinance() {
       return status === 'قيد المراجعة' || decision === 'pending';
     });
 
+    opsCenterState.paymentReviews = reviewDocs.length;
+    syncOpsCollectionState(
+      'paymentReviews',
+      new Set(reviewDocs.map((docSnap) => docSnap.id)),
+      (id) => {
+        const item = reviewDocs.find((docSnap) => docSnap.id === id);
+        const data = item?.data?.() || {};
+        return {
+          title: 'إيصال جديد بانتظار المراجعة',
+          body: `الطلب ${formatUnifiedOrderCode(data.orderNumber, data.orderId, id)} يحتاج مراجعة فورية.`,
+          level: 'danger',
+        };
+      }
+    );
+
     if (financePaymentReviewSummary) {
       financePaymentReviewSummary.textContent = reviewDocs.length
         ? `عدد الإيصالات قيد المراجعة: ${reviewDocs.length}`
@@ -1589,6 +2163,21 @@ function mountFinance() {
       return ['pending', 'pending_review', 'under_review'].includes(status)
         || reviewStatus === 'pending';
     });
+
+    opsCenterState.walletRecharges = pendingDocs.length;
+    syncOpsCollectionState(
+      'walletRecharges',
+      new Set(pendingDocs.map((docSnap) => docSnap.id)),
+      (id) => {
+        const item = pendingDocs.find((docSnap) => docSnap.id === id);
+        const data = item?.data?.() || {};
+        return {
+          title: 'طلب شحن محفظة جديد',
+          body: `يوجد طلب شحن محفظة جديد للعميل ${data.clientName || data.clientId || id}.`,
+          level: 'warning',
+        };
+      }
+    );
 
     if (financeWalletRechargeSummary) {
       financeWalletRechargeSummary.textContent = pendingDocs.length
@@ -1789,7 +2378,293 @@ function mountFinance() {
   );
 }
 
+function mountStoreOffersReview() {
+  if (!storeOffersSummary || !storeOffersPendingTable || !storeOffersApprovedTable) return;
+
+  const formatDateTimeLocal = (value) => {
+    if (!value || typeof value.toDate !== 'function') return '-';
+    try {
+      return value.toDate().toLocaleString('ar-EG');
+    } catch (_) {
+      return '-';
+    }
+  };
+
+  const renderEmptyState = (message, columns) => [
+    `<tr><td colspan="${columns}" class="muted">${escapeHtml(message)}</td></tr>`
+  ];
+
+  const callReview = async (offerId, action) => {
+    try {
+      await reviewStoreOfferRequest({ offerId, action });
+    } catch (err) {
+      alert(`تعذر تنفيذ الإجراء: ${err.message || err}`);
+    }
+  };
+
+  unsubscribers.push(
+    onSnapshot(query(collection(db, 'storeOffers'), limit(300)), (snap) => {
+      const docs = snap.docs.slice().sort((a, b) => {
+        const aData = a.data() || {};
+        const bData = b.data() || {};
+        const aTime = aData.updatedAt?.toMillis?.() || aData.createdAt?.toMillis?.() || 0;
+        const bTime = bData.updatedAt?.toMillis?.() || bData.createdAt?.toMillis?.() || 0;
+        return bTime - aTime;
+      });
+
+      const pendingDocs = docs.filter((doc) => String(doc.data()?.status || '') === 'pending');
+      const approvedDocs = docs.filter((doc) => String(doc.data()?.status || '') === 'approved');
+
+      setHtml(
+        storeOffersSummary,
+        `إجمالي العروض: <b>${docs.length}</b> - بانتظار المراجعة: <b>${pendingDocs.length}</b> - المعتمدة: <b>${approvedDocs.length}</b>`
+      );
+
+      const pendingRows = pendingDocs.length > 0
+        ? pendingDocs.map((doc) => {
+            const data = doc.data() || {};
+            return `<tr>
+              <td>${escapeHtml(String(data.restaurantName || data.restaurantId || '-'))}</td>
+              <td>${escapeHtml(String(data.title || '-'))}</td>
+              <td>${escapeHtml(String(data.summaryText || '-'))}</td>
+              <td>${formatDateTimeLocal(data.startsAt)}<br>${formatDateTimeLocal(data.endsAt)}</td>
+              <td>${formatDateTimeLocal(data.createdAt)}</td>
+              <td>
+                <button class="btn primary" data-offer-review="approve" data-offer-id="${escapeHtml(doc.id)}">اعتماد</button>
+                <button class="btn danger" data-offer-review="reject" data-offer-id="${escapeHtml(doc.id)}">رفض</button>
+              </td>
+            </tr>`;
+          })
+        : renderEmptyState('لا توجد عروض بانتظار المراجعة.', 6);
+
+      const approvedRows = approvedDocs.length > 0
+        ? approvedDocs.map((doc) => {
+            const data = doc.data() || {};
+            const active = data.isActive === true;
+            return `<tr>
+              <td>${escapeHtml(String(data.restaurantName || data.restaurantId || '-'))}</td>
+              <td>${escapeHtml(String(data.title || '-'))}</td>
+              <td>${escapeHtml(String(data.summaryText || '-'))}</td>
+              <td><span class="badge ${active ? 'closed' : 'open'}">${active ? 'مفعل' : 'موقوف'}</span></td>
+              <td>${formatDateTimeLocal(data.endsAt)}</td>
+              <td>
+                <button class="btn ghost" data-offer-review="${active ? 'deactivate' : 'activate'}" data-offer-id="${escapeHtml(doc.id)}">${active ? 'إيقاف' : 'تفعيل'}</button>
+              </td>
+            </tr>`;
+          })
+        : renderEmptyState('لا توجد عروض معتمدة حالياً.', 6);
+
+      setHtml(
+        storeOffersPendingTable,
+        table(['المطعم', 'عنوان العرض', 'الملخص', 'الفترة', 'أُرسل في', 'إجراء'], pendingRows)
+      );
+      setHtml(
+        storeOffersApprovedTable,
+        table(['المطعم', 'عنوان العرض', 'الملخص', 'الحالة', 'ينتهي في', 'إجراء'], approvedRows)
+      );
+
+      document.querySelectorAll('[data-offer-review]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const offerId = btn.getAttribute('data-offer-id');
+          const action = btn.getAttribute('data-offer-review');
+          if (!offerId || !action) return;
+          btn.setAttribute('disabled', 'disabled');
+          await callReview(offerId, action);
+          btn.removeAttribute('disabled');
+        });
+      });
+    })
+  );
+}
+
+function renderClientsDirectoryTable() {
+  if (!clientsTable) return;
+  const rows = clientDirectoryCache.slice(0, 80).map((item) => {
+    const data = item.data || {};
+    return `<tr>
+      <td>${escapeHtml(String(data.name || data.displayName || item.id || '-'))}</td>
+      <td>${escapeHtml(String(data.phone || '-'))}</td>
+      <td>${escapeHtml(String(data.email || '-'))}</td>
+      <td>${Number(data.walletBalance || 0).toLocaleString('ar-EG')} ج.س</td>
+      <td>${escapeHtml(String(data.defaultAddressText || data.address || '-'))}</td>
+    </tr>`;
+  });
+
+  setHtml(clientsTable, table(['العميل', 'الهاتف', 'البريد', 'المحفظة', 'آخر عنوان'], rows));
+}
+
+function getFilteredOperationsOrders() {
+  const filter = String(orderStatusFilter?.value || 'active').trim().toLowerCase();
+  const queryText = String(orderSearchInput?.value || '').trim().toLowerCase();
+
+  return operationsOrderDocsCache
+    .filter((item) => {
+      const data = item.data || {};
+      const status = getOrderLifecycleStatus(data);
+      const paymentStatus = String(data.paymentStatus || '').trim().toLowerCase();
+
+      if (filter === 'active' && !isActiveOrderStatus(status)) return false;
+      if (filter === 'courier' && !(data.assignedDriverId || data.offeredDriverId)) return false;
+      if (filter === 'payment-review' && !(paymentStatus === 'قيد المراجعة' || String(data.paymentReviewDecision || '').trim().toLowerCase() === 'pending')) return false;
+
+      if (!queryText) return true;
+      const haystack = [
+        item.id,
+        data.orderNumber,
+        data.orderId,
+        data.clientName,
+        data.clientPhone,
+        data.restaurantName,
+        data.restaurantId,
+        data.assignedDriverId,
+        data.offeredDriverId,
+      ].join(' ').toLowerCase();
+      return haystack.includes(queryText);
+    })
+    .sort((a, b) => (b.createdAtMillis || 0) - (a.createdAtMillis || 0));
+}
+
+async function executeAdminOrderAction(orderId, action) {
+  const orderEntry = operationsOrderDocsCache.find((item) => item.id === orderId);
+  const order = orderEntry?.data || {};
+  if (!orderId || !orderEntry) return;
+
+  const note = String(prompt('ملاحظة إدارية داخلية (اختياري):', '') || '').trim();
+  const payload = { orderId, action, note };
+
+  if (action === 'assign_specific') {
+    const driverId = String(document.getElementById(`orderAssignDriver-${orderId}`)?.value || '').trim();
+    if (!driverId) {
+      alert('اختر مندوبًا أولاً.');
+      return;
+    }
+    payload.driverId = driverId;
+  }
+
+  if (action === 'cancel' && !confirm(`تأكيد إلغاء الطلب ${formatUnifiedOrderCode(order.orderNumber, order.orderId, orderId)}؟`)) {
+    return;
+  }
+
+  try {
+    await adminManageOrder(payload);
+    alert('تم تنفيذ الإجراء بنجاح.');
+    renderOperationsOrderDetails(orderId);
+  } catch (err) {
+    alert(`تعذر تنفيذ الإجراء: ${err.message || err}`);
+  }
+}
+
+function renderOperationsOrderDetails(orderId) {
+  if (!operationsOrderDetails) return;
+  const entry = operationsOrderDocsCache.find((item) => item.id === orderId);
+  if (!entry) {
+    operationsOrderDetails.innerHTML = '<span class="muted">لم يتم العثور على الطلب المحدد.</span>';
+    return;
+  }
+
+  const data = entry.data || {};
+  const availableCouriers = courierDirectoryCache.filter((item) => {
+    const courier = item.data || {};
+    return courier.isApproved === true || String(courier.approvalStatus || '').trim().toLowerCase() === 'approved';
+  });
+
+  operationsOrderDetails.classList.remove('muted');
+  operationsOrderDetails.innerHTML = `
+    <h4 style="margin:0 0 8px">${escapeHtml(formatUnifiedOrderCode(data.orderNumber, data.orderId, orderId))}</h4>
+    <div><span class="kv"><b>الحالة:</b> ${escapeHtml(data.orderStatus || data.status || '-')}</span><span class="kv"><b>الدفع:</b> ${escapeHtml(data.paymentStatus || '-')}</span></div>
+    <div><span class="kv"><b>العميل:</b> ${escapeHtml(data.clientName || data.clientId || '-')}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.clientPhone || '-')}</span></div>
+    <div><span class="kv"><b>المتجر:</b> ${escapeHtml(data.restaurantName || data.restaurantId || '-')}</span><span class="kv"><b>المندوب الحالي:</b> ${escapeHtml(data.assignedDriverId || data.offeredDriverId || 'غير معين')}</span></div>
+    <div><span class="kv"><b>العنوان:</b> ${escapeHtml(data.deliveryAddress || data.address || '-')}</span></div>
+    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn danger" data-admin-order-action="cancel" data-order-id="${escapeHtml(orderId)}">إلغاء الطلب</button>
+      <button class="btn ghost" data-admin-order-action="unassign_courier" data-order-id="${escapeHtml(orderId)}">سحب المندوب</button>
+      <button class="btn ghost" data-admin-order-action="reassign_auto" data-order-id="${escapeHtml(orderId)}">إعادة إسناد تلقائي</button>
+      <button class="btn primary" data-open-order-map="${escapeHtml(orderId)}">الخريطة</button>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center;">
+      <select id="orderAssignDriver-${escapeHtml(orderId)}">
+        <option value="">اختر مندوبًا للتحويل اليدوي</option>
+        ${availableCouriers.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(String(item.data?.name || item.id))}</option>`).join('')}
+      </select>
+      <button class="btn primary" data-admin-order-action="assign_specific" data-order-id="${escapeHtml(orderId)}">تحويل إلى المندوب المحدد</button>
+      <button class="btn ghost" data-open-store-from-order="${escapeHtml(String(data.restaurantId || ''))}">فتح المتجر</button>
+      <button class="btn ghost" data-open-courier-from-order="${escapeHtml(String(data.assignedDriverId || data.offeredDriverId || ''))}">فتح المندوب</button>
+    </div>
+  `;
+
+  operationsOrderDetails.querySelectorAll('[data-admin-order-action]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const action = btn.getAttribute('data-admin-order-action');
+      const targetOrderId = btn.getAttribute('data-order-id');
+      if (!action || !targetOrderId) return;
+      await executeAdminOrderAction(targetOrderId, action);
+    });
+  });
+
+  operationsOrderDetails.querySelector('[data-open-order-map]')?.addEventListener('click', () => {
+    openOrderOnMap(orderId);
+  });
+
+  operationsOrderDetails.querySelector('[data-open-store-from-order]')?.addEventListener('click', async () => {
+    const storeId = String(data.restaurantId || '').trim();
+    if (!storeId) return;
+    activateSubpanel('management', 'management-stores');
+    await loadStoreDetails(storeId);
+  });
+
+  operationsOrderDetails.querySelector('[data-open-courier-from-order]')?.addEventListener('click', async () => {
+    const driverId = String(data.assignedDriverId || data.offeredDriverId || '').trim();
+    if (!driverId) return;
+    activateSubpanel('management', 'management-couriers');
+    await loadCourierDetails(driverId);
+  });
+}
+
+function renderOperationsOrders() {
+  if (!operationsOrdersTable) return;
+  const filtered = getFilteredOperationsOrders();
+  const activeCount = operationsOrderDocsCache.filter((item) => isActiveOrderStatus(getOrderLifecycleStatus(item.data || {}))).length;
+  opsCenterState.activeOrders = activeCount;
+  renderOpsPriorityCards();
+
+  if (operationsOrderSummary) {
+    operationsOrderSummary.innerHTML = `إجمالي الطلبات المعروضة: <b>${filtered.length}</b> | الطلبات النشطة: <b>${activeCount}</b> | العملاء: <b>${clientDirectoryCache.length}</b>`;
+  }
+
+  const rows = filtered.slice(0, 150).map((item) => {
+    const data = item.data || {};
+    return `<tr>
+      <td>${escapeHtml(formatUnifiedOrderCode(data.orderNumber, data.orderId, item.id))}</td>
+      <td>${escapeHtml(String(data.clientName || data.clientId || '-'))}</td>
+      <td>${escapeHtml(String(data.restaurantName || data.restaurantId || '-'))}</td>
+      <td>${escapeHtml(String(data.assignedDriverId || data.offeredDriverId || 'غير معين'))}</td>
+      <td>${escapeHtml(String(data.orderStatus || data.status || '-'))}</td>
+      <td>${escapeHtml(String(data.paymentStatus || '-'))}</td>
+      <td><button class="btn ghost" data-operations-order="${escapeHtml(item.id)}">تفاصيل وتحكم</button></td>
+    </tr>`;
+  });
+
+  setHtml(operationsOrdersTable, table(['الطلب', 'العميل', 'المتجر', 'المندوب', 'الحالة', 'الدفع', 'إجراء'], rows));
+  operationsOrdersTable.querySelectorAll('[data-operations-order]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const orderId = btn.getAttribute('data-operations-order');
+      if (!orderId) return;
+      renderOperationsOrderDetails(orderId);
+    });
+  });
+
+  if (filtered.length && operationsOrderDetails?.classList.contains('muted')) {
+    renderOperationsOrderDetails(filtered[0].id);
+  }
+}
+
 function mountManagement() {
+  if (!operationsOrdersBound) {
+    orderStatusFilter?.addEventListener('change', () => renderOperationsOrders());
+    orderSearchInput?.addEventListener('input', () => renderOperationsOrders());
+    operationsOrdersBound = true;
+  }
+
   unsubscribers.push(
     onSnapshot(query(collection(db, 'restaurants'), where('approvalStatus', '==', 'approved')), (snap) => {
       const rows = snap.docs
@@ -1830,6 +2705,7 @@ function mountManagement() {
 
   unsubscribers.push(
     onSnapshot(collection(db, 'drivers'), (snap) => {
+      courierDirectoryCache = snap.docs.map((d) => ({ id: d.id, data: d.data() || {} }));
       const rows = snap.docs.slice(0, 50).map((d) => {
         const data = d.data();
         const status = data.approvalStatus || (data.isApproved ? 'approved' : 'pending');
@@ -1875,6 +2751,33 @@ function mountManagement() {
           });
         });
       });
+
+      renderOperationsOrders();
+    })
+  );
+
+  unsubscribers.push(
+    onSnapshot(collection(db, 'orders'), (snap) => {
+      operationsOrderDocsCache = snap.docs.map((d) => ({
+        id: d.id,
+        data: d.data() || {},
+        createdAtMillis: d.data()?.createdAt?.toMillis?.() || d.data()?.updatedAt?.toMillis?.() || 0,
+      }));
+      renderOperationsOrders();
+    })
+  );
+
+  unsubscribers.push(
+    onSnapshot(collection(db, 'clients'), (snap) => {
+      clientDirectoryCache = snap.docs
+        .map((d) => ({ id: d.id, data: d.data() || {} }))
+        .sort((a, b) => {
+          const at = a.data?.updatedAt?.toMillis?.() || a.data?.createdAt?.toMillis?.() || 0;
+          const bt = b.data?.updatedAt?.toMillis?.() || b.data?.createdAt?.toMillis?.() || 0;
+          return bt - at;
+        });
+      renderClientsDirectoryTable();
+      renderOperationsOrders();
     })
   );
 }
@@ -2043,20 +2946,100 @@ async function loadStoreDetails(storeId) {
       ? `<div style="margin-top:8px"><a class="btn ghost" href="${escapeHtml(store.commercialRecordImageUrl)}" target="_blank" rel="noopener">فتح صورة السجل</a></div>`
       : '';
 
+    const storeOpenState = store.temporarilyClosed === true ? 'مغلق' : 'مفتوح';
+
     storeDetailsPanel.innerHTML = `
       <h4 style="margin:0 0 8px">تفاصيل المتجر</h4>
       <div><span class="kv"><b>المعرف:</b> ${escapeHtml(storeId)}</span><span class="kv"><b>الاسم:</b> ${escapeHtml(store.name || '-')}</span></div>
       <div><span class="kv"><b>البريد:</b> ${escapeHtml(store.email || '-')}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(store.phone || '-')}</span></div>
       <div><span class="kv"><b>صاحب الحساب:</b> ${escapeHtml(store.ownerUid || '-')}</span><span class="kv"><b>الحالة:</b> ${escapeHtml(store.approvalStatus || '-')}</span></div>
-      <div><span class="kv"><b>السجل التجاري:</b> ${escapeHtml(store.commercialRecordNumber || '-')}</span><span class="kv"><b>القبول التلقائي:</b> ${store.autoAcceptOrders === true ? 'مفعل' : 'غير مفعل'}</span></div>
+      <div><span class="kv"><b>السجل التجاري:</b> ${escapeHtml(store.commercialRecordNumber || '-')}</span><span class="kv"><b>القبول التلقائي:</b> ${store.autoAcceptOrders === true ? 'مفعل' : 'غير مفعل'}</span><span class="kv"><b>حالة الظهور الحالية:</b> ${escapeHtml(storeOpenState)}</span></div>
       <hr style="border:none;border-top:1px solid #ececec;margin:8px 0" />
       <div><span class="kv"><b>إجمالي الطلبات:</b> ${orders.length}</span><span class="kv"><b>الطلبات النشطة:</b> ${activeOrdersCount}</span></div>
       <div><span class="kv"><b>عدد العناوين:</b> ${addressesSnap.docs.length}</span><span class="kv"><b>أقسام المنيو:</b> ${menuDocsSnap.docs.length}</span><span class="kv"><b>عناصر full_menu:</b> ${fullMenuDocsSnap.docs.length}</span></div>
       ${image}
       <hr style="border:none;border-top:1px solid #ececec;margin:12px 0" />
+      <h4 style="margin:0 0 8px">حل مؤقت لحالة الظهور في تطبيق العميل</h4>
+      <p class="muted" style="margin:0 0 10px">استخدم هذه الأزرار إذا أردت جعل المتجر ظاهرًا كمفتوح دائمًا أو مغلق دائمًا في النسخة الحالية من التطبيق.</p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        <button class="btn primary" id="storeSetAlwaysOpen-${storeId}">دوام كامل</button>
+        <button class="btn danger" id="storeSetClosed-${storeId}">مغلق</button>
+      </div>
+      <h4 style="margin:12px 0 8px">تحرير ساعات الدوام</h4>
+      <p class="muted" style="margin:0 0 10px">يمكنك تعديل كل يوم مباشرة ثم حفظ الجدول الكامل للمطعم.</p>
+      ${buildWorkingHoursEditorMarkup(store.workingHours || {})}
+      <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn primary" id="storeSaveWorkingHours-${storeId}">حفظ ساعات الدوام</button>
+        <button class="btn ghost" id="storeOpenNow-${storeId}">فتح الآن</button>
+      </div>
+      <hr style="border:none;border-top:1px solid #ececec;margin:12px 0" />
       <h4 style="margin:0 0 8px">إدارة القائمة الكاملة (مباشر)</h4>
       <div id="adminMenuManager-${storeId}"><span class="muted">جاري تحميل أصناف القائمة...</span></div>
     `;
+
+    document.getElementById(`storeSetAlwaysOpen-${storeId}`)?.addEventListener('click', async () => {
+      try {
+        const fullDayHours = {
+          saturday: { status: 'مفتوح', open: '12:00 ص', close: '11:59 م' },
+          sunday: { status: 'مفتوح', open: '12:00 ص', close: '11:59 م' },
+          monday: { status: 'مفتوح', open: '12:00 ص', close: '11:59 م' },
+          tuesday: { status: 'مفتوح', open: '12:00 ص', close: '11:59 م' },
+          wednesday: { status: 'مفتوح', open: '12:00 ص', close: '11:59 م' },
+          thursday: { status: 'مفتوح', open: '12:00 ص', close: '11:59 م' },
+          friday: { status: 'مفتوح', open: '12:00 ص', close: '11:59 م' },
+        };
+
+        await updateDoc(doc(db, 'restaurants', storeId), {
+          temporarilyClosed: false,
+          workingHours: fullDayHours,
+          updatedAt: serverTimestamp(),
+        });
+        alert('تم ضبط المتجر على دوام كامل.');
+        await loadStoreDetails(storeId);
+      } catch (err) {
+        alert(`تعذر ضبط الدوام الكامل: ${err.message || err}`);
+      }
+    });
+
+    document.getElementById(`storeSetClosed-${storeId}`)?.addEventListener('click', async () => {
+      try {
+        await updateDoc(doc(db, 'restaurants', storeId), {
+          temporarilyClosed: true,
+          updatedAt: serverTimestamp(),
+        });
+        alert('تم ضبط المتجر كمغلق.');
+        await loadStoreDetails(storeId);
+      } catch (err) {
+        alert(`تعذر ضبط المتجر كمغلق: ${err.message || err}`);
+      }
+    });
+
+    document.getElementById(`storeSaveWorkingHours-${storeId}`)?.addEventListener('click', async () => {
+      try {
+        await updateDoc(doc(db, 'restaurants', storeId), {
+          temporarilyClosed: false,
+          workingHours: collectWorkingHoursFromPanel(storeId),
+          updatedAt: serverTimestamp(),
+        });
+        alert('تم حفظ ساعات الدوام بنجاح.');
+        await loadStoreDetails(storeId);
+      } catch (err) {
+        alert(`تعذر حفظ ساعات الدوام: ${err.message || err}`);
+      }
+    });
+
+    document.getElementById(`storeOpenNow-${storeId}`)?.addEventListener('click', async () => {
+      try {
+        await updateDoc(doc(db, 'restaurants', storeId), {
+          temporarilyClosed: false,
+          updatedAt: serverTimestamp(),
+        });
+        alert('تم فتح المتجر الآن دون تعديل جدول الدوام.');
+        await loadStoreDetails(storeId);
+      } catch (err) {
+        alert(`تعذر فتح المتجر: ${err.message || err}`);
+      }
+    });
 
     await renderAdminMenuManager(storeId);
   } catch (err) {
@@ -2687,6 +3670,7 @@ function mountSupport() {
       supportConversationHeader.textContent = 'اختر محادثة من القائمة لعرض التفاصيل.';
       supportMessagesPane.innerHTML = '<div class="muted">لا توجد محادثة محددة.</div>';
       supportToggleStatusBtn.disabled = true;
+      if (supportMarkReadBtn) supportMarkReadBtn.disabled = true;
       supportSendBtn.disabled = true;
       return;
     }
@@ -2696,6 +3680,7 @@ function mountSupport() {
       supportConversationHeader.textContent = 'المحادثة غير متاحة حاليًا.';
       supportMessagesPane.innerHTML = '<div class="muted">لم يتم العثور على بيانات هذه المحادثة.</div>';
       supportToggleStatusBtn.disabled = true;
+      if (supportMarkReadBtn) supportMarkReadBtn.disabled = true;
       supportSendBtn.disabled = true;
       return;
     }
@@ -2733,6 +3718,7 @@ function mountSupport() {
 
     supportMessagesPane.scrollTop = supportMessagesPane.scrollHeight;
     supportToggleStatusBtn.disabled = false;
+    if (supportMarkReadBtn) supportMarkReadBtn.disabled = false;
     supportReplyInput.disabled = convo.status === 'closed';
     supportToggleStatusBtn.textContent = convo.status === 'closed' ? 'إعادة فتح المحادثة' : 'إغلاق المحادثة';
     syncComposerState();
@@ -2811,6 +3797,21 @@ function mountSupport() {
     supportReplyInput?.addEventListener('input', () => syncComposerState());
     supportSendBtn?.addEventListener('click', sendReply);
     supportToggleStatusBtn?.addEventListener('click', toggleStatus);
+    supportMarkReadBtn?.addEventListener('click', async () => {
+      if (!supportSelectedConversationId) return;
+      try {
+        await markSupportConversationRead(supportSelectedConversationId);
+      } catch (err) {
+        alert(`تعذر تعليم المحادثة كمقروءة: ${err.message || err}`);
+      }
+    });
+    supportMarkAllReadBtn?.addEventListener('click', async () => {
+      try {
+        await markAllSupportConversationsRead();
+      } catch (err) {
+        alert(`تعذر تعليم الكل كمقروء: ${err.message || err}`);
+      }
+    });
     supportReplyInput?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -2867,8 +3868,11 @@ function mountSupport() {
             .filter((m) => m.senderType === 'admin')
             .map((m) => m.timestampMillis || 0)
             .reduce((max, current) => Math.max(max, current), 0);
+          const latestReadMillis = latestSorted
+            .map((m) => getMillis(m.adminReadAt))
+            .reduce((max, current) => Math.max(max, current), latestAdminMillis);
           const unreadCount = latestSorted
-            .filter((m) => m.senderType !== 'admin' && (m.timestampMillis || 0) > latestAdminMillis)
+            .filter((m) => m.senderType !== 'admin' && (m.timestampMillis || 0) > latestReadMillis)
             .length;
           const actor = normalizeActor(
             latestSorted.find((m) => m.senderType && m.senderType !== 'admin')?.senderType
@@ -2890,6 +3894,20 @@ function mountSupport() {
           };
         })
         .sort((a, b) => b.latestMillis - a.latestMillis);
+
+      opsCenterState.supportUnread = supportConversations.reduce((sum, item) => sum + (item.unreadCount > 0 ? 1 : 0), 0);
+      syncOpsCollectionState(
+        'supportUnread',
+        new Set(supportConversations.filter((item) => item.unreadCount > 0).map((item) => item.id)),
+        (id) => {
+          const convo = supportConversations.find((item) => item.id === id);
+          return {
+            title: 'رسالة دعم جديدة',
+            body: `محادثة ${convo?.senderName || convo?.userId || id} تحتوي رسائل غير مقروءة.`,
+            level: 'info',
+          };
+        }
+      );
 
       if (!supportSelectedConversationId && supportConversations.length) {
         supportSelectedConversationId = supportConversations[0].id;
@@ -3140,14 +4158,31 @@ function normalizeRemoteValueByType(valueRaw, valueTypeRaw) {
   return value;
 }
 
+function getRemoteConfigEntry(key) {
+  return remoteConfigParametersCache.find((item) => String(item.key || '') === String(key || '')) || null;
+}
+
+function fillPricingConfigForm() {
+  if (!pricingConfigForm) return;
+  pricingClientBaseFeeInput.value = String(getRemoteConfigEntry('pricing_client_delivery_base_fee')?.value || '5000');
+  pricingClientBaseDistanceInput.value = String(getRemoteConfigEntry('pricing_client_delivery_base_distance_km')?.value || '6');
+  pricingClientExtraPerKmInput.value = String(getRemoteConfigEntry('pricing_client_delivery_extra_per_km')?.value || '700');
+  pricingDriverBaseFeeInput.value = String(getRemoteConfigEntry('pricing_driver_delivery_base_fee')?.value || '4000');
+  pricingDriverBaseDistanceInput.value = String(getRemoteConfigEntry('pricing_driver_delivery_base_distance_km')?.value || '6');
+  pricingDriverExtraPerKmInput.value = String(getRemoteConfigEntry('pricing_driver_delivery_extra_per_km')?.value || '500');
+}
+
 function renderRemoteConfigTable(filterRaw = '') {
   if (!remoteConfigTable) return;
   const filter = String(filterRaw || '').trim().toLowerCase();
 
   const filtered = remoteConfigParametersCache.filter((item) => {
+    const meta = REMOTE_CONFIG_METADATA[String(item.key || '')] || null;
     if (!filter) return true;
     return String(item.key || '').toLowerCase().includes(filter)
-      || String(item.description || '').toLowerCase().includes(filter);
+      || String(item.description || '').toLowerCase().includes(filter)
+      || String(meta?.label || '').toLowerCase().includes(filter)
+      || String(meta?.description || '').toLowerCase().includes(filter);
   });
 
   if (!filtered.length) {
@@ -3158,12 +4193,15 @@ function renderRemoteConfigTable(filterRaw = '') {
   const rows = filtered.map((item) => {
     const key = String(item.key || '');
     const value = String(item.value || '');
-    const valueType = String(item.valueType || 'STRING').toUpperCase();
-    const desc = String(item.description || '').trim();
+    const meta = REMOTE_CONFIG_METADATA[key] || null;
+    const valueType = String(meta?.valueType || item.valueType || 'STRING').toUpperCase();
+    const desc = String(meta?.description || item.description || '').trim();
+    const label = String(meta?.label || '').trim();
     const marker = item.hasConditionalValues ? ' | لديه Conditional Values' : '';
 
     return `<tr>
       <td>
+        ${label ? `<span class="remote-key-label">${escapeHtml(label)}</span>` : ''}
         <span class="remote-key-text">${escapeHtml(key)}</span>
         <span class="remote-meta">${escapeHtml(valueType)}${escapeHtml(marker)}</span>
       </td>
@@ -3212,10 +4250,17 @@ async function loadRemoteConfigEditorUi() {
     remoteConfigParametersCache = Array.isArray(response?.data?.parameters)
       ? response.data.parameters
       : [];
+    fillPricingConfigForm();
     renderRemoteConfigTable(remoteConfigFilterInput?.value || '');
     remoteConfigBulkResult.textContent = `تم تحميل ${remoteConfigParametersCache.length} مفتاح. آخر تحديث: ${response?.data?.updatedAt || '-'}`;
+    if (pricingConfigResult) {
+      pricingConfigResult.textContent = 'تم تحميل مفاتيح تسعير التوصيل من Remote Config.';
+    }
   } catch (err) {
     remoteConfigBulkResult.textContent = `تعذر تحميل المفاتيح: ${err.message || err}`;
+    if (pricingConfigResult) {
+      pricingConfigResult.textContent = `تعذر تحميل مفاتيح التسعير: ${err.message || err}`;
+    }
   }
 }
 
@@ -3378,7 +4423,12 @@ function mountAdmins() {
         const prevValue = normalizeRemoteValueByType(current?.value || '', valueType);
         if (nextValue === prevValue) return;
 
-        updates.push({ key, value: nextValue, valueType });
+        updates.push({
+          key,
+          value: nextValue,
+          valueType,
+          description: REMOTE_CONFIG_METADATA[key]?.description || current?.description || '',
+        });
       });
 
       if (!updates.length) {
@@ -3405,6 +4455,64 @@ function mountAdmins() {
     });
 
     remoteConfigBulkFormBound = true;
+  }
+
+  if (!pricingConfigFormBound && pricingConfigForm) {
+    reloadPricingConfigBtn?.addEventListener('click', () => {
+      loadRemoteConfigEditorUi();
+    });
+
+    pricingConfigForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const nextValues = {
+        pricing_client_delivery_base_fee: normalizeRemoteValueByType(pricingClientBaseFeeInput?.value || '5000', 'NUMBER'),
+        pricing_client_delivery_base_distance_km: normalizeRemoteValueByType(pricingClientBaseDistanceInput?.value || '6', 'NUMBER'),
+        pricing_client_delivery_extra_per_km: normalizeRemoteValueByType(pricingClientExtraPerKmInput?.value || '700', 'NUMBER'),
+        pricing_driver_delivery_base_fee: normalizeRemoteValueByType(pricingDriverBaseFeeInput?.value || '4000', 'NUMBER'),
+        pricing_driver_delivery_base_distance_km: normalizeRemoteValueByType(pricingDriverBaseDistanceInput?.value || '6', 'NUMBER'),
+        pricing_driver_delivery_extra_per_km: normalizeRemoteValueByType(pricingDriverExtraPerKmInput?.value || '500', 'NUMBER'),
+      };
+
+      const updates = PRICING_REMOTE_KEYS
+        .map((key) => {
+          const current = getRemoteConfigEntry(key);
+          const nextValue = nextValues[key];
+          const prevValue = normalizeRemoteValueByType(current?.value || '', 'NUMBER');
+          if (nextValue === prevValue) return null;
+          return {
+            key,
+            value: nextValue,
+            valueType: 'NUMBER',
+            description: REMOTE_CONFIG_METADATA[key]?.description || '',
+          };
+        })
+        .filter(Boolean);
+
+      if (!updates.length) {
+        if (pricingConfigResult) pricingConfigResult.textContent = 'لا توجد تغييرات جديدة في تسعير التوصيل.';
+        return;
+      }
+
+      if (savePricingConfigBtn) savePricingConfigBtn.disabled = true;
+      if (pricingConfigResult) pricingConfigResult.textContent = `جارٍ حفظ ${updates.length} مفتاح تسعير...`;
+
+      try {
+        const result = await updateAdminRemoteConfigSettings({ parameters: updates });
+        if (pricingConfigResult) {
+          pricingConfigResult.textContent = `تم حفظ تسعير التوصيل بنجاح. النسخة: ${result?.data?.version || '-'} | مفاتيح محدثة: ${result?.data?.touchedCount || updates.length}`;
+        }
+        await loadRemoteConfigEditorUi();
+      } catch (err) {
+        if (pricingConfigResult) {
+          pricingConfigResult.textContent = `تعذر حفظ مفاتيح التسعير: ${err.message || err}`;
+        }
+      } finally {
+        if (savePricingConfigBtn) savePricingConfigBtn.disabled = false;
+      }
+    });
+
+    pricingConfigFormBound = true;
   }
 
   renderRolloutCityList(rolloutCitySearchInput?.value || '');
@@ -3573,9 +4681,187 @@ function refreshMapLegendSummary() {
   const hiddenRestaurants = Math.max(0, totalRestaurants - visibleRestaurants);
   const totalClients = mapState.clients.size;
 
+  if (mapMetrics) {
+    mapMetrics.innerHTML = `
+      <div class="map-metric"><span>الطلبات النشطة</span><strong>${activeOrders}</strong></div>
+      <div class="map-metric"><span>المندوبون المتاحون</span><strong>${availableDrivers}/${totalDrivers}</strong></div>
+      <div class="map-metric"><span>المطاعم الظاهرة</span><strong>${visibleRestaurants}/${totalRestaurants}</strong></div>
+      <div class="map-metric"><span>العملاء النشطون</span><strong>${totalClients}</strong></div>
+    `;
+  }
+
   setMapLegendSummary(
     `طلبات نشطة: ${activeOrders} | مندوبون متاحون: ${availableDrivers}/${totalDrivers} | مطاعم ظاهرة: ${visibleRestaurants}/${totalRestaurants} | غير ظاهرة: ${hiddenRestaurants} | عملاء: ${totalClients}`
   );
+}
+
+function fitMapToLatLngs(latLngs, maxZoom = 15) {
+  if (!liveMap || !Array.isArray(latLngs) || !latLngs.length) return;
+
+  if (latLngs.length === 1) {
+    liveMap.setView(latLngs[0], maxZoom, { animate: true });
+    return;
+  }
+
+  const bounds = window.L.latLngBounds(latLngs);
+  liveMap.fitBounds(bounds.pad(0.18), { animate: true, maxZoom });
+}
+
+function fitMapByScope(scope) {
+  activateTab('map');
+  const selectedScope = String(scope || 'all');
+  const targetGroups = selectedScope === 'drivers'
+    ? [markerState.drivers]
+    : selectedScope === 'restaurants'
+      ? [markerState.restaurants]
+      : selectedScope === 'orders'
+        ? [markerState.orders]
+        : [markerState.drivers, markerState.clients, markerState.restaurants, markerState.orders];
+
+  const latLngs = [];
+  targetGroups.forEach((group) => {
+    group.forEach((marker) => {
+      const latLng = marker.getLatLng();
+      if (latLng) latLngs.push(latLng);
+    });
+  });
+
+  fitMapToLatLngs(latLngs);
+}
+
+function focusMapSearchEntity(type, id) {
+  const exec = () => {
+    if (type === 'order') {
+      openOrderOnMap(id);
+      return;
+    }
+
+    const isDriver = type === 'driver';
+    const isClient = type === 'client';
+    const markerGroup = isDriver
+      ? markerState.drivers
+      : isClient
+        ? markerState.clients
+        : markerState.restaurants;
+    const marker = markerGroup.get(id);
+
+    if (marker && liveMap) {
+      liveMap.setView(marker.getLatLng(), 16, { animate: true });
+      marker.openPopup();
+    }
+
+    if (isDriver) {
+      const data = mapState.drivers.get(id)?.data;
+      if (data) renderEntityDetails('driver', id, data);
+      return;
+    }
+
+    if (isClient) {
+      const data = mapState.clients.get(id)?.data;
+      if (data) renderEntityDetails('client', id, data);
+      return;
+    }
+
+    const data = mapState.restaurants.get(id)?.data;
+    if (data) {
+      renderEntityDetails('restaurant', id, data);
+    }
+  };
+
+  activateTab('map');
+  setTimeout(exec, 180);
+}
+
+function renderMapSearchResults() {
+  if (!mapSearchResults) return;
+  const query = String(mapSearchInput?.value || '').trim().toLowerCase();
+
+  if (!query) {
+    mapSearchResults.innerHTML = '';
+    return;
+  }
+
+  const matches = [];
+
+  mapState.orders.forEach(({ data }, id) => {
+    const searchText = [
+      formatUnifiedOrderCode(data.orderNumber, data.orderId, id),
+      data.clientName,
+      data.restaurantName,
+      data.restaurantId,
+      data.clientId,
+      data.status,
+      data.orderStatus,
+    ].join(' ').toLowerCase();
+    if (!searchText.includes(query)) return;
+    matches.push({
+      type: 'order',
+      id,
+      title: `طلب ${formatUnifiedOrderCode(data.orderNumber, data.orderId, id)}`,
+      subtitle: `${String(data.restaurantName || data.restaurantId || 'مطعم غير محدد')} - ${String(data.clientName || data.clientId || 'عميل غير محدد')}`,
+    });
+  });
+
+  mapState.restaurants.forEach(({ data }, id) => {
+    const searchText = [data.name, data.phone, data.city, data.address, id].join(' ').toLowerCase();
+    if (!searchText.includes(query)) return;
+    matches.push({
+      type: 'restaurant',
+      id,
+      title: String(data.name || id),
+      subtitle: `مطعم - ${String(data.phone || 'بدون هاتف')}`,
+    });
+  });
+
+  mapState.drivers.forEach(({ data }, id) => {
+    const searchText = [data.name, data.phone, data.email, id].join(' ').toLowerCase();
+    if (!searchText.includes(query)) return;
+    matches.push({
+      type: 'driver',
+      id,
+      title: String(data.name || id),
+      subtitle: `مندوب - ${String(data.phone || 'بدون هاتف')}`,
+    });
+  });
+
+  mapState.clients.forEach(({ data }, id) => {
+    const searchText = [data.name, data.phone, data.email, id].join(' ').toLowerCase();
+    if (!searchText.includes(query)) return;
+    matches.push({
+      type: 'client',
+      id,
+      title: String(data.name || id),
+      subtitle: `عميل - ${String(data.phone || 'بدون هاتف')}`,
+    });
+  });
+
+  const limitedMatches = matches.slice(0, 8);
+  if (!limitedMatches.length) {
+    mapSearchResults.innerHTML = '<div class="muted">لا توجد نتيجة مطابقة داخل الخريطة.</div>';
+    return;
+  }
+
+  setHtml(
+    mapSearchResults,
+    limitedMatches.map((match) => `
+      <div class="map-search-item">
+        <div>
+          <b>${escapeHtml(match.title)}</b>
+          <span>${escapeHtml(match.subtitle)}</span>
+        </div>
+        <button class="btn ghost" type="button" data-map-search-type="${escapeHtml(match.type)}" data-map-search-id="${escapeHtml(match.id)}">تمركز</button>
+      </div>
+    `).join('')
+  );
+
+  mapSearchResults.querySelectorAll('[data-map-search-type]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const type = button.getAttribute('data-map-search-type');
+      const id = button.getAttribute('data-map-search-id');
+      if (!type || !id) return;
+      focusMapSearchEntity(type, id);
+    });
+  });
 }
 
 async function backfillRestaurantAddressesForMissingRestaurants() {
@@ -4117,6 +5403,7 @@ function refreshMapLayers() {
   }
 
   refreshMapLegendSummary();
+  renderMapSearchResults();
   refreshMapViewport();
 }
 
@@ -4254,6 +5541,9 @@ async function mountPending() {
     safeGetDocs(query(collection(db, 'drivers'), where('approvalStatus', '==', 'pending'))),
     safeGetDocs(query(collection(db, 'restaurants'), where('approvalStatus', '==', 'pending')))
   ]);
+
+  opsCenterState.pendingApprovals = courierApps.length + storeApps.length + fallbackDriverSnap.docs.length + fallbackStoreSnap.docs.length;
+  renderOpsPriorityCards();
 
   const pendingDriverIds = new Set(courierApps.map((d) => {
     const data = d.data() || {};

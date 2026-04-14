@@ -68,12 +68,20 @@ class _StoreChangeRequestsScreenState extends State<StoreChangeRequestsScreen> {
     }
   }
 
+  String _formatCreatedAt(dynamic createdAt) {
+    if (createdAt is Timestamp) {
+      final dt = createdAt.toDate();
+      return '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    }
+    return '-';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: AppThemeArabic.clientBackground,
+        backgroundColor: AppThemeArabic.storeBackground,
         appBar: AppBar(
           title: const Text('طلبات تعديل الإدارة'),
           centerTitle: true,
@@ -101,44 +109,147 @@ class _StoreChangeRequestsScreenState extends State<StoreChangeRequestsScreen> {
             }).toList();
 
             if (pendingDocs.isEmpty) {
-              return const Center(child: Text('لا توجد طلبات تعديل معلقة'));
+              return Center(
+                child: Container(
+                  margin: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.black12),
+                  ),
+                  child: const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.verified_outlined,
+                        size: 52,
+                        color: AppThemeArabic.storePrimary,
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        'لا توجد طلبات تعديل معلقة',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Tajawal',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
             }
 
-            return ListView.separated(
-              padding: const EdgeInsets.all(12),
-              itemCount: pendingDocs.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final doc = pendingDocs[index];
-                final data = doc.data();
-                final requestId = doc.id;
-                final processing = _processingIds.contains(requestId);
+            return ListView(
+              padding: const EdgeInsets.all(14),
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppThemeArabic.storePrimary, Color(0xFF14B8A6)],
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
+                    ),
+                    borderRadius: BorderRadius.circular(26),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'مركز موافقات الإدارة',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          fontFamily: 'Tajawal',
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'راجع الطلبات المعلقة بسرعة وقرّر الموافقة أو الرفض من نفس الشاشة.',
+                        style: TextStyle(color: Colors.white70, fontFamily: 'Tajawal'),
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Text(
+                          '${pendingDocs.length} طلبات معلقة',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 18,
+                            fontFamily: 'Tajawal',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ...pendingDocs.map((doc) {
+                  final data = doc.data();
+                  final requestId = doc.id;
+                  final processing = _processingIds.contains(requestId);
+                  final reason = (data['reason'] ?? '').toString();
+                  final type = (data['type'] ?? '').toString();
+                  final createdText = _formatCreatedAt(data['createdAt']);
 
-                final reason = (data['reason'] ?? '').toString();
-                final type = (data['type'] ?? '').toString();
-                final createdAt = data['createdAt'];
-                final createdText = createdAt is Timestamp
-                    ? createdAt.toDate().toString()
-                    : '-';
-
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: Colors.black12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          _typeLabel(type),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
+                        Row(
+                          children: [
+                            Container(
+                              width: 46,
+                              height: 46,
+                              decoration: BoxDecoration(
+                                color: AppThemeArabic.storePrimary.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: const Icon(
+                                Icons.assignment_turned_in_outlined,
+                                color: AppThemeArabic.storePrimary,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _typeLabel(type),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 17,
+                                  fontFamily: 'Tajawal',
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
+                        const SizedBox(height: 12),
+                        _infoRow('السبب', reason.isEmpty ? '-' : reason),
                         const SizedBox(height: 8),
-                        Text('السبب: ${reason.isEmpty ? '-' : reason}'),
-                        const SizedBox(height: 6),
-                        Text('تاريخ الطلب: $createdText'),
-                        const SizedBox(height: 10),
+                        _infoRow('تاريخ الطلب', createdText),
+                        const SizedBox(height: 14),
                         Row(
                           children: [
                             Expanded(
@@ -146,11 +257,24 @@ class _StoreChangeRequestsScreenState extends State<StoreChangeRequestsScreen> {
                                 onPressed: processing
                                     ? null
                                     : () => _respond(requestId, 'approved'),
-                                icon: const Icon(Icons.check_circle_outline),
+                                icon: processing
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(Icons.check_circle_outline),
                                 label: const Text('موافقة'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  minimumSize: const Size.fromHeight(48),
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 10),
                             Expanded(
                               child: OutlinedButton.icon(
                                 onPressed: processing
@@ -158,18 +282,51 @@ class _StoreChangeRequestsScreenState extends State<StoreChangeRequestsScreen> {
                                     : () => _respond(requestId, 'rejected'),
                                 icon: const Icon(Icons.cancel_outlined),
                                 label: const Text('رفض'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.red,
+                                  side: const BorderSide(color: Colors.red),
+                                  minimumSize: const Size.fromHeight(48),
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ],
                     ),
-                  ),
-                );
-              },
+                  );
+                }),
+              ],
             );
           },
         ),
+      ),
+    );
+  }
+
+  Widget _infoRow(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppThemeArabic.storeSurface,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontFamily: 'Tajawal',
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontFamily: 'Tajawal'),
+            ),
+          ),
+        ],
       ),
     );
   }

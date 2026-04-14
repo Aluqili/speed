@@ -10,6 +10,74 @@ class StoreMenuScreen extends StatelessWidget {
 
   const StoreMenuScreen({super.key, required this.restaurantId});
 
+  Map<String, double> _extractSizes(Map<String, dynamic> data) {
+    final raw = data['sizes'];
+    if (raw is! Map) return const {};
+
+    final result = <String, double>{};
+    for (final entry in raw.entries) {
+      final parsed = entry.value is num
+          ? (entry.value as num).toDouble()
+          : double.tryParse(entry.value.toString().trim().replaceAll(',', '.'));
+      if (parsed != null && parsed > 0) {
+        result[entry.key.toString()] = parsed;
+      }
+    }
+    return result;
+  }
+
+  Future<void> _deleteItem(
+    BuildContext context,
+    QueryDocumentSnapshot itemDoc,
+    Map<String, dynamic> data,
+  ) async {
+    final category = (data['category'] ?? '').toString().trim();
+    if (category.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر حذف الصنف لأن فئته غير معروفة')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('حذف الصنف'),
+            content: Text('هل تريد حذف الصنف ${(data['name'] ?? '').toString()}؟'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('إلغاء'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('حذف'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirmed) return;
+
+    final restaurantRef = FirebaseFirestore.instance
+        .collection('restaurants')
+        .doc(restaurantId);
+    await restaurantRef.collection('full_menu').doc(itemDoc.id).delete();
+    await restaurantRef
+        .collection('menu')
+        .doc(category.replaceAll('/', '-'))
+        .collection('items')
+        .doc(itemDoc.id)
+        .delete();
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حذف الصنف')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -85,16 +153,32 @@ class StoreMenuScreen extends StatelessWidget {
                     buttonBar: GFButtonBar(
                       children: <Widget>[
                         GFButton(
-                          onPressed: () {
-                            // TODO: تعديل الصنف لاحقًا
+                          onPressed: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => StoreAddMenuItemScreen(
+                                  restaurantId: restaurantId,
+                                  itemId: items[index].id,
+                                  initialName: itemName.toString(),
+                                  initialPrice: (data['price'] as num?)?.toDouble(),
+                                  initialSizes: _extractSizes(data),
+                                  initialCategory:
+                                      (data['category'] ?? '').toString(),
+                                  initialImageUrl:
+                                      (imageUrl ?? '').toString(),
+                                  initialAvailable: data['available'] != false,
+                                ),
+                              ),
+                            );
                           },
                           text: 'تعديل',
                           color: GFColors.WARNING,
                           icon: const Icon(Icons.edit, size: 16),
                         ),
                         GFButton(
-                          onPressed: () {
-                            // TODO: حذف الصنف لاحقًا
+                          onPressed: () async {
+                            await _deleteItem(context, items[index], data);
                           },
                           text: 'حذف',
                           color: GFColors.DANGER,

@@ -56,7 +56,7 @@
     },
     "store_min_build_android": {
       "defaultValue": {
-        "value": "4"
+        "value": "5"
       },
       "valueType": "NUMBER"
     },
@@ -137,6 +137,42 @@
         "value": "لسه ما جيناكم في الولاية يا غالي\nتابعنا على منصات التواصل عشان تعرف حنجيكم متين\nوقريبا حنصلكم.. انتظرونا!"
       },
       "valueType": "STRING"
+    },
+    "pricing_client_delivery_base_fee": {
+      "defaultValue": {
+        "value": "5000"
+      },
+      "valueType": "NUMBER"
+    },
+    "pricing_client_delivery_base_distance_km": {
+      "defaultValue": {
+        "value": "6"
+      },
+      "valueType": "NUMBER"
+    },
+    "pricing_client_delivery_extra_per_km": {
+      "defaultValue": {
+        "value": "700"
+      },
+      "valueType": "NUMBER"
+    },
+    "pricing_driver_delivery_base_fee": {
+      "defaultValue": {
+        "value": "4000"
+      },
+      "valueType": "NUMBER"
+    },
+    "pricing_driver_delivery_base_distance_km": {
+      "defaultValue": {
+        "value": "6"
+      },
+      "valueType": "NUMBER"
+    },
+    "pricing_driver_delivery_extra_per_km": {
+      "defaultValue": {
+        "value": "500"
+      },
+      "valueType": "NUMBER"
     }
   }
 }

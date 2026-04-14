@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'dart:io';
 import 'package:intl/intl.dart' as intl;
-import 'package:speedstar_core/src/config/ops_runtime_config.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -22,11 +20,9 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scrollController = ScrollController();
   final cloudinary =
       CloudinaryPublic('dvnzloec6', 'flutter_unsigned', cache: false);
-  static const _primaryColor = AppThemeArabic.clientPrimary;
+  static const _primaryColor = AppThemeArabic.storePrimary;
   static const _closedSupportTicketMessage =
       'أغلق الدعم الفني هذه التذكرة. يمكنك قراءة المحادثة السابقة فقط.';
-  bool _chatEnabled = true;
-  String _chatDisabledMessage = 'الدردشة متوقفة مؤقتًا.';
   bool _loadingConversation = true;
   String _supportConversationId = '';
   String _storeDisplayName = 'المطعم';
@@ -47,24 +43,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    _loadChatConfig();
     _controller.addListener(_onMessageChanged);
     _bootstrapSupportConversation();
-  }
-
-  Future<void> _loadChatConfig() async {
-    try {
-      final rc = FirebaseRemoteConfig.instance;
-      await rc.fetchAndActivate();
-      final ops = OpsRuntimeConfig.fromRemoteConfig(rc, appKey: 'store');
-      if (!mounted) return;
-      setState(() {
-        _chatEnabled = ops.chatEnabled;
-        _chatDisabledMessage = ops.chatDisabledMessage;
-      });
-    } catch (_) {
-      // Keep defaults
-    }
   }
 
   Future<void> _bootstrapSupportConversation() async {
@@ -242,66 +222,68 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     if (_loadingConversation) {
       return const Scaffold(
-        backgroundColor: AppThemeArabic.clientBackground,
+        backgroundColor: AppThemeArabic.storeBackground,
         body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (!_chatEnabled) {
-      return Directionality(
-        textDirection: TextDirection.rtl,
-        child: Scaffold(
-          backgroundColor: AppThemeArabic.clientBackground,
-          appBar: AppBar(
-            title: const Text('الدردشة',
-                style: TextStyle(
-                    color: AppThemeArabic.clientPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20,
-                    fontFamily: 'Tajawal')),
-            backgroundColor: Colors.white,
-            centerTitle: true,
-            elevation: 1,
-            iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-            ),
-          ),
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                _chatDisabledMessage,
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-        ),
       );
     }
 
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: AppThemeArabic.clientBackground,
+        backgroundColor: AppThemeArabic.storeBackground,
         resizeToAvoidBottomInset: true,
         appBar: AppBar(
           title: const Text('الدعم الفني',
               style: TextStyle(
-                  color: AppThemeArabic.clientPrimary,
+                  color: AppThemeArabic.storePrimary,
                   fontWeight: FontWeight.bold,
                   fontSize: 20,
                   fontFamily: 'Tajawal')),
           backgroundColor: Colors.white,
           centerTitle: true,
           elevation: 1,
-          iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+          iconTheme: const IconThemeData(color: AppThemeArabic.storePrimary),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
           ),
         ),
         body: Column(
           children: [
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppThemeArabic.storePrimary, Color(0xFF14B8A6)],
+                  begin: Alignment.topRight,
+                  end: Alignment.bottomLeft,
+                ),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'تواصل مع الدعم الفني',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      fontFamily: 'Tajawal',
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _storeDisplayName,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontFamily: 'Tajawal',
+                    ),
+                  ),
+                ],
+              ),
+            ),
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
@@ -349,7 +331,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: const Color(0xFFFFF3E0),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: const Color(0xFFFFCC80)),
                           ),
                           child: Column(
@@ -373,14 +355,19 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       Expanded(
                         child: msgs.isEmpty
-                            ? const Center(child: Text('لا توجد رسائل بعد'))
+                            ? const Center(
+                                child: Text(
+                                  'لا توجد رسائل بعد',
+                                  style: TextStyle(fontFamily: 'Tajawal'),
+                                ),
+                              )
                             : ListView.builder(
                                 controller: _scrollController,
                                 padding: const EdgeInsets.all(12),
                                 itemCount: msgs.length,
                                 itemBuilder: (context, index) {
-                                  final m =
-                                      msgs[index].data() as Map<String, dynamic>;
+                                  final m = msgs[index].data()
+                                      as Map<String, dynamic>;
                                   final isMe = m['senderId'] == _actorUid;
                                   return Align(
                                     alignment: isMe
@@ -393,12 +380,17 @@ class _ChatScreenState extends State<ChatScreen> {
                                           vertical: 8, horizontal: 12),
                                       decoration: BoxDecoration(
                                         color: isMe
-                                            ? AppThemeArabic.clientSurface
+                                            ? AppThemeArabic.storeSurface
                                             : Theme.of(context)
                                                 .colorScheme
                                                 .surfaceContainerHighest,
-                                        borderRadius:
-                                            BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.circular(18),
+                                        border: Border.all(
+                                          color: isMe
+                                              ? AppThemeArabic.storePrimary
+                                                  .withOpacity(0.10)
+                                              : Colors.transparent,
+                                        ),
                                       ),
                                       child: Column(
                                         crossAxisAlignment:
@@ -439,8 +431,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                               ),
                                             )
                                           else
-                                            Text((m['message'] ?? m['text'] ?? '')
-                                                .toString()),
+                                            Text(
+                                              (m['message'] ?? m['text'] ?? '')
+                                                  .toString(),
+                                              style: const TextStyle(
+                                                  fontFamily: 'Tajawal'),
+                                            ),
                                           const SizedBox(height: 4),
                                           Text(
                                             _formatTimestamp(m['timestamp']),
@@ -466,58 +462,82 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  children: [
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.add_photo_alternate,
-                          color: _primaryColor),
-                      onSelected: (source) {
-                        _pickAndSendImage(
-                          source == 'camera'
-                              ? ImageSource.camera
-                              : ImageSource.gallery,
-                        );
-                      },
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(value: 'camera', child: Text('الكاميرا')),
-                        PopupMenuItem(value: 'gallery', child: Text('المعرض')),
-                      ],
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        enabled: _supportConversationId.isNotEmpty,
-                        textInputAction: TextInputAction.send,
-                        minLines: 1,
-                        maxLines: 4,
-                        decoration: const InputDecoration(
-                          hintText: 'اكتب رسالتك...',
-                          border: OutlineInputBorder(),
-                        ),
-                        onSubmitted: (_) => _send(),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: Colors.black12),
+                  ),
+                  child: Row(
+                    children: [
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.add_photo_alternate,
+                            color: _primaryColor),
+                        onSelected: (source) {
+                          _pickAndSendImage(
+                            source == 'camera'
+                                ? ImageSource.camera
+                                : ImageSource.gallery,
+                          );
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(
+                              value: 'camera', child: Text('الكاميرا')),
+                          PopupMenuItem(
+                              value: 'gallery', child: Text('المعرض')),
+                        ],
                       ),
-                    ),
-                    StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance
-                          .collection('supportMessages')
-                          .where('conversationId', isEqualTo: _supportConversationId)
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        final latest = snapshot.data?.docs.isNotEmpty == true
-                            ? snapshot.data!.docs.last.data()
-                                as Map<String, dynamic>
-                            : <String, dynamic>{};
-                        final canCompose =
-                            (latest['status'] ?? 'open').toString() != 'closed';
-                        return IconButton(
-                          icon: const Icon(Icons.send, color: _primaryColor),
-                          onPressed: _controller.text.trim().isEmpty || !canCompose
-                              ? null
-                              : _send,
-                        );
-                      },
-                    ),
-                  ],
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          enabled: _supportConversationId.isNotEmpty,
+                          textInputAction: TextInputAction.send,
+                          minLines: 1,
+                          maxLines: 4,
+                          decoration: InputDecoration(
+                            hintText: 'اكتب رسالتك...',
+                            filled: true,
+                            fillColor: AppThemeArabic.storeSurface,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          onSubmitted: (_) => _send(),
+                        ),
+                      ),
+                      StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('supportMessages')
+                            .where('conversationId',
+                                isEqualTo: _supportConversationId)
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          final latest = snapshot.data?.docs.isNotEmpty == true
+                              ? snapshot.data!.docs.last.data()
+                                  as Map<String, dynamic>
+                              : <String, dynamic>{};
+                          final canCompose =
+                              (latest['status'] ?? 'open').toString() !=
+                                  'closed';
+                          return IconButton(
+                            icon: const Icon(Icons.send_rounded,
+                                color: _primaryColor),
+                            onPressed:
+                                _controller.text.trim().isEmpty || !canCompose
+                                    ? null
+                                    : _send,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

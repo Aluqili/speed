@@ -1,6 +1,6 @@
 name: speedstar_store_app
 description: Store app for SpeedStar
-version: 0.1.1+4
+version: 0.1.1+7
 publish_to: none
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -29,6 +29,7 @@ dependencies:
   audioplayers: ^6.5.1
   firebase_remote_config: ^6.1.4
   flutter_local_notifications: ^20.1.0
+  permission_handler: ^11.4.0
   url_launcher: ^6.3.2
 dev_dependencies:
   flutter_test:

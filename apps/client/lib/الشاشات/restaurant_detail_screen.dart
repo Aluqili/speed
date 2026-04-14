@@ -6,7 +6,7 @@ import 'package:getwidget/getwidget.dart';
 import 'package:provider/provider.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'cart_provider.dart';
-import 'package:intl/intl.dart' show NumberFormat;
+import 'package:intl/intl.dart' show DateFormat, NumberFormat;
 import 'client_cart_screen.dart';
 
 class RestaurantDetailScreen extends StatefulWidget {
@@ -38,17 +38,19 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   static const Color textColorSecondary = Color(0xFF6B7280);
   static const Color closedColor = Color(0xFFFF3B30);
   static const List<String> _globalCategoryOrder = [
+    'كل الأصناف',
     'الوجبات الرئيسية',
-    'المقبلات',
-    'الشوربات',
-    'السلطات',
+    'الوجبات',
     'السندويتشات',
     'البرغر',
     'البيتزا',
-    'الفطور',
+    'المقبلات',
+    'الشوربات',
     'المشروبات',
     'الحلويات',
+    'السلطات',
     'الإضافات',
+    'الفطور',
     'أصناف أخرى',
   ];
 
@@ -58,6 +60,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   Color statusColor = Colors.green;
   double? _ratingAverage;
   int _ratingCount = 0;
+  List<Map<String, dynamic>> _offerHighlights = [];
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _restaurantSubscription;
 
@@ -92,8 +95,191 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
             ((doc.data()?['ratingCount'] ?? doc.data()?['reviewCount']) as num?)
                     ?.toInt() ??
                 0;
+        _offerHighlights =
+            ((doc.data()?['offerHighlights'] as List?) ?? const [])
+                .whereType<Map>()
+                .map((entry) => Map<String, dynamic>.from(entry))
+                .toList();
       });
     });
+  }
+
+  String _formatOfferWindow(dynamic startsAt, dynamic endsAt) {
+    String format(dynamic value) {
+      if (value is Timestamp) {
+        final date = value.toDate();
+        return DateFormat('d/M h:mm a', 'ar').format(date);
+      }
+      return '';
+    }
+
+    final start = format(startsAt);
+    final end = format(endsAt);
+    if (start.isEmpty && end.isEmpty) return '';
+    if (start.isEmpty) return 'ينتهي $end';
+    if (end.isEmpty) return 'يبدأ $start';
+    return '$start - $end';
+  }
+
+  Widget _buildOfferHighlightsSection() {
+    final fallbackOffersText = widget.offers.trim();
+    if (_offerHighlights.isEmpty && fallbackOffersText.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    if (_offerHighlights.isEmpty) {
+      return Container(
+        margin: const EdgeInsets.only(top: 14),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: accentColor.withOpacity(0.2)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                fallbackOffersText,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: textColorPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Icon(Icons.local_offer_rounded, color: accentColor),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            const Spacer(),
+            const Text(
+              'العروض الحالية',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: textColorPrimary,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.local_offer_rounded, color: accentColor),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ..._offerHighlights.map((offer) {
+          final imageUrl = (offer['imageUrl'] ?? '').toString().trim();
+          final badgeText = (offer['badgeText'] ?? '').toString().trim();
+          final summaryText = (offer['summaryText'] ?? '').toString().trim();
+          final description = (offer['description'] ?? '').toString().trim();
+          final title = (offer['title'] ?? '').toString().trim();
+          final windowText =
+              _formatOfferWindow(offer['startsAt'], offer['endsAt']);
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: accentColor.withOpacity(0.22)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (imageUrl.isNotEmpty)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.network(
+                      imageUrl,
+                      width: 88,
+                      height: 88,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                if (imageUrl.isNotEmpty) const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Row(
+                        children: [
+                          if (badgeText.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: accentColor.withOpacity(0.18),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                badgeText,
+                                style: const TextStyle(
+                                  color: textColorPrimary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          const Spacer(),
+                          Flexible(
+                            child: Text(
+                              title,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: textColorPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        summaryText.isNotEmpty ? summaryText : description,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          color: textColorSecondary,
+                          height: 1.4,
+                        ),
+                      ),
+                      if (windowText.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          windowText,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            color: primaryColor,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
   }
 
   String _restaurantRatingText() {
@@ -379,6 +565,16 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       'اطباق رئيسية',
     ])) {
       return 'الوجبات الرئيسية';
+    }
+    if (containsAny([
+      'meal',
+      'meals',
+      'وجبة',
+      'وجبات',
+      'اطباق',
+      'أطباق',
+    ])) {
+      return 'الوجبات';
     }
     if (containsAny(['appetizer', 'starter', 'مقبلات'])) {
       return 'المقبلات';
@@ -1122,6 +1318,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                       ),
                       textAlign: TextAlign.right,
                     ),
+                    _buildOfferHighlightsSection(),
                     const SizedBox(height: 14),
                     FutureBuilder<QuerySnapshot>(
                       future: FirebaseFirestore.instance

@@ -3,6 +3,8 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class PushNotificationService {
@@ -11,7 +13,9 @@ class PushNotificationService {
   static final PushNotificationService instance = PushNotificationService._();
 
   static const String _channelId = 'speedstar_alerts';
-  static const String _ordersChannelId = 'speedstar_store_orders_incoming_v2';
+  static const String _ordersChannelId = 'speedstar_store_orders_incoming_v6';
+  static const MethodChannel _alertServiceChannel =
+      MethodChannel('speedstar/store_alert_service');
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications =
@@ -22,12 +26,22 @@ class PushNotificationService {
   StreamSubscription<String>? _tokenRefreshSub;
   final StreamController<Map<String, dynamic>> _tapPayloadController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _orderAlertController =
+      StreamController<Map<String, dynamic>>.broadcast();
   bool _initialized = false;
   String _boundStoreId = '';
   Map<String, dynamic>? _pendingTapPayload;
+  bool _localNotificationsReady = false;
 
   Stream<Map<String, dynamic>> get notificationTapStream =>
       _tapPayloadController.stream;
+  Stream<Map<String, dynamic>> get orderAlertStream =>
+      _orderAlertController.stream;
+
+  bool get _supportsPersistentOrderAlert {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android;
+  }
 
   Map<String, dynamic>? consumePendingTapPayload() {
     final payload = _pendingTapPayload;
@@ -38,6 +52,56 @@ class PushNotificationService {
   Future<void> initialize() async {
     if (_initialized) return;
 
+    await _ensureLocalNotificationsInitialized(withTapHandler: true);
+
+    await requestPermission();
+
+    await _messaging.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    _messageSub?.cancel();
+    _messageSub = FirebaseMessaging.onMessage.listen(_showForegroundAlert);
+    _messageOpenedSub?.cancel();
+    _messageOpenedSub =
+        FirebaseMessaging.onMessageOpenedApp.listen(_handleRemoteMessageTap);
+
+    final launchDetails =
+        await _localNotifications.getNotificationAppLaunchDetails();
+    if (launchDetails?.didNotificationLaunchApp == true) {
+      final payload = _decodePayload(
+        launchDetails?.notificationResponse?.payload,
+      );
+      if (payload != null) {
+        _emitTapPayload(payload);
+      }
+    }
+
+    final initialMessage = await _messaging.getInitialMessage();
+    if (initialMessage != null) {
+      _handleRemoteMessageTap(initialMessage);
+    }
+    _initialized = true;
+  }
+
+  Future<NotificationSettings> requestPermission() {
+    return _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+      provisional: false,
+    );
+  }
+
+  Future<NotificationSettings> getNotificationSettings() {
+    return _messaging.getNotificationSettings();
+  }
+
+  Future<void> _ensureLocalNotificationsInitialized({
+    required bool withTapHandler,
+  }) async {
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSettings = DarwinInitializationSettings();
@@ -47,13 +111,19 @@ class PushNotificationService {
     );
     await _localNotifications.initialize(
       settings: initSettings,
-      onDidReceiveNotificationResponse: (response) {
-        final payload = _decodePayload(response.payload);
-        if (payload != null) {
-          _emitTapPayload(payload);
-        }
-      },
+      onDidReceiveNotificationResponse: withTapHandler
+          ? (response) {
+              final payload = _decodePayload(response.payload);
+              if (payload != null) {
+                _emitTapPayload(payload);
+              }
+            }
+          : null,
     );
+
+    if (_localNotificationsReady) {
+      return;
+    }
 
     const channel = AndroidNotificationChannel(
       _channelId,
@@ -78,31 +148,7 @@ class PushNotificationService {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(ordersChannel);
-
-    await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      provisional: false,
-    );
-
-    await _messaging.setForegroundNotificationPresentationOptions(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-
-    _messageSub?.cancel();
-    _messageSub = FirebaseMessaging.onMessage.listen(_showForegroundAlert);
-    _messageOpenedSub?.cancel();
-    _messageOpenedSub =
-        FirebaseMessaging.onMessageOpenedApp.listen(_handleRemoteMessageTap);
-
-    final initialMessage = await _messaging.getInitialMessage();
-    if (initialMessage != null) {
-      _handleRemoteMessageTap(initialMessage);
-    }
-    _initialized = true;
+    _localNotificationsReady = true;
   }
 
   Map<String, dynamic>? _decodePayload(String? raw) {
@@ -127,8 +173,8 @@ class PushNotificationService {
       'title':
           (message.notification?.title ?? message.data['title'] ?? 'إشعار جديد')
               .toString(),
-      'body': (message.notification?.body ?? message.data['body'] ?? '')
-          .toString(),
+      'body':
+          (message.notification?.body ?? message.data['body'] ?? '').toString(),
     };
   }
 
@@ -168,19 +214,93 @@ class PushNotificationService {
         .doc(storeId)
         .set({
       'fcmToken': token,
+      'fcmTokens': FieldValue.arrayUnion([token]),
       'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 
+  Future<void> showRemoteMessageAsLocal(RemoteMessage message) async {
+    final payload = _payloadFromRemoteMessage(message);
+    _emitOrderAlert(payload);
+    if (_isOrderAlert(payload)) {
+      await startPersistentOrderAlert(
+        title: payload['title']?.toString(),
+        body: payload['body']?.toString(),
+        orderId: payload['orderId']?.toString(),
+      );
+    }
+    if (message.notification != null) {
+      return;
+    }
+    await _ensureLocalNotificationsInitialized(withTapHandler: false);
+    await _showLocalAlert(payload);
+  }
+
   Future<void> _showForegroundAlert(RemoteMessage message) async {
     final payload = _payloadFromRemoteMessage(message);
-    final title = (payload['title'] ?? 'إشعار جديد').toString();
-    final body = (payload['body'] ?? '').toString();
+    _emitOrderAlert(payload);
+    if (_isOrderAlert(payload)) {
+      await startPersistentOrderAlert(
+        title: payload['title']?.toString(),
+        body: payload['body']?.toString(),
+        orderId: payload['orderId']?.toString(),
+      );
+    }
+    await _ensureLocalNotificationsInitialized(withTapHandler: false);
+    await _showLocalAlert(payload);
+  }
+
+  Future<void> startPersistentOrderAlert({
+    String? title,
+    String? body,
+    String? orderId,
+  }) async {
+    if (!_supportsPersistentOrderAlert) return;
+    try {
+      await _alertServiceChannel.invokeMethod('startOrderAlert', {
+        'title':
+            (title == null || title.trim().isEmpty) ? 'طلب جديد' : title.trim(),
+        'body': (body == null || body.trim().isEmpty)
+            ? 'لديك طلب جديد بانتظار القبول أو الرفض.'
+            : body.trim(),
+        'orderId': (orderId ?? '').trim(),
+      });
+    } catch (_) {
+      // Ignore native alert service failures and keep local notification path.
+    }
+  }
+
+  Future<void> stopPersistentOrderAlert() async {
+    if (!_supportsPersistentOrderAlert) return;
+    try {
+      await _alertServiceChannel.invokeMethod('stopOrderAlert');
+    } catch (_) {
+      // Ignore stop failures.
+    }
+  }
+
+  bool _isOrderAlert(Map<String, dynamic> payload) {
     final type = (payload['type'] ?? '').toString().toLowerCase();
-    final isOrderAlert = type.contains('order') ||
+    final explicitChannel =
+        (payload['channelId'] ?? payload['androidChannelId'] ?? '')
+            .toString()
+            .toLowerCase();
+    final urgentFlag = (payload['urgent'] ?? payload['playSound'] ?? '')
+        .toString()
+        .toLowerCase();
+    return explicitChannel == _ordersChannelId.toLowerCase() ||
+        urgentFlag == '1' ||
+        urgentFlag == 'true' ||
+        type.contains('order') ||
         type.contains('offer') ||
         type.contains('pickup') ||
         type.contains('courier');
+  }
+
+  Future<void> _showLocalAlert(Map<String, dynamic> payload) async {
+    final title = (payload['title'] ?? 'إشعار جديد').toString();
+    final body = (payload['body'] ?? '').toString();
+    final isOrderAlert = _isOrderAlert(payload);
     final androidChannelId = isOrderAlert ? _ordersChannelId : _channelId;
 
     final details = NotificationDetails(
@@ -215,5 +335,12 @@ class PushNotificationService {
       notificationDetails: details,
       payload: jsonEncode(payload),
     );
+  }
+
+  void _emitOrderAlert(Map<String, dynamic> payload) {
+    if (!_isOrderAlert(payload) || _orderAlertController.isClosed) {
+      return;
+    }
+    _orderAlertController.add(payload);
   }
 }

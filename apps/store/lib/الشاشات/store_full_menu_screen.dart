@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'menu_item.dart';
+import 'store_add_menu_item_screen.dart';
 import 'store_full_menu_controller.dart';
 
 class StoreFullMenuScreen extends StatefulWidget {
@@ -16,6 +18,9 @@ class StoreFullMenuScreen extends StatefulWidget {
 class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
   late final StoreFullMenuController controller;
   late final String _controllerTag;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  bool _availableOnly = false;
 
   @override
   void initState() {
@@ -32,6 +37,7 @@ class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     if (Get.isRegistered<StoreFullMenuController>(tag: _controllerTag)) {
       Get.delete<StoreFullMenuController>(tag: _controllerTag, force: true);
     }
@@ -50,109 +56,47 @@ class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
     return parts.join(' | ');
   }
 
-  Future<Map<String, dynamic>?> _showEditDialog(MenuItem item) {
-    return showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) {
-        final singlePriceController =
-            TextEditingController(text: item.price.toString());
-        final smallController = TextEditingController(
-            text: item.sizes['small']?.toString() ?? '');
-        final mediumController = TextEditingController(
-            text: item.sizes['medium']?.toString() ?? '');
-        final largeController = TextEditingController(
-            text: item.sizes['large']?.toString() ?? '');
+  Iterable<MenuItem> _filteredItems() {
+    return controller.menuItems.where((item) {
+      final matchesAvailability = !_availableOnly || item.isAvailable;
+      final query = _searchQuery.trim().toLowerCase();
+      final matchesQuery = query.isEmpty ||
+          item.name.toLowerCase().contains(query) ||
+          (item.category ?? '').toLowerCase().contains(query);
+      return matchesAvailability && matchesQuery;
+    });
+  }
 
-        return AlertDialog(
-          title: const Text('تعديل السعر/الأحجام'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: singlePriceController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'سعر موحد (اختياري)',
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: smallController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'سعر صغير'),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: mediumController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'سعر وسط'),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: largeController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'سعر كبير'),
-                ),
-              ],
+  Widget _summaryChip(String label, String value, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final smallText = smallController.text.trim();
-                final mediumText = mediumController.text.trim();
-                final largeText = largeController.text.trim();
-                final hasAnySize =
-                    smallText.isNotEmpty || mediumText.isNotEmpty || largeText.isNotEmpty;
-
-                if (hasAnySize) {
-                  final small =
-                      double.tryParse(smallText.replaceAll(',', '.'));
-                  final medium =
-                      double.tryParse(mediumText.replaceAll(',', '.'));
-                  final large =
-                      double.tryParse(largeText.replaceAll(',', '.'));
-                  if (small == null || medium == null || large == null) {
-                    return;
-                  }
-                  if (small <= 0 || medium <= 0 || large <= 0) {
-                    return;
-                  }
-                  Navigator.pop(context, {
-                    'mode': 'sizes',
-                    'sizes': {
-                      'small': small,
-                      'medium': medium,
-                      'large': large,
-                    },
-                  });
-                  return;
-                }
-
-                final single = double.tryParse(
-                    singlePriceController.text.trim().replaceAll(',', '.'));
-                if (single == null || single <= 0) {
-                  return;
-                }
-                Navigator.pop(context, {
-                  'mode': 'single',
-                  'price': single,
-                });
-              },
-              child: const Text('حفظ'),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -161,11 +105,11 @@ class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('القائمة الكاملة'),
-        backgroundColor: Colors.amber[700],
         actions: [
           TextButton.icon(
             onPressed: () async {
               await controller.sendForApproval();
+              if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('تم إرسال القائمة للاعتماد')),
               );
@@ -180,101 +124,216 @@ class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
         if (controller.isLoading.value) {
           return const Center(child: CircularProgressIndicator());
         }
+        final filteredItems = _filteredItems().toList();
+
         if (controller.menuItems.isEmpty) {
           return const Center(
               child: Text('لا توجد أصناف في القائمة حتى الآن.'));
         }
-        return ListView.builder(
-          itemCount: controller.menuItems.length,
-          itemBuilder: (context, index) {
-            final MenuItem item = controller.menuItems[index];
-            return Card(
-              margin: const EdgeInsets.all(8.0),
-              child: ListTile(
-                leading: ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: item.imageUrl != null && item.imageUrl!.isNotEmpty
-                      ? Image.network(
-                          item.imageUrl!,
-                          width: 50,
-                          height: 50,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: 50,
-                            height: 50,
-                            color: Colors.grey.shade200,
-                            child: const Icon(Icons.broken_image),
-                          ),
-                        )
-                      : Container(
-                          width: 50,
-                          height: 50,
-                          color: Colors.grey.shade200,
-                          child: const Icon(Icons.fastfood, color: Colors.grey),
-                        ),
-                ),
-                title: Text(item.name),
-                subtitle: Text(
-                  item.hasSizes
-                      ? '${_sizesSummary(item.sizes)} - ${item.category ?? 'غير محدد'}'
-                      : '${item.price.toStringAsFixed(2)} ر.س - ${item.category ?? 'غير محدد'}',
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Switch(
-                      value: item.isAvailable,
-                      activeColor: Colors.amber[700],
-                      onChanged: (v) async {
-                        await controller.updateAvailability(item.id, v);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              v ? 'تم تفعيل الصنف' : 'تم تعطيل الصنف',
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      _summaryChip(
+                        'إجمالي الأصناف',
+                        '${controller.menuItems.length}',
+                        AppThemeArabic.storePrimary,
+                      ),
+                      const SizedBox(width: 10),
+                      _summaryChip(
+                        'المتاحة الآن',
+                        '${controller.menuItems.where((e) => e.isAvailable).length}',
+                        Colors.green,
+                      ),
+                      const SizedBox(width: 10),
+                      _summaryChip(
+                        'المخفية',
+                        '${controller.menuItems.where((e) => !e.isAvailable).length}',
+                        Colors.orange,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _searchController,
+                    onChanged: (value) => setState(() => _searchQuery = value),
+                    decoration: InputDecoration(
+                      hintText: 'ابحث باسم الصنف أو الفئة',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchQuery.isEmpty
+                          ? null
+                          : IconButton(
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                              icon: const Icon(Icons.close),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilterChip(
+                      selected: _availableOnly,
+                      label: const Text('عرض الأصناف المتاحة فقط'),
+                      onSelected: (value) => setState(() => _availableOnly = value),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: filteredItems.isEmpty
+                  ? const Center(child: Text('لا توجد نتائج مطابقة'))
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                      itemCount: filteredItems.length,
+                      itemBuilder: (context, index) {
+                        final MenuItem item = filteredItems[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: item.imageUrl != null && item.imageUrl!.isNotEmpty
+                                          ? Image.network(
+                                              item.imageUrl!,
+                                              width: 84,
+                                              height: 84,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => Container(
+                                                width: 84,
+                                                height: 84,
+                                                color: Colors.grey.shade200,
+                                                child: const Icon(Icons.broken_image),
+                                              ),
+                                            )
+                                          : Container(
+                                              width: 84,
+                                              height: 84,
+                                              color: Colors.grey.shade200,
+                                              child: const Icon(Icons.fastfood, color: Colors.grey),
+                                            ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            item.name,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 17,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Wrap(
+                                            spacing: 8,
+                                            runSpacing: 8,
+                                            children: [
+                                              Chip(
+                                                label: Text(item.category ?? 'غير محدد'),
+                                              ),
+                                              Chip(
+                                                backgroundColor: item.isAvailable
+                                                    ? Colors.green.withValues(alpha: 0.12)
+                                                    : Colors.orange.withValues(alpha: 0.12),
+                                                label: Text(
+                                                  item.isAvailable ? 'متاح' : 'مخفي',
+                                                  style: TextStyle(
+                                                    color: item.isAvailable ? Colors.green : Colors.orange,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            item.hasSizes
+                                                ? _sizesSummary(item.sizes)
+                                                : '${item.price.toStringAsFixed(2)} ج.س',
+                                            style: TextStyle(
+                                              color: AppThemeArabic.storePrimary,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: () async {
+                                          await Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => StoreAddMenuItemScreen(
+                                                restaurantId: widget.restaurantId,
+                                                itemId: item.id,
+                                                initialName: item.name,
+                                                initialPrice: item.hasSizes ? null : item.price,
+                                                initialSizes: item.hasSizes ? item.sizes : null,
+                                                initialCategory: item.category,
+                                                initialImageUrl: item.imageUrl,
+                                                initialAvailable: item.isAvailable,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                        icon: const Icon(Icons.edit_outlined),
+                                        label: const Text('تعديل شامل'),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IconButton.filledTonal(
+                                      onPressed: () async {
+                                        await controller.updateAvailability(item.id, !item.isAvailable);
+                                      },
+                                      icon: Icon(item.isAvailable ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    IconButton.filledTonal(
+                                      onPressed: () async {
+                                        await controller.deleteMenuItem(item.id);
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('تم حذف الصنف')),
+                                          );
+                                        }
+                                      },
+                                      style: IconButton.styleFrom(
+                                        backgroundColor: Colors.red.withValues(alpha: 0.12),
+                                      ),
+                                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           ),
                         );
                       },
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.edit, color: Colors.blue),
-                      tooltip: 'تعديل السعر',
-                      onPressed: () async {
-                        final result = await _showEditDialog(item);
-                        if (result == null) return;
-
-                        if (result['mode'] == 'sizes') {
-                          final sizes =
-                              Map<String, double>.from(result['sizes'] as Map);
-                          await controller.updateMenuItemSizes(item.id, sizes);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('تم تحديث أسعار الأحجام')),
-                          );
-                        } else if (result['mode'] == 'single') {
-                          final newPrice = result['price'] as double;
-                          if (newPrice != item.price) {
-                            await controller.updateMenuItemPrice(item.id, newPrice);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('تم تحديث السعر إلى $newPrice ج.س')),
-                            );
-                          }
-                        }
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () async {
-                        await controller.deleteMenuItem(item.id);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('تم حذف الصنف')),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
+            ),
+          ],
         );
       }),
     );

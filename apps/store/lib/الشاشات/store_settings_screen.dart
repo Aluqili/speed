@@ -119,10 +119,11 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
           resourceType: CloudinaryResourceType.Image),
     );
     setState(() {
-      if (isCover)
+      if (isCover) {
         _coverImageUrl = resp.secureUrl;
-      else
+      } else {
         _logoImageUrl = resp.secureUrl;
+      }
     });
   }
 
@@ -209,11 +210,11 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
     );
 
     if (confirmed != true) return;
+    if (!mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      messenger.showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('لا يوجد مستخدم مسجل حالياً')));
       return;
     }
@@ -247,12 +248,12 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
 
       await _logout();
       if (!mounted) return;
-      messenger.showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم إرسال طلب حذف الحساب بنجاح')),
       );
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تعذر إرسال طلب الحذف: $e')),
       );
     } finally {
@@ -267,22 +268,13 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
       child: Scaffold(
         backgroundColor: backgroundColor,
         appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 2,
-          centerTitle: true,
-          iconTheme: const IconThemeData(color: primaryColor),
           title: const Text(
             'إعدادات المطعم',
             style: TextStyle(
-              color: primaryColor,
               fontWeight: FontWeight.bold,
               fontFamily: 'Tajawal',
               fontSize: 20,
-              letterSpacing: 1.1,
             ),
-          ),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
           ),
         ),
         body: SingleChildScrollView(
@@ -290,7 +282,56 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Container(
+                margin: const EdgeInsets.only(bottom: 18),
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppThemeArabic.storePrimary, Color(0xFF13A89E)],
+                    begin: Alignment.topRight,
+                    end: Alignment.bottomLeft,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 32,
+                      backgroundColor: Colors.white.withValues(alpha: 0.18),
+                      backgroundImage: (_logoImageUrl ?? '').isNotEmpty
+                          ? NetworkImage(_logoImageUrl!)
+                          : null,
+                      child: (_logoImageUrl ?? '').isEmpty
+                          ? const Icon(Icons.storefront_rounded, color: Colors.white, size: 28)
+                          : null,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _nameController.text.trim().isEmpty ? 'بيانات المتجر' : _nameController.text.trim(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 20,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _address ?? 'حدّث العنوان وبيانات الهوية البصرية من هنا',
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               _buildSectionCard(
+                title: 'البيانات الأساسية',
+                icon: Icons.badge_outlined,
                 children: [
                   _buildLabel('📛 اسم المطعم'),
                   _buildTextField(_nameController),
@@ -303,6 +344,8 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                 ],
               ),
               _buildSectionCard(
+                title: 'الموقع',
+                icon: Icons.place_outlined,
                 children: [
                   _buildLabel('📍 العنوان'),
                   Row(
@@ -326,6 +369,8 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                 ],
               ),
               _buildSectionCard(
+                title: 'صورة الغلاف',
+                icon: Icons.wallpaper_outlined,
                 children: [
                   _buildLabel('🖼️ صورة الغلاف'),
                   _coverImageUrl != null
@@ -359,6 +404,8 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                 ],
               ),
               _buildSectionCard(
+                title: 'الشعار',
+                icon: Icons.image_outlined,
                 children: [
                   _buildLabel('🏷️ شعار المطعم'),
                   _logoImageUrl != null
@@ -388,6 +435,8 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                 ],
               ),
               _buildSectionCard(
+                title: 'سلوك الطلبات',
+                icon: Icons.tune,
                 children: [
                   SwitchListTile(
                     title: const Text('✅ قبول الطلبات تلقائياً',
@@ -399,6 +448,7 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                           .collection('restaurants')
                           .doc(widget.restaurantId)
                           .update({'autoAcceptOrders': v});
+                        if (!context.mounted) return;
                       GFToast.showToast(
                         v
                             ? 'تم تفعيل القبول التلقائي'
@@ -500,7 +550,11 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
     );
   }
 
-  Widget _buildSectionCard({required List<Widget> children}) {
+  Widget _buildSectionCard({
+    required List<Widget> children,
+    required String title,
+    required IconData icon,
+  }) {
     return Card(
       elevation: 3,
       margin: const EdgeInsets.only(bottom: 18),
@@ -509,7 +563,28 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
         padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: children,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: AppThemeArabic.storePrimary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: AppThemeArabic.storePrimary),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            ...children,
+          ],
         ),
       ),
     );

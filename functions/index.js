@@ -1,6 +1,6 @@
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
@@ -41,6 +41,12 @@ const DEFAULT_PRICING_CONFIG = {
   largeItemStepAmount: 5000,
   largeItemStepFee: 500,
   largeItemFeeCapPerUnit: 2500,
+  clientDeliveryBaseFee: 5000,
+  clientDeliveryBaseDistanceKm: 6,
+  clientDeliveryExtraPerKm: 700,
+  driverDeliveryBaseFee: 4000,
+  driverDeliveryBaseDistanceKm: 6,
+  driverDeliveryExtraPerKm: 500,
   deliveryPlatformMarginFixed: 700,
   deliveryPlatformMinMargin: 300,
 };
@@ -118,6 +124,121 @@ function normalizeAudienceRole(raw) {
   return '';
 }
 
+function getKhartoumClockSnapshot(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Khartoum',
+    weekday: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now);
+
+  const partMap = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value])
+  );
+
+  const weekdayMap = {
+    Saturday: 'saturday',
+    Sunday: 'sunday',
+    Monday: 'monday',
+    Tuesday: 'tuesday',
+    Wednesday: 'wednesday',
+    Thursday: 'thursday',
+    Friday: 'friday',
+  };
+
+  const dayKey = weekdayMap[partMap.weekday] || 'sunday';
+  const hour = Number(partMap.hour || 0);
+  const minute = Number(partMap.minute || 0);
+
+  return {
+    dayKey,
+    nowMinutes: (hour * 60) + minute,
+  };
+}
+
+function parseArabicClockTime(rawValue) {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return null;
+
+  const cleaned = raw.replace(/[^0-9:]/g, '');
+  const parts = cleaned.split(':');
+  if (parts.length !== 2) return null;
+
+  let hour = Number(parts[0]);
+  const minute = Number(parts[1]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  if (minute < 0 || minute > 59) return null;
+
+  const isPm = raw.includes('م');
+  const isAm = raw.includes('ص');
+
+  if (isPm && hour < 12) hour += 12;
+  if (isAm && hour === 12) hour = 0;
+  if (hour < 0 || hour > 23) return null;
+
+  return { hour, minute };
+}
+
+function extractWorkingHourRanges(dayData, status) {
+  const ranges = [];
+
+  const addRange = (openValue, closeValue) => {
+    const open = parseArabicClockTime(openValue);
+    const close = parseArabicClockTime(closeValue);
+    if (!open || !close) return;
+    ranges.push({ open, close });
+  };
+
+  if (
+    status === 'صباحي ومسائي'
+    || (dayData?.morning && typeof dayData.morning === 'object'
+      && dayData?.evening && typeof dayData.evening === 'object')
+  ) {
+    addRange(dayData?.morning?.open, dayData?.morning?.close);
+    addRange(dayData?.evening?.open, dayData?.evening?.close);
+    return ranges;
+  }
+
+  addRange(dayData?.open, dayData?.close);
+  return ranges;
+}
+
+function isWithinWorkingHourRange(nowMinutes, open, close) {
+  const openMinutes = (open.hour * 60) + open.minute;
+  const closeMinutes = (close.hour * 60) + close.minute;
+
+  if (closeMinutes >= openMinutes) {
+    return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
+  }
+
+  return nowMinutes >= openMinutes || nowMinutes <= closeMinutes;
+}
+
+function shouldRestaurantBeTemporarilyClosedByHours(restaurantData, clockSnapshot) {
+  const workingHours = restaurantData?.workingHours;
+  if (!workingHours || typeof workingHours !== 'object') return null;
+
+  const todayHours = workingHours[clockSnapshot.dayKey];
+  if (!todayHours || typeof todayHours !== 'object') return true;
+
+  const status = String(todayHours.status || '').trim();
+  if (status === 'مغلق') return true;
+
+  const ranges = extractWorkingHourRanges(todayHours, status);
+  if (!ranges.length) return true;
+
+  for (const range of ranges) {
+    if (isWithinWorkingHourRange(clockSnapshot.nowMinutes, range.open, range.close)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function normalizePaymentStatus(raw) {
   const normalized = String(raw || '').trim().toLowerCase();
   if (normalized === 'paid' || normalized === 'تم الدفع') return 'paid';
@@ -185,6 +306,18 @@ function extractFcmTokens(data) {
 }
 
 function notificationPayloadToData(payload, role, userId) {
+  const notificationType = String(payload?.type || '').trim().toLowerCase();
+  const isOrderUrgent =
+    notificationType.includes('order')
+    || notificationType.includes('offer')
+    || notificationType.includes('pickup')
+    || notificationType.includes('courier');
+  const normalizedRole = String(role || '').trim().toLowerCase();
+  const isStore = normalizedRole === 'store';
+  const androidChannelId = isOrderUrgent && isStore
+    ? 'speedstar_store_orders_incoming_v6'
+    : 'speedstar_alerts';
+
   return {
     title: String(payload.title || ''),
     body: String(payload.body || ''),
@@ -193,12 +326,21 @@ function notificationPayloadToData(payload, role, userId) {
     orderId: payload.orderId ? String(payload.orderId) : '',
     audience: String(role || ''),
     userId: String(userId || ''),
+    channelId: androidChannelId,
+    playSound: normalizedRole === 'client' || isOrderUrgent ? 'true' : 'false',
+    urgent: isOrderUrgent ? '1' : '0',
   };
 }
 
 async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
   const tokens = extractFcmTokens(userDocData);
-  if (!tokens.length) return 0;
+  if (!tokens.length) {
+    logger.warn('sendPushToUser skipped: no tokens', {
+      role: normalizedRole,
+      userId,
+    });
+    return 0;
+  }
 
   const notificationType = String(payload?.type || '').trim().toLowerCase();
   const isOrderUrgent =
@@ -206,28 +348,20 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
     || notificationType.includes('offer')
     || notificationType.includes('pickup')
     || notificationType.includes('courier');
-  const storeOrdersChannelId = 'speedstar_store_orders_incoming_v2';
+  const storeOrdersChannelId = 'speedstar_store_orders_incoming_v6';
   const sharedOrdersChannelId = 'speedstar_orders_incoming_v1';
-  const androidChannelId = isOrderUrgent
-    ? (normalizedRole === 'store' ? storeOrdersChannelId : sharedOrdersChannelId)
-    : 'speedstar_alerts';
+  const androidChannelId = normalizedRole === 'client'
+    ? 'speedstar_alerts'
+    : isOrderUrgent
+      ? (normalizedRole === 'store' ? storeOrdersChannelId : sharedOrdersChannelId)
+      : 'speedstar_alerts';
 
   const message = {
     tokens,
-    notification: {
-      title: String(payload.title || ''),
-      body: String(payload.body || ''),
-    },
     data: notificationPayloadToData(payload, normalizedRole, userId),
     android: {
       priority: 'high',
-      ttl: '30s',
-      notification: {
-        channelId: androidChannelId,
-        priority: 'high',
-        defaultSound: true,
-        sound: isOrderUrgent ? 'incoming_order' : 'default',
-      },
+      ttl: 30000,
     },
     apns: {
       headers: {
@@ -240,10 +374,45 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
         },
       },
     },
+    notification: {
+      title: String(payload.title || ''),
+      body: String(payload.body || ''),
+    },
   };
+
+  message.android.notification = {
+    channelId: androidChannelId,
+    visibility: 'public',
+  };
+
+  if (normalizedRole === 'client') {
+    message.android.notification.sound = 'default';
+  } else if (isOrderUrgent) {
+    message.android.notification.sound = 'incoming_order';
+  }
 
   try {
     const result = await admin.messaging().sendEachForMulticast(message);
+    logger.info('sendPushToUser result', {
+      role: normalizedRole,
+      userId,
+      tokenCount: tokens.length,
+      successCount: Number(result.successCount || 0),
+      failureCount: Number(result.failureCount || 0),
+    });
+    if (Number(result.failureCount || 0) > 0) {
+      const errorCodes = result.responses
+        .filter((response) => !response.success)
+        .map((response) => response.error?.code || response.error?.message || 'unknown')
+        .filter(Boolean);
+      logger.warn('sendPushToUser partial failure', {
+        role: normalizedRole,
+        userId,
+        successCount: Number(result.successCount || 0),
+        failureCount: Number(result.failureCount || 0),
+        errorCodes,
+      });
+    }
     return Number(result.successCount || 0);
   } catch (error) {
     logger.error('sendPushToUser failed', {
@@ -266,8 +435,7 @@ async function sendNotificationToSingleUser(role, userId, payload) {
 
   const userDoc = await roleRef.doc(uid).get();
   await writePayload.ref.set(writePayload.data);
-  await sendPushToUser(normalizedRole, uid, userDoc.data() || {}, payload);
-  return 1;
+  return await sendPushToUser(normalizedRole, uid, userDoc.data() || {}, payload);
 }
 
 async function sendNotificationToRole(role, payload, maxRecipients = 500) {
@@ -495,6 +663,340 @@ function evaluatePromocode(promo, context, userId) {
     },
   };
 }
+
+const STORE_OFFER_SCOPE_VALUES = new Set(['order_total', 'delivery_fee', 'specific_items']);
+const STORE_OFFER_TYPE_VALUES = new Set(['percent', 'fixed']);
+const STORE_OFFER_ADMIN_ACTIONS = new Set(['approve', 'reject', 'activate', 'deactivate']);
+
+function parseOptionalTimestampInput(rawValue, fieldName, { required = false } = {}) {
+  if (rawValue == null || rawValue === '') {
+    if (required) {
+      throw new HttpsError('invalid-argument', `${fieldName} is required`);
+    }
+    return null;
+  }
+
+  if (rawValue?.toDate && typeof rawValue.toDate === 'function') {
+    return admin.firestore.Timestamp.fromDate(rawValue.toDate());
+  }
+
+  const date = new Date(rawValue);
+  if (Number.isNaN(date.getTime())) {
+    throw new HttpsError('invalid-argument', `${fieldName} is invalid`);
+  }
+  return admin.firestore.Timestamp.fromDate(date);
+}
+
+function normalizeStoreOfferTargetItems(rawItems) {
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems
+    .map((item) => ({
+      itemId: String(item?.itemId || item?.id || '').trim(),
+      name: String(item?.name || item?.itemName || '').trim(),
+      imageUrl: String(item?.imageUrl || '').trim(),
+    }))
+    .filter((item) => item.itemId || item.name)
+    .slice(0, 25);
+}
+
+function buildStoreOfferSummaryText(offer) {
+  const scope = String(offer.discountScope || '').trim();
+  const discountType = String(offer.discountType || '').trim();
+  const discountValue = Math.max(0, toSafeNumber(offer.discountValue));
+  const maxDiscount = Math.max(0, toSafeNumber(offer.maxDiscount));
+  const minOrder = Math.max(0, toSafeNumber(offer.minOrder));
+  const targetItems = normalizeStoreOfferTargetItems(offer.targetItems || []);
+
+  let discountText = discountType === 'percent'
+    ? `خصم ${discountValue}%`
+    : `خصم ${Math.round(discountValue)} ج.س`;
+
+  if (scope === 'delivery_fee') {
+    discountText += ' على التوصيل';
+  } else if (scope === 'specific_items') {
+    const itemNames = targetItems
+      .map((item) => item.name)
+      .filter(Boolean)
+      .slice(0, 2);
+    if (itemNames.length > 0) {
+      discountText += ` على ${itemNames.join(' و ')}`;
+    } else {
+      discountText += ' على وجبات محددة';
+    }
+  } else {
+    discountText += ' على الطلب';
+  }
+
+  if (maxDiscount > 0) {
+    discountText += ` حتى ${Math.round(maxDiscount)} ج.س`;
+  }
+  if (minOrder > 0) {
+    discountText += ` للطلبات فوق ${Math.round(minOrder)} ج.س`;
+  }
+
+  return discountText;
+}
+
+function isStoreOfferVisible(offer, nowMillis = Date.now()) {
+  if (String(offer.status || '') !== 'approved') return false;
+  if (offer.isActive !== true) return false;
+
+  const startsAtMillis = offer.startsAt?.toMillis?.() || null;
+  const endsAtMillis = offer.endsAt?.toMillis?.() || null;
+
+  if (startsAtMillis && startsAtMillis > nowMillis) return false;
+  if (endsAtMillis && endsAtMillis <= nowMillis) return false;
+  return true;
+}
+
+async function syncRestaurantOfferSummary(restaurantId) {
+  const offersSnap = await db.collection('storeOffers')
+    .where('restaurantId', '==', restaurantId)
+    .get();
+
+  const visibleOffers = offersSnap.docs
+    .map((doc) => ({ id: doc.id, ...doc.data() }))
+    .filter((offer) => isStoreOfferVisible(offer))
+    .sort((a, b) => {
+      const aTime = a.updatedAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0;
+      const bTime = b.updatedAt?.toMillis?.() || b.createdAt?.toMillis?.() || 0;
+      return bTime - aTime;
+    });
+
+  const highlights = visibleOffers.slice(0, 6).map((offer) => ({
+    offerId: offer.id,
+    title: String(offer.title || '').trim(),
+    description: String(offer.description || '').trim(),
+    imageUrl: String(offer.imageUrl || '').trim(),
+    badgeText: String(offer.badgeText || '').trim(),
+    summaryText: String(offer.summaryText || buildStoreOfferSummaryText(offer)).trim(),
+    discountScope: String(offer.discountScope || '').trim(),
+    discountType: String(offer.discountType || '').trim(),
+    discountValue: toSafeNumber(offer.discountValue),
+    maxDiscount: Math.max(0, toSafeNumber(offer.maxDiscount)) || null,
+    minOrder: Math.max(0, toSafeNumber(offer.minOrder)) || null,
+    targetItems: normalizeStoreOfferTargetItems(offer.targetItems || []),
+    startsAt: offer.startsAt || null,
+    endsAt: offer.endsAt || null,
+  }));
+
+  const summaryText = highlights.length > 0
+    ? highlights.slice(0, 2).map((offer) => offer.summaryText || offer.title).filter(Boolean).join(' • ')
+    : '';
+
+  await db.collection('restaurants').doc(restaurantId).set({
+    hasOffers: highlights.length > 0,
+    offers: summaryText,
+    activeOfferCount: highlights.length,
+    offerHighlights: highlights,
+    offersUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+exports.submitStoreOfferRequest = onCall({ region: REGION }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Authentication is required');
+  }
+
+  const restaurantId = String(request.data?.restaurantId || '').trim();
+  if (!restaurantId || request.auth.uid !== restaurantId) {
+    throw new HttpsError('permission-denied', 'restaurantId must match the signed-in store');
+  }
+
+  const offer = request.data?.offer || {};
+  const title = String(offer.title || '').trim();
+  const description = String(offer.description || '').trim();
+  const imageUrl = String(offer.imageUrl || '').trim();
+  const badgeText = String(offer.badgeText || '').trim();
+  const discountScope = String(offer.discountScope || '').trim();
+  const discountType = String(offer.discountType || '').trim();
+  const discountValue = Math.max(0, toSafeNumber(offer.discountValue));
+  const maxDiscount = Math.max(0, toSafeNumber(offer.maxDiscount));
+  const minOrder = Math.max(0, toSafeNumber(offer.minOrder));
+  const targetItems = normalizeStoreOfferTargetItems(offer.targetItems || []);
+  const reviewNote = String(offer.reviewNote || '').trim();
+  const startsAt = parseOptionalTimestampInput(offer.startsAt, 'offer.startsAt', { required: true });
+  const endsAt = parseOptionalTimestampInput(offer.endsAt, 'offer.endsAt', { required: true });
+
+  if (!title) {
+    throw new HttpsError('invalid-argument', 'offer.title is required');
+  }
+  if (!description) {
+    throw new HttpsError('invalid-argument', 'offer.description is required');
+  }
+  if (!STORE_OFFER_SCOPE_VALUES.has(discountScope)) {
+    throw new HttpsError('invalid-argument', 'offer.discountScope is invalid');
+  }
+  if (!STORE_OFFER_TYPE_VALUES.has(discountType)) {
+    throw new HttpsError('invalid-argument', 'offer.discountType is invalid');
+  }
+  if (discountValue <= 0) {
+    throw new HttpsError('invalid-argument', 'offer.discountValue must be greater than zero');
+  }
+  if (endsAt.toMillis() <= startsAt.toMillis()) {
+    throw new HttpsError('invalid-argument', 'offer.endsAt must be after offer.startsAt');
+  }
+  if (discountScope === 'specific_items' && targetItems.length === 0) {
+    throw new HttpsError('invalid-argument', 'offer.targetItems is required for specific_items offers');
+  }
+
+  const restaurantSnap = await db.collection('restaurants').doc(restaurantId).get();
+  if (!restaurantSnap.exists) {
+    throw new HttpsError('not-found', 'Restaurant not found');
+  }
+
+  const restaurantData = restaurantSnap.data() || {};
+  const summaryText = buildStoreOfferSummaryText({
+    discountScope,
+    discountType,
+    discountValue,
+    maxDiscount,
+    minOrder,
+    targetItems,
+  });
+
+  const offerRef = await db.collection('storeOffers').add({
+    restaurantId,
+    restaurantName: String(restaurantData.name || '').trim(),
+    title,
+    description,
+    imageUrl,
+    badgeText,
+    discountScope,
+    discountType,
+    discountValue,
+    maxDiscount: maxDiscount || null,
+    minOrder: minOrder || null,
+    targetItems,
+    summaryText,
+    status: 'pending',
+    isActive: false,
+    reviewNote,
+    startsAt,
+    endsAt,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdByUid: request.auth.uid,
+    reviewedAt: null,
+    reviewedByUid: '',
+    reviewDecision: '',
+  });
+
+  return {
+    ok: true,
+    offerId: offerRef.id,
+  };
+});
+
+exports.reviewStoreOfferRequest = onCall({ region: REGION }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Authentication is required');
+  }
+
+  const actorUid = String(request.auth.uid || '').trim();
+  const actorEmail = String(request.auth.token?.email || '').toLowerCase().trim();
+  const actorIsAdmin = (await isAdminUid(actorUid)) || isStaticAdminEmail(actorEmail);
+  if (!actorIsAdmin) {
+    throw new HttpsError('permission-denied', 'Only admins can review store offers');
+  }
+
+  const offerId = String(request.data?.offerId || '').trim();
+  const action = String(request.data?.action || '').trim();
+  const reviewNote = String(request.data?.reviewNote || '').trim();
+  if (!offerId || !STORE_OFFER_ADMIN_ACTIONS.has(action)) {
+    throw new HttpsError('invalid-argument', 'offerId and a valid action are required');
+  }
+
+  const offerRef = db.collection('storeOffers').doc(offerId);
+  const offerSnap = await offerRef.get();
+  if (!offerSnap.exists) {
+    throw new HttpsError('not-found', 'Store offer not found');
+  }
+
+  const offer = offerSnap.data() || {};
+  const restaurantId = String(offer.restaurantId || '').trim();
+  if (!restaurantId) {
+    throw new HttpsError('failed-precondition', 'Store offer restaurantId is missing');
+  }
+
+  const patch = {
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    reviewNote,
+    reviewedByUid: actorUid,
+  };
+
+  if (action === 'approve') {
+    patch.status = 'approved';
+    patch.isActive = true;
+    patch.reviewDecision = 'approved';
+    patch.reviewedAt = admin.firestore.FieldValue.serverTimestamp();
+  } else if (action === 'reject') {
+    patch.status = 'rejected';
+    patch.isActive = false;
+    patch.reviewDecision = 'rejected';
+    patch.reviewedAt = admin.firestore.FieldValue.serverTimestamp();
+  } else if (action === 'activate') {
+    if (String(offer.status || '') !== 'approved') {
+      throw new HttpsError('failed-precondition', 'Only approved offers can be activated');
+    }
+    patch.isActive = true;
+    patch.reviewDecision = 'activated';
+  } else if (action === 'deactivate') {
+    patch.isActive = false;
+    patch.reviewDecision = 'deactivated';
+  }
+
+  await offerRef.set(patch, { merge: true });
+  await syncRestaurantOfferSummary(restaurantId);
+
+  return {
+    ok: true,
+    offerId,
+    restaurantId,
+    action,
+  };
+});
+
+exports.expireApprovedStoreOffers = onSchedule({
+  region: SCHEDULE_REGION,
+  schedule: 'every 30 minutes',
+  timeZone: 'Africa/Khartoum',
+}, async () => {
+  const now = Date.now();
+  const snap = await db.collection('storeOffers')
+    .where('isActive', '==', true)
+    .get();
+
+  if (snap.empty) {
+    return;
+  }
+
+  const batch = db.batch();
+  const restaurantIds = new Set();
+
+  for (const doc of snap.docs) {
+    const data = doc.data() || {};
+    if (String(data.status || '') !== 'approved') continue;
+    const endsAtMillis = data.endsAt?.toMillis?.() || null;
+    if (!endsAtMillis || endsAtMillis > now) continue;
+    batch.set(doc.ref, {
+      isActive: false,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewDecision: 'expired',
+    }, { merge: true });
+    if (data.restaurantId) {
+      restaurantIds.add(String(data.restaurantId));
+    }
+  }
+
+  if (restaurantIds.size === 0) {
+    return;
+  }
+
+  await batch.commit();
+  await Promise.all(Array.from(restaurantIds).map((restaurantId) => syncRestaurantOfferSummary(restaurantId)));
+});
 
 exports.validatePromocodeForClient = onCall({ region: REGION }, async (request) => {
   if (!request.auth?.uid) {
@@ -1335,7 +1837,10 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
   }
 
   const results = await Promise.allSettled(tasks);
-  const sent = results.filter((r) => r.status === 'fulfilled').length;
+  const sent = results.reduce((total, result) => {
+    if (result.status !== 'fulfilled') return total;
+    return total + Number(result.value || 0);
+  }, 0);
   return { sent, status: afterStatus };
 }
 
@@ -1369,6 +1874,31 @@ exports.notifyOnOrderStatusChange = onSchedule(
         lastNotificationSentCount: Number(result.sent || 0),
       });
     }
+  }
+);
+
+exports.notifyOnOrderCreatedRealtime = onDocumentCreated(
+  {
+    region: SCHEDULE_REGION,
+    document: 'orders/{orderId}',
+  },
+  async (event) => {
+    const afterData = event.data?.data() || {};
+    const afterStatus = normalizeOrderStatusForNotification(
+      afterData.orderStatus || afterData.status,
+    );
+    const lastNotifiedStatus = String(afterData.lastNotifiedStatus || '').trim();
+
+    if (!afterStatus) return;
+    if (afterStatus === lastNotifiedStatus) return;
+
+    const result = await dispatchOrderStatusNotifications(event.params.orderId, afterData);
+
+    await event.data.ref.set({
+      lastNotifiedStatus: afterStatus,
+      lastNotificationAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastNotificationSentCount: Number(result.sent || 0),
+    }, { merge: true });
   }
 );
 
@@ -1695,8 +2225,8 @@ function getOrderClientCoords(order) {
   return null;
 }
 
-function calculateDriverFeeFromOrder(order) {
-  const resolvedDriverFee = resolveDriverFeeForPricing(order);
+function calculateDriverFeeFromOrder(order, pricingConfig) {
+  const resolvedDriverFee = resolveDriverFeeForPricing(order, pricingConfig);
   if (resolvedDriverFee != null) {
     return Math.round(resolvedDriverFee);
   }
@@ -1709,23 +2239,45 @@ function calculateDriverFeeFromOrder(order) {
   return 3000;
 }
 
-function calculateDistanceBasedDriverFee(distanceKm) {
-  if (distanceKm < 2) {
-    return 2000;
+function calculateDistanceRuleFee(distanceKm, baseDistanceKm, baseFee, extraPerKm) {
+  const safeDistance = Number.isFinite(Number(distanceKm)) ? Math.max(0, Number(distanceKm)) : 0;
+  const safeBaseDistance = Number.isFinite(Number(baseDistanceKm))
+    ? Math.max(0, Number(baseDistanceKm))
+    : 0;
+  const safeBaseFee = Number.isFinite(Number(baseFee)) ? Math.max(0, Math.round(Number(baseFee))) : 0;
+  const safeExtraPerKm = Number.isFinite(Number(extraPerKm))
+    ? Math.max(0, Math.round(Number(extraPerKm)))
+    : 0;
+
+  if (safeDistance <= safeBaseDistance) {
+    return safeBaseFee;
   }
-  if (distanceKm < 5) {
-    return 2500;
-  }
-  if (distanceKm < 10) {
-    return 3000;
-  }
-  if (distanceKm < 14) {
-    return 3500;
-  }
-  return Math.ceil(distanceKm) * 250;
+
+  const extraKm = Math.ceil(safeDistance - safeBaseDistance);
+  return safeBaseFee + (extraKm * safeExtraPerKm);
 }
 
-function resolveDriverFeeForPricing(order) {
+function calculateDistanceBasedDriverFee(distanceKm, pricingConfig) {
+  const config = pricingConfig || DEFAULT_PRICING_CONFIG;
+  return calculateDistanceRuleFee(
+    distanceKm,
+    config.driverDeliveryBaseDistanceKm,
+    config.driverDeliveryBaseFee,
+    config.driverDeliveryExtraPerKm
+  );
+}
+
+function calculateDistanceBasedClientDeliveryFee(distanceKm, pricingConfig) {
+  const config = pricingConfig || DEFAULT_PRICING_CONFIG;
+  return calculateDistanceRuleFee(
+    distanceKm,
+    config.clientDeliveryBaseDistanceKm,
+    config.clientDeliveryBaseFee,
+    config.clientDeliveryExtraPerKm
+  );
+}
+
+function resolveDriverFeeForPricing(order, pricingConfig) {
   const existingDriverFee = toNumberOrNull(order.deliveryFeeForDriver);
   if (existingDriverFee != null && existingDriverFee > 0) {
     return Math.round(existingDriverFee);
@@ -1741,7 +2293,7 @@ function resolveDriverFeeForPricing(order) {
       clientCoords.lat,
       clientCoords.lng
     );
-    return Math.round(calculateDistanceBasedDriverFee(distanceKm));
+    return Math.round(calculateDistanceBasedDriverFee(distanceKm, pricingConfig));
   }
 
   return null;
@@ -1749,26 +2301,27 @@ function resolveDriverFeeForPricing(order) {
 
 function calculateClientDeliveryFeeFromOrder(order, pricingConfig) {
   const config = pricingConfig || DEFAULT_PRICING_CONFIG;
-  const fixedMargin = Number(config.deliveryPlatformMarginFixed);
-  const minMargin = Number(config.deliveryPlatformMinMargin);
-
-  const marginFixed = Number.isFinite(fixedMargin)
-    ? Math.max(0, Math.round(fixedMargin))
-    : DEFAULT_PRICING_CONFIG.deliveryPlatformMarginFixed;
-  const minimumMargin = Number.isFinite(minMargin)
-    ? Math.max(0, Math.round(minMargin))
-    : DEFAULT_PRICING_CONFIG.deliveryPlatformMinMargin;
-
-  const driverFee = resolveDriverFeeForPricing(order);
+  const driverFee = resolveDriverFeeForPricing(order, config);
   const storedDeliveryFee = Math.round(toNumberOrNull(order.deliveryFee) || 0);
+
+  const restaurantCoords = getOrderRestaurantCoords(order);
+  const clientCoords = getOrderClientCoords(order);
+
+  if (restaurantCoords && clientCoords) {
+    const distanceKm = haversineKm(
+      restaurantCoords.lat,
+      restaurantCoords.lng,
+      clientCoords.lat,
+      clientCoords.lng
+    );
+    return Math.round(calculateDistanceBasedClientDeliveryFee(distanceKm, config));
+  }
 
   if (driverFee == null) {
     return Math.max(0, storedDeliveryFee);
   }
 
-  const minimumAllowed = driverFee + minimumMargin;
-  const target = driverFee + marginFixed;
-  return Math.max(minimumAllowed, Math.round(target));
+  return Math.max(0, storedDeliveryFee || driverFee);
 }
 
 function parseRemoteBooleanParam(param, fallbackValue) {
@@ -1877,6 +2430,30 @@ async function loadPricingConfigFromRemoteConfig() {
       largeItemFeeCapPerUnit: parseRemoteNumberParam(
         parameters.pricing_large_item_fee_cap_per_unit,
         DEFAULT_PRICING_CONFIG.largeItemFeeCapPerUnit
+      ),
+      clientDeliveryBaseFee: parseRemoteNumberParam(
+        parameters.pricing_client_delivery_base_fee,
+        DEFAULT_PRICING_CONFIG.clientDeliveryBaseFee
+      ),
+      clientDeliveryBaseDistanceKm: parseRemoteNumberParam(
+        parameters.pricing_client_delivery_base_distance_km,
+        DEFAULT_PRICING_CONFIG.clientDeliveryBaseDistanceKm
+      ),
+      clientDeliveryExtraPerKm: parseRemoteNumberParam(
+        parameters.pricing_client_delivery_extra_per_km,
+        DEFAULT_PRICING_CONFIG.clientDeliveryExtraPerKm
+      ),
+      driverDeliveryBaseFee: parseRemoteNumberParam(
+        parameters.pricing_driver_delivery_base_fee,
+        DEFAULT_PRICING_CONFIG.driverDeliveryBaseFee
+      ),
+      driverDeliveryBaseDistanceKm: parseRemoteNumberParam(
+        parameters.pricing_driver_delivery_base_distance_km,
+        DEFAULT_PRICING_CONFIG.driverDeliveryBaseDistanceKm
+      ),
+      driverDeliveryExtraPerKm: parseRemoteNumberParam(
+        parameters.pricing_driver_delivery_extra_per_km,
+        DEFAULT_PRICING_CONFIG.driverDeliveryExtraPerKm
       ),
       deliveryPlatformMarginFixed: parseRemoteNumberParam(
         parameters.pricing_delivery_platform_margin_fixed,
@@ -2484,8 +3061,91 @@ exports.recalculateRecentOrderPricing = onSchedule({
   });
 });
 
+exports.syncRestaurantClosuresFromWorkingHours = onSchedule({
+  schedule: 'every 1 minutes',
+  region: SCHEDULE_REGION,
+  timeZone: 'Africa/Khartoum',
+}, async () => {
+  const clockSnapshot = getKhartoumClockSnapshot();
+  let scanned = 0;
+  let changed = 0;
+  let skipped = 0;
+  let lastDoc = null;
+
+  while (true) {
+    let restaurantsQuery = db
+      .collection('restaurants')
+      .orderBy(admin.firestore.FieldPath.documentId())
+      .limit(250);
+
+    if (lastDoc) {
+      restaurantsQuery = restaurantsQuery.startAfter(lastDoc);
+    }
+
+    const page = await restaurantsQuery.get();
+    if (page.empty) break;
+
+    let batch = db.batch();
+    let batchOps = 0;
+
+    for (const restaurantDoc of page.docs) {
+      lastDoc = restaurantDoc;
+      scanned += 1;
+
+      const restaurantData = restaurantDoc.data() || {};
+      if (restaurantData.workingHoursSyncEnabled === false) {
+        skipped += 1;
+        continue;
+      }
+
+      const nextClosed = shouldRestaurantBeTemporarilyClosedByHours(
+        restaurantData,
+        clockSnapshot
+      );
+
+      if (nextClosed == null) {
+        skipped += 1;
+        continue;
+      }
+
+      const currentClosed = restaurantData.temporarilyClosed === true;
+      if (currentClosed === nextClosed) {
+        continue;
+      }
+
+      batch.update(restaurantDoc.ref, {
+        temporarilyClosed: nextClosed,
+        workingHoursLastSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+        workingHoursClosureSource: 'schedule',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      batchOps += 1;
+      changed += 1;
+
+      if (batchOps >= 400) {
+        await batch.commit();
+        batch = db.batch();
+        batchOps = 0;
+      }
+    }
+
+    if (batchOps > 0) {
+      await batch.commit();
+    }
+  }
+
+  logger.info('syncRestaurantClosuresFromWorkingHours complete', {
+    scanned,
+    changed,
+    skipped,
+    dayKey: clockSnapshot.dayKey,
+    nowMinutes: clockSnapshot.nowMinutes,
+  });
+});
+
 exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
   const { orderId, driverId, decision } = request.data || {};
+  const pricingConfig = await getPricingConfigCached();
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Authentication is required');
   }
@@ -2514,7 +3174,7 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
     }
 
     if (decision === 'accept') {
-      const driverFee = calculateDriverFeeFromOrder(order);
+      const driverFee = calculateDriverFeeFromOrder(order, pricingConfig);
       tx.update(orderRef, {
         orderStatus: 'courier_assigned',
         status: 'courier_assigned',
@@ -2547,6 +3207,214 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
   }
 
   return { ok: true };
+});
+
+exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Authentication is required');
+  }
+
+  const isAdminAllowed = isAdminAuth(request.auth) || await isAdminUid(request.auth.uid);
+  if (!isAdminAllowed) {
+    throw new HttpsError('permission-denied', 'Only admins can manage orders');
+  }
+
+  const orderId = String(request.data?.orderId || '').trim();
+  const action = String(request.data?.action || '').trim().toLowerCase();
+  const nextDriverId = String(request.data?.nextDriverId || '').trim();
+  const note = String(request.data?.note || '').trim();
+
+  if (!orderId || !['cancel', 'unassign_courier', 'reassign_auto', 'assign_specific'].includes(action)) {
+    throw new HttpsError('invalid-argument', 'orderId and a valid action are required');
+  }
+
+  const orderRef = db.collection('orders').doc(orderId);
+  const orderSnap = await orderRef.get();
+  if (!orderSnap.exists) {
+    throw new HttpsError('not-found', 'Order not found');
+  }
+
+  const order = orderSnap.data() || {};
+  const currentStatus = getStatus(order);
+  const immutableStatuses = new Set(['delivered', 'completed']);
+  if (immutableStatuses.has(currentStatus)) {
+    throw new HttpsError('failed-precondition', 'This order can no longer be managed from admin');
+  }
+
+  const previousAssignedDriverId = String(order.assignedDriverId || '').trim();
+  const previousOfferedDriverId = String(order.offeredDriverId || '').trim();
+  const previousDriverId = previousAssignedDriverId || previousOfferedDriverId;
+  const adminPatch = {
+    adminOrderAction: action,
+    adminOrderActionAt: admin.firestore.FieldValue.serverTimestamp(),
+    adminOrderActionByUid: request.auth.uid,
+    adminOrderActionByEmail: String(request.auth.token?.email || ''),
+    adminOrderActionNote: note,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  let result = {
+    ok: true,
+    orderId,
+    action,
+    status: currentStatus,
+    assignedDriverId: previousAssignedDriverId,
+  };
+
+  if (action === 'cancel') {
+    if (currentStatus === 'cancelled') {
+      throw new HttpsError('failed-precondition', 'Order is already cancelled');
+    }
+
+    await orderRef.set({
+      ...adminPatch,
+      orderStatus: 'cancelled',
+      status: 'cancelled',
+      cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+      cancelledByRole: 'admin',
+      cancelledByAdminUid: request.auth.uid,
+      cancellationReason: note || 'admin_cancelled',
+      offeredDriverId: admin.firestore.FieldValue.delete(),
+      offerStartedAt: admin.firestore.FieldValue.delete(),
+      offerExpiresAt: admin.firestore.FieldValue.delete(),
+    }, { merge: true });
+
+    result = {
+      ...result,
+      status: 'cancelled',
+      assignedDriverId: '',
+    };
+  }
+
+  if (action === 'unassign_courier' || action === 'reassign_auto') {
+    if (!previousDriverId) {
+      throw new HttpsError('failed-precondition', 'There is no courier assigned or offered for this order');
+    }
+
+    await orderRef.set({
+      ...adminPatch,
+      assignedDriverId: admin.firestore.FieldValue.delete(),
+      offeredDriverId: admin.firestore.FieldValue.delete(),
+      offerStartedAt: admin.firestore.FieldValue.delete(),
+      offerExpiresAt: admin.firestore.FieldValue.delete(),
+      acceptedAt: admin.firestore.FieldValue.delete(),
+      offerAcceptedAt: admin.firestore.FieldValue.delete(),
+      deliveryFeeForDriver: admin.firestore.FieldValue.delete(),
+      orderStatus: 'courier_searching',
+      status: 'courier_searching',
+      reassignedByAdminAt: admin.firestore.FieldValue.serverTimestamp(),
+      assignmentBackoffReason: admin.firestore.FieldValue.delete(),
+    }, { merge: true });
+
+    result = {
+      ...result,
+      status: 'courier_searching',
+      assignedDriverId: '',
+    };
+
+    if (action === 'reassign_auto') {
+      const assignResult = await assignNextCourier(orderRef);
+      const refreshed = await orderRef.get();
+      const refreshedData = refreshed.data() || {};
+      result = {
+        ...result,
+        status: getStatus(refreshedData),
+        assignedDriverId: String(refreshedData.assignedDriverId || refreshedData.offeredDriverId || ''),
+        autoAssigned: Boolean(assignResult.assigned),
+      };
+    }
+  }
+
+  if (action === 'assign_specific') {
+    if (!nextDriverId) {
+      throw new HttpsError('invalid-argument', 'nextDriverId is required for assign_specific');
+    }
+
+    const allowedStatuses = new Set([
+      'courier_searching',
+      'courier_offer_pending',
+      'courier_assigned',
+      'pickup_ready',
+      'store_pending',
+      'قيد التجهيز',
+    ]);
+
+    if (!allowedStatuses.has(currentStatus)) {
+      throw new HttpsError('failed-precondition', 'This order status cannot be reassigned right now');
+    }
+
+    const driverRef = db.collection('drivers').doc(nextDriverId);
+    const driverSnap = await driverRef.get();
+    if (!driverSnap.exists) {
+      throw new HttpsError('not-found', 'Target driver not found');
+    }
+
+    const driverData = driverSnap.data() || {};
+    const driverApprovalStatus = String(driverData.approvalStatus || '').trim().toLowerCase();
+    if (driverApprovalStatus && driverApprovalStatus !== 'approved') {
+      throw new HttpsError('failed-precondition', 'Target driver is not approved');
+    }
+
+    const pricingConfig = await getPricingConfigCached();
+    const driverFee = calculateDriverFeeFromOrder(order, pricingConfig);
+    await orderRef.set({
+      ...adminPatch,
+      assignedDriverId: nextDriverId,
+      offeredDriverId: admin.firestore.FieldValue.delete(),
+      offerStartedAt: admin.firestore.FieldValue.delete(),
+      offerExpiresAt: admin.firestore.FieldValue.delete(),
+      deliveryFeeForDriver: driverFee,
+      orderStatus: 'courier_assigned',
+      status: 'courier_assigned',
+      acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+      offerAcceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+      assignmentBackoffReason: admin.firestore.FieldValue.delete(),
+      rejectedByDrivers: admin.firestore.FieldValue.arrayRemove(nextDriverId),
+      reassignedByAdminAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    result = {
+      ...result,
+      status: 'courier_assigned',
+      assignedDriverId: nextDriverId,
+    };
+  }
+
+  if (previousDriverId && previousDriverId !== result.assignedDriverId) {
+    await sendNotificationToSingleUser(
+      'courier',
+      previousDriverId,
+      buildNotificationPayload({
+        title: action === 'cancel' ? 'تم إلغاء الطلب' : 'تم سحب الطلب منك',
+        body: action === 'cancel'
+          ? `تم إلغاء الطلب رقم ${orderId} من لوحة التحكم.`
+          : `تم نقل الطلب رقم ${orderId} إلى مسار تشغيل آخر بواسطة الإدارة.`,
+        type: 'admin_order_reassignment',
+        source: 'admin-order-control',
+        orderId,
+      })
+    ).catch((error) => {
+      logger.warn('adminManageOrder previous courier notify failed', { orderId, previousDriverId, error: error?.message || error });
+    });
+  }
+
+  if (action === 'assign_specific' && result.assignedDriverId) {
+    await sendNotificationToSingleUser(
+      'courier',
+      result.assignedDriverId,
+      buildNotificationPayload({
+        title: 'تم تحويل طلب إليك',
+        body: `قامت الإدارة بتحويل الطلب رقم ${orderId} إليك مباشرة.`,
+        type: 'admin_order_assigned',
+        source: 'admin-order-control',
+        orderId,
+      })
+    ).catch((error) => {
+      logger.warn('adminManageOrder next courier notify failed', { orderId, nextDriverId: result.assignedDriverId, error: error?.message || error });
+    });
+  }
+
+  return result;
 });
 
 exports.setUserAdminRole = onCall({ region: REGION }, async (request) => {

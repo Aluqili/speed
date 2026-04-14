@@ -147,7 +147,7 @@
           || host === '127.0.0.1'
           || host === '::1'
           || host.endsWith('.local');
-        const projectId = isLocal ? 'speedstar-dev' : 'speedstar-prod-4c7c5';
+        const projectId = 'speedstar-prod-4c7c5';
         const trackingUrl = `https://me-central1-${projectId}.cloudfunctions.net/trackPublicLandingEvent`;
 
         function track(eventName) {

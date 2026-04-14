@@ -100,6 +100,9 @@ class _InitGateCourierState extends State<_InitGateCourier> {
         'courier_root_url': '',
         'courier_maintenance_mode': false,
         'courier_maintenance_message': 'التطبيق تحت الصيانة. حاول لاحقًا.',
+        'pricing_driver_delivery_base_fee': 4000.0,
+        'pricing_driver_delivery_base_distance_km': 6.0,
+        'pricing_driver_delivery_extra_per_km': 500.0,
       };
       await rc.setDefaults(defaults);
       await rc.fetchAndActivate();

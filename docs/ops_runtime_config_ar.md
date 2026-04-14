@@ -53,14 +53,27 @@
 - `pricing_large_item_step_fee` (double): الزيادة في الرسوم لكل شريحة إضافية (مثال: `500`).
 - `pricing_large_item_fee_cap_per_unit` (double): سقف الرسوم لكل وجبة مهما ارتفع السعر (مثال: `2500`).
 
-مفاتيح حماية هامش التوصيل (عميل مقابل مندوب):
+مفاتيح تسعير التوصيل الجديدة:
 
-- `pricing_delivery_platform_margin_fixed` (double): هامش المنصة المستهدف فوق رسوم المندوب (مثال: `700`).
-- `pricing_delivery_platform_min_margin` (double): أقل هامش مسموح للمنصة مهما تغيرت القيم (مثال: `300`).
+- `pricing_client_delivery_base_fee` (double): سعر التوصيل للعميل حتى المسافة الأساسية.
+- `pricing_client_delivery_base_distance_km` (double): عدد الكيلومترات المشمولة في السعر الأساسي للعميل.
+- `pricing_client_delivery_extra_per_km` (double): الرسم الإضافي لكل كيلومتر زائد بعد المسافة الأساسية للعميل.
+- `pricing_driver_delivery_base_fee` (double): أجر المندوب حتى المسافة الأساسية.
+- `pricing_driver_delivery_base_distance_km` (double): عدد الكيلومترات المشمولة في أجر المندوب الأساسي.
+- `pricing_driver_delivery_extra_per_km` (double): أجر كل كيلومتر زائد بعد المسافة الأساسية للمندوب.
+
+المفاتيح القديمة التالية أصبحت فقط للتوافق القديم مع نسخة العميل الحالية، وليست المصدر الأساسي الجديد:
+
+- `pricing_delivery_platform_margin_fixed`
+- `pricing_delivery_platform_min_margin`
 
 > الصيغة الحالية في التطبيق: لكل وجبة سعرها أعلى من `threshold` يتم حساب رسوم تصاعدية خطية، ثم ضربها في الكمية.
-
-> الصيغة الحالية لرسوم التوصيل: `رسوم العميل = رسوم المندوب حسب المسافة + هامش المنصة` مع حد أدنى للهامش عبر `pricing_delivery_platform_min_margin`.
+>
+> الصيغة الأساسية الجديدة: `رسوم العميل = السعر الأساسي حتى base_distance ثم زيادة extra_per_km لكل كيلومتر زائد`.
+>
+> الصيغة الأساسية الجديدة للمندوب: `أجر المندوب = السعر الأساسي حتى base_distance ثم زيادة extra_per_km لكل كيلومتر زائد`.
+>
+> في التطبيق العميل الحالي بدون إصدار جديد سيظل عرض السلة تقديريًا حسب المنطق القديم، لكن السيرفر سيصحح السعر النهائي داخل الطلب تلقائيًا بعد الإنشاء.
 
 ## أولوية التطبيق (Precedence)
 
@@ -137,8 +150,12 @@
 | `pricing_large_item_step_amount` | `5000` |
 | `pricing_large_item_step_fee` | `500` |
 | `pricing_large_item_fee_cap_per_unit` | `2500` |
-| `pricing_delivery_platform_margin_fixed` | `700` |
-| `pricing_delivery_platform_min_margin` | `300` |
+| `pricing_client_delivery_base_fee` | `5000` |
+| `pricing_client_delivery_base_distance_km` | `6` |
+| `pricing_client_delivery_extra_per_km` | `700` |
+| `pricing_driver_delivery_base_fee` | `4000` |
+| `pricing_driver_delivery_base_distance_km` | `6` |
+| `pricing_driver_delivery_extra_per_km` | `500` |
 
 > ملاحظة: تم اقتراح `client_ringtone_enabled = false` لأن العميل غالبًا يعتمد على إشعارات النظام أكثر من جرس متكرر داخل التطبيق، بينما المتجر/المندوب يحتاجان تنبيهًا أعلى للأوامر التشغيلية.
 
@@ -193,8 +210,12 @@
     "pricing_large_item_step_amount": 5000,
     "pricing_large_item_step_fee": 500,
     "pricing_large_item_fee_cap_per_unit": 2500,
-    "pricing_delivery_platform_margin_fixed": 700,
-    "pricing_delivery_platform_min_margin": 300
+    "pricing_client_delivery_base_fee": 5000,
+    "pricing_client_delivery_base_distance_km": 6,
+    "pricing_client_delivery_extra_per_km": 700,
+    "pricing_driver_delivery_base_fee": 4000,
+    "pricing_driver_delivery_base_distance_km": 6,
+    "pricing_driver_delivery_extra_per_km": 500
   },
   "emergency": {
     "ops_chat_enabled": false,
@@ -234,8 +255,12 @@
 - `pricing_large_item_step_amount` = `5000`
 - `pricing_large_item_step_fee` = `500`
 - `pricing_large_item_fee_cap_per_unit` = `2500`
-- `pricing_delivery_platform_margin_fixed` = `700`
-- `pricing_delivery_platform_min_margin` = `300`
+- `pricing_client_delivery_base_fee` = `5000`
+- `pricing_client_delivery_base_distance_km` = `6`
+- `pricing_client_delivery_extra_per_km` = `700`
+- `pricing_driver_delivery_base_fee` = `4000`
+- `pricing_driver_delivery_base_distance_km` = `6`
+- `pricing_driver_delivery_extra_per_km` = `500`
 
 1. احفظ كل Parameter مع **Default value** (نوع Bool/Number بحسب المفتاح).
 1. اضغط **Publish changes** لتفعيلها على جميع العملاء.

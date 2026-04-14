@@ -1,0 +1,178 @@
+{
+  "parameters": {
+    "ops_force_update_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "ops_min_build_android": {
+      "defaultValue": {
+        "value": "0"
+      },
+      "valueType": "NUMBER"
+    },
+    "ops_update_message": {
+      "defaultValue": {
+        "value": "ÙŠÙˆØ¬Ø¯ ØªØ­Ø¯ÙŠØ« Ø¬Ø¯ÙŠØ¯ Ù…Ù‡Ù… Ù„ØªØ­Ø³ÙŠÙ† Ø§Ù„Ø£Ø¯Ø§Ø¡. Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø§Ù„ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¢Ù†."
+      },
+      "valueType": "STRING"
+    },
+    "ops_update_url_android": {
+      "defaultValue": {
+        "value": "``"
+      },
+      "valueType": "STRING"
+    },
+    "client_force_update_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "client_min_build_android": {
+      "defaultValue": {
+        "value": "11"
+      },
+      "valueType": "NUMBER"
+    },
+    "client_update_message": {
+      "defaultValue": {
+        "value": "ÙŠØ±Ø¬Ù‰ ØªØ­Ø¯ÙŠØ« ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ù„Ù„Ø§Ø³ØªÙ…Ø±Ø§Ø±."
+      },
+      "valueType": "STRING"
+    },
+    "client_update_url_android": {
+      "defaultValue": {
+        "value": "https://speedstarapp.web.app/downloads/client-android.apk"
+      },
+      "valueType": "STRING"
+    },
+    "store_force_update_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "store_min_build_android": {
+      "defaultValue": {
+        "value": "7"
+      },
+      "valueType": "NUMBER"
+    },
+    "store_update_message": {
+      "defaultValue": {
+        "value": "ÙŠØ±Ø¬Ù‰ ØªØ­Ø¯ÙŠØ« ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ù…ØªØ¬Ø± Ù„Ù„Ø§Ø³ØªÙ…Ø±Ø§Ø±."
+      },
+      "valueType": "STRING"
+    },
+    "store_update_url_android": {
+      "defaultValue": {
+        "value": "https://speedstarapp.web.app/downloads/store-android.apk"
+      },
+      "valueType": "STRING"
+    },
+    "courier_force_update_enabled": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "courier_min_build_android": {
+      "defaultValue": {
+        "value": "1"
+      },
+      "valueType": "NUMBER"
+    },
+    "courier_update_message": {
+      "defaultValue": {
+        "value": "ÙŠØ±Ø¬Ù‰ ØªØ­Ø¯ÙŠØ« ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ù…Ù†Ø¯ÙˆØ¨ Ù„Ù„Ø§Ø³ØªÙ…Ø±Ø§Ø±."
+      },
+      "valueType": "STRING"
+    },
+    "courier_update_url_android": {
+      "defaultValue": {
+        "value": "https://github.com/Aluqili/speed/releases/download/android-v20260314-195221/SpeedStar-corier.apk"
+      },
+      "valueType": "STRING"
+    },
+    "client_root_url": {
+      "defaultValue": {
+        "value": "https://speedstar-prod-4c7c5.web.app/sdui/client/index.json"
+      },
+      "valueType": "STRING"
+    },
+    "store_root_url": {
+      "defaultValue": {
+        "value": "https://speedstar-prod-4c7c5.web.app/sdui/courier/index.json"
+      },
+      "valueType": "STRING"
+    },
+    "courier_root_url": {
+      "defaultValue": {
+        "value": "https://speedstar-prod-4c7c5.web.app/sdui/courier/index.json"
+      },
+      "valueType": "STRING"
+    },
+    "client_state_guard_distance_km": {
+      "defaultValue": {
+        "value": "120"
+      },
+      "valueType": "NUMBER"
+    },
+    "client_state_rollout_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "client_enabled_states_csv": {
+      "defaultValue": {
+        "value": "khartoum"
+      },
+      "valueType": "STRING"
+    },
+    "client_state_rollout_block_message": {
+      "defaultValue": {
+        "value": "Ù„Ø³Ù‡ Ù…Ø§ Ø¬ÙŠÙ†Ø§ÙƒÙ… ÙÙŠ Ø§Ù„ÙˆÙ„Ø§ÙŠØ© ÙŠØ§ ØºØ§Ù„ÙŠ\nØªØ§Ø¨Ø¹Ù†Ø§ Ø¹Ù„Ù‰ Ù…Ù†ØµØ§Øª Ø§Ù„ØªÙˆØ§ØµÙ„ Ø¹Ø´Ø§Ù† ØªØ¹Ø±Ù Ø­Ù†Ø¬ÙŠÙƒÙ… Ù…ØªÙŠÙ†\nÙˆÙ‚Ø±ÙŠØ¨Ø§ Ø­Ù†ØµÙ„ÙƒÙ….. Ø§Ù†ØªØ¸Ø±ÙˆÙ†Ø§!"
+      },
+      "valueType": "STRING"
+    },
+    "pricing_client_delivery_base_fee": {
+      "defaultValue": {
+        "value": "5000"
+      },
+      "valueType": "NUMBER"
+    },
+    "pricing_client_delivery_base_distance_km": {
+      "defaultValue": {
+        "value": "6"
+      },
+      "valueType": "NUMBER"
+    },
+    "pricing_client_delivery_extra_per_km": {
+      "defaultValue": {
+        "value": "700"
+      },
+      "valueType": "NUMBER"
+    },
+    "pricing_driver_delivery_base_fee": {
+      "defaultValue": {
+        "value": "4000"
+      },
+      "valueType": "NUMBER"
+    },
+    "pricing_driver_delivery_base_distance_km": {
+      "defaultValue": {
+        "value": "6"
+      },
+      "valueType": "NUMBER"
+    },
+    "pricing_driver_delivery_extra_per_km": {
+      "defaultValue": {
+        "value": "500"
+      },
+      "valueType": "NUMBER"
+    }
+  }
+}

@@ -11,6 +11,12 @@ class AppThemeArabic {
   static const Color clientSuccess = Color(0xFF22C55E);
   static const Color clientError = Color(0xFFEF4444);
   static const Color _clientSeed = clientPrimary;
+  static const Color storePrimary = Color(0xFF0F766E);
+  static const Color storeAccent = Color(0xFFF59E0B);
+  static const Color storeBackground = Color(0xFFF4FBF8);
+  static const Color storeSurface = Color(0xFFFFFFFF);
+  static const Color storeTextPrimary = Color(0xFF12312C);
+  static const Color storeTextSecondary = Color(0xFF5F766F);
 
   /// إنشاء ثيم من لون أساسي (seed)
   static ThemeData fromSeed(Color seed, {bool dark = false}) => _buildCommon(seed, dark: dark);
@@ -183,6 +189,117 @@ class AppThemeArabic {
   static final ThemeData courierDarkTheme = _buildCommon(_clientSeed, dark: true);
 
   /// ثيم تطبيق المتجر (فاتح/داكن)
-  static final ThemeData storeTheme = _buildCommon(_clientSeed);
-  static final ThemeData storeDarkTheme = _buildCommon(_clientSeed, dark: true);
+  static final ThemeData storeTheme = _buildStoreTheme();
+  static final ThemeData storeDarkTheme = _buildStoreTheme(dark: true);
+
+  static ThemeData _buildStoreTheme({bool dark = false}) {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: storePrimary,
+      secondary: storeAccent,
+      brightness: dark ? Brightness.dark : Brightness.light,
+    );
+    final base = ThemeData(
+      useMaterial3: true,
+      colorScheme: scheme,
+      brightness: dark ? Brightness.dark : Brightness.light,
+      fontFamily: 'Cairo',
+    );
+    final textTheme = base.textTheme.apply(
+      bodyColor: dark ? const Color(0xFFE7F4EF) : storeTextPrimary,
+      displayColor: dark ? const Color(0xFFF4FFFB) : storeTextPrimary,
+    );
+
+    return base.copyWith(
+      scaffoldBackgroundColor: dark ? const Color(0xFF071513) : storeBackground,
+      primaryColor: storePrimary,
+      textTheme: textTheme,
+      appBarTheme: AppBarTheme(
+        backgroundColor: dark ? const Color(0xFF0B1F1B) : storeSurface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        iconTheme: const IconThemeData(color: storePrimary),
+        titleTextStyle: textTheme.titleLarge?.copyWith(
+          color: storePrimary,
+          fontWeight: FontWeight.w800,
+          fontSize: 20,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: dark ? const Color(0xFF102623) : storeSurface,
+        elevation: dark ? 0 : 6,
+        shadowColor: storePrimary.withOpacity(dark ? 0 : 0.08),
+        margin: const EdgeInsets.all(8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: dark ? const Color(0xFF11302B) : const Color(0xFF163C35),
+        contentTextStyle: textTheme.bodyMedium?.copyWith(color: Colors.white),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: dark ? const Color(0xFF0F2622) : Colors.white,
+        hintStyle: TextStyle(color: dark ? const Color(0xFF9BC2B8) : storeTextSecondary),
+        labelStyle: TextStyle(color: dark ? const Color(0xFFBFE1D8) : storeTextSecondary),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: storePrimary.withOpacity(0.14)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: storePrimary.withOpacity(0.12)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: storePrimary, width: 1.4),
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: storePrimary,
+          foregroundColor: Colors.white,
+          minimumSize: const Size.fromHeight(50),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          textStyle: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: storePrimary,
+          minimumSize: const Size.fromHeight(48),
+          side: BorderSide(color: storePrimary.withOpacity(0.3)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          textStyle: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+      ),
+      chipTheme: base.chipTheme.copyWith(
+        backgroundColor: dark ? const Color(0xFF11302B) : const Color(0xFFE7F6F2),
+        selectedColor: storePrimary.withOpacity(0.14),
+        secondarySelectedColor: storeAccent.withOpacity(0.18),
+        side: BorderSide.none,
+        labelStyle: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+      ),
+      dividerTheme: DividerThemeData(
+        color: dark ? const Color(0xFF20443D) : const Color(0xFFDCEDE7),
+        thickness: 1,
+      ),
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        selectedItemColor: storePrimary,
+        unselectedItemColor: storeTextSecondary,
+        backgroundColor: dark ? const Color(0xFF0B1F1B) : Colors.white,
+        type: BottomNavigationBarType.fixed,
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: dark ? const Color(0xFF0B1F1B) : Colors.white,
+        indicatorColor: storePrimary.withOpacity(0.14),
+        labelTextStyle: WidgetStatePropertyAll(
+          textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
 }

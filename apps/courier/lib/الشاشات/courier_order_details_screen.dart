@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'dart:math';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart'
@@ -30,6 +31,45 @@ class CourierOrderDetailsScreen extends StatefulWidget {
 class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   Map<String, dynamic>? orderData;
   double deliveryFee = 0;
+
+  double get _driverBaseFee {
+    try {
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('pricing_driver_delivery_base_fee');
+      return value >= 0 ? value : 4000.0;
+    } catch (_) {
+      return 4000.0;
+    }
+  }
+
+  double get _driverBaseDistanceKm {
+    try {
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('pricing_driver_delivery_base_distance_km');
+      return value >= 0 ? value : 6.0;
+    } catch (_) {
+      return 6.0;
+    }
+  }
+
+  double get _driverExtraPerKm {
+    try {
+      final value = FirebaseRemoteConfig.instance
+          .getDouble('pricing_driver_delivery_extra_per_km');
+      return value >= 0 ? value : 500.0;
+    } catch (_) {
+      return 500.0;
+    }
+  }
+
+  double _driverFeeByDistance(double distanceKm) {
+    final safeDistance = distanceKm < 0 ? 0.0 : distanceKm;
+    if (safeDistance <= _driverBaseDistanceKm) {
+      return _driverBaseFee;
+    }
+    final extraKm = (safeDistance - _driverBaseDistanceKm).ceil();
+    return _driverBaseFee + (extraKm * _driverExtraPerKm);
+  }
 
   String _getOrderStatus(Map<String, dynamic> data) {
     return (data['orderStatus'] ?? data['status'] ?? '').toString().trim();
@@ -80,7 +120,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
           data['clientLat'],
           data['clientLng'],
         );
-        deliveryFee = 700 + (distanceInKm * 100).roundToDouble();
+        deliveryFee = _driverFeeByDistance(distanceInKm);
       }
 
       try {

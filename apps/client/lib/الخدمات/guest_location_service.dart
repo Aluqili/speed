@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class GuestLocationData {
@@ -55,5 +56,49 @@ class GuestLocationService {
     await prefs.remove(_latKey);
     await prefs.remove(_lngKey);
     await prefs.remove(_stateIdKey);
+  }
+
+  static Future<String?> saveAsClientAddress(
+    String clientId, {
+    bool setAsDefault = true,
+  }) async {
+    final guestLocation = await load();
+    if (guestLocation == null || clientId.trim().isEmpty) {
+      return null;
+    }
+
+    final clientRef =
+        FirebaseFirestore.instance.collection('clients').doc(clientId);
+    final addressRef =
+        clientRef.collection('addresses').doc('quick_browsing_location');
+
+    await clientRef.set({
+      'uid': clientId,
+      'role': 'client',
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await addressRef.set({
+      'addressName': guestLocation.addressName,
+      'latitude': guestLocation.latitude,
+      'longitude': guestLocation.longitude,
+      'stateId': guestLocation.stateId,
+      'state': guestLocation.stateId,
+      'city': guestLocation.stateId,
+      'administrativeArea': guestLocation.stateId,
+      'isQuickBrowsingLocation': true,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    if (setAsDefault) {
+      await clientRef.set({
+        'defaultAddressId': addressRef.id,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+
+    await clear();
+    return addressRef.id;
   }
 }

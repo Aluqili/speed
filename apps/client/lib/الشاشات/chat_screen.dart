@@ -273,7 +273,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String _formatTimestamp(Timestamp? timestamp) {
     if (timestamp == null) return '';
     final date = timestamp.toDate();
-    return DateFormat('hh:mm a').format(date);
+    return DateFormat('hh:mm a', 'ar').format(date);
   }
 
   @override
@@ -295,21 +295,6 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
 
-    if (!_chatEnabled && _isSupportChat) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('الدردشة')),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              _chatDisabledMessage,
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
-      );
-    }
-
     return Scaffold(
       appBar: AppBar(
         title: Text(otherUserName.isNotEmpty ? otherUserName : 'تحميل...'),
@@ -319,7 +304,11 @@ class _ChatScreenState extends State<ChatScreen> {
           child: Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: Text(
-              _isSupportChat ? 'محادثة دعم' : 'محادثة مباشرة',
+              _isSupportChat
+                  ? (_chatEnabled
+                      ? 'محادثة دعم'
+                      : 'محادثة دعم متاحة الآن رغم الإيقاف المؤقت')
+                  : 'محادثة مباشرة',
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ),
@@ -366,8 +355,8 @@ class _ChatScreenState extends State<ChatScreen> {
           final latestData = messages.isNotEmpty
               ? messages.last.data() as Map<String, dynamic>
               : <String, dynamic>{};
-          final supportConversationClosed =
-              _isSupportChat && (latestData['status'] ?? 'open').toString() == 'closed';
+          final supportConversationClosed = _isSupportChat &&
+              (latestData['status'] ?? 'open').toString() == 'closed';
           final canCompose = !supportConversationClosed;
 
           if (messages.isNotEmpty) {
@@ -382,6 +371,25 @@ class _ChatScreenState extends State<ChatScreen> {
 
           return Column(
             children: [
+              if (_isSupportChat && !_chatEnabled)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F5E9),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFA5D6A7)),
+                  ),
+                  child: Text(
+                    'تم فتح مراسلة الدعم للعملاء مباشرة. التنبيه الحالي من الإعدادات كان: $_chatDisabledMessage',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1B5E20),
+                    ),
+                  ),
+                ),
               if (supportConversationClosed)
                 Container(
                   width: double.infinity,
@@ -419,7 +427,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         padding: const EdgeInsets.all(12),
                         itemCount: messages.length,
                         itemBuilder: (context, index) {
-                          final data = messages[index].data() as Map<String, dynamic>;
+                          final data =
+                              messages[index].data() as Map<String, dynamic>;
                           final isMe = data['senderId'] == widget.currentUserId;
                           return Align(
                             alignment: isMe
@@ -524,7 +533,8 @@ class _ChatScreenState extends State<ChatScreen> {
                             ? AppThemeArabic.clientPrimary
                             : Colors.grey,
                       ),
-                      onPressed: !canCompose || _messageController.text.trim().isEmpty
+                      onPressed: !canCompose ||
+                              _messageController.text.trim().isEmpty
                           ? null
                           : () => _sendMessage(text: _messageController.text),
                     ),

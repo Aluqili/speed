@@ -120,6 +120,9 @@ class _InitGateClientState extends State<_InitGateClient> {
         'pricing_large_item_step_amount': 5000.0,
         'pricing_large_item_step_fee': 500.0,
         'pricing_large_item_fee_cap_per_unit': 2500.0,
+        'pricing_client_delivery_base_fee': 5000.0,
+        'pricing_client_delivery_base_distance_km': 6.0,
+        'pricing_client_delivery_extra_per_km': 700.0,
         'pricing_delivery_platform_margin_fixed': 700.0,
         'pricing_delivery_platform_min_margin': 300.0,
       };

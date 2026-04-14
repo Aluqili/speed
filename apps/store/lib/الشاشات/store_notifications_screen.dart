@@ -77,15 +77,32 @@ class StoreNotificationsScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _markAllAsRead() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('notifications')
+        .where('restaurantId', isEqualTo: restaurantId)
+        .get();
+
+    final batch = FirebaseFirestore.instance.batch();
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, {
+        'read': true,
+        'isRead': true,
+        'readAt': FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppThemeArabic.clientBackground,
+      backgroundColor: AppThemeArabic.storeBackground,
       appBar: AppBar(
         title: const Text(
           'الإشعارات',
           style: TextStyle(
-            color: AppThemeArabic.clientPrimary,
+            color: AppThemeArabic.storePrimary,
             fontWeight: FontWeight.bold,
             fontSize: 20,
             fontFamily: 'Tajawal',
@@ -94,10 +111,23 @@ class StoreNotificationsScreen extends StatelessWidget {
         backgroundColor: Colors.white,
         centerTitle: true,
         elevation: 1,
-        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        iconTheme: const IconThemeData(color: AppThemeArabic.storePrimary),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'تعليم الكل كمقروء',
+            onPressed: () async {
+              await _markAllAsRead();
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('تم تعليم كل الإشعارات كمقروءة')),
+              );
+            },
+            icon: const Icon(Icons.done_all_rounded),
+          ),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
@@ -122,10 +152,30 @@ class StoreNotificationsScreen extends StatelessWidget {
           }
 
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(
-              child: Text(
-                'لا توجد إشعارات جديدة.',
-                style: TextStyle(fontSize: 16),
+            return Center(
+              child: Container(
+                margin: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.black12),
+                ),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.notifications_none_rounded,
+                      size: 54,
+                      color: AppThemeArabic.storePrimary,
+                    ),
+                    SizedBox(height: 12),
+                    Text(
+                      'لا توجد إشعارات جديدة.',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
               ),
             );
           }
@@ -141,114 +191,160 @@ class StoreNotificationsScreen extends StatelessWidget {
                   : (bDate is num ? bDate.toInt() : 0);
               return bMs.compareTo(aMs);
             });
+          final unreadCount = notifications.where((doc) {
+            final data = doc.data();
+            return !(data['read'] == true || data['isRead'] == true);
+          }).length;
 
-          return ListView.builder(
+          return ListView(
             padding: const EdgeInsets.all(12),
-            itemCount: notifications.length,
-            itemBuilder: (context, index) {
-              final doc = notifications[index];
-              final data = doc.data();
-              final isRead = data['read'] == true || data['isRead'] == true;
-              final hasOrder = (data['orderId'] ?? '').toString().trim().isNotEmpty;
-
-              return InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => _openNotification(context, doc),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isRead
-                          ? Colors.black12
-                          : AppThemeArabic.clientPrimary.withOpacity(0.28),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+            children: [
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppThemeArabic.storePrimary, Color(0xFF14B8A6)],
+                    begin: Alignment.topRight,
+                    end: Alignment.bottomLeft,
                   ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      GFAvatar(
-                        backgroundColor: hasOrder
-                            ? AppThemeArabic.clientPrimary
-                            : Colors.blueGrey,
-                        child: Icon(
-                          hasOrder ? Icons.receipt_long : Icons.notifications_active,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    (data['title'] ?? 'إشعار بدون عنوان').toString(),
-                                    style: TextStyle(
-                                      fontWeight: isRead
-                                          ? FontWeight.w600
-                                          : FontWeight.w800,
-                                      fontFamily: 'Tajawal',
-                                    ),
-                                  ),
-                                ),
-                                if (!isRead)
-                                  Container(
-                                    width: 10,
-                                    height: 10,
-                                    decoration: const BoxDecoration(
-                                      color: AppThemeArabic.clientPrimary,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              (data['body'] ?? '').toString(),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppThemeArabic.clientTextSecondary,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Text(
-                                  _formatDate(data['createdAt']),
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  hasOrder ? 'عرض تفاصيل الطلب' : 'عرض التفاصيل',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppThemeArabic.clientPrimary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                  borderRadius: BorderRadius.circular(26),
                 ),
-              );
-            },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'مركز إشعارات المطعم',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        fontFamily: 'Tajawal',
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'تابع الطلبات والتحديثات المهمة أولاً بأول.',
+                      style: TextStyle(color: Colors.white70, fontFamily: 'Tajawal'),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(child: _summaryBox('الإجمالي', '${notifications.length}')),
+                        const SizedBox(width: 10),
+                        Expanded(child: _summaryBox('غير المقروء', '$unreadCount')),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              ...notifications.map((doc) {
+                final data = doc.data();
+                final isRead = data['read'] == true || data['isRead'] == true;
+                final hasOrder = (data['orderId'] ?? '').toString().trim().isNotEmpty;
+
+                return InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => _openNotification(context, doc),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isRead
+                            ? Colors.black12
+                            : AppThemeArabic.storePrimary.withValues(alpha: 0.28),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        GFAvatar(
+                          backgroundColor:
+                              hasOrder ? AppThemeArabic.storePrimary : Colors.blueGrey,
+                          child: Icon(
+                            hasOrder ? Icons.receipt_long : Icons.notifications_active,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      (data['title'] ?? 'إشعار بدون عنوان').toString(),
+                                      style: TextStyle(
+                                        fontWeight: isRead ? FontWeight.w600 : FontWeight.w800,
+                                        fontFamily: 'Tajawal',
+                                      ),
+                                    ),
+                                  ),
+                                  if (!isRead)
+                                    Container(
+                                      width: 10,
+                                      height: 10,
+                                      decoration: const BoxDecoration(
+                                        color: AppThemeArabic.storePrimary,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                (data['body'] ?? '').toString(),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppThemeArabic.storeTextSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.schedule_outlined,
+                                    size: 14,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatDate(data['createdAt']),
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    hasOrder ? 'فتح الطلب' : 'فتح الإشعار',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppThemeArabic.storePrimary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
           );
         },
       ),
@@ -261,5 +357,34 @@ class StoreNotificationsScreen extends StatelessWidget {
       return '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     }
     return '';
+  }
+
+  Widget _summaryBox(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              fontFamily: 'Tajawal',
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontFamily: 'Tajawal'),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import '../services/order_service.dart';
-import 'store_order_actions.dart';
 
 const Set<String> _storeNewStatuses = {
   'store_pending',
@@ -50,21 +49,51 @@ String _storeStatusLabel(String status) {
   }
 }
 
-Color _statusChipColor(String status) {
-  if (status == 'store_rejected' || status == 'cancelled' || status == 'ملغي') {
-    return Colors.red;
+num _safeNum(dynamic value) {
+  if (value is num) return value;
+  return num.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+String _formatAmount(num value) {
+  return value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toStringAsFixed(2);
+}
+
+Map<String, dynamic> _promoDetails(Map<String, dynamic> orderData) {
+  final promo = orderData['promocode'];
+  if (promo is Map<String, dynamic>) return promo;
+  if (promo is Map) {
+    return promo.map(
+      (key, value) => MapEntry(key.toString(), value),
+    );
   }
-  if (status == 'picked_up' ||
-      status == 'arrived_to_client' ||
-      status == 'delivered' ||
-      status == 'وصل إلى العميل' ||
-      status == 'تم التوصيل') {
-    return Colors.green;
+  return const {};
+}
+
+num _storeDiscountAmount(Map<String, dynamic> orderData) {
+  final restaurantId = (orderData['restaurantId'] ?? '').toString().trim();
+  final promo = _promoDetails(orderData);
+  final promoRestaurantId = (promo['restaurantId'] ?? '').toString().trim();
+  final discountScope = (promo['discountScope'] ?? '').toString().trim();
+  final discountAmount = _safeNum(orderData['discountAmount']);
+  final isStoreOwnedPromo =
+      restaurantId.isNotEmpty && promoRestaurantId == restaurantId;
+
+  if (!isStoreOwnedPromo || discountAmount <= 0) {
+    return 0;
   }
-  if (status == 'pickup_ready' || status == 'جاهز للتوصيل') {
-    return Colors.blueGrey;
+  if (discountScope == 'delivery_fee') {
+    return 0;
   }
-  return AppThemeArabic.clientPrimary;
+  return discountAmount;
+}
+
+num _storeReceivable(Map<String, dynamic> orderData) {
+  final subtotal = _safeNum(orderData['total']);
+  final storeDiscount = _storeDiscountAmount(orderData);
+  final receivable = subtotal - storeDiscount;
+  return receivable < 0 ? 0 : receivable;
 }
 
 class StoreOrderDetailsScreen extends StatelessWidget {
@@ -118,6 +147,7 @@ class StoreOrderDetailsScreen extends StatelessWidget {
 
         // إضافة التغيير عبر الخدمة الموحدة للحالة دون تغيير المنطق القديم
         await OrderService.approveByRestaurant(orderDocId);
+        if (!context.mounted) return;
 
         Navigator.of(context).pop();
         GFToast.showToast(
@@ -133,6 +163,7 @@ class StoreOrderDetailsScreen extends StatelessWidget {
         );
       }
     } catch (e) {
+      if (!context.mounted) return;
       GFToast.showToast(
         '⚠️ حدث خطأ أثناء تحديث الطلب',
         context,
@@ -141,16 +172,51 @@ class StoreOrderDetailsScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _rejectOrder(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('رفض الطلب'),
+              content: const Text(
+                'سيتم إنهاء الطلب من جهة المتجر ولن يعود إلى قائمة الطلبات الجديدة. هل تريد المتابعة؟',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('إلغاء'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                  child: const Text('تأكيد الرفض'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (!confirmed) return;
+
+    final docId = orderData['docId'] ?? orderData['orderId'];
+    await FirebaseFirestore.instance.collection('orders').doc(docId).update({
+      'orderStatus': 'store_rejected',
+      'status': 'store_rejected',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    if (!context.mounted) return;
+    Navigator.of(context).pop();
+    GFToast.showToast('تم رفض الطلب', context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = orderData['items'] as List<dynamic>? ?? [];
-    final total = orderData['total'] ?? 0;
-    final deliveryFee = orderData['deliveryFee'] ?? 0;
-    final largeOrderFee = orderData['largeOrderFee'] ?? 0;
-    final totalWithDelivery =
-        orderData['totalWithDelivery'] ?? (total + deliveryFee + largeOrderFee);
-    final clientName = orderData['clientName'] ?? 'غير معروف';
-    final orderId = orderData['docId'] ?? orderData['orderId'] ?? '—';
+    final subtotal = _safeNum(orderData['total']);
+    final storeDiscount = _storeDiscountAmount(orderData);
+    final receivable = _storeReceivable(orderData);
+    final hasStoreDiscount = storeDiscount > 0;
     final unifiedOrderCode = formatUnifiedOrderCode(
       orderNumber: orderData['orderNumber'],
       orderId: orderData['orderId'],
@@ -170,11 +236,105 @@ class StoreOrderDetailsScreen extends StatelessWidget {
         status == 'بانتظار المطعم';
 
     final storePerspectiveDone = !_storeNewStatuses.contains(status);
+    final orderNote =
+        (orderData['notes'] ?? orderData['orderNotes'] ?? '').toString().trim();
+
+    Widget infoPill({
+      required IconData icon,
+      required String label,
+      required String value,
+    }) {
+      return Expanded(
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppThemeArabic.storeSurface,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: AppThemeArabic.storePrimary, size: 18),
+              const SizedBox(height: 10),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppThemeArabic.storeTextSecondary,
+                  fontSize: 12,
+                  fontFamily: 'Tajawal',
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Tajawal',
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget sectionCard({
+      required String title,
+      required IconData icon,
+      required Widget child,
+    }) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Colors.black12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppThemeArabic.storePrimary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(icon, color: AppThemeArabic.storePrimary),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    fontFamily: 'Tajawal',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            child,
+          ],
+        ),
+      );
+    }
 
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: AppThemeArabic.clientBackground,
+        backgroundColor: AppThemeArabic.storeBackground,
         appBar: AppBar(
           title: const Text('تفاصيل الطلب'),
           centerTitle: true,
@@ -184,11 +344,14 @@ class StoreOrderDetailsScreen extends StatelessWidget {
           child: ListView(
             children: [
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.black12),
+                  gradient: const LinearGradient(
+                    colors: [AppThemeArabic.storePrimary, Color(0xFF14B8A6)],
+                    begin: Alignment.topRight,
+                    end: Alignment.bottomLeft,
+                  ),
+                  borderRadius: BorderRadius.circular(26),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -201,7 +364,7 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                             style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.w800,
-                              color: AppThemeArabic.clientPrimary,
+                              color: Colors.white,
                               fontFamily: 'Tajawal',
                             ),
                           ),
@@ -210,14 +373,13 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: _statusChipColor(status)
-                                .withValues(alpha: 0.12),
+                            color: Colors.white.withValues(alpha: 0.16),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
                             _storeStatusLabel(status),
                             style: TextStyle(
-                              color: _statusChipColor(status),
+                              color: Colors.white,
                               fontWeight: FontWeight.w700,
                               fontFamily: 'Tajawal',
                             ),
@@ -227,95 +389,153 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '👤 اسم العميل: $clientName',
-                      style:
-                          const TextStyle(fontSize: 16, fontFamily: 'Tajawal'),
-                    ),
-                    if ((orderData['clientPhone'] ?? '')
-                        .toString()
-                        .trim()
-                        .isNotEmpty)
-                      Text(
-                        '📞 هاتف العميل: ${orderData['clientPhone']}',
-                        style: const TextStyle(
-                            fontSize: 14, color: Colors.black54),
-                      ),
-                    const Divider(height: 30),
-                    const Text(
-                      'عناصر الطلب',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'Tajawal',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ...items.map((item) {
-                      final qty = item['quantity'] ?? 0;
-                      final price = item['price'] ?? 0;
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppThemeArabic.clientSurface,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.restaurant_menu,
-                              color: AppThemeArabic.clientPrimary,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                '${item['name'] ?? 'صنف'} × $qty',
-                                style: const TextStyle(fontFamily: 'Tajawal'),
-                              ),
-                            ),
-                            Text(
-                              '${(qty * price)} ج.س',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontFamily: 'Tajawal'),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                    const Divider(height: 30),
-                    Text(
-                      '💰 الإجمالي الأساسي: $total ج.س',
-                      style: const TextStyle(fontFamily: 'Tajawal'),
-                    ),
-                    Text(
-                      '🚚 رسوم التوصيل: $deliveryFee ج.س',
-                      style: const TextStyle(fontFamily: 'Tajawal'),
-                    ),
-                    if (largeOrderFee != 0)
-                      Text(
-                        '📦 رسوم الطلبات الكبيرة: $largeOrderFee ج.س',
-                        style: const TextStyle(fontFamily: 'Tajawal'),
-                      ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '💳 الإجمالي النهائي: $totalWithDelivery ج.س',
+                      'مراجعة سريعة قبل قبول الطلب أو تجهيزه.',
                       style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
                         fontFamily: 'Tajawal',
+                        color: Colors.white70,
                       ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        infoPill(
+                          icon: Icons.shopping_bag_outlined,
+                          label: 'الأصناف',
+                          value: '${items.length} عناصر',
+                        ),
+                        const SizedBox(width: 10),
+                        infoPill(
+                          icon: Icons.payments_outlined,
+                          label:
+                              hasStoreDiscount ? 'صافي المتجر' : 'مستحق المتجر',
+                          value: '${_formatAmount(receivable)} ج.س',
+                        ),
+                      ],
+                    ),
+                    if (hasStoreDiscount) ...[
+                      const SizedBox(height: 10),
+                      infoPill(
+                        icon: Icons.local_offer_outlined,
+                        label: 'خصم ممول من المتجر',
+                        value: '${_formatAmount(storeDiscount)} ج.س',
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              sectionCard(
+                title: 'عناصر الطلب',
+                icon: Icons.restaurant_menu_outlined,
+                child: Column(
+                  children: items.map((item) {
+                    final qty = item['quantity'] ?? 0;
+                    final price = item['price'] ?? 0;
+                    final totalItemPrice = qty * price;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppThemeArabic.storeSurface,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color:
+                                  AppThemeArabic.storePrimary.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.fastfood_rounded,
+                              color: AppThemeArabic.storePrimary,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item['name']?.toString() ?? 'صنف',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'Tajawal',
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'الكمية: $qty',
+                                  style: const TextStyle(
+                                    color: AppThemeArabic.storeTextSecondary,
+                                    fontFamily: 'Tajawal',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            '$totalItemPrice ج.س',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontFamily: 'Tajawal',
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 18),
+              sectionCard(
+                title: 'المبلغ المستحق للمتجر',
+                icon: Icons.account_balance_wallet_outlined,
+                child: Column(
+                  children: [
+                    _buildMoneyRow(
+                      'قيمة أصناف الطلب',
+                      '${_formatAmount(subtotal)} ج.س',
+                    ),
+                    if (hasStoreDiscount)
+                      _buildMoneyRow(
+                        'خصم المتجر',
+                        '- ${_formatAmount(storeDiscount)} ج.س',
+                      ),
+                    const Divider(height: 26),
+                    _buildMoneyRow(
+                      hasStoreDiscount
+                          ? 'صافي ما يستلمه المتجر'
+                          : 'ما يستلمه المتجر',
+                      '${_formatAmount(receivable)} ج.س',
+                      emphasized: true,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
+              if (orderNote.isNotEmpty) ...[
+                const SizedBox(height: 18),
+                sectionCard(
+                  title: 'ملاحظات الطلب',
+                  icon: Icons.sticky_note_2_outlined,
+                  child: Text(
+                    orderNote,
+                    style: const TextStyle(fontSize: 15, fontFamily: 'Tajawal'),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 18),
               if (storePerspectiveDone)
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Text(
                     '✅ من منظور المتجر: الطلب انتهى عند الاستلام من المطعم، ولا يلزمك تتبّع الحالات اللاحقة.',
@@ -326,78 +546,175 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (orderId != '—' && !storePerspectiveDone) ...[
-                const SizedBox(height: 12),
-                StoreOrderActions(orderId: orderId),
-              ],
               if (showAcceptReject)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    GFButton(
-                      onPressed: () => _updateOrderStatusToPreparing(context),
-                      text: 'قبول الطلب',
-                      color: GFColors.SUCCESS,
-                    ),
-                    GFButton(
-                      onPressed: () async {
-                        final docId =
-                            orderData['docId'] ?? orderData['orderId'];
-                        await FirebaseFirestore.instance
-                            .collection('orders')
-                            .doc(docId)
-                            .update({
-                          'orderStatus': 'store_rejected',
-                          'status': 'store_rejected',
-                          'updatedAt': FieldValue.serverTimestamp(),
-                        });
-                        Navigator.of(context).pop();
-                        GFToast.showToast('❌ تم إلغاء الطلب', context);
-                      },
-                      text: 'رفض الطلب',
-                      color: GFColors.DANGER,
-                    ),
-                  ],
+                sectionCard(
+                  title: 'قرار المتجر',
+                  icon: Icons.rule_folder_outlined,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'راجع الأصناف والمبلغ المستحق، ثم اختر الإجراء المناسب للطلب.',
+                        style: TextStyle(
+                          color: AppThemeArabic.storeTextSecondary,
+                          fontFamily: 'Tajawal',
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () =>
+                                  _updateOrderStatusToPreparing(context),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF0F9D58),
+                                minimumSize: const Size.fromHeight(56),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                              ),
+                              icon: const Icon(
+                                  Icons.check_circle_outline_rounded),
+                              label: const Text('قبول وبدء المعالجة'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _rejectOrder(context),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red.shade700,
+                                side: BorderSide(color: Colors.red.shade200),
+                                minimumSize: const Size.fromHeight(56),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                backgroundColor: Colors.red.shade50,
+                              ),
+                              icon: const Icon(Icons.close_rounded),
+                              label: const Text('رفض الطلب'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               if (showReadyAction)
-                GFButton(
-                  onPressed: () async {
-                    final docId = orderData['docId'] ?? orderData['orderId'];
-                    await FirebaseFirestore.instance
-                        .collection('orders')
-                        .doc(docId)
-                        .update({
-                      'readyByRestaurant': true,
-                      'orderStatus': hasAssignedDriver
-                          ? 'pickup_ready'
-                          : 'courier_searching',
-                      'status': hasAssignedDriver
-                          ? 'pickup_ready'
-                          : 'courier_searching',
-                      'updatedAt': FieldValue.serverTimestamp(),
-                    });
-                    GFToast.showToast(
-                      hasAssignedDriver
-                          ? '✅ تم تجهيز الطلب وإرسال إشعار للمندوب'
-                          : '✅ تم تجهيز الطلب وسيتم البحث عن مندوب تلقائيًا',
-                      context,
-                    );
-                    Navigator.of(context).pop();
-                  },
-                  text: hasAssignedDriver ? 'جاهز للتوصيل' : 'جاهز وابدأ البحث',
-                  color: AppThemeArabic.clientPrimary,
-                  fullWidthButton: true,
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: sectionCard(
+                    title: 'تجهيز الطلب',
+                    icon: Icons.delivery_dining_outlined,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hasAssignedDriver
+                              ? 'عند اكتمال التحضير سيتم إشعار المندوب مباشرة بالاستلام.'
+                              : 'عند اكتمال التحضير سيتم إبقاء الطلب جاهزًا ومتابعة البحث عن مندوب تلقائيًا.',
+                          style: const TextStyle(
+                            color: AppThemeArabic.storeTextSecondary,
+                            fontFamily: 'Tajawal',
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () async {
+                              final docId =
+                                  orderData['docId'] ?? orderData['orderId'];
+                              await FirebaseFirestore.instance
+                                  .collection('orders')
+                                  .doc(docId)
+                                  .update({
+                                'readyByRestaurant': true,
+                                'orderStatus': hasAssignedDriver
+                                    ? 'pickup_ready'
+                                    : 'courier_searching',
+                                'status': hasAssignedDriver
+                                    ? 'pickup_ready'
+                                    : 'courier_searching',
+                                'updatedAt': FieldValue.serverTimestamp(),
+                              });
+                              if (!context.mounted) return;
+                              GFToast.showToast(
+                                hasAssignedDriver
+                                    ? 'تم تجهيز الطلب وإرسال إشعار للمندوب'
+                                    : 'تم تجهيز الطلب وسيتم البحث عن مندوب تلقائيًا',
+                                context,
+                              );
+                              Navigator.of(context).pop();
+                            },
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppThemeArabic.storePrimary,
+                              minimumSize: const Size.fromHeight(54),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                            ),
+                            icon: const Icon(Icons.inventory_2_outlined),
+                            label: Text(
+                              hasAssignedDriver
+                                  ? 'تأكيد الجاهزية للاستلام'
+                                  : 'تأكيد الجاهزية والبحث',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               if (status == 'pickup_ready' || status == 'جاهز للتوصيل')
-                const Center(
-                  child: Text(
-                    '✅ تم تجهيز الطلب - في انتظار المندوب',
-                    style: TextStyle(color: Colors.blueGrey, fontSize: 16),
+                Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.local_shipping_outlined,
+                          color: Colors.blueGrey),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'تم تجهيز الطلب وهو الآن بانتظار استلام المندوب.',
+                          style:
+                              TextStyle(color: Colors.blueGrey, fontSize: 15),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildMoneyRow(String label, String value, {bool emphasized = false}) {
+    final style = TextStyle(
+      fontFamily: 'Tajawal',
+      fontWeight: emphasized ? FontWeight.w800 : FontWeight.w500,
+      fontSize: emphasized ? 18 : 14,
+      color: emphasized
+          ? AppThemeArabic.storePrimary
+          : AppThemeArabic.storeTextPrimary,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: style),
+          Text(value, style: style),
+        ],
       ),
     );
   }
