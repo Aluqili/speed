@@ -4,11 +4,11 @@ import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:get_storage/get_storage.dart'; // ✅ لإزالة الطلب من التخزين المحلي
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart'
     show formatUnifiedOrderCode, OrderStatusPalette;
+import '../helpers/courier_runtime_helpers.dart';
 import 'chat_screen.dart';
 
 class CourierConfirmDeliveryScreen extends StatefulWidget {
@@ -174,18 +174,6 @@ class _CourierConfirmDeliveryScreenState
     }
   }
 
-  String _normalizePhone(String phone) {
-    const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
-    const englishDigits = '0123456789';
-    var normalized = phone;
-    for (var index = 0; index < arabicDigits.length; index++) {
-      normalized =
-          normalized.replaceAll(arabicDigits[index], englishDigits[index]);
-    }
-    normalized = normalized.replaceAll(RegExp(r'[^0-9+]'), '');
-    return normalized;
-  }
-
   String _resolveClientPhone(Map<String, dynamic>? orderData) {
     final data = orderData ?? <String, dynamic>{};
     final candidates = [
@@ -211,25 +199,7 @@ class _CourierConfirmDeliveryScreenState
   }
 
   Future<void> _callClient(String rawPhone) async {
-    final phone = _normalizePhone(rawPhone);
-    if (phone.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('رقم هاتف العميل غير متوفر أو غير صالح')),
-      );
-      return;
-    }
-
-    final phoneUri = Uri(scheme: 'tel', path: phone);
-    if (await canLaunchUrl(phoneUri)) {
-      await launchUrl(phoneUri, mode: LaunchMode.externalApplication);
-      return;
-    }
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('❌ لا يمكن فتح الاتصال')),
-    );
+    await launchCourierPhoneCall(context, rawPhone);
   }
 
   String _generateChatId(String user1, String user2) {
@@ -272,6 +242,9 @@ class _CourierConfirmDeliveryScreenState
             .toString();
     final totalWithDelivery =
         (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
+    final driverFee = courierToDouble(
+      orderData['deliveryFeeForDriver'] ?? orderData['deliveryFee'],
+    );
 
     return Card(
       child: ExpansionTile(
@@ -318,6 +291,8 @@ class _CourierConfirmDeliveryScreenState
           ),
           _detailRow('طريقة الدفع', paymentMethod),
           _detailRow('الإجمالي', '$totalWithDelivery ج.س'),
+          if (driverFee > 0)
+            _detailRow('رسوم التوصيل', '${courierFormatMoney(driverFee)} ج.س'),
           const SizedBox(height: 8),
           const Align(
             alignment: Alignment.centerRight,
@@ -368,9 +343,10 @@ class _CourierConfirmDeliveryScreenState
         children: [
           CircleAvatar(
             radius: 22,
-            backgroundColor: AppThemeArabic.clientPrimary.withOpacity(0.12),
+            backgroundColor:
+                AppThemeArabic.courierPrimary.withValues(alpha: 0.12),
             child: const Icon(Icons.verified_outlined,
-                color: AppThemeArabic.clientPrimary),
+                color: AppThemeArabic.courierPrimary),
           ),
           const SizedBox(width: 12),
           const Expanded(
@@ -408,18 +384,18 @@ class _CourierConfirmDeliveryScreenState
     final clientId = (_orderData?['clientId'] ?? '').toString();
 
     return Scaffold(
-      backgroundColor: AppThemeArabic.clientBackground,
+      backgroundColor: AppThemeArabic.courierBackground,
       appBar: AppBar(
         title: const Text('إثبات التسليم',
             style: TextStyle(
-                color: AppThemeArabic.clientPrimary,
+                color: AppThemeArabic.courierPrimary,
                 fontWeight: FontWeight.bold,
                 fontSize: 20,
                 fontFamily: 'Tajawal')),
         backgroundColor: Colors.white,
         elevation: 1,
         centerTitle: true,
-        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        iconTheme: const IconThemeData(color: AppThemeArabic.courierPrimary),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
         ),
@@ -449,7 +425,7 @@ class _CourierConfirmDeliveryScreenState
                       const SizedBox(height: 12),
                       Row(children: [
                         const Icon(Icons.person,
-                            color: AppThemeArabic.clientPrimary),
+                            color: AppThemeArabic.courierPrimary),
                         const SizedBox(width: 8),
                         Text(
                           clientName,
@@ -460,7 +436,7 @@ class _CourierConfirmDeliveryScreenState
                       const SizedBox(height: 10),
                       Row(children: [
                         const Icon(Icons.phone_android,
-                            color: AppThemeArabic.clientPrimary),
+                            color: AppThemeArabic.courierPrimary),
                         const SizedBox(width: 8),
                         Text(
                           clientPhone.isEmpty ? 'غير متاح' : clientPhone,
@@ -506,7 +482,7 @@ class _CourierConfirmDeliveryScreenState
                             text: 'دردشة',
                             icon: const Icon(Icons.chat, size: 18),
                             size: GFSize.SMALL,
-                            color: AppThemeArabic.clientPrimary,
+                            color: AppThemeArabic.courierPrimary,
                             shape: GFButtonShape.pills,
                           ),
                           GFButton(
@@ -582,7 +558,7 @@ class _CourierConfirmDeliveryScreenState
                         onPressed: _pickImage,
                         text: 'اختيار الصورة',
                         icon: const Icon(Icons.camera_alt),
-                        color: AppThemeArabic.clientPrimary,
+                        color: AppThemeArabic.courierPrimary,
                         fullWidthButton: true,
                         shape: GFButtonShape.pills,
                         size: GFSize.LARGE,
@@ -598,7 +574,7 @@ class _CourierConfirmDeliveryScreenState
                         onPressed: _uploading ? null : _uploadAndFinish,
                         text: _uploading ? 'جاري الرفع...' : 'إنهاء الطلب',
                         icon: const Icon(Icons.done),
-                        color: AppThemeArabic.clientSuccess,
+                        color: AppThemeArabic.courierAccent,
                         fullWidthButton: true,
                         shape: GFButtonShape.pills,
                         size: GFSize.LARGE,

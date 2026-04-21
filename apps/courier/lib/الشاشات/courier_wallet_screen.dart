@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
@@ -16,6 +18,16 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
   final _accountNameController = TextEditingController();
   String _selectedMethod = 'bankk';
   bool _saving = false;
+
+  bool _isDeliveredStatus(dynamic rawStatus) {
+    final status = (rawStatus ?? '').toString().trim();
+    return status == 'delivered' || status == 'تم التوصيل';
+  }
+
+  double _toAmount(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse((value ?? '').toString()) ?? 0;
+  }
 
   @override
   void dispose() {
@@ -119,31 +131,65 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
             _selectedMethod = method;
           }
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Card(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('ملخص المستحقات', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-                        const SizedBox(height: 10),
-                        Text('المبلغ المتبقي للتحويل: ${pendingBalance.toStringAsFixed(2)} ج.س',
-                            style: const TextStyle(color: Colors.deepOrange, fontWeight: FontWeight.bold)),
-                        Text('إجمالي ما تم تحويله: ${transferredTotal.toStringAsFixed(2)} ج.س'),
-                        Text('إجمالي مستحقاتك التاريخية: ${lifetimeEarnings.toStringAsFixed(2)} ج.س'),
-                        Text('عدد الطلبات المكتملة: $deliveredOrdersCount طلب'),
-                      ],
+          return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('orders')
+                .where('assignedDriverId', isEqualTo: widget.driverId)
+                .snapshots(),
+            builder: (context, ordersSnap) {
+              var effectivePendingBalance = pendingBalance;
+              var effectiveLifetimeEarnings = lifetimeEarnings;
+              var effectiveDeliveredOrdersCount = deliveredOrdersCount;
+
+              if (ordersSnap.hasData) {
+                var derivedLifetimeEarnings = 0.0;
+                var derivedDeliveredOrdersCount = 0;
+
+                for (final orderDoc in ordersSnap.data!.docs) {
+                  final order = orderDoc.data();
+                  if (!_isDeliveredStatus(order['orderStatus'] ?? order['status'])) {
+                    continue;
+                  }
+
+                  derivedDeliveredOrdersCount += 1;
+                  derivedLifetimeEarnings += _toAmount(
+                    order['deliveryFeeForDriver'] ?? order['deliveryFee'],
+                  );
+                }
+
+                effectiveLifetimeEarnings = derivedLifetimeEarnings;
+                effectiveDeliveredOrdersCount = derivedDeliveredOrdersCount;
+                effectivePendingBalance = math.max(
+                  0,
+                  effectiveLifetimeEarnings - transferredTotal,
+                ).toDouble();
+              }
+
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Card(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('ملخص المستحقات', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                            const SizedBox(height: 10),
+                            Text('المبلغ المتبقي للتحويل: ${effectivePendingBalance.toStringAsFixed(2)} ج.س',
+                                style: const TextStyle(color: Colors.deepOrange, fontWeight: FontWeight.bold)),
+                            Text('إجمالي ما تم تحويله: ${transferredTotal.toStringAsFixed(2)} ج.س'),
+                            Text('إجمالي مستحقاتك التاريخية: ${effectiveLifetimeEarnings.toStringAsFixed(2)} ج.س'),
+                            Text('عدد الطلبات المكتملة: $effectiveDeliveredOrdersCount طلب'),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Card(
+                    const SizedBox(height: 12),
+                    Card(
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   child: Padding(
                     padding: const EdgeInsets.all(14),
@@ -213,9 +259,9 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Card(
+                    ),
+                    const SizedBox(height: 12),
+                    Card(
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   child: Padding(
                     padding: const EdgeInsets.all(14),
@@ -287,9 +333,11 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
                       ],
                     ),
                   ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           );
         },
       ),

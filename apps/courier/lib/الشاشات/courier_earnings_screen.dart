@@ -36,7 +36,10 @@ class _CourierEarningsScreenState extends State<CourierEarningsScreen> {
       final data = doc.data();
       final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
       if (status != 'delivered' && status != 'تم التوصيل') continue;
-      final deliveryFee = (data['deliveryFeeForDriver'] ?? 0).toDouble();
+      final feeSource = data['deliveryFeeForDriver'] ?? data['deliveryFee'] ?? 0;
+      final deliveryFee = feeSource is num
+          ? feeSource.toDouble()
+          : double.tryParse(feeSource.toString()) ?? 0;
       earnings += deliveryFee;
       orders++;
     }

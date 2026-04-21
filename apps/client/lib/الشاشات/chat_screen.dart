@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'dart:io';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' as intl;
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
-import 'package:speedstar_core/src/config/ops_runtime_config.dart';
 
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
@@ -34,56 +32,10 @@ class _ChatScreenState extends State<ChatScreen> {
   final cloudinary =
       CloudinaryPublic('dvnzloec6', 'flutter_unsigned', cache: false);
   String otherUserName = '';
-  bool _chatEnabled = true;
-  String _chatDisabledMessage = 'الدردشة متوقفة مؤقتًا.';
-  static const String _closedSupportTicketMessage =
-      'أغلق الدعم الفني هذه التذكرة. يمكنك قراءة المحادثة السابقة فقط.';
-
-  bool get _isSupportChat =>
-      widget.otherUserId == 'support' || widget.chatId.endsWith('-support');
-
-  String get _chatKind => _isSupportChat ? 'support' : 'direct';
-
-  String get _sourceApp => 'client';
 
   int _timestampMillis(dynamic value) {
     if (value is Timestamp) return value.millisecondsSinceEpoch;
     return 0;
-  }
-
-  String _buildNewSupportChatId() {
-    return '${widget.currentUserId}-support-${DateTime.now().millisecondsSinceEpoch}';
-  }
-
-  Future<void> _startNewSupportTicket() async {
-    final newChatId = _buildNewSupportChatId();
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('clients')
-          .doc(widget.currentUserId)
-          .set({
-        'lastSupportConversationId': newChatId,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } catch (_) {
-      // Navigation should still proceed even if the metadata update fails.
-    }
-
-    if (!mounted) return;
-
-    await Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          currentUserId: widget.currentUserId,
-          otherUserId: widget.otherUserId,
-          currentUserRole: widget.currentUserRole,
-          chatId: newChatId,
-          currentUserName: widget.currentUserName,
-        ),
-      ),
-    );
   }
 
   void _onMessageChanged() {
@@ -95,23 +47,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _messageController.addListener(_onMessageChanged);
-    _loadChatConfig();
     _fetchOtherUserName();
-  }
-
-  Future<void> _loadChatConfig() async {
-    try {
-      final rc = FirebaseRemoteConfig.instance;
-      await rc.fetchAndActivate();
-      final ops = OpsRuntimeConfig.fromRemoteConfig(rc, appKey: 'client');
-      if (!mounted) return;
-      setState(() {
-        _chatEnabled = ops.chatEnabled;
-        _chatDisabledMessage = ops.chatDisabledMessage;
-      });
-    } catch (_) {
-      // Keep defaults
-    }
   }
 
   Future<String?> _findUserNameInCollection(
@@ -153,14 +89,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _fetchOtherUserName() async {
-    if (_isSupportChat) {
-      if (!mounted) return;
-      setState(() {
-        otherUserName = 'الدعم الفني';
-      });
-      return;
-    }
-
     final fallbackCollections = ['clients', 'drivers', 'restaurants'];
     for (final col in fallbackCollections) {
       final name = await _findUserNameInCollection(col, widget.otherUserId);
@@ -200,8 +128,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final message = {
       'conversationId': widget.chatId,
-      'chatKind': _chatKind,
-      'sourceApp': _sourceApp,
+      'chatKind': 'direct',
+      'sourceApp': 'client',
       'senderId': widget.currentUserId,
       'senderType': senderType,
       'senderName': widget.currentUserName,
@@ -209,22 +137,11 @@ class _ChatScreenState extends State<ChatScreen> {
       'participants': [widget.currentUserId, widget.otherUserId],
       'participantsKey': [widget.currentUserId, widget.otherUserId]..sort(),
       'timestamp': FieldValue.serverTimestamp(),
-      if (_isSupportChat) 'status': 'open',
       if (text != null) 'message': text.trim(),
       if (imageUrl != null) 'imageUrl': imageUrl,
     };
 
     await FirebaseFirestore.instance.collection('supportMessages').add(message);
-
-    if (_isSupportChat) {
-      await FirebaseFirestore.instance
-          .collection('clients')
-          .doc(widget.currentUserId)
-          .set({
-        'lastSupportConversationId': widget.chatId,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    }
 
     _messageController.clear();
     if (_scrollController.hasClients) {
@@ -273,7 +190,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String _formatTimestamp(Timestamp? timestamp) {
     if (timestamp == null) return '';
     final date = timestamp.toDate();
-    return DateFormat('hh:mm a', 'ar').format(date);
+    return intl.DateFormat('hh:mm a', 'ar').format(date);
   }
 
   @override
@@ -299,24 +216,9 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         title: Text(otherUserName.isNotEmpty ? otherUserName : 'تحميل...'),
         backgroundColor: AppThemeArabic.clientPrimary,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(28),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Text(
-              _isSupportChat
-                  ? (_chatEnabled
-                      ? 'محادثة دعم'
-                      : 'محادثة دعم متاحة الآن رغم الإيقاف المؤقت')
-                  : 'محادثة مباشرة',
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-            ),
-          ),
-        ),
         actions: [
           PopupMenuButton(
             icon: const Icon(Icons.add_photo_alternate, color: Colors.white),
-            enabled: !_isSupportChat,
             onSelected: (source) {
               _pickAndSendImage(source == 'camera'
                   ? ImageSource.camera
@@ -352,13 +254,6 @@ class _ChatScreenState extends State<ChatScreen> {
                   .compareTo(_timestampMillis(bData['timestamp']));
             });
 
-          final latestData = messages.isNotEmpty
-              ? messages.last.data() as Map<String, dynamic>
-              : <String, dynamic>{};
-          final supportConversationClosed = _isSupportChat &&
-              (latestData['status'] ?? 'open').toString() == 'closed';
-          final canCompose = !supportConversationClosed;
-
           if (messages.isNotEmpty) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (_scrollController.hasClients) {
@@ -371,54 +266,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
           return Column(
             children: [
-              if (_isSupportChat && !_chatEnabled)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8F5E9),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFA5D6A7)),
-                  ),
-                  child: Text(
-                    'تم فتح مراسلة الدعم للعملاء مباشرة. التنبيه الحالي من الإعدادات كان: $_chatDisabledMessage',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1B5E20),
-                    ),
-                  ),
-                ),
-              if (supportConversationClosed)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF3E0),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFFFCC80)),
-                  ),
-                  child: Column(
-                    children: [
-                      const Text(
-                        _closedSupportTicketMessage,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _startNewSupportTicket,
-                          icon: const Icon(Icons.add_comment_outlined),
-                          label: const Text('فتح تذكرة جديدة'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               Expanded(
                 child: messages.isEmpty
                     ? const Center(child: Text('لا توجد رسائل بعد'))
@@ -486,7 +333,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                     )
                                   else
                                     Text(
-                                      data['message'] ?? '',
+                                      (data['message'] ?? data['text'] ?? '')
+                                          .toString(),
                                       style: const TextStyle(fontSize: 16),
                                     ),
                                   const SizedBox(height: 5),
@@ -513,28 +361,21 @@ class _ChatScreenState extends State<ChatScreen> {
                     Expanded(
                       child: TextField(
                         controller: _messageController,
-                        enabled: canCompose,
                         textInputAction: TextInputAction.send,
                         decoration: InputDecoration(
-                          hintText: canCompose
-                              ? 'اكتب رسالتك...'
-                              : 'التذكرة مغلقة ولا يمكن إضافة رد جديد',
+                          hintText: 'اكتب رسالتك...',
                           border: const OutlineInputBorder(),
                         ),
-                        onSubmitted: canCompose
-                            ? (_) => _sendMessage(text: _messageController.text)
-                            : null,
+                        onSubmitted: (_) =>
+                            _sendMessage(text: _messageController.text),
                       ),
                     ),
                     IconButton(
                       icon: Icon(
                         Icons.send,
-                        color: canCompose
-                            ? AppThemeArabic.clientPrimary
-                            : Colors.grey,
+                        color: AppThemeArabic.clientPrimary,
                       ),
-                      onPressed: !canCompose ||
-                              _messageController.text.trim().isEmpty
+                      onPressed: _messageController.text.trim().isEmpty
                           ? null
                           : () => _sendMessage(text: _messageController.text),
                     ),

@@ -6,8 +6,8 @@
     <title>SpeedStar Admin</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./css/styles.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./css/styles.css?v=20260422-admin-visual-polish" />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -30,7 +30,7 @@
     </header>
 
     <main class="container">
-      <section id="loginCard" class="login-shell card">
+      <section id="loginCard" class="login-shell card" hidden>
         <div class="login-shell-copy">
           <span class="eyebrow">بوابة الإدارة</span>
           <h2>مركز تشغيل احترافي لإدارة الطلبات والمدفوعات والدعم</h2>
@@ -61,109 +61,77 @@
 
       <section id="appPanel" hidden>
         <div class="admin-shell">
-          <aside class="portal-sidebar card">
-            <div class="portal-sidebar-head">
-              <span class="eyebrow">بوابات المنصة</span>
-              <h2>تنقل منظم حسب نوع العمل</h2>
-              <p class="muted">كل مجال تشغيلي داخل بوابة مستقلة لتقليل التشتت وتسريع الوصول.</p>
-            </div>
-
+          <section class="portal-strip card">
             <nav class="tabs" aria-label="بوابات الأدمن">
               <button class="tab active" data-tab="dashboard">
                 <span class="tab-icon">01</span>
                 <span class="tab-copy">
-                  <strong>بوابة القيادة</strong>
-                  <small>اللوحة، المؤشرات، وآخر الطلبات</small>
+                  <strong>اللوحة</strong>
+                  <small>النشاط والطلبات الحالية</small>
                 </span>
               </button>
               <button class="tab" data-tab="finance">
                 <span class="tab-icon">02</span>
                 <span class="tab-copy">
-                  <strong>بوابة المالية</strong>
-                  <small>الدفع، الخصومات، الشحنات، والتحويلات</small>
+                  <strong>المالية <span class="tab-badge" data-tab-badge hidden>0</span></strong>
+                  <small>الدفع والتحويلات</small>
                 </span>
               </button>
               <button class="tab" data-tab="map">
                 <span class="tab-icon">03</span>
                 <span class="tab-copy">
-                  <strong>بوابة الخريطة</strong>
-                  <small>تتبع الطلبات والمندوبين والمطاعم لحظيًا</small>
+                  <strong>الخريطة</strong>
+                  <small>تتبع حي</small>
                 </span>
               </button>
               <button class="tab" data-tab="management">
                 <span class="tab-icon">04</span>
                 <span class="tab-copy">
-                  <strong>بوابة التشغيل</strong>
-                  <small>إدارة المتاجر والمندوبين والتفاصيل التشغيلية</small>
+                  <strong>التشغيل</strong>
+                  <small>الطلبات والكيانات</small>
                 </span>
               </button>
               <button class="tab" data-tab="admins">
                 <span class="tab-icon">05</span>
                 <span class="tab-copy">
-                  <strong>بوابة التحكم</strong>
-                  <small>المسؤولون، المدن، و Remote Config</small>
+                  <strong>التحكم</strong>
+                  <small>المسؤولون والإعدادات</small>
                 </span>
               </button>
               <button class="tab" data-tab="notifications">
                 <span class="tab-icon">06</span>
                 <span class="tab-copy">
-                  <strong>بوابة الإشعارات</strong>
-                  <small>الإرسال اليدوي والمتابعة السريعة</small>
+                  <strong>الإشعارات</strong>
+                  <small>إرسال ومتابعة</small>
                 </span>
               </button>
               <button class="tab" data-tab="support">
                 <span class="tab-icon">07</span>
                 <span class="tab-copy">
-                  <strong>بوابة الدعم</strong>
-                  <small>المحادثات، الحالات، والردود</small>
+                  <strong>الدعم <span class="tab-badge" data-tab-badge hidden>0</span></strong>
+                  <small>المحادثات والردود</small>
                 </span>
               </button>
               <button class="tab" data-tab="pending">
                 <span class="tab-icon">08</span>
                 <span class="tab-copy">
-                  <strong>بوابة الاعتمادات</strong>
-                  <small>طلبات التسجيل والقوائم المعلقة</small>
+                  <strong>الاعتمادات <span class="tab-badge" data-tab-badge hidden>0</span></strong>
+                  <small>طلبات معلقة</small>
                 </span>
               </button>
             </nav>
 
-            <section class="admin-workbar">
-              <div class="admin-workbar-col">
-                <label for="adminQuickTab">وصول سريع للأقسام</label>
-                <select id="adminQuickTab">
-                  <option value="dashboard">اللوحة</option>
-                  <option value="finance">المالية</option>
-                  <option value="map">الخريطة</option>
-                  <option value="management">إدارة المتاجر والمندوبين</option>
-                  <option value="admins">المسؤولون</option>
-                  <option value="notifications">الإشعارات</option>
-                  <option value="support">الدعم الفني</option>
-                  <option value="pending">طلبات التسجيل</option>
-                </select>
-              </div>
+            <section class="admin-search-inline">
               <div class="admin-workbar-col grow">
                 <label for="adminGlobalSearch">بحث موحد داخل البوابات</label>
                 <input id="adminGlobalSearch" type="text" placeholder="ابحث برقم الطلب، اسم العميل، المتجر، المندوب، المعاملة..." />
               </div>
               <div id="adminSearchMeta" class="admin-search-meta muted">اكتب أي كلمة للبحث داخل الجداول والبوابات.</div>
-              <div id="adminSearchResults" class="admin-search-results"></div>
             </section>
-          </aside>
+            <div id="adminSearchResults" class="admin-search-results"></div>
+          </section>
 
           <div class="admin-stage">
-            <section class="workspace-hero card">
-              <div class="workspace-hero-main">
-                <span id="activePortalEyebrow" class="eyebrow">بوابة القيادة</span>
-                <h2 id="activePortalTitle">لوحة القيادة التنفيذية</h2>
-                <p id="activePortalSummary" class="muted">نظرة سريعة على النشاط الحالي مع انتقال سلس إلى كل بوابة متخصصة.</p>
-              </div>
-              <div class="workspace-hero-side">
-                <div class="hero-badge">تشغيل لحظي</div>
-                <div class="hero-badge hero-badge-soft">بحث سريع</div>
-                <div class="hero-badge hero-badge-soft">بوابات منظمة</div>
-              </div>
-            </section>
-
             <section id="map" class="tab-panel portal-panel">
               <div class="portal-header card">
                 <div>
@@ -179,33 +147,62 @@
                     <label for="mapSearchInput">بحث داخل الخريطة</label>
                     <input id="mapSearchInput" type="text" placeholder="ابحث بطلب، متجر، عميل، أو مندوب" />
                   </div>
+                  <div class="map-search-box">
+                    <label for="mapOrderStatusFilter">فلتر حالة الطلبات</label>
+                    <select id="mapOrderStatusFilter">
+                      <option value="active">كل الطلبات النشطة</option>
+                      <option value="courier_searching">البحث عن مندوب</option>
+                      <option value="courier_offer_pending">عرض معلق لمندوب</option>
+                      <option value="courier_assigned">مندوب معين</option>
+                      <option value="pickup_ready">جاهز للاستلام</option>
+                      <option value="picked_up">تم الاستلام</option>
+                      <option value="arrived_to_client">وصل للعميل</option>
+                    </select>
+                  </div>
+                  <div class="map-search-box">
+                    <label for="mapStyleSelect">نمط الخريطة</label>
+                    <select id="mapStyleSelect">
+                      <option value="voyager">تشغيلي حديث</option>
+                      <option value="positron">فاتح وهادئ</option>
+                      <option value="imagery">أقمار صناعية</option>
+                      <option value="topo">تضاريس</option>
+                      <option value="osm">كلاسيكي</option>
+                    </select>
+                  </div>
                   <div class="map-actions">
                     <button class="btn ghost" type="button" data-map-focus="orders">الطلبات النشطة</button>
                     <button class="btn ghost" type="button" data-map-focus="drivers">المندوبون</button>
                     <button class="btn ghost" type="button" data-map-focus="restaurants">المطاعم</button>
                     <button class="btn ghost" type="button" data-map-focus="all">كل العناصر</button>
+                    <button id="mapFullscreenBtn" class="btn ghost" type="button">شاشة كاملة</button>
                     <button id="mapResetViewBtn" class="btn primary" type="button">إعادة ضبط المشهد</button>
                   </div>
                 </div>
+                <div class="map-toolbar map-toolbar-compact">
+                  <div class="map-layer-toggles">
+                    <label class="map-layer-chip"><input id="mapLayerDriversInput" type="checkbox" checked />المندوبون</label>
+                    <label class="map-layer-chip"><input id="mapLayerClientsInput" type="checkbox" checked />العملاء النشطون</label>
+                    <label class="map-layer-chip"><input id="mapLayerRestaurantsInput" type="checkbox" checked />المطاعم</label>
+                    <label class="map-layer-chip"><input id="mapLayerOrdersInput" type="checkbox" checked />الطلبات</label>
+                    <label class="map-layer-chip"><input id="mapFollowSelectedOrderInput" type="checkbox" />متابعة الطلب المحدد</label>
+                    <label class="map-layer-chip"><input id="mapPinDetailsInput" type="checkbox" />تثبيت بطاقة التفاصيل</label>
+                  </div>
+                </div>
                 <div id="mapSearchResults" class="map-search-results"></div>
-                <p class="muted">المندوب: D أخضر متاح أو رمادي غير متاح، العميل النشط: C أزرق، المطعم: R برتقالي أو بني، موقع الطلب: O أحمر.</p>
+                <div id="mapEventFeed" class="map-event-feed muted">جاري تجهيز موجز الأحداث الحية...</div>
                 <div id="mapLegendBar" class="map-legend-bar">جاري تحميل ملخص الخريطة...</div>
-                <div id="liveMap" class="map-canvas"></div>
+                <div id="mapViewport" class="map-viewport">
+                  <div id="liveMap" class="map-canvas"></div>
+                </div>
               </div>
               <div class="card">
                 <h3>تفاصيل العنصر المحدد</h3>
+                <div id="mapSelectionBanner" class="map-selection-banner muted">لا يوجد عنصر مثبت حاليًا.</div>
                 <div id="mapDetails" class="map-details muted">اضغط على أي علامة في الخريطة لعرض التفاصيل.</div>
               </div>
             </section>
 
             <section id="dashboard" class="tab-panel portal-panel active">
-              <div class="portal-header card">
-                <div>
-                  <span class="eyebrow">بوابة القيادة</span>
-                  <h3>نظرة تنفيذية على المنصة</h3>
-                  <p class="muted">أهم مؤشرات النشاط، روابط الانتقال السريع، وآخر الطلبات مع تفاصيل جاهزة للمراجعة.</p>
-                </div>
-              </div>
           <div id="opsPriorityGrid" class="stats"></div>
           <div class="card">
             <h3>مركز التنبيهات التشغيلية</h3>
@@ -225,15 +222,17 @@
             </div>
           </div>
           <div class="card">
-            <h3>إحصائيات الصفحة العامة</h3>
-            <p class="muted">تعرض زيارات الصفحة وتحميل التطبيقات ونقرات التواصل (إجمالي + اليوم).</p>
-            <div class="stats" id="publicMetricsTotalGrid"></div>
-            <div class="stats" id="publicMetricsTodayGrid"></div>
-            <div id="publicMetricsUpdatedAt" class="muted">جاري تحميل الإحصائيات...</div>
+            <h3>الطلبات النشطة حاليًا</h3>
+            <p class="muted">تُعرض هنا الطلبات التي لم يتم تسليمها للعميل بعد.</p>
+            <div id="activeOrdersTable"></div>
           </div>
           <div class="card">
-            <h3>أحدث الطلبات</h3>
-            <div id="ordersTable"></div>
+            <h3>الطلبات التي تم تسليمها</h3>
+            <p class="muted">سجل سريع لآخر الطلبات المكتملة بعد التسليم.</p>
+            <div id="deliveredOrdersTable"></div>
+          </div>
+          <div class="card">
+            <h3>تفاصيل الطلب المحدد</h3>
             <div id="dashboardOrderDetails" class="management-details muted">اختر طلبًا من الجدول لعرض التفاصيل الكاملة وفتحه على الخريطة.</div>
           </div>
             </section>
@@ -440,6 +439,13 @@
                       <input id="discountCode" type="text" required placeholder="WELCOME20" />
                     </label>
                     <label>
+                      نطاق الخصم
+                      <select id="discountScope" required>
+                        <option value="order_total">إجمالي الطلب</option>
+                        <option value="delivery_fee">رسوم التوصيل فقط</option>
+                      </select>
+                    </label>
+                    <label>
                       نوع الخصم
                       <select id="discountType" required>
                         <option value="percent">نسبة مئوية</option>
@@ -527,6 +533,10 @@
                   <strong>المندوبون</strong>
                   <small>متابعة المندوبين وحالاتهم والوصول السريع إلى تفاصيلهم</small>
                 </button>
+                <button class="portal-subtab" type="button" data-subtab="management-courier-activity">
+                  <strong>نشاط المندوبين</strong>
+                  <small>تقرير تقديري لساعات النشاط اليومية والشهرية من مسار تنفيذ الطلبات</small>
+                </button>
                 <button class="portal-subtab" type="button" data-subtab="management-orders">
                   <strong>الطلبات والتحكم</strong>
                   <small>أوامر الإلغاء والتحويل وإعادة الإسناد ومتابعة العملاء</small>
@@ -546,6 +556,15 @@
                   <h3>إدارة المندوبين</h3>
                   <div id="couriersTable"></div>
                   <div id="courierDetailsPanel" class="management-details muted">اختر مندوبًا من الجدول لعرض كل التفاصيل.</div>
+                </div>
+              </div>
+
+              <div class="portal-subpanel" data-subpanel="management-courier-activity">
+                <div class="card">
+                  <h3>نشاط المندوبين</h3>
+                  <div id="courierActivitySummary" class="management-details muted">جاري تحميل تقرير نشاط المندوبين...</div>
+                  <div id="courierActivityTable"></div>
+                  <div class="management-details muted">هذا التقرير تقديري ويعتمد على أزمنة الطلبات المسندة للمندوب مثل وقت القبول والاستلام والتسليم. لا يوجد حاليًا سجل حضور/انصراف دقيق داخل النظام.</div>
                 </div>
               </div>
 
@@ -572,6 +591,7 @@
                   <h3>آخر العملاء</h3>
                   <p class="muted">رؤية سريعة لبيانات العملاء والمحفظة وآخر النشاط من تطبيق العميل.</p>
                   <div id="clientsTable"></div>
+                  <div id="clientDetailsPanel" class="management-details muted">اختر عميلًا من الجدول لعرض التفاصيل والتعديل.</div>
                 </div>
               </div>
             </section>
@@ -607,9 +627,23 @@
                       بريد المستخدم
                       <input id="adminEmailInput" type="email" required placeholder="user@example.com" />
                     </label>
-                    <button type="submit" class="btn primary">جعل المستخدم أدمن</button>
+                    <fieldset class="admin-permissions-fieldset">
+                      <legend>صلاحيات المسؤول</legend>
+                      <div class="admin-permissions-picker">
+                        <label class="admin-permission-option"><input type="checkbox" name="adminPermission" value="dashboard" checked />لوحة القيادة</label>
+                        <label class="admin-permission-option"><input type="checkbox" name="adminPermission" value="finance" checked />المالية والتحويلات</label>
+                        <label class="admin-permission-option"><input type="checkbox" name="adminPermission" value="orders" checked />متابعة الطلبات والتشغيل</label>
+                        <label class="admin-permission-option"><input type="checkbox" name="adminPermission" value="map" checked />الخريطة الحية</label>
+                        <label class="admin-permission-option"><input type="checkbox" name="adminPermission" value="approvals" checked />طلبات الاعتماد والقوائم</label>
+                        <label class="admin-permission-option"><input type="checkbox" name="adminPermission" value="support" checked />الدعم الفني</label>
+                        <label class="admin-permission-option"><input type="checkbox" name="adminPermission" value="notifications" checked />الإشعارات</label>
+                        <label class="admin-permission-option"><input type="checkbox" name="adminPermission" value="config" checked />Remote Config وتشغيل المدن</label>
+                        <label class="admin-permission-option"><input type="checkbox" name="adminPermission" value="admins" checked />إدارة المسؤولين</label>
+                      </div>
+                    </fieldset>
+                    <button type="submit" class="btn primary">حفظ صلاحيات المسؤول</button>
                   </form>
-                  <p class="muted">المستخدم يجب أن يكون موجود مسبقًا في Firebase Auth.</p>
+                  <p class="muted">المستخدم يجب أن يكون موجود مسبقًا في Firebase Auth. يمكنك اختيار أكثر من وظيفة لنفس المسؤول.</p>
                 </div>
                 <div class="card">
                   <h3>ترحيل وتوحيد الولاية</h3>
@@ -670,8 +704,115 @@
 
               <div class="portal-subpanel" data-subpanel="admins-remote-config">
                 <div class="card">
-                  <h3>تسعير التوصيل بالعربي</h3>
-                  <p class="muted">تحكم مباشر في مفاتيح تسعير العميل والمندوب بدون الحاجة إلى تذكر أسماء المفاتيح التقنية.</p>
+                  <h3>التحديثات والروابط بالعربي</h3>
+                  <p class="muted">تحكم مباشر في مفاتيح التحديث الإجباري وروابط كل تطبيق من نفس لوحة الأدمن.</p>
+                  <form id="appRemoteConfigForm" class="grid pricing-config-grid">
+                    <div class="muted remote-config-section-title">إعدادات عامة</div>
+                    <label>
+                      تفعيل التحديث الإجباري العام
+                      <select id="opsForceUpdateEnabledInput">
+                        <option value="true">مفعل</option>
+                        <option value="false">متوقف</option>
+                      </select>
+                    </label>
+                    <label>
+                      أقل بناء أندرويد عام
+                      <input id="opsMinBuildAndroidInput" type="number" min="0" step="1" placeholder="0" />
+                    </label>
+                    <label>
+                      رسالة التحديث العامة
+                      <textarea id="opsUpdateMessageInput" rows="3" placeholder="يوجد تحديث جديد مهم لتحسين الأداء. الرجاء التحديث الآن."></textarea>
+                    </label>
+                    <label>
+                      رابط التحديث العام للأندرويد
+                      <input id="opsUpdateUrlAndroidInput" type="url" placeholder="https://..." />
+                    </label>
+
+                    <div class="muted remote-config-section-title">تطبيق العميل</div>
+                    <label>
+                      تفعيل التحديث الإجباري للعميل
+                      <select id="clientForceUpdateEnabledInput">
+                        <option value="true">مفعل</option>
+                        <option value="false">متوقف</option>
+                      </select>
+                    </label>
+                    <label>
+                      أقل بناء أندرويد للعميل
+                      <input id="clientMinBuildAndroidInput" type="number" min="0" step="1" placeholder="11" />
+                    </label>
+                    <label>
+                      رسالة تحديث العميل
+                      <textarea id="clientUpdateMessageInput" rows="3" placeholder="يرجى تحديث تطبيق العميل للاستمرار."></textarea>
+                    </label>
+                    <label>
+                      رابط تحديث العميل
+                      <input id="clientUpdateUrlAndroidInput" type="url" placeholder="https://..." />
+                    </label>
+                    <label>
+                      رابط محتوى العميل
+                      <input id="clientRootUrlInput" type="url" placeholder="https://..." />
+                    </label>
+
+                    <div class="muted remote-config-section-title">تطبيق المتجر</div>
+                    <label>
+                      تفعيل التحديث الإجباري للمتجر
+                      <select id="storeForceUpdateEnabledInput">
+                        <option value="true">مفعل</option>
+                        <option value="false">متوقف</option>
+                      </select>
+                    </label>
+                    <label>
+                      أقل بناء أندرويد للمتجر
+                      <input id="storeMinBuildAndroidInput" type="number" min="0" step="1" placeholder="5" />
+                    </label>
+                    <label>
+                      رسالة تحديث المتجر
+                      <textarea id="storeUpdateMessageInput" rows="3" placeholder="يرجى تحديث تطبيق المتجر للاستمرار."></textarea>
+                    </label>
+                    <label>
+                      رابط تحديث المتجر
+                      <input id="storeUpdateUrlAndroidInput" type="url" placeholder="https://..." />
+                    </label>
+                    <label>
+                      رابط محتوى المتجر
+                      <input id="storeRootUrlInput" type="url" placeholder="https://..." />
+                    </label>
+
+                    <div class="muted remote-config-section-title">تطبيق المندوب</div>
+                    <label>
+                      تفعيل التحديث الإجباري للمندوب
+                      <select id="courierForceUpdateEnabledInput">
+                        <option value="true">مفعل</option>
+                        <option value="false">متوقف</option>
+                      </select>
+                    </label>
+                    <label>
+                      أقل بناء أندرويد للمندوب
+                      <input id="courierMinBuildAndroidInput" type="number" min="0" step="1" placeholder="1" />
+                    </label>
+                    <label>
+                      رسالة تحديث المندوب
+                      <textarea id="courierUpdateMessageInput" rows="3" placeholder="يرجى تحديث تطبيق المندوب للاستمرار."></textarea>
+                    </label>
+                    <label>
+                      رابط تحديث المندوب
+                      <input id="courierUpdateUrlAndroidInput" type="url" placeholder="https://..." />
+                    </label>
+                    <label>
+                      رابط محتوى المندوب
+                      <input id="courierRootUrlInput" type="url" placeholder="https://..." />
+                    </label>
+
+                    <div class="rollout-actions-row pricing-config-actions">
+                      <button id="reloadAppRemoteConfigBtn" type="button" class="btn ghost">إعادة تحميل الإعدادات</button>
+                      <button id="saveAppRemoteConfigBtn" type="submit" class="btn primary">حفظ التحديثات والروابط</button>
+                    </div>
+                  </form>
+                  <div id="appRemoteConfigResult" class="muted normalize-result">جاري تحميل إعدادات التحديث والروابط...</div>
+                </div>
+                <div class="card">
+                  <h3>تسعير التوصيل والطلبات الكبيرة بالعربي</h3>
+                  <p class="muted">تحكم مباشر في مفاتيح تسعير العميل والمندوب ورسوم الطلبات الكبيرة بدون الحاجة إلى تذكر أسماء المفاتيح التقنية.</p>
                   <form id="pricingConfigForm" class="grid pricing-config-grid">
                     <label>
                       سعر العميل الأساسي حتى 6 كم
@@ -697,9 +838,36 @@
                       الزيادة لكل كم زائد للمندوب
                       <input id="pricingDriverExtraPerKmInput" type="number" min="0" step="100" placeholder="500" />
                     </label>
+                    <label>
+                      تفعيل رسوم الطلبات الكبيرة
+                      <select id="pricingLargeItemFeeEnabledInput">
+                        <option value="true">مفعلة</option>
+                        <option value="false">متوقفة</option>
+                      </select>
+                    </label>
+                    <label>
+                      حد سعر الوجبة الكبيرة
+                      <input id="pricingLargeItemThresholdInput" type="number" min="0" step="100" placeholder="10000" />
+                    </label>
+                    <label>
+                      الرسم الأساسي فوق الحد
+                      <input id="pricingLargeItemFeeBaseInput" type="number" min="0" step="50" placeholder="500" />
+                    </label>
+                    <label>
+                      قيمة الشريحة الإضافية
+                      <input id="pricingLargeItemStepAmountInput" type="number" min="1" step="100" placeholder="5000" />
+                    </label>
+                    <label>
+                      الزيادة لكل شريحة إضافية
+                      <input id="pricingLargeItemStepFeeInput" type="number" min="0" step="50" placeholder="500" />
+                    </label>
+                    <label>
+                      السقف الأعلى للرسم لكل وجبة
+                      <input id="pricingLargeItemFeeCapPerUnitInput" type="number" min="0" step="50" placeholder="2500" />
+                    </label>
                     <div class="rollout-actions-row pricing-config-actions">
                       <button id="reloadPricingConfigBtn" type="button" class="btn ghost">إعادة تحميل التسعير</button>
-                      <button id="savePricingConfigBtn" type="submit" class="btn primary">حفظ تسعير التوصيل</button>
+                      <button id="savePricingConfigBtn" type="submit" class="btn primary">حفظ التسعير</button>
                     </div>
                   </form>
                   <div id="pricingConfigResult" class="muted normalize-result">جاري تحميل مفاتيح التسعير...</div>
@@ -855,6 +1023,6 @@
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     ></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-    <script type="module" src="./js/app.js?v=20260315-metricsfix2"></script>
+    <script type="module" src="./js/app.js?v=20260418-courier-activity-report"></script>
   </body>
 </html>

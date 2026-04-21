@@ -55,6 +55,8 @@ const getAdminRemoteConfigSettings = httpsCallable(fns, 'getAdminRemoteConfigSet
 const updateAdminRemoteConfigSettings = httpsCallable(fns, 'updateAdminRemoteConfigSettings');
 const reviewStoreOfferRequest = httpsCallable(fns, 'reviewStoreOfferRequest');
 const adminManageOrder = httpsCallable(fns, 'adminManageOrder');
+const deleteManagedUserAccount = httpsCallable(fns, 'deleteManagedUserAccount');
+const updateManagedUserProfile = httpsCallable(fns, 'updateManagedUserProfile');
 
 const loginCard = document.getElementById('loginCard');
 const appPanel = document.getElementById('appPanel');
@@ -64,14 +66,10 @@ const loginStatus = document.getElementById('loginStatus');
 const logoutBtn = document.getElementById('logoutBtn');
 const authState = document.getElementById('authState');
 const envBadge = document.getElementById('envBadge');
-const adminQuickTab = document.getElementById('adminQuickTab');
 const adminGlobalSearch = document.getElementById('adminGlobalSearch');
 const adminSearchMeta = document.getElementById('adminSearchMeta');
 const adminSearchResults = document.getElementById('adminSearchResults');
 const dashboardQuickActions = document.getElementById('dashboardQuickActions');
-const activePortalEyebrow = document.getElementById('activePortalEyebrow');
-const activePortalTitle = document.getElementById('activePortalTitle');
-const activePortalSummary = document.getElementById('activePortalSummary');
 
 const statsGrid = document.getElementById('statsGrid');
 const opsPriorityGrid = document.getElementById('opsPriorityGrid');
@@ -80,7 +78,8 @@ const publicMetricsTotalGrid = document.getElementById('publicMetricsTotalGrid')
 const publicMetricsTodayGrid = document.getElementById('publicMetricsTodayGrid');
 const publicMetricsUpdatedAt = document.getElementById('publicMetricsUpdatedAt');
 const financeGrid = document.getElementById('financeGrid');
-const ordersTable = document.getElementById('ordersTable');
+const activeOrdersTable = document.getElementById('activeOrdersTable');
+const deliveredOrdersTable = document.getElementById('deliveredOrdersTable');
 const dashboardOrderDetails = document.getElementById('dashboardOrderDetails');
 const financeTotalsSummary = document.getElementById('financeTotalsSummary');
 const financeOrdersTable = document.getElementById('financeOrdersTable');
@@ -152,6 +151,9 @@ const pendingTable = document.getElementById('pendingTable');
 const pendingMenuTable = document.getElementById('pendingMenuTable');
 const storeDetailsPanel = document.getElementById('storeDetailsPanel');
 const courierDetailsPanel = document.getElementById('courierDetailsPanel');
+const courierActivitySummary = document.getElementById('courierActivitySummary');
+const courierActivityTable = document.getElementById('courierActivityTable');
+const clientDetailsPanel = document.getElementById('clientDetailsPanel');
 const operationsOrderSummary = document.getElementById('operationsOrderSummary');
 const operationsOrdersTable = document.getElementById('operationsOrdersTable');
 const operationsOrderDetails = document.getElementById('operationsOrderDetails');
@@ -160,6 +162,7 @@ const orderStatusFilter = document.getElementById('orderStatusFilter');
 const orderSearchInput = document.getElementById('orderSearchInput');
 const addAdminForm = document.getElementById('addAdminForm');
 const adminEmailInput = document.getElementById('adminEmailInput');
+const adminPermissionInputs = Array.from(document.querySelectorAll('input[name="adminPermission"]'));
 const normalizeStateForm = document.getElementById('normalizeStateForm');
 const normalizeLimitInput = document.getElementById('normalizeLimitInput');
 const normalizeStateResult = document.getElementById('normalizeStateResult');
@@ -183,6 +186,29 @@ const remoteConfigTable = document.getElementById('remoteConfigTable');
 const reloadRemoteConfigBulkBtn = document.getElementById('reloadRemoteConfigBulkBtn');
 const saveRemoteConfigBulkBtn = document.getElementById('saveRemoteConfigBulkBtn');
 const remoteConfigBulkResult = document.getElementById('remoteConfigBulkResult');
+const appRemoteConfigForm = document.getElementById('appRemoteConfigForm');
+const opsForceUpdateEnabledInput = document.getElementById('opsForceUpdateEnabledInput');
+const opsMinBuildAndroidInput = document.getElementById('opsMinBuildAndroidInput');
+const opsUpdateMessageInput = document.getElementById('opsUpdateMessageInput');
+const opsUpdateUrlAndroidInput = document.getElementById('opsUpdateUrlAndroidInput');
+const clientForceUpdateEnabledInput = document.getElementById('clientForceUpdateEnabledInput');
+const clientMinBuildAndroidInput = document.getElementById('clientMinBuildAndroidInput');
+const clientUpdateMessageInput = document.getElementById('clientUpdateMessageInput');
+const clientUpdateUrlAndroidInput = document.getElementById('clientUpdateUrlAndroidInput');
+const clientRootUrlInput = document.getElementById('clientRootUrlInput');
+const storeForceUpdateEnabledInput = document.getElementById('storeForceUpdateEnabledInput');
+const storeMinBuildAndroidInput = document.getElementById('storeMinBuildAndroidInput');
+const storeUpdateMessageInput = document.getElementById('storeUpdateMessageInput');
+const storeUpdateUrlAndroidInput = document.getElementById('storeUpdateUrlAndroidInput');
+const storeRootUrlInput = document.getElementById('storeRootUrlInput');
+const courierForceUpdateEnabledInput = document.getElementById('courierForceUpdateEnabledInput');
+const courierMinBuildAndroidInput = document.getElementById('courierMinBuildAndroidInput');
+const courierUpdateMessageInput = document.getElementById('courierUpdateMessageInput');
+const courierUpdateUrlAndroidInput = document.getElementById('courierUpdateUrlAndroidInput');
+const courierRootUrlInput = document.getElementById('courierRootUrlInput');
+const reloadAppRemoteConfigBtn = document.getElementById('reloadAppRemoteConfigBtn');
+const saveAppRemoteConfigBtn = document.getElementById('saveAppRemoteConfigBtn');
+const appRemoteConfigResult = document.getElementById('appRemoteConfigResult');
 const pricingConfigForm = document.getElementById('pricingConfigForm');
 const pricingClientBaseFeeInput = document.getElementById('pricingClientBaseFeeInput');
 const pricingClientBaseDistanceInput = document.getElementById('pricingClientBaseDistanceInput');
@@ -190,11 +216,18 @@ const pricingClientExtraPerKmInput = document.getElementById('pricingClientExtra
 const pricingDriverBaseFeeInput = document.getElementById('pricingDriverBaseFeeInput');
 const pricingDriverBaseDistanceInput = document.getElementById('pricingDriverBaseDistanceInput');
 const pricingDriverExtraPerKmInput = document.getElementById('pricingDriverExtraPerKmInput');
+const pricingLargeItemFeeEnabledInput = document.getElementById('pricingLargeItemFeeEnabledInput');
+const pricingLargeItemThresholdInput = document.getElementById('pricingLargeItemThresholdInput');
+const pricingLargeItemFeeBaseInput = document.getElementById('pricingLargeItemFeeBaseInput');
+const pricingLargeItemStepAmountInput = document.getElementById('pricingLargeItemStepAmountInput');
+const pricingLargeItemStepFeeInput = document.getElementById('pricingLargeItemStepFeeInput');
+const pricingLargeItemFeeCapPerUnitInput = document.getElementById('pricingLargeItemFeeCapPerUnitInput');
 const reloadPricingConfigBtn = document.getElementById('reloadPricingConfigBtn');
 const savePricingConfigBtn = document.getElementById('savePricingConfigBtn');
 const pricingConfigResult = document.getElementById('pricingConfigResult');
 const discountForm = document.getElementById('discountForm');
 const discountCode = document.getElementById('discountCode');
+const discountScope = document.getElementById('discountScope');
 const discountType = document.getElementById('discountType');
 const discountValue = document.getElementById('discountValue');
 const discountMinOrder = document.getElementById('discountMinOrder');
@@ -217,6 +250,18 @@ const mapLegendBar = document.getElementById('mapLegendBar');
 const mapMetrics = document.getElementById('mapMetrics');
 const mapSearchInput = document.getElementById('mapSearchInput');
 const mapSearchResults = document.getElementById('mapSearchResults');
+const mapEventFeed = document.getElementById('mapEventFeed');
+const mapSelectionBanner = document.getElementById('mapSelectionBanner');
+const mapViewport = document.getElementById('mapViewport');
+const mapOrderStatusFilter = document.getElementById('mapOrderStatusFilter');
+const mapStyleSelect = document.getElementById('mapStyleSelect');
+const mapLayerDriversInput = document.getElementById('mapLayerDriversInput');
+const mapLayerClientsInput = document.getElementById('mapLayerClientsInput');
+const mapLayerRestaurantsInput = document.getElementById('mapLayerRestaurantsInput');
+const mapLayerOrdersInput = document.getElementById('mapLayerOrdersInput');
+const mapFollowSelectedOrderInput = document.getElementById('mapFollowSelectedOrderInput');
+const mapPinDetailsInput = document.getElementById('mapPinDetailsInput');
+const mapFullscreenBtn = document.getElementById('mapFullscreenBtn');
 const mapResetViewBtn = document.getElementById('mapResetViewBtn');
 const mapFocusButtons = Array.from(document.querySelectorAll('[data-map-focus]'));
 
@@ -224,6 +269,7 @@ const tabs = Array.from(document.querySelectorAll('.tab'));
 const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
 const portalSubtabs = Array.from(document.querySelectorAll('[data-subtab]'));
 const portalSubpanels = Array.from(document.querySelectorAll('[data-subpanel]'));
+const baseAdminDocumentTitle = document.title || 'SpeedStar Admin';
 
 const PORTAL_META = {
   dashboard: {
@@ -278,6 +324,7 @@ const SUBPANEL_META = {
   management: {
     'management-stores': { title: 'المتاجر', summary: 'متابعة المتاجر المعتمدة وتفاصيل تشغيلها.' },
     'management-couriers': { title: 'المندوبون', summary: 'متابعة حالة المندوبين والدخول إلى تفاصيلهم.' },
+    'management-courier-activity': { title: 'نشاط المندوبين', summary: 'تقرير تقديري لساعات النشاط اليومية والشهرية للمندوبين.' },
     'management-orders': { title: 'الطلبات والتحكم', summary: 'واجهة تشغيلية للتحكم الفعلي في الطلبات والعملاء.' },
   },
   admins: {
@@ -287,11 +334,43 @@ const SUBPANEL_META = {
   },
 };
 
+const ADMIN_PERMISSION_DEFS = {
+  dashboard: 'لوحة القيادة',
+  finance: 'المالية والتحويلات',
+  orders: 'متابعة الطلبات والتشغيل',
+  map: 'الخريطة الحية',
+  approvals: 'طلبات الاعتماد',
+  support: 'الدعم الفني',
+  notifications: 'الإشعارات',
+  config: 'Remote Config وتشغيل المدن',
+  admins: 'إدارة المسؤولين',
+};
+
+const ALL_ADMIN_PERMISSIONS = Object.keys(ADMIN_PERMISSION_DEFS);
+
+const TAB_PERMISSION_REQUIREMENTS = {
+  dashboard: ['dashboard'],
+  finance: ['finance'],
+  map: ['map'],
+  management: ['orders'],
+  admins: ['admins', 'config'],
+  notifications: ['notifications'],
+  support: ['support'],
+  pending: ['approvals'],
+};
+
+const SUBPANEL_PERMISSION_REQUIREMENTS = {
+  'admins-access': ['admins'],
+  'admins-rollout': ['config'],
+  'admins-remote-config': ['config'],
+};
+
 let unsubscribers = [];
 let addAdminFormBound = false;
 let normalizeStateFormBound = false;
 let rolloutConfigFormBound = false;
 let remoteConfigBulkFormBound = false;
+let appRemoteConfigFormBound = false;
 let pricingConfigFormBound = false;
 let discountFormBound = false;
 let liveMap = null;
@@ -299,6 +378,11 @@ let mapBootstrapped = false;
 let mapAutoFitted = false;
 let mapLegendControlAdded = false;
 let mapAddressBackfillInProgress = false;
+let mapBaseLayer = null;
+let mapOverlayLayer = null;
+let mapRefreshTimer = null;
+let mapUiBound = false;
+let mapScaleControlAdded = false;
 let supportConversations = [];
 let supportMessagesByConversation = new Map();
 let supportSelectedConversationId = '';
@@ -307,6 +391,10 @@ let notificationFormBound = false;
 let authTransitionInProgress = false;
 let preservedLoginStatus = null;
 let selectedOrderOnMapId = '';
+let allowCompletedSelectedOrderOnMap = false;
+let currentMapSelection = null;
+let currentAdminProfile = null;
+let currentAdminPermissions = new Set();
 let financeRangeFilterBound = false;
 let paymentSettingsFormBound = false;
 let rolloutSelectedCityIds = new Set();
@@ -314,6 +402,63 @@ let remoteConfigParametersCache = [];
 let operationsOrdersBound = false;
 let operationsOrderDocsCache = [];
 let courierDirectoryCache = [];
+
+const MAP_STYLE_PRESETS = {
+  voyager: {
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; OpenStreetMap &copy; CARTO',
+    subdomains: 'abcd'
+  },
+  positron: {
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; OpenStreetMap &copy; CARTO',
+    subdomains: 'abcd'
+  },
+  imagery: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri',
+    subdomains: 'abc',
+    overlay: {
+      url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      attribution: 'Labels &copy; Esri',
+      opacity: 0.92,
+      subdomains: 'abc'
+    }
+  },
+  topo: {
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution: 'Map data &copy; OpenStreetMap, SRTM | Style &copy; OpenTopoMap',
+    subdomains: 'abc'
+  },
+  osm: {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap',
+    subdomains: 'abc'
+  }
+};
+
+const MAP_ORDER_STATUS_LABELS = {
+  active: 'كل الطلبات النشطة',
+  courier_searching: 'البحث عن مندوب',
+  courier_offer_pending: 'عرض معلق لمندوب',
+  courier_assigned: 'مندوب معين',
+  pickup_ready: 'جاهز للاستلام',
+  picked_up: 'تم الاستلام',
+  arrived_to_client: 'وصل للعميل'
+};
+
+const mapUiState = {
+  style: 'voyager',
+  orderStatus: 'active',
+  showDrivers: true,
+  showClients: true,
+  showRestaurants: true,
+  showOrders: true,
+  followSelectedOrder: false,
+  pinDetails: false,
+  hiddenRestaurants: [],
+  events: []
+};
 let clientDirectoryCache = [];
 const activeSubpanelByPortal = {};
 
@@ -322,18 +467,110 @@ const opsCenterState = {
   paymentReviews: 0,
   walletRecharges: 0,
   supportUnread: 0,
+  supportUnreadMessages: 0,
   pendingApprovals: 0,
   alerts: [],
   seenKeys: new Set(),
   paymentReviewIds: new Set(),
   walletRechargeIds: new Set(),
   supportUnreadKeys: new Set(),
+  pendingApprovalIds: new Set(),
   bootstrapped: {
     paymentReviews: false,
     walletRecharges: false,
     support: false,
+    pendingApprovals: false,
   },
 };
+
+const pendingRealtimeState = {
+  courierApps: [],
+  storeApps: [],
+  fallbackDrivers: [],
+  fallbackStores: [],
+};
+
+let pendingRealtimeBound = false;
+
+function formatAttentionCount(value) {
+  const count = Math.max(0, Number(value || 0));
+  if (!count) return '';
+  if (count > 99) return '99+';
+  return count.toLocaleString('ar-EG');
+}
+
+function getFinanceAttentionCount() {
+  return Math.max(0, Number(opsCenterState.paymentReviews || 0));
+}
+
+function getSupportAttentionCount() {
+  return Math.max(0, Number(opsCenterState.supportUnreadMessages || opsCenterState.supportUnread || 0));
+}
+
+function getPendingAttentionCount() {
+  return Math.max(0, Number(opsCenterState.pendingApprovals || 0));
+}
+
+function setTabAttentionBadge(tabId, count) {
+  const badge = document.querySelector(`.tab[data-tab="${tabId}"] [data-tab-badge]`);
+  if (!badge) return;
+  const formatted = formatAttentionCount(count);
+  badge.hidden = !formatted;
+  badge.textContent = formatted || '0';
+  badge.setAttribute('aria-label', formatted ? `يوجد ${formatted} تنبيه` : 'لا توجد تنبيهات');
+}
+
+function renderPortalAttentionBadges() {
+  setTabAttentionBadge('finance', getFinanceAttentionCount());
+  setTabAttentionBadge('support', getSupportAttentionCount());
+  setTabAttentionBadge('pending', getPendingAttentionCount());
+}
+
+function renderAdminAttentionTitle() {
+  const totalAttention = getFinanceAttentionCount() + getSupportAttentionCount() + getPendingAttentionCount();
+  document.title = totalAttention > 0
+    ? `(${formatAttentionCount(totalAttention)}) ${baseAdminDocumentTitle}`
+    : baseAdminDocumentTitle;
+}
+
+function syncAdminAttentionUi() {
+  renderPortalAttentionBadges();
+  renderAdminAttentionTitle();
+}
+
+function resetOpsCenterAttentionState() {
+  opsCenterState.activeOrders = 0;
+  opsCenterState.paymentReviews = 0;
+  opsCenterState.walletRecharges = 0;
+  opsCenterState.supportUnread = 0;
+  opsCenterState.supportUnreadMessages = 0;
+  opsCenterState.pendingApprovals = 0;
+  opsCenterState.alerts = [];
+  opsCenterState.seenKeys = new Set();
+  opsCenterState.paymentReviewIds = new Set();
+  opsCenterState.walletRechargeIds = new Set();
+  opsCenterState.supportUnreadKeys = new Set();
+  opsCenterState.pendingApprovalIds = new Set();
+  opsCenterState.bootstrapped = {
+    paymentReviews: false,
+    walletRecharges: false,
+    support: false,
+    pendingApprovals: false,
+  };
+  pendingRealtimeState.courierApps = [];
+  pendingRealtimeState.storeApps = [];
+  pendingRealtimeState.fallbackDrivers = [];
+  pendingRealtimeState.fallbackStores = [];
+  renderOpsAlertFeed();
+  renderOpsPriorityCards();
+}
+
+function primeBrowserNotificationsPermission() {
+  if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
+}
 
 const WORKING_DAY_OPTIONS = [
   { key: 'saturday', label: 'السبت' },
@@ -346,6 +583,121 @@ const WORKING_DAY_OPTIONS = [
 ];
 
 const REMOTE_CONFIG_METADATA = {
+  ops_force_update_enabled: {
+    label: 'تفعيل التحديث الإجباري العام',
+    description: 'تشغيل أو إيقاف التحديث الإجباري العام على التطبيقات.',
+    valueType: 'BOOLEAN',
+  },
+  ops_min_build_android: {
+    label: 'أقل بناء أندرويد عام',
+    description: 'أقل رقم بناء يُسمح به قبل إجبار المستخدم على التحديث.',
+    valueType: 'NUMBER',
+  },
+  ops_update_message: {
+    label: 'رسالة التحديث العامة',
+    description: 'الرسالة العامة التي تظهر عند طلب التحديث.',
+    valueType: 'STRING',
+  },
+  ops_update_url_android: {
+    label: 'رابط التحديث العام للأندرويد',
+    description: 'رابط بديل عام لتحميل آخر إصدار على أندرويد.',
+    valueType: 'STRING',
+  },
+  client_force_update_enabled: {
+    label: 'تفعيل تحديث العميل',
+    description: 'تشغيل أو إيقاف التحديث الإجباري لتطبيق العميل.',
+    valueType: 'BOOLEAN',
+  },
+  client_min_build_android: {
+    label: 'أقل بناء للعميل',
+    description: 'أقل رقم بناء مسموح لتطبيق العميل على أندرويد.',
+    valueType: 'NUMBER',
+  },
+  client_update_message: {
+    label: 'رسالة تحديث العميل',
+    description: 'الرسالة التي تظهر لتطبيق العميل عند التحديث الإجباري.',
+    valueType: 'STRING',
+  },
+  client_update_url_android: {
+    label: 'رابط تحديث العميل',
+    description: 'رابط تنزيل آخر APK أو صفحة التحديث لتطبيق العميل.',
+    valueType: 'STRING',
+  },
+  store_force_update_enabled: {
+    label: 'تفعيل تحديث المتجر',
+    description: 'تشغيل أو إيقاف التحديث الإجباري لتطبيق المتجر.',
+    valueType: 'BOOLEAN',
+  },
+  store_min_build_android: {
+    label: 'أقل بناء للمتجر',
+    description: 'أقل رقم بناء مسموح لتطبيق المتجر على أندرويد.',
+    valueType: 'NUMBER',
+  },
+  store_update_message: {
+    label: 'رسالة تحديث المتجر',
+    description: 'الرسالة التي تظهر لتطبيق المتجر عند التحديث الإجباري.',
+    valueType: 'STRING',
+  },
+  store_update_url_android: {
+    label: 'رابط تحديث المتجر',
+    description: 'رابط تنزيل آخر APK أو صفحة التحديث لتطبيق المتجر.',
+    valueType: 'STRING',
+  },
+  courier_force_update_enabled: {
+    label: 'تفعيل تحديث المندوب',
+    description: 'تشغيل أو إيقاف التحديث الإجباري لتطبيق المندوب.',
+    valueType: 'BOOLEAN',
+  },
+  courier_min_build_android: {
+    label: 'أقل بناء للمندوب',
+    description: 'أقل رقم بناء مسموح لتطبيق المندوب على أندرويد.',
+    valueType: 'NUMBER',
+  },
+  courier_update_message: {
+    label: 'رسالة تحديث المندوب',
+    description: 'الرسالة التي تظهر لتطبيق المندوب عند التحديث الإجباري.',
+    valueType: 'STRING',
+  },
+  courier_update_url_android: {
+    label: 'رابط تحديث المندوب',
+    description: 'رابط تنزيل آخر APK أو صفحة التحديث لتطبيق المندوب.',
+    valueType: 'STRING',
+  },
+  client_root_url: {
+    label: 'رابط محتوى العميل',
+    description: 'الرابط الجذري الذي يجلب منه تطبيق العميل المحتوى البعيد.',
+    valueType: 'STRING',
+  },
+  store_root_url: {
+    label: 'رابط محتوى المتجر',
+    description: 'الرابط الجذري الذي يجلب منه تطبيق المتجر المحتوى البعيد.',
+    valueType: 'STRING',
+  },
+  courier_root_url: {
+    label: 'رابط محتوى المندوب',
+    description: 'الرابط الجذري الذي يجلب منه تطبيق المندوب المحتوى البعيد.',
+    valueType: 'STRING',
+  },
+  client_state_guard_distance_km: {
+    label: 'مسافة حراسة الولاية',
+    description: 'المسافة القصوى للتحقق من تفعيل الولاية للعميل.',
+    valueType: 'NUMBER',
+  },
+  client_state_rollout_enabled: {
+    label: 'تفعيل تشغيل الولايات',
+    description: 'تشغيل أو إيقاف ميزة تفعيل ولايات العميل حسب الإطلاق المرحلي.',
+    valueType: 'BOOLEAN',
+  },
+  client_enabled_states_csv: {
+    label: 'الولايات المفعلة CSV',
+    description: 'قائمة الولايات أو المدن المفعلة مفصولة بفواصل.',
+    valueType: 'STRING',
+  },
+  client_state_rollout_block_message: {
+    label: 'رسالة الولايات غير المفعلة',
+    description: 'الرسالة التي تظهر للمستخدم خارج النطاق المفعّل.',
+    valueType: 'STRING',
+  },
   pricing_client_delivery_base_fee: {
     label: 'سعر العميل الأساسي',
     description: 'سعر التوصيل للعميل حتى المسافة الأساسية.',
@@ -415,6 +767,34 @@ const PRICING_REMOTE_KEYS = [
   'pricing_driver_delivery_base_fee',
   'pricing_driver_delivery_base_distance_km',
   'pricing_driver_delivery_extra_per_km',
+  'pricing_large_item_fee_enabled',
+  'pricing_large_item_threshold',
+  'pricing_large_item_fee_base',
+  'pricing_large_item_step_amount',
+  'pricing_large_item_step_fee',
+  'pricing_large_item_fee_cap_per_unit',
+];
+
+const APP_REMOTE_KEYS = [
+  'ops_force_update_enabled',
+  'ops_min_build_android',
+  'ops_update_message',
+  'ops_update_url_android',
+  'client_force_update_enabled',
+  'client_min_build_android',
+  'client_update_message',
+  'client_update_url_android',
+  'client_root_url',
+  'store_force_update_enabled',
+  'store_min_build_android',
+  'store_update_message',
+  'store_update_url_android',
+  'store_root_url',
+  'courier_force_update_enabled',
+  'courier_min_build_android',
+  'courier_update_message',
+  'courier_update_url_android',
+  'courier_root_url',
 ];
 
 function getPortalSubpanelMeta(portalId, subpanelId) {
@@ -431,7 +811,8 @@ function getPortalSubtabButtons(portalId) {
 
 function activateSubpanel(portalId, subpanelId, options = {}) {
   const { scroll = false } = options;
-  const portalPanels = getPortalSubpanelNodes(portalId);
+  const portalPanels = getPortalSubpanelNodes(portalId)
+    .filter((panel) => !panel.hidden && canAccessSubpanel(String(panel.dataset.subpanel || '')));
   if (!portalPanels.length) return;
 
   const nextSubpanelId = portalPanels.some((panel) => panel.dataset.subpanel === subpanelId)
@@ -457,22 +838,13 @@ function activateSubpanel(portalId, subpanelId, options = {}) {
 }
 
 function ensurePortalSubpanel(portalId) {
-  const portalPanels = getPortalSubpanelNodes(portalId);
+  const portalPanels = getPortalSubpanelNodes(portalId)
+    .filter((panel) => !panel.hidden && canAccessSubpanel(String(panel.dataset.subpanel || '')));
   if (!portalPanels.length) return;
   activateSubpanel(portalId, activeSubpanelByPortal[portalId] || portalPanels[0].dataset.subpanel);
 }
 
 function syncPortalPresentation(id) {
-  const meta = PORTAL_META[id] || PORTAL_META.dashboard;
-  if (activePortalEyebrow) {
-    activePortalEyebrow.textContent = meta.eyebrow;
-  }
-  if (activePortalTitle) {
-    activePortalTitle.textContent = meta.title;
-  }
-  if (activePortalSummary) {
-    activePortalSummary.textContent = meta.summary;
-  }
   tabs.forEach((tab) => {
     const isActive = tab.dataset.tab === id;
     tab.setAttribute('aria-current', isActive ? 'page' : 'false');
@@ -693,6 +1065,7 @@ function renderOpsPriorityCards() {
     <div class="stat accent-green"><h4>طلبات نشطة قابلة للتحكم</h4><b>${Number(opsCenterState.activeOrders || 0).toLocaleString('ar-EG')}</b></div>
     <div class="stat"><h4>اعتمادات معلقة</h4><b>${Number(opsCenterState.pendingApprovals || 0).toLocaleString('ar-EG')}</b></div>
   `;
+  syncAdminAttentionUi();
 }
 
 function pushOpsAlert(key, title, body, level = 'info') {
@@ -748,6 +1121,191 @@ function isActiveOrderStatus(status) {
     'picked_up',
     'arrived_to_client',
   ].includes(String(status || '').trim().toLowerCase());
+}
+
+function isDeliveredOrderStatus(status) {
+  return ['delivered', 'تم التوصيل', 'completed'].includes(String(status || '').trim().toLowerCase());
+}
+
+function getTimestampMillis(value) {
+  if (!value) return 0;
+  if (typeof value?.toMillis === 'function') return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function getLocalDayKey(value = new Date()) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getCourierAvailableTodayMs(driver = {}, nowMs = Date.now()) {
+  const now = new Date(nowMs);
+  const todayKey = getLocalDayKey(now);
+  const todayStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayKey = String(driver.availabilityDayKey || '').trim();
+  const baseMs = dayKey === todayKey ? Math.max(0, Number(driver.availabilityTodayMs || 0)) : 0;
+  const startedMs = getTimestampMillis(driver.availabilityCurrentStartedAt);
+
+  if (driver.available === true && startedMs > 0) {
+    return baseMs + Math.max(0, nowMs - Math.max(startedMs, todayStartMs));
+  }
+
+  if (baseMs <= 0 && startedMs > 0) {
+    const lastSeenMs = getCourierLastActivityMillis(driver);
+    const effectiveEndMs = Math.min(nowMs, lastSeenMs || 0);
+    if (effectiveEndMs > 0) {
+      return Math.max(0, effectiveEndMs - Math.max(startedMs, todayStartMs));
+    }
+  }
+
+  return baseMs;
+}
+
+async function buildDriverAvailabilityPatch(driverId, nextAvailable) {
+  const ref = doc(db, 'drivers', driverId);
+  const snap = await getDoc(ref);
+  const data = snap.data() || {};
+  const nowMs = Date.now();
+  const now = new Date(nowMs);
+  const todayKey = getLocalDayKey(now);
+  const todayStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const currentDayKey = String(data.availabilityDayKey || '').trim();
+  const currentStartedMs = getTimestampMillis(data.availabilityCurrentStartedAt);
+  let totalTodayMs = currentDayKey === todayKey ? Math.max(0, Number(data.availabilityTodayMs || 0)) : 0;
+
+  if (!nextAvailable && currentStartedMs > 0) {
+    totalTodayMs += Math.max(0, nowMs - Math.max(currentStartedMs, todayStartMs));
+  }
+
+  return {
+    available: nextAvailable,
+    availabilityDayKey: todayKey,
+    availabilityTodayMs: Math.round(totalTodayMs),
+    availabilityCurrentStartedAt: nextAvailable ? serverTimestamp() : null,
+    updatedAt: serverTimestamp(),
+  };
+}
+
+function getCourierLastActivityMillis(driver = {}) {
+  return Math.max(
+    getTimestampMillis(driver.lastUpdated),
+    getTimestampMillis(driver.lastLocationUpdate),
+    getTimestampMillis(driver.updatedAt),
+    getTimestampMillis(driver.createdAt)
+  );
+}
+
+function getCourierOrderActivityStartMillis(order = {}) {
+  return [
+    order.acceptedAt,
+    order.offerAcceptedAt,
+    order.courierAcceptedAt,
+    order.pickedUpAt,
+    order.arrivedToClientAt,
+    order.createdAt,
+    order.updatedAt,
+  ].map(getTimestampMillis).find((value) => value > 0) || 0;
+}
+
+function getCourierOrderActivityEndMillis(order = {}, nowMs = Date.now()) {
+  const status = getOrderLifecycleStatus(order);
+  if (isActiveOrderStatus(status)) return nowMs;
+  return [
+    order.deliveredAt,
+    order.completedAt,
+    order.updatedAt,
+  ].map(getTimestampMillis).find((value) => value > 0) || 0;
+}
+
+function getOverlappingDurationMs(startMs, endMs, rangeStartMs, rangeEndMs) {
+  if (!startMs || !endMs || endMs <= startMs) return 0;
+  const boundedStart = Math.max(startMs, rangeStartMs);
+  const boundedEnd = Math.min(endMs, rangeEndMs);
+  return boundedEnd > boundedStart ? boundedEnd - boundedStart : 0;
+}
+
+function formatDurationHours(durationMs) {
+  const hours = Math.max(0, durationMs) / (60 * 60 * 1000);
+  if (!hours) return '0 س';
+  if (hours < 1) return `${Math.round(hours * 60)} د`;
+  return `${hours.toLocaleString('ar-EG', { minimumFractionDigits: hours >= 10 ? 0 : 1, maximumFractionDigits: 1 })} س`;
+}
+
+function buildEntityFactsGrid(items = []) {
+  const safeItems = items.filter((item) => item && item.label);
+  if (!safeItems.length) return '';
+  return `
+    <div class="entity-facts-grid">
+      ${safeItems.map((item) => `
+        <div class="entity-fact${item.className ? ` ${escapeHtml(item.className)}` : ''}">
+          <span>${escapeHtml(item.label)}</span>
+          <strong>${escapeHtml(String(item.value ?? '-'))}</strong>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function buildEntitySection(title, body, options = {}) {
+  const eyebrow = String(options.eyebrow || '').trim();
+  const description = String(options.description || '').trim();
+  return `
+    <section class="entity-section">
+      <div class="entity-section-head">
+        ${eyebrow ? `<span class="entity-section-eyebrow">${escapeHtml(eyebrow)}</span>` : ''}
+        <h5>${escapeHtml(title)}</h5>
+        ${description ? `<p>${escapeHtml(description)}</p>` : ''}
+      </div>
+      <div class="entity-section-body">${body}</div>
+    </section>
+  `;
+}
+
+function buildBankAccountsDetailsMarkup(data) {
+  const account = typeof parseAccount === 'function' ? parseAccount(data) : {
+    method: String(data?.payoutMethod || '').trim(),
+    accountNumber: String(data?.payoutAccountNumber || '').trim(),
+    accountName: String(data?.payoutAccountName || '').trim(),
+  };
+
+  if (!account.method && !account.accountName && !account.accountNumber) {
+    return '';
+  }
+
+  const methodLabelMap = {
+    bankk: 'بنكك',
+    ocash: 'أوكاش',
+    fawry: 'فوري',
+  };
+  const methodLabel = methodLabelMap[String(account.method || '').trim().toLowerCase()] || account.method || '-';
+
+  return buildEntitySection(
+    'بيانات التحويل',
+    buildEntityFactsGrid([
+      { label: 'طريقة التحويل', value: methodLabel },
+      { label: 'اسم صاحب الحساب', value: account.accountName || '-' },
+      { label: 'رقم الحساب', value: account.accountNumber || '-' },
+    ]),
+    { eyebrow: 'المالية' }
+  );
+}
+
+function formatDateTimeLabel(value) {
+  const ms = getTimestampMillis(value);
+  if (!ms) return '-';
+  try {
+    return new Date(ms).toLocaleString('ar-EG');
+  } catch (_) {
+    return '-';
+  }
 }
 
 function buildWorkingHoursEditorMarkup(workingHours) {
@@ -827,11 +1385,23 @@ const markerState = {
   orders: new Map()
 };
 
+const markerLayerState = {
+  drivers: null,
+  clients: null,
+  restaurants: null,
+  orders: null,
+};
+
 const lineState = {
   orders: new Map()
 };
 
+const mapRouteCache = new Map();
+const mapRoutePending = new Map();
+const mapRouteFailures = new Set();
+
 let leafletReadyPromise = null;
+let leafletClusterReadyPromise = null;
 
 const CLOUDINARY_CLOUD_NAME = 'dvnzloec6';
 const CLOUDINARY_UPLOAD_PRESET = 'flutter_unsigned';
@@ -991,12 +1561,12 @@ async function ensureLeaflet() {
       'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js'
     ];
 
-    let styleLoaded = false;
+    let styleLoaded = Boolean(window.L);
     for (const href of styleCandidates) {
+      if (styleLoaded) break;
       try {
         await loadExternalStyle(href);
         styleLoaded = true;
-        break;
       } catch (_) {
       }
     }
@@ -1005,18 +1575,206 @@ async function ensureLeaflet() {
       throw new Error('تعذر تحميل ملف أنماط الخريطة.');
     }
 
-    for (const src of scriptCandidates) {
+    if (!window.L) {
+      for (const src of scriptCandidates) {
+        try {
+          await loadExternalScript(src);
+          if (window.L) break;
+        } catch (_) {
+        }
+      }
+    }
+
+    if (!window.L) {
+      throw new Error('تعذر تحميل مكتبة الخريطة.');
+    }
+
+    return;
+  })();
+
+  await leafletReadyPromise;
+}
+
+async function ensureLeafletMarkerCluster() {
+  if (!window.L || window.L.markerClusterGroup) return;
+  if (leafletClusterReadyPromise) {
+    await leafletClusterReadyPromise;
+    return;
+  }
+
+  leafletClusterReadyPromise = (async () => {
+    const clusterStyleCandidates = [
+      'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css',
+      'https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css',
+      'https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css'
+    ];
+    const clusterDefaultStyleCandidates = [
+      'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css',
+      'https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css',
+      'https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css'
+    ];
+    const clusterScriptCandidates = [
+      'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js',
+      'https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js'
+    ];
+
+    for (const href of clusterStyleCandidates) {
       try {
-        await loadExternalScript(src);
-        if (window.L) return;
+        await loadExternalStyle(href);
+        break;
       } catch (_) {
       }
     }
 
-    throw new Error('تعذر تحميل مكتبة الخريطة.');
+    for (const href of clusterDefaultStyleCandidates) {
+      try {
+        await loadExternalStyle(href);
+        break;
+      } catch (_) {
+      }
+    }
+
+    for (const clusterSrc of clusterScriptCandidates) {
+      try {
+        await loadExternalScript(clusterSrc);
+        if (window.L?.markerClusterGroup) return;
+      } catch (_) {
+      }
+    }
   })();
 
-  await leafletReadyPromise;
+  await leafletClusterReadyPromise;
+}
+
+function createMapMarkerLayer(type) {
+  if (!window.L) return null;
+  if (window.L.markerClusterGroup) {
+    return window.L.markerClusterGroup({
+      showCoverageOnHover: false,
+      spiderfyOnMaxZoom: true,
+      removeOutsideVisibleBounds: true,
+      chunkedLoading: true,
+      maxClusterRadius: 48,
+      iconCreateFunction(cluster) {
+        return window.L.divIcon({
+          html: `<div class="map-cluster map-cluster--${type}"><span>${cluster.getChildCount()}</span></div>`,
+          className: 'map-cluster-shell',
+          iconSize: [42, 42],
+          iconAnchor: [21, 21],
+        });
+      },
+    });
+  }
+  return window.L.layerGroup();
+}
+
+function ensureMarkerLayers() {
+  if (!liveMap) return;
+  ['drivers', 'clients', 'restaurants', 'orders'].forEach((type) => {
+    if (markerLayerState[type]) return;
+    markerLayerState[type] = createMapMarkerLayer(type);
+    markerLayerState[type]?.addTo(liveMap);
+  });
+}
+
+function rebuildMarkerLayers() {
+  if (!liveMap) return;
+
+  Object.keys(markerLayerState).forEach((type) => {
+    const layer = markerLayerState[type];
+    if (layer && liveMap.hasLayer(layer)) {
+      liveMap.removeLayer(layer);
+    }
+    markerLayerState[type] = null;
+  });
+
+  Object.values(markerState).forEach((stateMap) => {
+    stateMap.forEach((marker) => marker.remove());
+    stateMap.clear();
+  });
+
+  ensureMarkerLayers();
+}
+
+function addMarkerToLayer(type, marker) {
+  if (!liveMap || !marker) return;
+  ensureMarkerLayers();
+  const layer = markerLayerState[type];
+  if (layer?.addLayer) {
+    layer.addLayer(marker);
+    return;
+  }
+  marker.addTo(liveMap);
+}
+
+function removeMarkerFromLayer(type, marker) {
+  if (!marker) return;
+  const layer = markerLayerState[type];
+  if (layer?.removeLayer) {
+    layer.removeLayer(marker);
+    return;
+  }
+  marker.remove();
+}
+
+function buildRouteKey(points) {
+  return points
+    .map(([lat, lng]) => `${Number(lat).toFixed(5)},${Number(lng).toFixed(5)}`)
+    .join('|');
+}
+
+async function fetchRouteGeometry(points) {
+  const coords = points.map(([lat, lng]) => `${lng},${lat}`).join(';');
+  const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`route:${response.status}`);
+  }
+  const payload = await response.json();
+  const route = payload?.routes?.[0]?.geometry?.coordinates;
+  if (!Array.isArray(route) || !route.length) {
+    throw new Error('route:empty');
+  }
+  return route.map(([lng, lat]) => [lat, lng]);
+}
+
+function resolveOrderRoutePoints(orderId, points, preferActualRoute) {
+  const routeKey = buildRouteKey(points);
+  if (!preferActualRoute) {
+    mapRouteFailures.delete(routeKey);
+    return { points, routeKey, mode: 'straight' };
+  }
+
+  if (mapRouteCache.has(routeKey)) {
+    return { points: mapRouteCache.get(routeKey), routeKey, mode: 'actual' };
+  }
+
+  if (!mapRoutePending.has(routeKey) && !mapRouteFailures.has(routeKey)) {
+    const promise = fetchRouteGeometry(points)
+      .then((routedPoints) => {
+        mapRouteCache.set(routeKey, routedPoints);
+        mapRouteFailures.delete(routeKey);
+      })
+      .catch(() => {
+        mapRouteFailures.add(routeKey);
+      })
+      .finally(() => {
+        mapRoutePending.delete(routeKey);
+        requestRefreshMapLayers();
+      });
+    mapRoutePending.set(routeKey, promise);
+  }
+
+  return {
+    points,
+    routeKey,
+    mode: mapRouteFailures.has(routeKey) ? 'fallback' : 'loading',
+  };
 }
 
 function withTimeout(promise, timeoutMs, message) {
@@ -1047,6 +1805,108 @@ function table(headers, rows) {
   `;
 }
 
+function normalizeAdminPermissions(rawPermissions, { fallbackToAll = true } = {}) {
+  const items = Array.isArray(rawPermissions) ? rawPermissions : [];
+  const normalized = items
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter((item) => ALL_ADMIN_PERMISSIONS.includes(item));
+
+  if (normalized.length) {
+    return Array.from(new Set(normalized));
+  }
+
+  return fallbackToAll ? [...ALL_ADMIN_PERMISSIONS] : [];
+}
+
+function hasAdminPermission(permission) {
+  return currentAdminPermissions.has(permission);
+}
+
+function canAccessPortal(tabId) {
+  const required = TAB_PERMISSION_REQUIREMENTS[tabId] || [];
+  if (!required.length) return true;
+  return required.some((permission) => hasAdminPermission(permission));
+}
+
+function canAccessSubpanel(subpanelId) {
+  const required = SUBPANEL_PERMISSION_REQUIREMENTS[subpanelId] || [];
+  if (!required.length) return true;
+  return required.some((permission) => hasAdminPermission(permission));
+}
+
+function getFirstAccessibleTabId() {
+  const firstVisibleTab = tabs.find((tab) => canAccessPortal(String(tab.dataset.tab || '')));
+  return firstVisibleTab?.dataset.tab || 'dashboard';
+}
+
+function applyAdminAccessControl() {
+  tabs.forEach((tab) => {
+    const tabId = String(tab.dataset.tab || '');
+    tab.hidden = !canAccessPortal(tabId);
+  });
+
+  tabPanels.forEach((panel) => {
+    const panelId = String(panel.id || '');
+    panel.hidden = !canAccessPortal(panelId);
+  });
+
+  portalSubtabs.forEach((button) => {
+    const subpanelId = String(button.dataset.subtab || '');
+    button.hidden = !canAccessSubpanel(subpanelId);
+  });
+
+  portalSubpanels.forEach((panel) => {
+    const subpanelId = String(panel.dataset.subpanel || '');
+    panel.hidden = !canAccessSubpanel(subpanelId);
+  });
+
+  dashboardQuickActions?.querySelectorAll('[data-quick-tab]').forEach((btn) => {
+    const tabId = String(btn.getAttribute('data-quick-tab') || '');
+    btn.hidden = !canAccessPortal(tabId);
+  });
+}
+
+function formatAdminPermissionsSummary(rawPermissions) {
+  const permissions = normalizeAdminPermissions(rawPermissions, { fallbackToAll: true });
+  return permissions.map((permission) => ADMIN_PERMISSION_DEFS[permission] || permission).join('، ');
+}
+
+async function loadAdminAccessProfile(user) {
+  if (!user) {
+    return { allowed: false, permissions: [], isStaticAdmin: false };
+  }
+
+  const normalizedEmail = String(user.email || '').toLowerCase();
+  if (guaranteedAdminEmails.has(normalizedEmail)) {
+    return {
+      allowed: true,
+      permissions: [...ALL_ADMIN_PERMISSIONS],
+      isStaticAdmin: true,
+      data: {
+        uid: user.uid,
+        email: normalizedEmail,
+        role: 'admin',
+        active: true,
+        permissions: [...ALL_ADMIN_PERMISSIONS],
+      },
+    };
+  }
+
+  const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+  if (!adminDoc.exists()) {
+    return { allowed: false, permissions: [], isStaticAdmin: false };
+  }
+
+  const data = adminDoc.data() || {};
+  const allowed = data.role === 'admin' || data.active === true;
+  return {
+    allowed,
+    permissions: normalizeAdminPermissions(data.permissions, { fallbackToAll: true }),
+    isStaticAdmin: false,
+    data,
+  };
+}
+
 async function isAdmin(user) {
   if (!user) return false;
   if (guaranteedAdminEmails.has((user.email || '').toLowerCase())) return true;
@@ -1063,13 +1923,18 @@ async function isAdmin(user) {
 }
 
 function activateTab(id) {
+  if (!canAccessPortal(id)) {
+    const fallbackId = getFirstAccessibleTabId();
+    if (fallbackId && fallbackId !== id) {
+      activateTab(fallbackId);
+    }
+    return;
+  }
+
   tabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === id));
   tabPanels.forEach((p) => p.classList.toggle('active', p.id === id));
   syncPortalPresentation(id);
   ensurePortalSubpanel(id);
-  if (adminQuickTab) {
-    adminQuickTab.value = id;
-  }
   applyAdminGlobalFilter();
   if (id === 'map') {
     // Re-enable auto-fit whenever map tab is reopened, unless user moves map again.
@@ -1126,12 +1991,6 @@ function applyAdminGlobalFilter() {
   renderAdminSearchResults({ visibleRows, totalRows: rows.length });
 }
 
-if (adminQuickTab) {
-  adminQuickTab.addEventListener('change', () => {
-    activateTab(String(adminQuickTab.value || 'dashboard'));
-  });
-}
-
 if (adminGlobalSearch) {
   adminGlobalSearch.addEventListener('input', () => {
     applyAdminGlobalFilter();
@@ -1140,7 +1999,7 @@ if (adminGlobalSearch) {
 
 if (mapResetViewBtn) {
   mapResetViewBtn.addEventListener('click', () => {
-    selectedOrderOnMapId = '';
+    clearSelectedOrderOnMap();
     mapAutoFitted = false;
     refreshMapLayers();
     if (liveMap) {
@@ -1176,6 +2035,16 @@ function setLoginStatus(message = '', tone = 'muted') {
   const safeTone = tone === 'error' || tone === 'success' ? tone : 'muted';
   loginStatus.className = `login-status ${safeTone}`;
   loginStatus.textContent = message;
+}
+
+function showSignedOutUi() {
+  authState.textContent = 'غير مسجل';
+  loginCard.hidden = false;
+  appPanel.hidden = true;
+  logoutBtn.hidden = true;
+  clearSubscriptions();
+  pendingRealtimeBound = false;
+  resetOpsCenterAttentionState();
 }
 
 function mapAuthErrorMessage(err) {
@@ -1227,16 +2096,13 @@ async function handleAuthenticatedUser(user) {
   authTransitionInProgress = true;
 
   try {
-    const normalizedEmail = (user.email || '').toLowerCase();
-    const isStaticAdmin = guaranteedAdminEmails.has(normalizedEmail);
-    const allowed = isStaticAdmin
-      ? true
-      : await Promise.race([
-        isAdmin(user),
-        new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('admin-check-timeout')), 9000);
-        })
-      ]);
+    const profile = await Promise.race([
+      loadAdminAccessProfile(user),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('admin-check-timeout')), 9000);
+      })
+    ]);
+    const allowed = profile?.allowed === true;
 
     if (!allowed) {
       preservedLoginStatus = {
@@ -1248,11 +2114,26 @@ async function handleAuthenticatedUser(user) {
       return;
     }
 
+    currentAdminProfile = profile?.data || null;
+    currentAdminPermissions = new Set(profile?.permissions || []);
+    applyAdminAccessControl();
+
+    if (!currentAdminPermissions.size) {
+      preservedLoginStatus = {
+        message: 'هذا الحساب لا يملك أي صلاحية تشغيلية مفعلة.',
+        tone: 'error'
+      };
+      setLoginStatus(preservedLoginStatus.message, preservedLoginStatus.tone);
+      await signOut(auth);
+      return;
+    }
+
     authState.textContent = user.email || user.uid;
     loginCard.hidden = true;
     appPanel.hidden = false;
     logoutBtn.hidden = false;
-    activateTab('dashboard');
+    activateTab(getFirstAccessibleTabId());
+    primeBrowserNotificationsPermission();
     setLoginStatus('تم تسجيل الدخول بنجاح.', 'success');
 
     mountAll()
@@ -1301,10 +2182,6 @@ loginForm.addEventListener('submit', async (e) => {
   try {
     await signInWithEmailAndPassword(auth, email, password);
     setLoginStatus('تم تسجيل الدخول، جاري التحقق من الصلاحيات...', 'muted');
-    const signedUser = auth.currentUser;
-    if (signedUser) {
-      void handleAuthenticatedUser(signedUser);
-    }
   } catch (err) {
     console.error('signIn failed', err);
     setLoginStatus(`فشل تسجيل الدخول: ${mapAuthErrorMessage(err)}`, 'error');
@@ -1319,82 +2196,31 @@ resetPasswordBtn?.addEventListener('click', async () => {
 
 logoutBtn.addEventListener('click', async () => {
   preservedLoginStatus = null;
+  currentAdminProfile = null;
+  currentAdminPermissions = new Set();
   await signOut(auth);
+});
+
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    void handleAuthenticatedUser(user);
+    return;
+  }
+
+  authTransitionInProgress = false;
+  currentAdminProfile = null;
+  currentAdminPermissions = new Set();
+  showSignedOutUi();
+  if (preservedLoginStatus) {
+    setLoginStatus(preservedLoginStatus.message, preservedLoginStatus.tone);
+  } else {
+    setLoginStatus('');
+  }
 });
 
 function mountDashboard() {
   renderOpsPriorityCards();
   renderOpsAlertFeed();
-
-  const publicMetricDefs = [
-    ['زيارات الصفحة', 'page_view'],
-    ['تحميل العميل', 'download_client_android'],
-    ['تحميل المتجر', 'download_store_android'],
-    ['تحميل المندوب', 'download_courier_android'],
-    ['اتصال هاتفي', 'contact_phone'],
-    ['بريد إلكتروني', 'contact_email'],
-    ['واتساب', 'contact_whatsapp'],
-    ['انستغرام', 'contact_instagram'],
-    ['فيسبوك', 'contact_facebook'],
-    ['تيك توك', 'contact_tiktok'],
-  ];
-
-  const readCount = (docData, key) => {
-    const nestedValue = docData?.events?.[key];
-    const dottedValue = docData?.[`events.${key}`];
-    const value = Number(nestedValue ?? dottedValue ?? 0);
-    return Number.isFinite(value) ? value : 0;
-  };
-
-  const renderPublicMetrics = (target, docData, headingPrefix) => {
-    if (!target) return;
-    const blocks = publicMetricDefs.map(([label, key]) => {
-      const count = readCount(docData, key).toLocaleString('ar-EG');
-      return `<div class="stat"><h4>${headingPrefix} ${label}</h4><b>${count}</b></div>`;
-    });
-    target.innerHTML = blocks.join('');
-  };
-
-  const dayKey = new Date().toISOString().slice(0, 10);
-  const rootMetricsRef = doc(db, 'public_metrics', 'landing_page');
-  const dailyMetricsRef = doc(db, 'public_metrics', 'landing_page', 'daily', dayKey);
-
-  renderPublicMetrics(publicMetricsTotalGrid, {}, 'إجمالي');
-  renderPublicMetrics(publicMetricsTodayGrid, {}, 'اليوم');
-
-  unsubscribers.push(
-    onSnapshot(rootMetricsRef, (snap) => {
-      const data = snap.data() || {};
-      renderPublicMetrics(publicMetricsTotalGrid, data, 'إجمالي');
-      if (publicMetricsUpdatedAt) {
-        const hasData = snap.exists();
-        publicMetricsUpdatedAt.textContent = hasData
-          ? 'تم تحديث الإحصائيات الإجمالية بنجاح.'
-          : 'لا توجد بيانات إجمالية بعد.';
-      }
-    }, (err) => {
-      if (publicMetricsUpdatedAt) {
-        publicMetricsUpdatedAt.textContent = `تعذر تحميل الإحصائيات الإجمالية: ${err.message || err}`;
-      }
-    })
-  );
-
-  unsubscribers.push(
-    onSnapshot(dailyMetricsRef, (snap) => {
-      const data = snap.data() || {};
-      renderPublicMetrics(publicMetricsTodayGrid, data, 'اليوم');
-      if (publicMetricsUpdatedAt) {
-        const hasData = snap.exists();
-        publicMetricsUpdatedAt.textContent = hasData
-          ? `آخر تحديث: ${dayKey}`
-          : `لا توجد بيانات لليوم (${dayKey}) بعد.`;
-      }
-    }, (err) => {
-      if (publicMetricsUpdatedAt) {
-        publicMetricsUpdatedAt.textContent = `تعذر تحميل إحصائيات اليوم: ${err.message || err}`;
-      }
-    })
-  );
 
   const toMoney = (value) => {
     const parsed = Number(value);
@@ -1410,7 +2236,7 @@ function mountDashboard() {
     const totalWithDelivery = toMoney(orderData.totalWithDelivery || fallbackTotal);
 
     let restaurantShare = toMoney(orderData.restaurantShare ?? orderData.storeShare ?? subtotal);
-    let driverShare = toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? 0);
+  let driverShare = toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? orderData.deliveryFee ?? 0);
     let platformShare = toMoney(orderData.platformShare);
 
     if (!Number.isFinite(platformShare) || platformShare <= 0) {
@@ -1441,6 +2267,8 @@ function mountDashboard() {
 
   const renderDashboardOrderDetailsPanel = (orderId, data) => {
     if (!dashboardOrderDetails) return;
+    const lifecycleStatus = getOrderLifecycleStatus(data);
+    const canOpenMap = isActiveOrderStatus(lifecycleStatus);
     const financial = computeFinancial(data);
     const items = Array.isArray(data.items)
       ? data.items.map((item) => `
@@ -1468,7 +2296,7 @@ function mountDashboard() {
         </div>
       ` : '<div style="margin-top:8px;" class="muted">لا توجد عناصر مفصلة.</div>'}
       <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn primary" data-open-order-map-panel="${escapeHtml(orderId)}">فتح وتتبع الطلب على الخريطة</button>
+        ${canOpenMap ? `<button class="btn primary" data-open-order-map-panel="${escapeHtml(orderId)}">فتح وتتبع الطلب على الخريطة</button>` : ''}
         <button class="btn ghost" data-open-order-management="${escapeHtml(orderId)}">فتح من الإدارة</button>
       </div>
     `;
@@ -1506,13 +2334,16 @@ function mountDashboard() {
     unsubscribers.push(unsub);
   });
 
-  const latestOrdersQ = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(20));
+  const latestOrdersQ = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(60));
   unsubscribers.push(
     onSnapshot(latestOrdersQ, (snap) => {
-      opsCenterState.activeOrders = snap.docs.filter((docSnap) => isActiveOrderStatus(getOrderLifecycleStatus(docSnap.data() || {}))).length;
+      const activeDocs = snap.docs.filter((docSnap) => isActiveOrderStatus(getOrderLifecycleStatus(docSnap.data() || {})));
+      const deliveredDocs = snap.docs.filter((docSnap) => isDeliveredOrderStatus(getOrderLifecycleStatus(docSnap.data() || {})));
+
+      opsCenterState.activeOrders = activeDocs.length;
       renderOpsPriorityCards();
 
-      const rows = snap.docs.map((d) => {
+      const buildRows = (docs, { allowMap = true } = {}) => docs.map((d) => {
         const data = d.data();
         const financial = computeFinancial(data);
         return `<tr>
@@ -1524,22 +2355,28 @@ function mountDashboard() {
           <td>${formatMoney(financial.totalWithDelivery)}</td>
           <td>
             <button class="btn ghost" data-order-details="${escapeHtml(d.id)}">تفاصيل</button>
-            <button class="btn primary" data-order-map="${escapeHtml(d.id)}">الخريطة</button>
+            ${allowMap ? `<button class="btn primary" data-order-map="${escapeHtml(d.id)}">الخريطة</button>` : ''}
           </td>
         </tr>`;
       });
-      setHtml(ordersTable, table(['رقم الطلب', 'العميل', 'المطعم', 'المندوب', 'الحالة', 'الإجمالي', 'إجراء'], rows));
 
-      ordersTable.querySelectorAll('[data-order-details]').forEach((btn) => {
+      if (activeOrdersTable) {
+        setHtml(activeOrdersTable, table(['رقم الطلب', 'العميل', 'المطعم', 'المندوب', 'الحالة', 'الإجمالي', 'إجراء'], buildRows(activeDocs, { allowMap: true })));
+      }
+      if (deliveredOrdersTable) {
+        setHtml(deliveredOrdersTable, table(['رقم الطلب', 'العميل', 'المطعم', 'المندوب', 'الحالة', 'الإجمالي', 'إجراء'], buildRows(deliveredDocs, { allowMap: false })));
+      }
+
+      [activeOrdersTable, deliveredOrdersTable].filter(Boolean).forEach((tableRoot) => tableRoot.querySelectorAll('[data-order-details]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const id = btn.getAttribute('data-order-details');
           const doc = snap.docs.find((item) => item.id === id);
           if (!id || !doc) return;
           renderDashboardOrderDetailsPanel(id, doc.data() || {});
         });
-      });
+      }));
 
-      ordersTable.querySelectorAll('[data-order-map]').forEach((btn) => {
+      activeOrdersTable?.querySelectorAll('[data-order-map]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const id = btn.getAttribute('data-order-map');
           if (!id) return;
@@ -1547,9 +2384,9 @@ function mountDashboard() {
         });
       });
 
-      if (snap.docs.length && dashboardOrderDetails && dashboardOrderDetails.classList.contains('muted')) {
+      if ((activeDocs.length || deliveredDocs.length) && dashboardOrderDetails && dashboardOrderDetails.classList.contains('muted')) {
         dashboardOrderDetails.classList.remove('muted');
-        const first = snap.docs[0];
+        const first = activeDocs[0] || deliveredDocs[0];
         renderDashboardOrderDetailsPanel(first.id, first.data() || {});
       }
     })
@@ -1584,7 +2421,7 @@ function mountFinance() {
     const totalWithDelivery = toMoney(orderData.totalWithDelivery || fallbackTotal);
 
     let restaurantShare = toMoney(orderData.restaurantShare ?? orderData.storeShare ?? subtotal);
-    let driverShare = toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? 0);
+  let driverShare = toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? orderData.deliveryFee ?? 0);
     let platformShare = toMoney(orderData.platformShare);
     if (platformShare <= 0) {
       platformShare = totalWithDelivery - restaurantShare - driverShare;
@@ -1609,7 +2446,7 @@ function mountFinance() {
 
   const needsFinancialUpdate = (orderData, computed) => {
     const sameRestaurant = Math.round(toMoney(orderData.restaurantShare)) === Math.round(computed.restaurantShare);
-    const sameDriver = Math.round(toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver)) === Math.round(computed.driverShare);
+    const sameDriver = Math.round(toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? orderData.deliveryFee)) === Math.round(computed.driverShare);
     const samePlatform = Math.round(toMoney(orderData.platformShare)) === Math.round(computed.platformShare);
     const sameTotal = Math.round(toMoney(orderData.totalWithDelivery)) === Math.round(computed.totalWithDelivery);
     return !(sameRestaurant && sameDriver && samePlatform && sameTotal);
@@ -1847,6 +2684,7 @@ function mountFinance() {
         <td>${formatMoney(agg.transferred)}</td>
         <td>${formatMoney(agg.payable)}</td>
         <td>${escapeHtml(account.method || '-')}</td>
+        <td>${escapeHtml(account.accountName || '-')}</td>
         <td>${escapeHtml(account.accountNumber || '-')}</td>
         <td>
           <button class="btn primary" data-pay-store="${escapeHtml(storeId)}" data-payable="${agg.payable}">تم التحويل</button>
@@ -1864,6 +2702,7 @@ function mountFinance() {
         <td>${formatMoney(agg.transferred)}</td>
         <td>${formatMoney(agg.payable)}</td>
         <td>${escapeHtml(account.method || '-')}</td>
+        <td>${escapeHtml(account.accountName || '-')}</td>
         <td>${escapeHtml(account.accountNumber || '-')}</td>
         <td>
           <button class="btn primary" data-pay-courier="${escapeHtml(driverId)}" data-payable="${agg.payable}">تم التحويل</button>
@@ -1872,7 +2711,7 @@ function mountFinance() {
     });
 
     if (financeStoresPayoutTable) {
-      setHtml(financeStoresPayoutTable, table(['المطعم', 'عدد الطلبات', 'المستحق الكلي', 'المحول سابقاً', 'المتبقي للتحويل', 'طريقة الدفع', 'رقم الحساب', 'إجراء'], storeRows));
+      setHtml(financeStoresPayoutTable, table(['المطعم', 'عدد الطلبات', 'المستحق الكلي', 'المحول سابقاً', 'المتبقي للتحويل', 'طريقة الدفع', 'اسم صاحب الحساب', 'رقم الحساب', 'إجراء'], storeRows));
       financeStoresPayoutTable.querySelectorAll('[data-pay-store]').forEach((btn) => {
         btn.addEventListener('click', async () => {
           const targetId = btn.getAttribute('data-pay-store');
@@ -1905,7 +2744,7 @@ function mountFinance() {
     }
 
     if (financeCouriersPayoutTable) {
-      setHtml(financeCouriersPayoutTable, table(['المندوب', 'عدد الطلبات', 'المستحق الكلي', 'المحول سابقاً', 'المتبقي للتحويل', 'طريقة الدفع', 'رقم الحساب', 'إجراء'], courierRows));
+      setHtml(financeCouriersPayoutTable, table(['المندوب', 'عدد الطلبات', 'المستحق الكلي', 'المحول سابقاً', 'المتبقي للتحويل', 'طريقة الدفع', 'اسم صاحب الحساب', 'رقم الحساب', 'إجراء'], courierRows));
       financeCouriersPayoutTable.querySelectorAll('[data-pay-courier]').forEach((btn) => {
         btn.addEventListener('click', async () => {
           const targetId = btn.getAttribute('data-pay-courier');
@@ -2307,7 +3146,7 @@ function mountFinance() {
     await renderPaymentReviewQueue(docs);
   await renderWalletRechargeQueue();
 
-    await renderPayoutTables(docs);
+    await renderPayoutTables(latestFinanceDocs);
   };
 
   if (financeRangeFilter && !financeRangeFilterBound) {
@@ -2477,6 +3316,35 @@ function mountStoreOffersReview() {
   );
 }
 
+async function handleManagedUserDeletion({ role, uid, displayName = '' }) {
+  const normalizedRole = role === 'courier' ? 'courier' : 'client';
+  const roleLabel = normalizedRole === 'courier' ? 'المندوب' : 'العميل';
+  const targetLabel = String(displayName || uid || '').trim() || uid;
+  const confirmation = window.prompt(
+    `لحذف ${roleLabel} ${targetLabel} نهائيًا اكتب كلمة حذف. لن يتم الحذف إذا كانت هناك طلبات نشطة مرتبطة بالحساب.`,
+    ''
+  );
+
+  if (confirmation == null) return;
+  if (confirmation.trim() !== 'حذف') {
+    alert('تم إلغاء الحذف لأن كلمة التأكيد غير صحيحة.');
+    return;
+  }
+
+  try {
+    await deleteManagedUserAccount({ role: normalizedRole, uid });
+    alert(`تم حذف ${roleLabel} بنجاح.`);
+    if (normalizedRole === 'courier' && courierDetailsPanel) {
+      courierDetailsPanel.innerHTML = '<span class="muted">تم حذف حساب المندوب.</span>';
+    }
+    if (normalizedRole === 'client' && clientDetailsPanel) {
+      clientDetailsPanel.innerHTML = '<span class="muted">تم حذف حساب العميل.</span>';
+    }
+  } catch (err) {
+    alert(`تعذر حذف ${roleLabel}: ${err.message || err}`);
+  }
+}
+
 function renderClientsDirectoryTable() {
   if (!clientsTable) return;
   const rows = clientDirectoryCache.slice(0, 80).map((item) => {
@@ -2487,10 +3355,137 @@ function renderClientsDirectoryTable() {
       <td>${escapeHtml(String(data.email || '-'))}</td>
       <td>${Number(data.walletBalance || 0).toLocaleString('ar-EG')} ج.س</td>
       <td>${escapeHtml(String(data.defaultAddressText || data.address || '-'))}</td>
+      <td>
+        <button class="btn ghost" data-view-client="${escapeHtml(item.id)}">تفاصيل</button>
+        <button class="btn danger" data-delete-client="${escapeHtml(item.id)}">حذف</button>
+      </td>
     </tr>`;
   });
 
-  setHtml(clientsTable, table(['العميل', 'الهاتف', 'البريد', 'المحفظة', 'آخر عنوان'], rows));
+  setHtml(clientsTable, table(['العميل', 'الهاتف', 'البريد', 'المحفظة', 'آخر عنوان', 'إجراء'], rows));
+
+  clientsTable.querySelectorAll('[data-view-client]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const uid = btn.getAttribute('data-view-client');
+      if (!uid) return;
+      await loadClientDetails(uid);
+    });
+  });
+
+  clientsTable.querySelectorAll('[data-delete-client]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const uid = btn.getAttribute('data-delete-client');
+      if (!uid) return;
+      const item = clientDirectoryCache.find((entry) => entry.id === uid);
+      await handleManagedUserDeletion({
+        role: 'client',
+        uid,
+        displayName: item?.data?.name || item?.data?.displayName || uid,
+      });
+    });
+  });
+
+  if (clientDirectoryCache.length && clientDetailsPanel?.classList.contains('muted')) {
+    loadClientDetails(clientDirectoryCache[0].id);
+  }
+}
+
+async function loadClientDetails(clientId) {
+  if (!clientDetailsPanel) return;
+  clientDetailsPanel.innerHTML = '<span class="muted">جاري تحميل تفاصيل العميل...</span>';
+
+  try {
+    const clientRef = doc(db, 'clients', clientId);
+    const clientSnap = await getDoc(clientRef);
+    if (!clientSnap.exists()) {
+      clientDetailsPanel.innerHTML = '<span class="muted">لم يتم العثور على بيانات العميل.</span>';
+      return;
+    }
+
+    const client = clientSnap.data() || {};
+    const ordersSnap = await safeGetDocs(query(collection(db, 'orders'), where('clientId', '==', clientId)));
+    const orders = ordersSnap.docs.map((d) => d.data() || {});
+    const activeOrderStatuses = new Set(['pending', 'store_pending', 'courier_searching', 'courier_offer_pending', 'courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client']);
+    const activeOrdersCount = orders.filter((order) => activeOrderStatuses.has(String(order.orderStatus || order.status || '').trim().toLowerCase())).length;
+
+    let defaultAddressName = String(client.defaultAddressText || client.address || '-');
+    const defaultAddressId = String(client.defaultAddressId || '').trim();
+    if (defaultAddressId) {
+      const addressSnap = await getDoc(doc(db, 'clients', clientId, 'addresses', defaultAddressId));
+      if (addressSnap.exists()) {
+        defaultAddressName = String(addressSnap.data()?.addressName || defaultAddressName || '-');
+      }
+    }
+
+    clientDetailsPanel.classList.remove('muted');
+    clientDetailsPanel.innerHTML = `
+      <div class="entity-details-panel">
+        <div class="entity-hero">
+          <div>
+            <span class="entity-role-badge">العملاء</span>
+            <h4>تفاصيل العميل</h4>
+            <p>عرض موجز ومنظم للحساب مع مساحة تعديل سريعة دون تشتيت.</p>
+          </div>
+          <div class="entity-hero-side">
+            <span class="entity-mini-label">${escapeHtml(clientId)}</span>
+          </div>
+        </div>
+        ${buildEntitySection('البيانات الأساسية', buildEntityFactsGrid([
+          { label: 'المعرف', value: clientId },
+          { label: 'الاسم', value: client.name || client.displayName || '-' },
+          { label: 'البريد', value: client.email || '-' },
+          { label: 'الهاتف', value: client.phone || '-' },
+          { label: 'الرصيد', value: `${Number(client.walletBalance || client.wallet || 0).toLocaleString('ar-EG')} ج.س`, className: 'entity-fact-highlight' },
+          { label: 'العنوان الافتراضي', value: defaultAddressName || '-' },
+        ]), { eyebrow: 'الملف' })}
+        ${buildEntitySection('مؤشرات سريعة', buildEntityFactsGrid([
+          { label: 'إجمالي الطلبات', value: orders.length },
+          { label: 'الطلبات النشطة', value: activeOrdersCount },
+        ]), { eyebrow: 'النشاط' })}
+        ${buildEntitySection('تعديل بيانات العميل', `
+          <div class="entity-form-grid">
+            <label>الاسم<input id="clientName-${clientId}" type="text" value="${escapeHtml(client.name || client.displayName || '')}" /></label>
+            <label>الهاتف<input id="clientPhone-${clientId}" type="text" value="${escapeHtml(client.phone || '')}" /></label>
+            <label>البريد الإلكتروني<input id="clientEmail-${clientId}" type="email" value="${escapeHtml(client.email || '')}" /></label>
+            <label>العنوان الافتراضي<input id="clientAddress-${clientId}" type="text" value="${escapeHtml(defaultAddressName === '-' ? '' : defaultAddressName)}" /></label>
+          </div>
+          <div class="entity-actions">
+            <button class="btn primary" id="clientSave-${clientId}">حفظ التعديلات</button>
+            <button class="btn danger" id="clientDelete-${clientId}">حذف الحساب</button>
+          </div>
+        `, { eyebrow: 'التحرير' })}
+      </div>
+    `;
+
+    document.getElementById(`clientSave-${clientId}`)?.addEventListener('click', async () => {
+      try {
+        await updateManagedUserProfile({
+          role: 'client',
+          uid: clientId,
+          fields: {
+            name: (document.getElementById(`clientName-${clientId}`)?.value || '').trim(),
+            phone: (document.getElementById(`clientPhone-${clientId}`)?.value || '').trim(),
+            email: (document.getElementById(`clientEmail-${clientId}`)?.value || '').trim(),
+            address: (document.getElementById(`clientAddress-${clientId}`)?.value || '').trim(),
+          },
+        });
+        alert('تم حفظ بيانات العميل بنجاح');
+        await loadClientDetails(clientId);
+      } catch (err) {
+        alert(`تعذر حفظ بيانات العميل: ${err.message || err}`);
+      }
+    });
+
+    document.getElementById(`clientDelete-${clientId}`)?.addEventListener('click', async () => {
+      await handleManagedUserDeletion({
+        role: 'client',
+        uid: clientId,
+        displayName: client.name || client.displayName || clientId,
+      });
+    });
+  } catch (err) {
+    clientDetailsPanel.innerHTML = `<span class="muted">تعذر تحميل التفاصيل: ${escapeHtml(err.message || err)}</span>`;
+  }
 }
 
 function getFilteredOperationsOrders() {
@@ -2589,6 +3584,7 @@ function renderOperationsOrderDetails(orderId) {
       <button class="btn primary" data-admin-order-action="assign_specific" data-order-id="${escapeHtml(orderId)}">تحويل إلى المندوب المحدد</button>
       <button class="btn ghost" data-open-store-from-order="${escapeHtml(String(data.restaurantId || ''))}">فتح المتجر</button>
       <button class="btn ghost" data-open-courier-from-order="${escapeHtml(String(data.assignedDriverId || data.offeredDriverId || ''))}">فتح المندوب</button>
+      <button class="btn ghost" data-open-client-from-order="${escapeHtml(String(data.clientId || ''))}">فتح العميل</button>
     </div>
   `;
 
@@ -2602,7 +3598,7 @@ function renderOperationsOrderDetails(orderId) {
   });
 
   operationsOrderDetails.querySelector('[data-open-order-map]')?.addEventListener('click', () => {
-    openOrderOnMap(orderId);
+    openOrderOnMap(orderId, { allowCompleted: true });
   });
 
   operationsOrderDetails.querySelector('[data-open-store-from-order]')?.addEventListener('click', async () => {
@@ -2617,6 +3613,13 @@ function renderOperationsOrderDetails(orderId) {
     if (!driverId) return;
     activateSubpanel('management', 'management-couriers');
     await loadCourierDetails(driverId);
+  });
+
+  operationsOrderDetails.querySelector('[data-open-client-from-order]')?.addEventListener('click', async () => {
+    const clientId = String(data.clientId || '').trim();
+    if (!clientId) return;
+    activateSubpanel('management', 'management-orders');
+    await loadClientDetails(clientId);
   });
 }
 
@@ -2658,6 +3661,127 @@ function renderOperationsOrders() {
   }
 }
 
+function buildCourierActivityRows(drivers = [], orders = []) {
+  const nowMs = Date.now();
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+  const maxOrderActivityMs = 6 * 60 * 60 * 1000;
+  const driverMap = new Map();
+
+  drivers.forEach((entry) => {
+    driverMap.set(entry.id, {
+      id: entry.id,
+      name: String(entry.data?.name || entry.id),
+      phone: String(entry.data?.phone || entry.data?.mobile || '-'),
+      approvalStatus: String(entry.data?.approvalStatus || (entry.data?.isApproved ? 'approved' : 'pending')),
+      available: entry.data?.available === true,
+      lastSeenMs: getCourierLastActivityMillis(entry.data || {}),
+      todayMs: getCourierAvailableTodayMs(entry.data || {}, nowMs),
+      monthMs: 0,
+      todayOrders: 0,
+      monthOrders: 0,
+      activeOrders: 0,
+    });
+  });
+
+  orders.forEach((entry) => {
+    const order = entry.data || {};
+    const driverId = String(order.assignedDriverId || '').trim();
+    if (!driverId) return;
+
+    const status = getOrderLifecycleStatus(order);
+    if (!isActiveOrderStatus(status) && !isDeliveredOrderStatus(status)) return;
+
+    const startMs = getCourierOrderActivityStartMillis(order);
+    const endMs = getCourierOrderActivityEndMillis(order, nowMs);
+    if (!startMs || !endMs || endMs <= startMs) return;
+
+    const boundedEndMs = Math.min(endMs, startMs + maxOrderActivityMs);
+    if (boundedEndMs <= startMs) return;
+
+    const todayMs = getOverlappingDurationMs(startMs, boundedEndMs, todayStart.getTime(), nowMs);
+    const monthMs = getOverlappingDurationMs(startMs, boundedEndMs, monthStart.getTime(), nowMs);
+    const existing = driverMap.get(driverId) || {
+      id: driverId,
+      name: driverId,
+      phone: '-',
+      approvalStatus: 'غير معروف',
+      available: false,
+      lastSeenMs: 0,
+      todayMs: 0,
+      monthMs: 0,
+      todayOrders: 0,
+      monthOrders: 0,
+      activeOrders: 0,
+    };
+
+    existing.monthMs += monthMs;
+    if (todayMs > 0) existing.todayOrders += 1;
+    if (monthMs > 0) existing.monthOrders += 1;
+    if (isActiveOrderStatus(status)) existing.activeOrders += 1;
+    driverMap.set(driverId, existing);
+  });
+
+  return Array.from(driverMap.values())
+    .filter((item) => item.approvalStatus === 'approved' || item.todayMs > 0 || item.monthMs > 0 || item.activeOrders > 0)
+    .sort((a, b) => {
+      if (b.todayMs !== a.todayMs) return b.todayMs - a.todayMs;
+      if (b.monthMs !== a.monthMs) return b.monthMs - a.monthMs;
+      return String(a.name).localeCompare(String(b.name), 'ar');
+    });
+}
+
+function renderCourierActivityReport() {
+  if (!courierActivitySummary || !courierActivityTable) return;
+
+  const rowsData = buildCourierActivityRows(courierDirectoryCache, operationsOrderDocsCache);
+  const totalTodayMs = rowsData.reduce((sum, item) => sum + item.todayMs, 0);
+  const totalMonthMs = rowsData.reduce((sum, item) => sum + item.monthMs, 0);
+  const activeTodayCount = rowsData.filter((item) => item.todayMs > 0 || item.activeOrders > 0).length;
+
+  courierActivitySummary.classList.remove('muted');
+  courierActivitySummary.innerHTML = `
+    <div class="stats">
+      <div class="stat"><h4>إجمالي المندوبين</h4><b>${rowsData.length.toLocaleString('ar-EG')}</b></div>
+      <div class="stat"><h4>نشطون اليوم</h4><b>${activeTodayCount.toLocaleString('ar-EG')}</b></div>
+      <div class="stat"><h4>وقت التوفر اليوم</h4><b>${formatDurationHours(totalTodayMs)}</b></div>
+      <div class="stat"><h4>ساعات الشهر</h4><b>${formatDurationHours(totalMonthMs)}</b></div>
+    </div>
+    <div style="margin-top:10px;">وقت اليوم هنا مبني على وقت التوفر الفعلي للمندوب. أما الشهر فيبقى تقديريًا من مدد الطلبات إلى أن نضيف سجل توفر شهري تراكمي.</div>
+  `;
+
+  if (!rowsData.length) {
+    setHtml(courierActivityTable, '<p class="muted">لا توجد بيانات نشاط كافية لعرض التقرير حاليًا.</p>');
+    return;
+  }
+
+  const rows = rowsData.slice(0, 150).map((item) => `
+    <tr>
+      <td>${escapeHtml(item.name)}</td>
+      <td>${escapeHtml(item.phone)}</td>
+      <td>${item.available ? 'متاح الآن' : 'غير متاح'}</td>
+      <td>${formatDurationHours(item.todayMs)}</td>
+      <td>${item.todayOrders.toLocaleString('ar-EG')}</td>
+      <td>${formatDurationHours(item.monthMs)}</td>
+      <td>${item.monthOrders.toLocaleString('ar-EG')}</td>
+      <td>${item.activeOrders.toLocaleString('ar-EG')}</td>
+      <td>${escapeHtml(formatDateTimeLabel(item.lastSeenMs))}</td>
+      <td><button class="btn ghost" data-open-activity-driver="${escapeHtml(item.id)}">فتح المندوب</button></td>
+    </tr>
+  `);
+
+  setHtml(courierActivityTable, table(['المندوب', 'الهاتف', 'الحالة الحالية', 'وقت التوفر اليوم', 'طلبات اليوم', 'نشاط الشهر', 'طلبات الشهر', 'طلبات نشطة', 'آخر ظهور', 'إجراء'], rows));
+  courierActivityTable.querySelectorAll('[data-open-activity-driver]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const driverId = btn.getAttribute('data-open-activity-driver');
+      if (!driverId) return;
+      activateSubpanel('management', 'management-couriers');
+      await loadCourierDetails(driverId);
+    });
+  });
+}
+
 function mountManagement() {
   if (!operationsOrdersBound) {
     orderStatusFilter?.addEventListener('change', () => renderOperationsOrders());
@@ -2672,16 +3796,20 @@ function mountManagement() {
         .map((d) => {
         const data = d.data() || {};
         const closed = data.temporarilyClosed === true;
+        const menuApproved = data.menuApproved !== false;
         return `<tr>
           <td>${data.name || d.id}</td>
           <td><span class="badge ${closed ? 'open' : 'closed'}">${closed ? 'مغلق مؤقتًا' : 'مفتوح'}</span></td>
+          <td><span class="badge ${menuApproved ? 'closed' : 'open'}">${menuApproved ? 'القائمة معتمدة' : 'القائمة غير معتمدة'}</span></td>
           <td>
             <button class="btn ghost" data-view-store="${d.id}">تفاصيل</button>
             <button class="btn ghost" data-toggle-store="${d.id}">${closed ? 'فتح' : 'إغلاق مؤقت'}</button>
+            <button class="btn ghost" data-direct-menu-approve="${d.id}">${menuApproved ? 'إعادة اعتماد القائمة' : 'اعتماد القائمة مباشرة'}</button>
+            <button class="btn danger" data-direct-menu-reject="${d.id}">سحب اعتماد القائمة</button>
           </td>
         </tr>`;
         });
-      setHtml(restaurantsTable, table(['المتجر', 'الحالة', 'إجراء'], rows));
+      setHtml(restaurantsTable, table(['المتجر', 'الحالة', 'حالة القائمة', 'إجراء'], rows));
       restaurantsTable.querySelectorAll('[data-view-store]').forEach((btn) => {
         btn.addEventListener('click', async () => {
           const id = btn.getAttribute('data-view-store');
@@ -2698,6 +3826,20 @@ function mountManagement() {
             temporarilyClosed: !current,
             updatedAt: serverTimestamp()
           });
+        });
+      });
+      restaurantsTable.querySelectorAll('[data-direct-menu-approve]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-direct-menu-approve');
+          if (!id) return;
+          await setMenuApprovalDirect({ restaurantId: id, approved: true });
+        });
+      });
+      restaurantsTable.querySelectorAll('[data-direct-menu-reject]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-direct-menu-reject');
+          if (!id) return;
+          await setMenuApprovalDirect({ restaurantId: id, approved: false });
         });
       });
     })
@@ -2718,6 +3860,7 @@ function mountManagement() {
             <button class="btn ghost" data-view-driver="${d.id}">تفاصيل</button>
             <button class="btn ghost" data-approve-driver="${d.id}">قبول</button>
             <button class="btn danger" data-reject-driver="${d.id}">رفض</button>
+            <button class="btn danger" data-delete-driver="${d.id}">حذف</button>
           </td>
         </tr>`;
       });
@@ -2745,6 +3888,7 @@ function mountManagement() {
         btn.addEventListener('click', async () => {
           const id = btn.getAttribute('data-reject-driver');
           await updateDoc(doc(db, 'drivers', id), {
+            ...(await buildDriverAvailabilityPatch(id, false)),
             approvalStatus: 'rejected',
             isApproved: false,
             updatedAt: serverTimestamp()
@@ -2752,6 +3896,20 @@ function mountManagement() {
         });
       });
 
+      couriersTable.querySelectorAll('[data-delete-driver]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const uid = btn.getAttribute('data-delete-driver');
+          if (!uid) return;
+          const item = courierDirectoryCache.find((entry) => entry.id === uid);
+          await handleManagedUserDeletion({
+            role: 'courier',
+            uid,
+            displayName: item?.data?.name || uid,
+          });
+        });
+      });
+
+      renderCourierActivityReport();
       renderOperationsOrders();
     })
   );
@@ -2763,6 +3921,7 @@ function mountManagement() {
         data: d.data() || {},
         createdAtMillis: d.data()?.createdAt?.toMillis?.() || d.data()?.updatedAt?.toMillis?.() || 0,
       }));
+      renderCourierActivityReport();
       renderOperationsOrders();
     })
   );
@@ -2798,54 +3957,77 @@ async function loadCourierDetails(driverId) {
     const orders = ordersSnap.docs.map((d) => d.data() || {});
     const activeOrderStatuses = new Set(['courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client']);
     const activeOrdersCount = orders.filter((o) => activeOrderStatuses.has(String(o.orderStatus || o.status || ''))).length;
+    const todayAvailabilityMs = getCourierAvailableTodayMs(driver);
 
     const idImage = driver.idImageUrl
-      ? `<div style="margin-top:8px"><a class="btn ghost" href="${escapeHtml(driver.idImageUrl)}" target="_blank" rel="noopener">فتح صورة الهوية/الرخصة</a></div>`
-      : '<div class="muted" style="margin-top:8px">لا توجد صورة هوية/رخصة</div>';
+      ? `<div class="entity-media-card"><a class="btn ghost" href="${escapeHtml(driver.idImageUrl)}" target="_blank" rel="noopener">فتح صورة الهوية/الرخصة</a></div>`
+      : '<div class="entity-media-card muted">لا توجد صورة هوية/رخصة</div>';
 
     courierDetailsPanel.innerHTML = `
-      <h4 style="margin:0 0 8px">تفاصيل المندوب</h4>
-      <div><span class="kv"><b>المعرف:</b> ${escapeHtml(driverId)}</span><span class="kv"><b>الاسم:</b> ${escapeHtml(driver.name || '-')}</span></div>
-      <div><span class="kv"><b>البريد:</b> ${escapeHtml(driver.email || '-')}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(driver.phone || '-')}</span></div>
-      <div><span class="kv"><b>نوع المركبة:</b> ${escapeHtml(driver.vehicleType || '-')}</span><span class="kv"><b>رقم اللوحة:</b> ${escapeHtml(driver.vehiclePlate || '-')}</span></div>
-      <div><span class="kv"><b>رقم الهوية/الرخصة:</b> ${escapeHtml(driver.nationalIdNumber || '-')}</span><span class="kv"><b>المنطقة:</b> ${escapeHtml(driver.region || '-')}</span></div>
-      <div><span class="kv"><b>الموافقة:</b> ${escapeHtml(driver.approvalStatus || '-')}</span><span class="kv"><b>التوفر:</b> ${driver.available === true ? 'متاح' : 'غير متاح'}</span></div>
-      <hr style="border:none;border-top:1px solid #ececec;margin:8px 0" />
-      <div><span class="kv"><b>إجمالي الطلبات:</b> ${orders.length}</span><span class="kv"><b>الطلبات النشطة:</b> ${activeOrdersCount}</span></div>
-      ${idImage}
-      <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn ghost" id="driverImageChange-${driverId}">تعديل صورة الهوية/الرخصة</button>
-        <button class="btn ghost" id="driverToggleAvailability-${driverId}">${driver.available === true ? 'إيقاف التوفر' : 'تفعيل التوفر'}</button>
-        <button class="btn ghost" id="driverApprove-${driverId}">قبول</button>
-        <button class="btn danger" id="driverReject-${driverId}">رفض</button>
-      </div>
-      <hr style="border:none;border-top:1px solid #ececec;margin:12px 0" />
-      <h4 style="margin:0 0 8px">تعديل بيانات المندوب (مباشر)</h4>
-      <div class="grid" style="grid-template-columns: 1fr 1fr; gap:8px;">
-        <label>الاسم<input id="driverName-${driverId}" type="text" value="${escapeHtml(driver.name || '')}" /></label>
-        <label>الهاتف<input id="driverPhone-${driverId}" type="text" value="${escapeHtml(driver.phone || '')}" /></label>
-        <label>نوع المركبة<input id="driverVehicleType-${driverId}" type="text" value="${escapeHtml(driver.vehicleType || '')}" /></label>
-        <label>رقم اللوحة<input id="driverVehiclePlate-${driverId}" type="text" value="${escapeHtml(driver.vehiclePlate || '')}" /></label>
-        <label>رقم الهوية/الرخصة<input id="driverNationalId-${driverId}" type="text" value="${escapeHtml(driver.nationalIdNumber || '')}" /></label>
-        <label>المنطقة<input id="driverRegion-${driverId}" type="text" value="${escapeHtml(driver.region || '')}" /></label>
-      </div>
-      <div style="margin-top:10px;">
-        <button class="btn primary" id="driverSave-${driverId}">حفظ التعديلات</button>
+      <div class="entity-details-panel">
+        <div class="entity-hero">
+          <div>
+            <span class="entity-role-badge entity-role-badge-courier">المندوبون</span>
+            <h4>تفاصيل المندوب</h4>
+            <p>حالة الحساب، التشغيل، البيانات الأساسية، والتحكم السريع في شاشة واحدة أوضح.</p>
+          </div>
+          <div class="entity-hero-side">
+            <span class="entity-state-pill ${driver.available === true ? 'live' : 'idle'}">${driver.available === true ? 'متاح الآن' : 'غير متاح'}</span>
+          </div>
+        </div>
+        ${buildEntitySection('الملف التشغيلي', buildEntityFactsGrid([
+          { label: 'المعرف', value: driverId },
+          { label: 'الاسم', value: driver.name || '-' },
+          { label: 'البريد', value: driver.email || '-' },
+          { label: 'الهاتف', value: driver.phone || '-' },
+          { label: 'نوع المركبة', value: driver.vehicleType || '-' },
+          { label: 'رقم اللوحة', value: driver.vehiclePlate || '-' },
+          { label: 'رقم الهوية/الرخصة', value: driver.nationalIdNumber || '-' },
+          { label: 'المنطقة', value: driver.region || '-' },
+          { label: 'الموافقة', value: driver.approvalStatus || '-' },
+          { label: 'التوفر', value: driver.available === true ? 'متاح' : 'غير متاح', className: driver.available === true ? 'entity-fact-highlight' : '' },
+        ]), { eyebrow: 'الملف' })}
+        ${buildBankAccountsDetailsMarkup(driver)}
+        ${buildEntitySection('الأداء الحالي', buildEntityFactsGrid([
+          { label: 'إجمالي الطلبات', value: orders.length },
+          { label: 'الطلبات النشطة', value: activeOrdersCount },
+          { label: 'وقت التوفر اليوم', value: formatDurationHours(todayAvailabilityMs), className: 'entity-fact-highlight' },
+        ]), { eyebrow: 'النشاط' })}
+        ${buildEntitySection('الهوية والمرفقات', `${idImage}<div class="entity-actions"><button class="btn ghost" id="driverImageChange-${driverId}">تعديل صورة الهوية/الرخصة</button><button class="btn ghost" id="driverToggleAvailability-${driverId}">${driver.available === true ? 'إيقاف التوفر' : 'تفعيل التوفر'}</button><button class="btn ghost" id="driverApprove-${driverId}">قبول</button><button class="btn danger" id="driverReject-${driverId}">رفض</button><button class="btn danger" id="driverDelete-${driverId}">حذف الحساب</button></div>`, { eyebrow: 'الإجراءات' })}
+        ${buildEntitySection('تعديل بيانات المندوب', `
+          <div class="entity-form-grid">
+            <label>الاسم<input id="driverName-${driverId}" type="text" value="${escapeHtml(driver.name || '')}" /></label>
+            <label>الهاتف<input id="driverPhone-${driverId}" type="text" value="${escapeHtml(driver.phone || '')}" /></label>
+            <label>البريد الإلكتروني<input id="driverEmail-${driverId}" type="email" value="${escapeHtml(driver.email || '')}" /></label>
+            <label>نوع المركبة<input id="driverVehicleType-${driverId}" type="text" value="${escapeHtml(driver.vehicleType || '')}" /></label>
+            <label>رقم اللوحة<input id="driverVehiclePlate-${driverId}" type="text" value="${escapeHtml(driver.vehiclePlate || '')}" /></label>
+            <label>رقم الهوية/الرخصة<input id="driverNationalId-${driverId}" type="text" value="${escapeHtml(driver.nationalIdNumber || '')}" /></label>
+            <label>المنطقة<input id="driverRegion-${driverId}" type="text" value="${escapeHtml(driver.region || '')}" /></label>
+            <label>رابط صورة الهوية/الرخصة<input id="driverIdImageUrl-${driverId}" type="text" value="${escapeHtml(driver.idImageUrl || '')}" /></label>
+          </div>
+          <div class="entity-actions">
+            <button class="btn primary" id="driverSave-${driverId}">حفظ التعديلات</button>
+          </div>
+        `, { eyebrow: 'التحرير' })}
       </div>
     `;
 
     document.getElementById(`driverSave-${driverId}`)?.addEventListener('click', async () => {
       try {
-        const patch = {
-          name: (document.getElementById(`driverName-${driverId}`)?.value || '').trim(),
-          phone: (document.getElementById(`driverPhone-${driverId}`)?.value || '').trim(),
-          vehicleType: (document.getElementById(`driverVehicleType-${driverId}`)?.value || '').trim(),
-          vehiclePlate: (document.getElementById(`driverVehiclePlate-${driverId}`)?.value || '').trim(),
-          nationalIdNumber: (document.getElementById(`driverNationalId-${driverId}`)?.value || '').trim(),
-          region: (document.getElementById(`driverRegion-${driverId}`)?.value || '').trim(),
-          updatedAt: serverTimestamp(),
-        };
-        await updateDoc(doc(db, 'drivers', driverId), patch);
+        await updateManagedUserProfile({
+          role: 'courier',
+          uid: driverId,
+          fields: {
+            name: (document.getElementById(`driverName-${driverId}`)?.value || '').trim(),
+            phone: (document.getElementById(`driverPhone-${driverId}`)?.value || '').trim(),
+            email: (document.getElementById(`driverEmail-${driverId}`)?.value || '').trim(),
+            vehicleType: (document.getElementById(`driverVehicleType-${driverId}`)?.value || '').trim(),
+            vehiclePlate: (document.getElementById(`driverVehiclePlate-${driverId}`)?.value || '').trim(),
+            nationalIdNumber: (document.getElementById(`driverNationalId-${driverId}`)?.value || '').trim(),
+            region: (document.getElementById(`driverRegion-${driverId}`)?.value || '').trim(),
+            idImageUrl: (document.getElementById(`driverIdImageUrl-${driverId}`)?.value || '').trim(),
+          },
+        });
         alert('تم حفظ بيانات المندوب بنجاح');
         await loadCourierDetails(driverId);
       } catch (err) {
@@ -2855,10 +4037,7 @@ async function loadCourierDetails(driverId) {
 
     document.getElementById(`driverToggleAvailability-${driverId}`)?.addEventListener('click', async () => {
       try {
-        await updateDoc(doc(db, 'drivers', driverId), {
-          available: driver.available !== true,
-          updatedAt: serverTimestamp(),
-        });
+        await updateDoc(doc(db, 'drivers', driverId), await buildDriverAvailabilityPatch(driverId, driver.available !== true));
         await loadCourierDetails(driverId);
       } catch (err) {
         alert(`تعذر تحديث التوفر: ${err.message || err}`);
@@ -2881,15 +4060,23 @@ async function loadCourierDetails(driverId) {
     document.getElementById(`driverReject-${driverId}`)?.addEventListener('click', async () => {
       try {
         await updateDoc(doc(db, 'drivers', driverId), {
+          ...(await buildDriverAvailabilityPatch(driverId, false)),
           approvalStatus: 'rejected',
           isApproved: false,
-          available: false,
           updatedAt: serverTimestamp(),
         });
         await loadCourierDetails(driverId);
       } catch (err) {
         alert(`تعذر رفض المندوب: ${err.message || err}`);
       }
+    });
+
+    document.getElementById(`driverDelete-${driverId}`)?.addEventListener('click', async () => {
+      await handleManagedUserDeletion({
+        role: 'courier',
+        uid: driverId,
+        displayName: driver.name || driverId,
+      });
     });
 
     document.getElementById(`driverImageChange-${driverId}`)?.addEventListener('click', async () => {
@@ -2949,33 +4136,120 @@ async function loadStoreDetails(storeId) {
     const storeOpenState = store.temporarilyClosed === true ? 'مغلق' : 'مفتوح';
 
     storeDetailsPanel.innerHTML = `
-      <h4 style="margin:0 0 8px">تفاصيل المتجر</h4>
-      <div><span class="kv"><b>المعرف:</b> ${escapeHtml(storeId)}</span><span class="kv"><b>الاسم:</b> ${escapeHtml(store.name || '-')}</span></div>
-      <div><span class="kv"><b>البريد:</b> ${escapeHtml(store.email || '-')}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(store.phone || '-')}</span></div>
-      <div><span class="kv"><b>صاحب الحساب:</b> ${escapeHtml(store.ownerUid || '-')}</span><span class="kv"><b>الحالة:</b> ${escapeHtml(store.approvalStatus || '-')}</span></div>
-      <div><span class="kv"><b>السجل التجاري:</b> ${escapeHtml(store.commercialRecordNumber || '-')}</span><span class="kv"><b>القبول التلقائي:</b> ${store.autoAcceptOrders === true ? 'مفعل' : 'غير مفعل'}</span><span class="kv"><b>حالة الظهور الحالية:</b> ${escapeHtml(storeOpenState)}</span></div>
-      <hr style="border:none;border-top:1px solid #ececec;margin:8px 0" />
-      <div><span class="kv"><b>إجمالي الطلبات:</b> ${orders.length}</span><span class="kv"><b>الطلبات النشطة:</b> ${activeOrdersCount}</span></div>
-      <div><span class="kv"><b>عدد العناوين:</b> ${addressesSnap.docs.length}</span><span class="kv"><b>أقسام المنيو:</b> ${menuDocsSnap.docs.length}</span><span class="kv"><b>عناصر full_menu:</b> ${fullMenuDocsSnap.docs.length}</span></div>
-      ${image}
-      <hr style="border:none;border-top:1px solid #ececec;margin:12px 0" />
-      <h4 style="margin:0 0 8px">حل مؤقت لحالة الظهور في تطبيق العميل</h4>
-      <p class="muted" style="margin:0 0 10px">استخدم هذه الأزرار إذا أردت جعل المتجر ظاهرًا كمفتوح دائمًا أو مغلق دائمًا في النسخة الحالية من التطبيق.</p>
-      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
-        <button class="btn primary" id="storeSetAlwaysOpen-${storeId}">دوام كامل</button>
-        <button class="btn danger" id="storeSetClosed-${storeId}">مغلق</button>
+      <div class="entity-details-panel entity-details-panel-store">
+        <div class="entity-hero">
+          <div>
+            <span class="entity-role-badge entity-role-badge-store">المتاجر</span>
+            <h4>تفاصيل المتجر</h4>
+            <p>مركز تشغيل موحد للبيانات الأساسية، الظهور، الدوام، والقائمة الكاملة.</p>
+          </div>
+          <div class="entity-hero-side">
+            <span class="entity-state-pill ${store.temporarilyClosed === true ? 'idle' : 'live'}">${escapeHtml(storeOpenState)}</span>
+          </div>
+        </div>
+        ${buildEntitySection('الملف التجاري', buildEntityFactsGrid([
+          { label: 'المعرف', value: storeId },
+          { label: 'الاسم', value: store.name || '-' },
+          { label: 'البريد', value: store.email || '-' },
+          { label: 'الهاتف', value: store.phone || '-' },
+          { label: 'صاحب الحساب', value: store.ownerUid || '-' },
+          { label: 'الحالة', value: store.approvalStatus || '-' },
+          { label: 'السجل التجاري', value: store.commercialRecordNumber || '-' },
+          { label: 'القبول التلقائي', value: store.autoAcceptOrders === true ? 'مفعل' : 'غير مفعل' },
+          { label: 'حالة الظهور', value: storeOpenState, className: store.temporarilyClosed === true ? '' : 'entity-fact-highlight' },
+          { label: 'العنوان', value: store.address || '-' },
+          { label: 'خصم التوصيل/المتجر', value: String(store.deliveryDiscountPercentage ?? '-') },
+        ]), { eyebrow: 'الملف' })}
+        ${buildBankAccountsDetailsMarkup(store)}
+        ${buildEntitySection('مؤشرات المتجر', buildEntityFactsGrid([
+          { label: 'إجمالي الطلبات', value: orders.length },
+          { label: 'الطلبات النشطة', value: activeOrdersCount },
+          { label: 'عدد العناوين', value: addressesSnap.docs.length },
+          { label: 'أقسام المنيو', value: menuDocsSnap.docs.length },
+          { label: 'عناصر full_menu', value: fullMenuDocsSnap.docs.length, className: 'entity-fact-highlight' },
+        ]), { eyebrow: 'النشاط' })}
+        ${buildEntitySection('الوثائق والميديا', `${image || '<div class="entity-media-card muted">لا توجد صورة سجل تجاري</div>'}`, { eyebrow: 'المرفقات' })}
+        ${buildEntitySection('تعديل بيانات المتجر', `
+          <div class="entity-form-grid">
+            <label>الاسم<input id="storeName-${storeId}" type="text" value="${escapeHtml(store.name || '')}" /></label>
+            <label>الهاتف<input id="storePhone-${storeId}" type="text" value="${escapeHtml(store.phone || '')}" /></label>
+            <label>البريد الإلكتروني<input id="storeEmail-${storeId}" type="email" value="${escapeHtml(store.email || '')}" /></label>
+            <label>السجل التجاري<input id="storeCommercialRecord-${storeId}" type="text" value="${escapeHtml(store.commercialRecordNumber || '')}" /></label>
+            <label>العنوان<input id="storeAddress-${storeId}" type="text" value="${escapeHtml(store.address || '')}" /></label>
+            <label>نسبة الخصم<input id="storeDiscountPct-${storeId}" type="number" step="0.01" value="${escapeHtml(String(store.deliveryDiscountPercentage ?? ''))}" /></label>
+            <label>رابط صورة الغلاف<input id="storeCoverImageUrl-${storeId}" type="text" value="${escapeHtml(store.coverImageUrl || '')}" /></label>
+            <label>رابط الشعار<input id="storeLogoImageUrl-${storeId}" type="text" value="${escapeHtml(store.logoImageUrl || '')}" /></label>
+          </div>
+          <div class="entity-actions">
+            <button class="btn ghost" id="storeUploadCover-${storeId}">رفع صورة غلاف</button>
+            <button class="btn ghost" id="storeUploadLogo-${storeId}">رفع شعار</button>
+            <button class="btn primary" id="storeSaveProfile-${storeId}">حفظ بيانات المتجر</button>
+          </div>
+        `, { eyebrow: 'التحرير' })}
+        ${buildEntitySection('الظهور والدوام', `
+          <p class="entity-inline-note">استخدم هذه الأزرار إذا أردت جعل المتجر ظاهرًا كمفتوح دائمًا أو مغلقًا مباشرة، أو عدل جدول الدوام بشكل منظم.</p>
+          <div class="entity-actions">
+            <button class="btn primary" id="storeSetAlwaysOpen-${storeId}">دوام كامل</button>
+            <button class="btn danger" id="storeSetClosed-${storeId}">مغلق</button>
+          </div>
+          <div class="entity-scheduler-block">
+            ${buildWorkingHoursEditorMarkup(store.workingHours || {})}
+          </div>
+          <div class="entity-actions">
+            <button class="btn primary" id="storeSaveWorkingHours-${storeId}">حفظ ساعات الدوام</button>
+            <button class="btn ghost" id="storeOpenNow-${storeId}">فتح الآن</button>
+          </div>
+        `, { eyebrow: 'التشغيل', description: 'تعديل الدوام والظهور من نفس اللوحة بدون الرجوع لشاشات متفرقة.' })}
+        ${buildEntitySection('إدارة القائمة الكاملة', `<div id="adminMenuManager-${storeId}"><span class="muted">جاري تحميل أصناف القائمة...</span></div>`, { eyebrow: 'المنيو' })}
       </div>
-      <h4 style="margin:12px 0 8px">تحرير ساعات الدوام</h4>
-      <p class="muted" style="margin:0 0 10px">يمكنك تعديل كل يوم مباشرة ثم حفظ الجدول الكامل للمطعم.</p>
-      ${buildWorkingHoursEditorMarkup(store.workingHours || {})}
-      <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn primary" id="storeSaveWorkingHours-${storeId}">حفظ ساعات الدوام</button>
-        <button class="btn ghost" id="storeOpenNow-${storeId}">فتح الآن</button>
-      </div>
-      <hr style="border:none;border-top:1px solid #ececec;margin:12px 0" />
-      <h4 style="margin:0 0 8px">إدارة القائمة الكاملة (مباشر)</h4>
-      <div id="adminMenuManager-${storeId}"><span class="muted">جاري تحميل أصناف القائمة...</span></div>
     `;
+
+    document.getElementById(`storeUploadCover-${storeId}`)?.addEventListener('click', async () => {
+      const pickedFile = await pickSingleImageFile();
+      if (!pickedFile) return;
+      const uploaded = await uploadImageToCloudinary(pickedFile);
+      if (!uploaded) {
+        alert('تعذر رفع صورة الغلاف');
+        return;
+      }
+      const input = document.getElementById(`storeCoverImageUrl-${storeId}`);
+      if (input) input.value = uploaded;
+    });
+
+    document.getElementById(`storeUploadLogo-${storeId}`)?.addEventListener('click', async () => {
+      const pickedFile = await pickSingleImageFile();
+      if (!pickedFile) return;
+      const uploaded = await uploadImageToCloudinary(pickedFile);
+      if (!uploaded) {
+        alert('تعذر رفع الشعار');
+        return;
+      }
+      const input = document.getElementById(`storeLogoImageUrl-${storeId}`);
+      if (input) input.value = uploaded;
+    });
+
+    document.getElementById(`storeSaveProfile-${storeId}`)?.addEventListener('click', async () => {
+      try {
+        await updateManagedUserProfile({
+          role: 'store',
+          uid: storeId,
+          fields: {
+            name: (document.getElementById(`storeName-${storeId}`)?.value || '').trim(),
+            phone: (document.getElementById(`storePhone-${storeId}`)?.value || '').trim(),
+            email: (document.getElementById(`storeEmail-${storeId}`)?.value || '').trim(),
+            commercialRecordNumber: (document.getElementById(`storeCommercialRecord-${storeId}`)?.value || '').trim(),
+            address: (document.getElementById(`storeAddress-${storeId}`)?.value || '').trim(),
+            deliveryDiscountPercentage: (document.getElementById(`storeDiscountPct-${storeId}`)?.value || '').trim(),
+            coverImageUrl: (document.getElementById(`storeCoverImageUrl-${storeId}`)?.value || '').trim(),
+            logoImageUrl: (document.getElementById(`storeLogoImageUrl-${storeId}`)?.value || '').trim(),
+          },
+        });
+        alert('تم حفظ بيانات المتجر بنجاح');
+        await loadStoreDetails(storeId);
+      } catch (err) {
+        alert(`تعذر حفظ بيانات المتجر: ${err.message || err}`);
+      }
+    });
 
     document.getElementById(`storeSetAlwaysOpen-${storeId}`)?.addEventListener('click', async () => {
       try {
@@ -3141,22 +4415,42 @@ async function renderAdminMenuManager(storeId) {
   });
 
   container.innerHTML = `
-    <div class="grid" style="grid-template-columns: repeat(4, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">
-      <input id="newItemName-${storeId}" type="text" placeholder="اسم الصنف" />
-      <input id="newItemPrice-${storeId}" type="number" step="0.01" placeholder="السعر الأساسي (اختياري مع الأحجام)" />
-      <input id="newItemSmallPrice-${storeId}" type="number" step="0.01" placeholder="سعر صغير" />
-      <input id="newItemMediumPrice-${storeId}" type="number" step="0.01" placeholder="سعر وسط" />
-      <input id="newItemLargePrice-${storeId}" type="number" step="0.01" placeholder="سعر كبير" />
-      <input id="newItemCategory-${storeId}" type="text" placeholder="الفئة" />
-      <input id="newItemImageFile-${storeId}" type="file" accept="image/*" />
+    <div class="admin-menu-manager">
+      <div class="admin-menu-create-card">
+        <div class="entity-section-head compact">
+          <span class="entity-section-eyebrow">إضافة سريعة</span>
+          <h5>إضافة صنف جديد</h5>
+          <p>الحقول متقاربة ومنظمة لتقليل الحركة بين الاسم والسعر والفئة والصورة.</p>
+        </div>
+        <div class="admin-menu-create-grid">
+          <label>اسم الصنف<input id="newItemName-${storeId}" type="text" placeholder="مثال: بيتزا خضار" /></label>
+          <label>الفئة<input id="newItemCategory-${storeId}" type="text" placeholder="مثال: بيتزا" /></label>
+          <label>السعر الأساسي<input id="newItemPrice-${storeId}" type="number" step="0.01" placeholder="اختياري مع الأحجام" /></label>
+          <label>سعر صغير<input id="newItemSmallPrice-${storeId}" type="number" step="0.01" placeholder="صغير" /></label>
+          <label>سعر وسط<input id="newItemMediumPrice-${storeId}" type="number" step="0.01" placeholder="وسط" /></label>
+          <label>سعر كبير<input id="newItemLargePrice-${storeId}" type="number" step="0.01" placeholder="كبير" /></label>
+          <label class="admin-menu-file-field">صورة الصنف<input id="newItemImageFile-${storeId}" type="file" accept="image/*" /></label>
+        </div>
+        <div class="admin-menu-toolbar">
+          <button class="btn primary" id="addMenuItem-${storeId}">إضافة الصنف</button>
+        </div>
+      </div>
+      <div class="admin-menu-bulk-card">
+        <div class="entity-section-head compact">
+          <span class="entity-section-eyebrow">تسعير</span>
+          <h5>تعديل جماعي للأسعار</h5>
+          <p>زيادة أو خفض الأسعار على كامل القائمة من مكان واحد.</p>
+        </div>
+        <div class="admin-menu-bulk-actions">
+          <label class="admin-menu-pct-field">النسبة<input id="pricePct-${storeId}" type="number" step="0.01" placeholder="%" /></label>
+          <button class="btn ghost" id="incPrices-${storeId}">زيادة الأسعار %</button>
+          <button class="btn ghost" id="decPrices-${storeId}">تخفيض الأسعار %</button>
+        </div>
+      </div>
+      <div class="admin-menu-table-wrap">
+        ${table(['الصنف', 'الفئة', 'السعر', 'الأحجام', 'الصورة', 'الحالة', 'إجراء'], rows)}
+      </div>
     </div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-      <button class="btn primary" id="addMenuItem-${storeId}">إضافة صنف</button>
-      <input id="pricePct-${storeId}" type="number" step="0.01" style="max-width:120px" placeholder="%" />
-      <button class="btn ghost" id="incPrices-${storeId}">زيادة الأسعار %</button>
-      <button class="btn ghost" id="decPrices-${storeId}">تخفيض الأسعار %</button>
-    </div>
-    ${table(['الصنف', 'الفئة', 'السعر', 'الأحجام', 'الصورة', 'الحالة', 'إجراء'], rows)}
   `;
 
   const addBtn = document.getElementById(`addMenuItem-${storeId}`);
@@ -3513,6 +4807,155 @@ async function setStoreDecision({ appId, restaurantId, decision, ownerUid, appDa
   }
 }
 
+function normalizeAdminStateId(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+
+  const normalized = value
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .toLowerCase();
+
+  const compact = normalized
+    .replace(/[^ -\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const khartoumTokens = [
+    'الخرطوم',
+    'ولاية الخرطوم',
+    'خرطوم',
+    'khartoum',
+    'khartum',
+    'بحري',
+    'bahri',
+    'khartoum north',
+    'ام درمان',
+    'امدرمان',
+    'ام درمان الكبرى',
+    'omdurman',
+    'omdorman',
+    'oum durman',
+  ];
+
+  for (const token of khartoumTokens) {
+    if (compact === token || compact.includes(token)) {
+      return 'khartoum';
+    }
+  }
+
+  return compact;
+}
+
+function buildRestaurantVisibilityBackfill(restaurantData = {}, addressData = {}) {
+  const updates = {};
+  const directGeo = extractGeo(addressData, ['location', 'currentLocation', 'geo', 'coordinates']);
+  const pairGeo = extractGeoByPairs(addressData, [
+    ['latitude', 'longitude'],
+    ['lat', 'lng'],
+    ['geo.latitude', 'geo.longitude'],
+    ['coordinates.latitude', 'coordinates.longitude'],
+  ]);
+  const geo = directGeo || pairGeo;
+
+  if (geo) {
+    if (!restaurantData.location && getByPath(addressData, 'location')) {
+      updates.location = getByPath(addressData, 'location');
+    }
+    if (restaurantData.latitude == null && restaurantData.lat == null && restaurantData.restaurantLat == null) {
+      updates.latitude = geo.lat;
+      updates.lat = geo.lat;
+      updates.restaurantLat = geo.lat;
+    }
+    if (restaurantData.longitude == null && restaurantData.lng == null && restaurantData.restaurantLng == null) {
+      updates.longitude = geo.lng;
+      updates.lng = geo.lng;
+      updates.restaurantLng = geo.lng;
+    }
+  }
+
+  const rawState = restaurantData.stateId
+    || restaurantData.state
+    || restaurantData.region
+    || restaurantData.city
+    || addressData.stateId
+    || addressData.state
+    || addressData.region
+    || addressData.city
+    || addressData.administrativeArea
+    || addressData.addressName
+    || addressData.address;
+  const normalizedState = normalizeAdminStateId(rawState);
+
+  if (normalizedState) {
+    if (!String(restaurantData.stateId || '').trim()) {
+      updates.stateId = normalizedState;
+    }
+    if (!String(restaurantData.region || '').trim()) {
+      updates.region = normalizedState;
+    }
+  }
+
+  if (!String(restaurantData.state || '').trim() && String(addressData.state || '').trim()) {
+    updates.state = String(addressData.state || '').trim();
+  }
+  if (!String(restaurantData.city || '').trim()) {
+    const city = String(addressData.city || addressData.locality || addressData.subAdministrativeArea || '').trim();
+    if (city) {
+      updates.city = city;
+    }
+  }
+  if (!String(restaurantData.address || '').trim()) {
+    const address = String(addressData.addressName || addressData.address || addressData.label || '').trim();
+    if (address) {
+      updates.address = address;
+    }
+  }
+
+  return updates;
+}
+
+async function setMenuApprovalDirect({ restaurantId, approved = true }) {
+  if (!restaurantId) return;
+
+  const restaurantRef = doc(db, 'restaurants', restaurantId);
+  const restaurantSnap = await getDoc(restaurantRef);
+  const restaurantData = restaurantSnap.exists() ? (restaurantSnap.data() || {}) : {};
+  let addressData = {};
+
+  if (approved) {
+    const defaultAddressId = String(restaurantData.defaultAddressId || '').trim();
+    if (defaultAddressId) {
+      try {
+        const addressSnap = await getDoc(doc(db, 'restaurants', restaurantId, 'addresses', defaultAddressId));
+        if (addressSnap.exists()) {
+          addressData = addressSnap.data() || {};
+        }
+      } catch (_) {
+        // ignore missing address read failures for direct menu approval
+      }
+    }
+  }
+
+  const updates = {
+    pendingApproval: false,
+    menuApproved: approved,
+    menuEverApproved: true,
+    menuApprovedAt: approved ? serverTimestamp() : deleteField(),
+    menuRejectedAt: approved ? deleteField() : serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  if (approved) {
+    updates.approvalStatus = 'approved';
+    updates.isApproved = true;
+    Object.assign(updates, buildRestaurantVisibilityBackfill(restaurantData, addressData));
+  }
+
+  await updateDoc(restaurantRef, updates);
+}
+
 async function setCourierDecision({ appId, driverId, decision, ownerUid }) {
   const approved = decision === 'approved';
   await setDoc(doc(db, 'courierApplications', appId), {
@@ -3534,6 +4977,16 @@ function mountSupport() {
   if (!supportRoot || !supportConversationList || !supportMessagesPane) {
     return;
   }
+
+  const scrollMessageNearComposer = (messageElement) => {
+    if (!supportMessagesPane || !messageElement) return;
+    const composerVisualGap = 28;
+    const desiredTop = Math.max(
+      0,
+      messageElement.offsetTop - Math.max(0, supportMessagesPane.clientHeight - messageElement.offsetHeight - composerVisualGap)
+    );
+    supportMessagesPane.scrollTo({ top: desiredTop, behavior: 'smooth' });
+  };
 
   const normalizeActor = (value) => {
     const v = String(value || '').toLowerCase();
@@ -3691,6 +5144,9 @@ function mountSupport() {
       : convo.sourceApp === 'courier'
         ? 'المندوبون'
         : 'المتاجر';
+    const latestReadMillis = messages
+      .map((msg) => getMillis(msg.adminReadAt))
+      .reduce((max, current) => Math.max(max, current), 0);
 
     supportConversationHeader.innerHTML = `
       <b>${escapeHtml(convo.senderName || convo.userId || convo.id)}</b>
@@ -3701,13 +5157,14 @@ function mountSupport() {
     `;
 
     supportMessagesPane.innerHTML = messages.length
-      ? messages.map((msg) => {
+      ? messages.map((msg, index) => {
           const mine = msg.senderType === 'admin' || msg.senderId === (auth.currentUser?.uid || '');
+          const isUnreadForAdmin = !mine && (msg.timestampMillis || 0) > latestReadMillis;
           const body = msg.imageUrl
             ? `<a href="${escapeHtml(msg.imageUrl)}" target="_blank" rel="noopener">📷 صورة مرفقة</a>`
             : escapeHtml(msg.message || '-');
           return `
-            <div class="support-bubble ${mine ? 'mine' : ''}">
+            <div class="support-bubble ${mine ? 'mine' : ''}" data-support-message-index="${index}" ${isUnreadForAdmin ? 'data-support-unread="true"' : ''}>
               <div class="support-bubble-head">${escapeHtml(msg.senderName || msg.senderType || msg.senderId || 'مستخدم')}</div>
               <div>${body}</div>
               <div class="support-bubble-time">${escapeHtml(msg.timeText)}</div>
@@ -3716,12 +5173,26 @@ function mountSupport() {
         }).join('')
       : '<div class="muted">لا توجد رسائل بعد.</div>';
 
-    supportMessagesPane.scrollTop = supportMessagesPane.scrollHeight;
+    const firstUnreadMessage = supportMessagesPane.querySelector('[data-support-unread="true"]');
+    const latestExternalMessage = Array.from(supportMessagesPane.querySelectorAll('.support-bubble:not(.mine)')).pop();
+    const targetMessage = firstUnreadMessage || latestExternalMessage;
+    if (targetMessage) {
+      scrollMessageNearComposer(targetMessage);
+    } else {
+      supportMessagesPane.scrollTop = supportMessagesPane.scrollHeight;
+    }
+
     supportToggleStatusBtn.disabled = false;
     if (supportMarkReadBtn) supportMarkReadBtn.disabled = false;
     supportReplyInput.disabled = convo.status === 'closed';
     supportToggleStatusBtn.textContent = convo.status === 'closed' ? 'إعادة فتح المحادثة' : 'إغلاق المحادثة';
     syncComposerState();
+
+    if (convo.status !== 'closed') {
+      requestAnimationFrame(() => {
+        supportReplyInput?.focus({ preventScroll: true });
+      });
+    }
   };
 
   const syncComposerState = () => {
@@ -3762,6 +5233,8 @@ function mountSupport() {
       });
       supportReplyInput.value = '';
       syncComposerState();
+      supportMessagesPane.scrollTop = supportMessagesPane.scrollHeight;
+      supportReplyInput?.focus({ preventScroll: true });
     } catch (err) {
       alert(`تعذر إرسال الرد: ${err.message || err}`);
     }
@@ -3896,6 +5369,7 @@ function mountSupport() {
         .sort((a, b) => b.latestMillis - a.latestMillis);
 
       opsCenterState.supportUnread = supportConversations.reduce((sum, item) => sum + (item.unreadCount > 0 ? 1 : 0), 0);
+      opsCenterState.supportUnreadMessages = supportConversations.reduce((sum, item) => sum + Number(item.unreadCount || 0), 0);
       syncOpsCollectionState(
         'supportUnread',
         new Set(supportConversations.filter((item) => item.unreadCount > 0).map((item) => item.id)),
@@ -3925,6 +5399,11 @@ function mountSupport() {
 function mountDiscountCodes() {
   if (!discountForm || !discountsTable) return;
 
+  const DISCOUNT_SCOPE_LABELS = {
+    order_total: 'إجمالي الطلب',
+    delivery_fee: 'التوصيل فقط',
+  };
+
   const parseNumberOrNull = (raw) => {
     const value = Number(String(raw || '').trim());
     return Number.isFinite(value) && value >= 0 ? value : null;
@@ -3943,6 +5422,7 @@ function mountDiscountCodes() {
     discountForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const code = String(discountCode?.value || '').trim().toUpperCase();
+      const scope = String(discountScope?.value || 'order_total').trim().toLowerCase();
       const type = String(discountType?.value || 'percent').trim().toLowerCase();
       const value = parseNumberOrNull(discountValue?.value);
       const expiryRaw = String(discountExpiryDate?.value || '').trim();
@@ -3956,6 +5436,10 @@ function mountDiscountCodes() {
         if (discountResult) discountResult.textContent = 'نوع الخصم غير صالح.';
         return;
       }
+      if (!['order_total', 'delivery_fee'].includes(scope)) {
+        if (discountResult) discountResult.textContent = 'نطاق الخصم غير صالح.';
+        return;
+      }
       if (value == null || value <= 0) {
         if (discountResult) discountResult.textContent = 'قيمة الخصم يجب أن تكون أكبر من صفر.';
         return;
@@ -3967,12 +5451,13 @@ function mountDiscountCodes() {
 
       const payload = {
         code,
+        discountScope: scope,
         discountType: type,
         discountValue: value,
         isActive: discountIsActive?.checked === true,
         onlyForNewOrders: discountOnlyNewOrders?.checked === true,
         restaurantId: String(discountRestaurantId?.value || '').trim(),
-        itemName: String(discountItemName?.value || '').trim(),
+        itemName: scope === 'delivery_fee' ? '' : String(discountItemName?.value || '').trim(),
         minOrder: parseNumberOrNull(discountMinOrder?.value),
         maxUsage: parseNumberOrNull(discountMaxUsage?.value),
         maxUsagePerUser: parseNumberOrNull(discountMaxUsagePerUser?.value),
@@ -3988,6 +5473,7 @@ function mountDiscountCodes() {
         const existing = await getDoc(ref);
         await setDoc(ref, {
           code,
+          discountScope: payload.discountScope,
           discountType: payload.discountType,
           discountValue: payload.discountValue,
           isActive: payload.isActive,
@@ -4014,6 +5500,7 @@ function mountDiscountCodes() {
         if (discountResult) discountResult.textContent = `تم حفظ الكود ${code} بنجاح.`;
         discountForm.reset();
         if (discountIsActive) discountIsActive.checked = true;
+        if (discountScope) discountScope.value = 'order_total';
       } catch (err) {
         if (discountResult) discountResult.textContent = `تعذر حفظ الكود: ${err.message || err}`;
       } finally {
@@ -4038,9 +5525,11 @@ function mountDiscountCodes() {
         const usedCount = Number(data.usedCount || 0);
         const maxUsage = Number(data.maxUsage || 0);
         const capText = Number(data.maxDiscount || 0) > 0 ? ` (سقف ${Number(data.maxDiscount)})` : '';
+        const scopeLabel = DISCOUNT_SCOPE_LABELS[String(data.discountScope || 'order_total').trim().toLowerCase()] || 'إجمالي الطلب';
 
         return `<tr>
           <td>${escapeHtml(code)}</td>
+          <td>${escapeHtml(scopeLabel)}</td>
           <td>${escapeHtml(String(data.discountType || '-'))}</td>
           <td>${Number(data.discountValue || 0)}${capText}</td>
           <td>${usedCount}${maxUsage > 0 ? ` / ${maxUsage}` : ''}</td>
@@ -4053,7 +5542,7 @@ function mountDiscountCodes() {
         </tr>`;
       });
 
-      setHtml(discountsTable, table(['الكود', 'النوع', 'القيمة', 'الاستخدام', 'ينتهي في', 'الحالة', 'إجراء'], rows));
+      setHtml(discountsTable, table(['الكود', 'النطاق', 'النوع', 'القيمة', 'الاستخدام', 'ينتهي في', 'الحالة', 'إجراء'], rows));
 
       discountsTable.querySelectorAll('[data-toggle-discount]').forEach((btn) => {
         btn.addEventListener('click', async () => {
@@ -4170,6 +5659,35 @@ function fillPricingConfigForm() {
   pricingDriverBaseFeeInput.value = String(getRemoteConfigEntry('pricing_driver_delivery_base_fee')?.value || '4000');
   pricingDriverBaseDistanceInput.value = String(getRemoteConfigEntry('pricing_driver_delivery_base_distance_km')?.value || '6');
   pricingDriverExtraPerKmInput.value = String(getRemoteConfigEntry('pricing_driver_delivery_extra_per_km')?.value || '500');
+  pricingLargeItemFeeEnabledInput.value = String(getRemoteConfigEntry('pricing_large_item_fee_enabled')?.value || 'true');
+  pricingLargeItemThresholdInput.value = String(getRemoteConfigEntry('pricing_large_item_threshold')?.value || '10000');
+  pricingLargeItemFeeBaseInput.value = String(getRemoteConfigEntry('pricing_large_item_fee_base')?.value || '500');
+  pricingLargeItemStepAmountInput.value = String(getRemoteConfigEntry('pricing_large_item_step_amount')?.value || '5000');
+  pricingLargeItemStepFeeInput.value = String(getRemoteConfigEntry('pricing_large_item_step_fee')?.value || '500');
+  pricingLargeItemFeeCapPerUnitInput.value = String(getRemoteConfigEntry('pricing_large_item_fee_cap_per_unit')?.value || '2500');
+}
+
+function fillAppRemoteConfigForm() {
+  if (!appRemoteConfigForm) return;
+  opsForceUpdateEnabledInput.value = String(getRemoteConfigEntry('ops_force_update_enabled')?.value || 'true');
+  opsMinBuildAndroidInput.value = String(getRemoteConfigEntry('ops_min_build_android')?.value || '0');
+  opsUpdateMessageInput.value = String(getRemoteConfigEntry('ops_update_message')?.value || 'يوجد تحديث جديد مهم لتحسين الأداء. الرجاء التحديث الآن.');
+  opsUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('ops_update_url_android')?.value || '');
+  clientForceUpdateEnabledInput.value = String(getRemoteConfigEntry('client_force_update_enabled')?.value || 'true');
+  clientMinBuildAndroidInput.value = String(getRemoteConfigEntry('client_min_build_android')?.value || '11');
+  clientUpdateMessageInput.value = String(getRemoteConfigEntry('client_update_message')?.value || 'يرجى تحديث تطبيق العميل للاستمرار.');
+  clientUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('client_update_url_android')?.value || 'https://speedstarapp.web.app/downloads/client-android.apk');
+  clientRootUrlInput.value = String(getRemoteConfigEntry('client_root_url')?.value || 'https://speedstar-prod-4c7c5.web.app/sdui/client/index.json');
+  storeForceUpdateEnabledInput.value = String(getRemoteConfigEntry('store_force_update_enabled')?.value || 'true');
+  storeMinBuildAndroidInput.value = String(getRemoteConfigEntry('store_min_build_android')?.value || '5');
+  storeUpdateMessageInput.value = String(getRemoteConfigEntry('store_update_message')?.value || 'يرجى تحديث تطبيق المتجر للاستمرار.');
+  storeUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('store_update_url_android')?.value || 'https://speedstarapp.web.app/downloads/store-android.apk');
+  storeRootUrlInput.value = String(getRemoteConfigEntry('store_root_url')?.value || 'https://speedstar-prod-4c7c5.web.app/sdui/store/index.json');
+  courierForceUpdateEnabledInput.value = String(getRemoteConfigEntry('courier_force_update_enabled')?.value || 'false');
+  courierMinBuildAndroidInput.value = String(getRemoteConfigEntry('courier_min_build_android')?.value || '1');
+  courierUpdateMessageInput.value = String(getRemoteConfigEntry('courier_update_message')?.value || 'يرجى تحديث تطبيق المندوب للاستمرار.');
+  courierUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('courier_update_url_android')?.value || 'https://speedstarapp.web.app/downloads/courier-android.apk');
+  courierRootUrlInput.value = String(getRemoteConfigEntry('courier_root_url')?.value || 'https://speedstar-prod-4c7c5.web.app/sdui/courier/index.json');
 }
 
 function renderRemoteConfigTable(filterRaw = '') {
@@ -4250,14 +5768,21 @@ async function loadRemoteConfigEditorUi() {
     remoteConfigParametersCache = Array.isArray(response?.data?.parameters)
       ? response.data.parameters
       : [];
+    fillAppRemoteConfigForm();
     fillPricingConfigForm();
     renderRemoteConfigTable(remoteConfigFilterInput?.value || '');
     remoteConfigBulkResult.textContent = `تم تحميل ${remoteConfigParametersCache.length} مفتاح. آخر تحديث: ${response?.data?.updatedAt || '-'}`;
+    if (appRemoteConfigResult) {
+      appRemoteConfigResult.textContent = 'تم تحميل إعدادات التحديث والروابط من Remote Config.';
+    }
     if (pricingConfigResult) {
       pricingConfigResult.textContent = 'تم تحميل مفاتيح تسعير التوصيل من Remote Config.';
     }
   } catch (err) {
     remoteConfigBulkResult.textContent = `تعذر تحميل المفاتيح: ${err.message || err}`;
+    if (appRemoteConfigResult) {
+      appRemoteConfigResult.textContent = `تعذر تحميل إعدادات التحديث والروابط: ${err.message || err}`;
+    }
     if (pricingConfigResult) {
       pricingConfigResult.textContent = `تعذر تحميل مفاتيح التسعير: ${err.message || err}`;
     }
@@ -4265,23 +5790,34 @@ async function loadRemoteConfigEditorUi() {
 }
 
 function mountAdmins() {
-  if (!addAdminFormBound) {
+  if (hasAdminPermission('admins') && !addAdminFormBound) {
     addAdminForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = adminEmailInput.value.trim().toLowerCase();
+      const permissions = adminPermissionInputs
+        .filter((input) => input.checked)
+        .map((input) => String(input.value || '').trim().toLowerCase())
+        .filter((value) => ALL_ADMIN_PERMISSIONS.includes(value));
       if (!email) return;
+      if (!permissions.length) {
+        alert('اختر صلاحية واحدة على الأقل لهذا المسؤول.');
+        return;
+      }
       try {
-        await setUserAdminRole({ email, active: true });
+        await setUserAdminRole({ email, active: true, permissions });
         adminEmailInput.value = '';
-        alert('تم منح المستخدم صلاحية الأدمن بنجاح');
+        adminPermissionInputs.forEach((input) => {
+          input.checked = true;
+        });
+        alert('تم حفظ صلاحيات المسؤول بنجاح');
       } catch (err) {
-        alert(`تعذر منح صلاحية الأدمن: ${err.message}`);
+        alert(`تعذر حفظ صلاحيات المسؤول: ${err.message}`);
       }
     });
     addAdminFormBound = true;
   }
 
-  if (!normalizeStateFormBound && normalizeStateForm) {
+  if (hasAdminPermission('config') && !normalizeStateFormBound && normalizeStateForm) {
     normalizeStateForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const parsed = Number(normalizeLimitInput?.value || 500);
@@ -4319,7 +5855,7 @@ function mountAdmins() {
     normalizeStateFormBound = true;
   }
 
-  if (!rolloutConfigFormBound && rolloutConfigForm) {
+  if (hasAdminPermission('config') && !rolloutConfigFormBound && rolloutConfigForm) {
     rolloutConfigForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       syncRolloutSetFromCsv();
@@ -4399,7 +5935,7 @@ function mountAdmins() {
     rolloutConfigFormBound = true;
   }
 
-  if (!remoteConfigBulkFormBound && remoteConfigBulkForm) {
+  if (hasAdminPermission('config') && !remoteConfigBulkFormBound && remoteConfigBulkForm) {
     remoteConfigFilterInput?.addEventListener('input', () => {
       renderRemoteConfigTable(remoteConfigFilterInput.value || '');
     });
@@ -4457,7 +5993,79 @@ function mountAdmins() {
     remoteConfigBulkFormBound = true;
   }
 
-  if (!pricingConfigFormBound && pricingConfigForm) {
+  if (hasAdminPermission('config') && !appRemoteConfigFormBound && appRemoteConfigForm) {
+    reloadAppRemoteConfigBtn?.addEventListener('click', () => {
+      loadRemoteConfigEditorUi();
+    });
+
+    appRemoteConfigForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const nextValues = {
+        ops_force_update_enabled: normalizeRemoteValueByType(opsForceUpdateEnabledInput?.value || 'true', 'BOOLEAN'),
+        ops_min_build_android: normalizeRemoteValueByType(opsMinBuildAndroidInput?.value || '0', 'NUMBER'),
+        ops_update_message: normalizeRemoteValueByType(opsUpdateMessageInput?.value || '', 'STRING'),
+        ops_update_url_android: normalizeRemoteValueByType(opsUpdateUrlAndroidInput?.value || '', 'STRING'),
+        client_force_update_enabled: normalizeRemoteValueByType(clientForceUpdateEnabledInput?.value || 'true', 'BOOLEAN'),
+        client_min_build_android: normalizeRemoteValueByType(clientMinBuildAndroidInput?.value || '11', 'NUMBER'),
+        client_update_message: normalizeRemoteValueByType(clientUpdateMessageInput?.value || '', 'STRING'),
+        client_update_url_android: normalizeRemoteValueByType(clientUpdateUrlAndroidInput?.value || '', 'STRING'),
+        client_root_url: normalizeRemoteValueByType(clientRootUrlInput?.value || '', 'STRING'),
+        store_force_update_enabled: normalizeRemoteValueByType(storeForceUpdateEnabledInput?.value || 'true', 'BOOLEAN'),
+        store_min_build_android: normalizeRemoteValueByType(storeMinBuildAndroidInput?.value || '5', 'NUMBER'),
+        store_update_message: normalizeRemoteValueByType(storeUpdateMessageInput?.value || '', 'STRING'),
+        store_update_url_android: normalizeRemoteValueByType(storeUpdateUrlAndroidInput?.value || '', 'STRING'),
+        store_root_url: normalizeRemoteValueByType(storeRootUrlInput?.value || '', 'STRING'),
+        courier_force_update_enabled: normalizeRemoteValueByType(courierForceUpdateEnabledInput?.value || 'false', 'BOOLEAN'),
+        courier_min_build_android: normalizeRemoteValueByType(courierMinBuildAndroidInput?.value || '1', 'NUMBER'),
+        courier_update_message: normalizeRemoteValueByType(courierUpdateMessageInput?.value || '', 'STRING'),
+        courier_update_url_android: normalizeRemoteValueByType(courierUpdateUrlAndroidInput?.value || '', 'STRING'),
+        courier_root_url: normalizeRemoteValueByType(courierRootUrlInput?.value || '', 'STRING'),
+      };
+
+      const updates = APP_REMOTE_KEYS
+        .map((key) => {
+          const current = getRemoteConfigEntry(key);
+          const nextValue = nextValues[key];
+          const valueType = String(REMOTE_CONFIG_METADATA[key]?.valueType || current?.valueType || 'STRING').toUpperCase();
+          const prevValue = normalizeRemoteValueByType(current?.value || '', valueType);
+          if (nextValue === prevValue) return null;
+          return {
+            key,
+            value: nextValue,
+            valueType,
+            description: REMOTE_CONFIG_METADATA[key]?.description || current?.description || '',
+          };
+        })
+        .filter(Boolean);
+
+      if (!updates.length) {
+        if (appRemoteConfigResult) appRemoteConfigResult.textContent = 'لا توجد تغييرات جديدة في إعدادات التحديث والروابط.';
+        return;
+      }
+
+      if (saveAppRemoteConfigBtn) saveAppRemoteConfigBtn.disabled = true;
+      if (appRemoteConfigResult) appRemoteConfigResult.textContent = `جارٍ حفظ ${updates.length} إعدادًا...`;
+
+      try {
+        const result = await updateAdminRemoteConfigSettings({ parameters: updates });
+        if (appRemoteConfigResult) {
+          appRemoteConfigResult.textContent = `تم حفظ إعدادات التحديث والروابط بنجاح. النسخة: ${result?.data?.version || '-'} | مفاتيح محدثة: ${result?.data?.touchedCount || updates.length}`;
+        }
+        await loadRemoteConfigEditorUi();
+      } catch (err) {
+        if (appRemoteConfigResult) {
+          appRemoteConfigResult.textContent = `تعذر حفظ إعدادات التحديث والروابط: ${err.message || err}`;
+        }
+      } finally {
+        if (saveAppRemoteConfigBtn) saveAppRemoteConfigBtn.disabled = false;
+      }
+    });
+
+    appRemoteConfigFormBound = true;
+  }
+
+  if (hasAdminPermission('config') && !pricingConfigFormBound && pricingConfigForm) {
     reloadPricingConfigBtn?.addEventListener('click', () => {
       loadRemoteConfigEditorUi();
     });
@@ -4472,18 +6080,25 @@ function mountAdmins() {
         pricing_driver_delivery_base_fee: normalizeRemoteValueByType(pricingDriverBaseFeeInput?.value || '4000', 'NUMBER'),
         pricing_driver_delivery_base_distance_km: normalizeRemoteValueByType(pricingDriverBaseDistanceInput?.value || '6', 'NUMBER'),
         pricing_driver_delivery_extra_per_km: normalizeRemoteValueByType(pricingDriverExtraPerKmInput?.value || '500', 'NUMBER'),
+        pricing_large_item_fee_enabled: normalizeRemoteValueByType(pricingLargeItemFeeEnabledInput?.value || 'true', 'BOOLEAN'),
+        pricing_large_item_threshold: normalizeRemoteValueByType(pricingLargeItemThresholdInput?.value || '10000', 'NUMBER'),
+        pricing_large_item_fee_base: normalizeRemoteValueByType(pricingLargeItemFeeBaseInput?.value || '500', 'NUMBER'),
+        pricing_large_item_step_amount: normalizeRemoteValueByType(pricingLargeItemStepAmountInput?.value || '5000', 'NUMBER'),
+        pricing_large_item_step_fee: normalizeRemoteValueByType(pricingLargeItemStepFeeInput?.value || '500', 'NUMBER'),
+        pricing_large_item_fee_cap_per_unit: normalizeRemoteValueByType(pricingLargeItemFeeCapPerUnitInput?.value || '2500', 'NUMBER'),
       };
 
       const updates = PRICING_REMOTE_KEYS
         .map((key) => {
           const current = getRemoteConfigEntry(key);
           const nextValue = nextValues[key];
-          const prevValue = normalizeRemoteValueByType(current?.value || '', 'NUMBER');
+          const valueType = String(REMOTE_CONFIG_METADATA[key]?.valueType || current?.valueType || 'NUMBER').toUpperCase();
+          const prevValue = normalizeRemoteValueByType(current?.value || '', valueType);
           if (nextValue === prevValue) return null;
           return {
             key,
             value: nextValue,
-            valueType: 'NUMBER',
+            valueType,
             description: REMOTE_CONFIG_METADATA[key]?.description || '',
           };
         })
@@ -4500,7 +6115,7 @@ function mountAdmins() {
       try {
         const result = await updateAdminRemoteConfigSettings({ parameters: updates });
         if (pricingConfigResult) {
-          pricingConfigResult.textContent = `تم حفظ تسعير التوصيل بنجاح. النسخة: ${result?.data?.version || '-'} | مفاتيح محدثة: ${result?.data?.touchedCount || updates.length}`;
+          pricingConfigResult.textContent = `تم حفظ إعدادات التسعير بنجاح. النسخة: ${result?.data?.version || '-'} | مفاتيح محدثة: ${result?.data?.touchedCount || updates.length}`;
         }
         await loadRemoteConfigEditorUi();
       } catch (err) {
@@ -4515,27 +6130,33 @@ function mountAdmins() {
     pricingConfigFormBound = true;
   }
 
-  renderRolloutCityList(rolloutCitySearchInput?.value || '');
-  syncRolloutCsvFromSet();
-  loadRolloutConfigUi();
-  loadRemoteConfigEditorUi();
+  if (hasAdminPermission('config')) {
+    renderRolloutCityList(rolloutCitySearchInput?.value || '');
+    syncRolloutCsvFromSet();
+    loadRolloutConfigUi();
+    loadRemoteConfigEditorUi();
+  }
 
-  unsubscribers.push(
-    onSnapshot(collection(db, 'admins'), (snap) => {
-      const rows = snap.docs
-        .map((d) => {
-          const data = d.data() || {};
-          const isActive = data.active === true || data.role === 'admin';
-          return `<tr>
-            <td>${data.email || '-'}</td>
-            <td>${data.uid || d.id}</td>
-            <td>${data.role || '-'}</td>
-            <td><span class="badge ${isActive ? 'closed' : 'open'}">${isActive ? 'نشط' : 'غير نشط'}</span></td>
-          </tr>`;
-        });
-      setHtml(adminsTable, table(['البريد', 'UID', 'الدور', 'الحالة'], rows));
-    })
-  );
+  if (hasAdminPermission('admins')) {
+    unsubscribers.push(
+      onSnapshot(collection(db, 'admins'), (snap) => {
+        const rows = snap.docs
+          .map((d) => {
+            const data = d.data() || {};
+            const isActive = data.active === true || data.role === 'admin';
+            const permissionsSummary = formatAdminPermissionsSummary(data.permissions);
+            return `<tr>
+              <td>${data.email || '-'}</td>
+              <td>${data.uid || d.id}</td>
+              <td>${data.role || '-'}</td>
+              <td>${escapeHtml(permissionsSummary || 'كامل')}</td>
+              <td><span class="badge ${isActive ? 'closed' : 'open'}">${isActive ? 'نشط' : 'غير نشط'}</span></td>
+            </tr>`;
+          });
+        setHtml(adminsTable, table(['البريد', 'UID', 'الدور', 'الصلاحيات', 'الحالة'], rows));
+      })
+    );
+  }
 
 }
 
@@ -4660,9 +6281,220 @@ function getRestaurantGeo(restaurantId, restaurantData) {
   return null;
 }
 
-function setMapDetails(html) {
+function syncMapUiStateFromInputs() {
+  mapUiState.orderStatus = String(mapOrderStatusFilter?.value || 'active');
+  mapUiState.style = String(mapStyleSelect?.value || 'voyager');
+  mapUiState.showDrivers = mapLayerDriversInput ? mapLayerDriversInput.checked : true;
+  mapUiState.showClients = mapLayerClientsInput ? mapLayerClientsInput.checked : true;
+  mapUiState.showRestaurants = mapLayerRestaurantsInput ? mapLayerRestaurantsInput.checked : true;
+  mapUiState.showOrders = mapLayerOrdersInput ? mapLayerOrdersInput.checked : true;
+  mapUiState.followSelectedOrder = mapFollowSelectedOrderInput ? mapFollowSelectedOrderInput.checked : false;
+  mapUiState.pinDetails = mapPinDetailsInput ? mapPinDetailsInput.checked : false;
+}
+
+function requestRefreshMapLayers() {
+  clearTimeout(mapRefreshTimer);
+  mapRefreshTimer = setTimeout(() => {
+    refreshMapLayers();
+  }, 70);
+}
+
+function applyMapBaseLayer() {
+  if (!liveMap || !window.L) return;
+  const preset = MAP_STYLE_PRESETS[mapUiState.style] || MAP_STYLE_PRESETS.voyager;
+  if (mapBaseLayer) {
+    liveMap.removeLayer(mapBaseLayer);
+  }
+  if (mapOverlayLayer) {
+    liveMap.removeLayer(mapOverlayLayer);
+    mapOverlayLayer = null;
+  }
+  mapBaseLayer = window.L.tileLayer(preset.url, {
+    maxZoom: 19,
+    subdomains: preset.subdomains,
+    attribution: preset.attribution
+  });
+  mapBaseLayer.addTo(liveMap);
+  if (preset.overlay) {
+    mapOverlayLayer = window.L.tileLayer(preset.overlay.url, {
+      maxZoom: 19,
+      subdomains: preset.overlay.subdomains || 'abc',
+      opacity: preset.overlay.opacity ?? 1,
+      attribution: preset.overlay.attribution || ''
+    });
+    mapOverlayLayer.addTo(liveMap);
+  }
+}
+
+function updateMapFullscreenButton() {
+  if (!mapFullscreenBtn) return;
+  const isFullscreen = document.fullscreenElement === mapViewport;
+  mapFullscreenBtn.textContent = isFullscreen ? 'إنهاء الشاشة الكاملة' : 'شاشة كاملة';
+}
+
+async function toggleMapFullscreen() {
+  if (!mapViewport) return;
+  if (document.fullscreenElement === mapViewport) {
+    await document.exitFullscreen();
+  } else {
+    await mapViewport.requestFullscreen();
+  }
+  updateMapFullscreenButton();
+  setTimeout(() => {
+    if (liveMap) liveMap.invalidateSize();
+  }, 180);
+}
+
+function normalizeMapOrderStatusValue(order) {
+  return String(order?.orderStatus || order?.status || '').trim().toLowerCase();
+}
+
+function matchesMapOrderFilter(order) {
+  const selectedStatus = String(mapUiState.orderStatus || 'active');
+  if (selectedStatus === 'active') return isActiveOrder(order);
+  return normalizeMapOrderStatusValue(order) === selectedStatus;
+}
+
+function shouldDisplayMapLayer(layerName) {
+  if (layerName === 'drivers') return mapUiState.showDrivers;
+  if (layerName === 'clients') return mapUiState.showClients;
+  if (layerName === 'restaurants') return mapUiState.showRestaurants;
+  if (layerName === 'orders') return mapUiState.showOrders;
+  return true;
+}
+
+function updateMapSelectionBanner(text) {
+  if (!mapSelectionBanner) return;
+  mapSelectionBanner.textContent = text || 'لا يوجد عنصر مثبت حاليًا.';
+}
+
+function formatMapSelectionLabel(selection) {
+  if (!selection) return 'لا يوجد عنصر مثبت حاليًا.';
+  const pinnedLabel = mapUiState.pinDetails ? ' | البطاقة مثبتة' : '';
+  return `${selection.label || 'عنصر محدد'}${pinnedLabel}`;
+}
+
+function pushMapEvent(entry) {
+  if (!entry) return;
+  mapUiState.events = [entry, ...mapUiState.events]
+    .slice(0, 8);
+  renderMapEventFeed();
+}
+
+function renderMapEventFeed() {
+  if (!mapEventFeed) return;
+  if (!mapUiState.events.length) {
+    mapEventFeed.innerHTML = '<div class="muted">لا توجد أحداث جديدة بعد. سيتم عرض آخر التغيرات هنا.</div>';
+    return;
+  }
+  setHtml(
+    mapEventFeed,
+    mapUiState.events.map((event) => `
+      <div class="map-event-item">
+        <div class="map-event-dot" data-level="${escapeHtml(event.level || 'info')}"></div>
+        <div>
+          <strong>${escapeHtml(event.title || 'حدث جديد')}</strong>
+          <span>${escapeHtml(event.description || '')}</span>
+        </div>
+        <button class="btn ghost" type="button" data-map-event-type="${escapeHtml(event.type || '')}" data-map-event-id="${escapeHtml(event.id || '')}">فتح</button>
+      </div>
+    `).join('')
+  );
+  mapEventFeed.querySelectorAll('[data-map-event-type]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const type = button.getAttribute('data-map-event-type');
+      const id = button.getAttribute('data-map-event-id');
+      if (!type || !id) return;
+      focusMapSearchEntity(type, id);
+    });
+  });
+}
+
+function describeRestaurantMapGap(restaurantId, restaurantData) {
+  const reasons = [];
+  const addresses = mapState.restaurantAddresses.get(restaurantId);
+  if (!extractGeo(restaurantData, ['location', 'currentLocation', 'address.location', 'defaultAddress.location', 'selectedAddress.location'])
+    && !extractGeoByPairs(restaurantData, [
+      ['latitude', 'longitude'],
+      ['lat', 'lng'],
+      ['address.latitude', 'address.longitude'],
+      ['defaultAddress.latitude', 'defaultAddress.longitude'],
+      ['selectedAddress.latitude', 'selectedAddress.longitude'],
+    ])) {
+    reasons.push('لا يوجد موقع في السجل الرئيسي');
+  }
+  if (!addresses || !addresses.size) {
+    reasons.push('لا توجد عناوين فرعية مرتبطة');
+  }
+  if (addresses && addresses.size && !getRestaurantGeo(restaurantId, restaurantData)) {
+    reasons.push('العناوين الفرعية لا تحتوي إحداثيات صالحة');
+  }
+  return reasons;
+}
+
+function bindMapDetailsActions() {
   if (!mapDetails) return;
-  mapDetails.innerHTML = html;
+  mapDetails.querySelectorAll('[data-map-toggle-pin-details]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (mapPinDetailsInput) {
+        mapPinDetailsInput.checked = !mapPinDetailsInput.checked;
+      }
+      syncMapUiStateFromInputs();
+      updateMapSelectionBanner(formatMapSelectionLabel(currentMapSelection));
+    });
+  });
+  mapDetails.querySelectorAll('[data-map-focus-order]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const orderId = button.getAttribute('data-map-focus-order');
+      if (orderId) {
+        focusMapOnOrder(orderId);
+      }
+    });
+  });
+}
+
+function setMapDetails(html, options = {}) {
+  if (!mapDetails) return;
+  const actions = `
+    <div class="map-details-actions">
+      <button class="btn ghost" type="button" data-map-toggle-pin-details>${mapUiState.pinDetails ? 'إلغاء تثبيت البطاقة' : 'تثبيت البطاقة'}</button>
+      ${options.orderId ? `<button class="btn ghost" type="button" data-map-focus-order="${escapeHtml(options.orderId)}">إعادة تتبع الطلب</button>` : ''}
+    </div>
+  `;
+  mapDetails.innerHTML = `<div class="map-details-card">${html}${actions}</div>`;
+  bindMapDetailsActions();
+  if (options.selection) {
+    currentMapSelection = options.selection;
+    updateMapSelectionBanner(formatMapSelectionLabel(currentMapSelection));
+  }
+}
+
+function renderCurrentMapSelection() {
+  if (!currentMapSelection) return;
+  const selection = currentMapSelection;
+  if (selection.type === 'order') {
+    const orderData = mapState.orders.get(selection.id)?.data;
+    if (orderData) {
+      renderOrderDetails(orderData, selection.id);
+    }
+    return;
+  }
+  if (selection.type === 'driver') {
+    const data = mapState.drivers.get(selection.id)?.data;
+    if (data) renderEntityDetails('driver', selection.id, data);
+    return;
+  }
+  if (selection.type === 'client') {
+    const data = mapState.clients.get(selection.id)?.data;
+    if (data) renderEntityDetails('client', selection.id, data);
+    return;
+  }
+  if (selection.type === 'restaurant') {
+    const data = mapState.restaurants.get(selection.id)?.data || selection.fallbackData;
+    if (data) {
+      renderEntityDetails('restaurant', selection.id, data, selection.context || null);
+    }
+  }
 }
 
 function setMapLegendSummary(text) {
@@ -4671,27 +6503,37 @@ function setMapLegendSummary(text) {
 }
 
 function refreshMapLegendSummary() {
+  const hiddenReasonCounts = mapUiState.hiddenRestaurants.reduce((acc, item) => {
+    (item.reasons || []).forEach((reason) => {
+      acc[reason] = (acc[reason] || 0) + 1;
+    });
+    return acc;
+  }, {});
   const totalDrivers = mapState.drivers.size;
   const availableDrivers = Array.from(mapState.drivers.values())
     .filter(({ data }) => data.isAvailable === true || data.available === true || String(data.availabilityStatus || '').toLowerCase() === 'available')
     .length;
-  const activeOrders = Array.from(mapState.orders.values()).filter(({ data }) => isActiveOrder(data)).length;
+  const activeOrders = Array.from(mapState.orders.values()).filter(({ data }) => matchesMapOrderFilter(data)).length;
   const totalRestaurants = mapState.restaurants.size;
   const visibleRestaurants = markerState.restaurants.size;
   const hiddenRestaurants = Math.max(0, totalRestaurants - visibleRestaurants);
   const totalClients = mapState.clients.size;
+  const hiddenSummary = Object.entries(hiddenReasonCounts)
+    .slice(0, 2)
+    .map(([reason, count]) => `${reason}: ${count}`)
+    .join(' | ');
 
   if (mapMetrics) {
     mapMetrics.innerHTML = `
       <div class="map-metric"><span>الطلبات النشطة</span><strong>${activeOrders}</strong></div>
       <div class="map-metric"><span>المندوبون المتاحون</span><strong>${availableDrivers}/${totalDrivers}</strong></div>
       <div class="map-metric"><span>المطاعم الظاهرة</span><strong>${visibleRestaurants}/${totalRestaurants}</strong></div>
-      <div class="map-metric"><span>العملاء النشطون</span><strong>${totalClients}</strong></div>
+      <div class="map-metric"><span>فلتر الحالة</span><strong>${escapeHtml(MAP_ORDER_STATUS_LABELS[mapUiState.orderStatus] || 'نشط')}</strong></div>
     `;
   }
 
   setMapLegendSummary(
-    `طلبات نشطة: ${activeOrders} | مندوبون متاحون: ${availableDrivers}/${totalDrivers} | مطاعم ظاهرة: ${visibleRestaurants}/${totalRestaurants} | غير ظاهرة: ${hiddenRestaurants} | عملاء: ${totalClients}`
+    `طلبات مطابقة: ${activeOrders} | مندوبون متاحون: ${availableDrivers}/${totalDrivers} | مطاعم ظاهرة: ${visibleRestaurants}/${totalRestaurants} | مطاعم مخفية: ${hiddenRestaurants} | عملاء نشطون: ${totalClients}${hiddenSummary ? ` | أسباب الإخفاء: ${hiddenSummary}` : ''}`
   );
 }
 
@@ -4784,6 +6626,7 @@ function renderMapSearchResults() {
   const matches = [];
 
   mapState.orders.forEach(({ data }, id) => {
+    if (!shouldDisplayMapLayer('orders') || !matchesMapOrderFilter(data)) return;
     const searchText = [
       formatUnifiedOrderCode(data.orderNumber, data.orderId, id),
       data.clientName,
@@ -4803,6 +6646,7 @@ function renderMapSearchResults() {
   });
 
   mapState.restaurants.forEach(({ data }, id) => {
+    if (!shouldDisplayMapLayer('restaurants')) return;
     const searchText = [data.name, data.phone, data.city, data.address, id].join(' ').toLowerCase();
     if (!searchText.includes(query)) return;
     matches.push({
@@ -4814,6 +6658,7 @@ function renderMapSearchResults() {
   });
 
   mapState.drivers.forEach(({ data }, id) => {
+    if (!shouldDisplayMapLayer('drivers')) return;
     const searchText = [data.name, data.phone, data.email, id].join(' ').toLowerCase();
     if (!searchText.includes(query)) return;
     matches.push({
@@ -4825,6 +6670,7 @@ function renderMapSearchResults() {
   });
 
   mapState.clients.forEach(({ data }, id) => {
+    if (!shouldDisplayMapLayer('clients')) return;
     const searchText = [data.name, data.phone, data.email, id].join(' ').toLowerCase();
     if (!searchText.includes(query)) return;
     matches.push({
@@ -4846,6 +6692,7 @@ function renderMapSearchResults() {
     limitedMatches.map((match) => `
       <div class="map-search-item">
         <div>
+          <div class="map-search-item-meta"><span class="map-search-badge" data-kind="${escapeHtml(match.type)}">${escapeHtml(match.type === 'order' ? 'طلب' : match.type === 'restaurant' ? 'مطعم' : match.type === 'driver' ? 'مندوب' : 'عميل')}</span></div>
           <b>${escapeHtml(match.title)}</b>
           <span>${escapeHtml(match.subtitle)}</span>
         </div>
@@ -4901,7 +6748,7 @@ async function backfillRestaurantAddressesForMissingRestaurants() {
     mapAddressBackfillInProgress = false;
   }
 
-  refreshMapLayers();
+  requestRefreshMapLayers();
 }
 
 function refreshMapViewport() {
@@ -4939,6 +6786,20 @@ function isActiveOrder(order) {
     'rejected',
     'failed'
   ].includes(status);
+}
+
+function canDisplayOrderOnMap(orderData, orderId) {
+  if (isActiveOrder(orderData)) return true;
+  return Boolean(allowCompletedSelectedOrderOnMap && selectedOrderOnMapId && selectedOrderOnMapId === orderId);
+}
+
+function clearSelectedOrderOnMap() {
+  selectedOrderOnMapId = '';
+  allowCompletedSelectedOrderOnMap = false;
+  if (currentMapSelection?.type === 'order') {
+    currentMapSelection = null;
+    updateMapSelectionBanner('لا يوجد عنصر مثبت حاليًا.');
+  }
 }
 
 function activeOrdersFor(fn) {
@@ -4986,6 +6847,20 @@ function getOrderTrackingInsight(orderData, restaurantGeo, driverGeo, clientGeo)
   return `المتابعة نشطة. مسافة المندوب للمطعم: ${driverToRestaurantKm.toFixed(2)} كم، وللعميل: ${driverToClientKm.toFixed(2)} كم.`;
 }
 
+function describeOrderRouteState(points) {
+  const routeKey = buildRouteKey(points);
+  if (mapRouteCache.has(routeKey)) {
+    return 'مسار فعلي على الطرق';
+  }
+  if (mapRoutePending.has(routeKey)) {
+    return 'جارٍ جلب المسار الفعلي';
+  }
+  if (mapRouteFailures.has(routeKey)) {
+    return 'تعذر جلب المسار الفعلي، تم استخدام خط تقريبي';
+  }
+  return points.length > 1 ? 'سيتم رسم المسار الفعلي عند التحديث' : 'نقاط المسار غير مكتملة';
+}
+
 function renderOrderDetails(orderData, orderId) {
   const clientId = orderData.clientId || '';
   const restaurantId = orderData.restaurantId || '';
@@ -5005,6 +6880,16 @@ function renderOrderDetails(orderData, orderId) {
   const driverGeo = getDriverGeoByOrder(orderData);
   const clientGeo = getClientGeoByOrder(orderData);
   const trackingInsight = getOrderTrackingInsight(orderData, restaurantGeo, driverGeo, clientGeo);
+  const routeSourcePoints = [];
+  if (restaurantGeo) routeSourcePoints.push([restaurantGeo.lat, restaurantGeo.lng]);
+  if (driverGeo) routeSourcePoints.push([driverGeo.lat, driverGeo.lng]);
+  if (clientGeo) routeSourcePoints.push([clientGeo.lat, clientGeo.lng]);
+  const routeStateLabel = describeOrderRouteState(routeSourcePoints);
+  const missingPieces = [
+    restaurantGeo ? '' : 'المطعم بلا موقع صالح',
+    driverId && !driverGeo ? 'المندوب المعين لا يرسل موقعًا حاليًا' : '',
+    clientGeo ? '' : 'العميل بلا نقطة توصيل واضحة',
+  ].filter(Boolean);
 
   setMapDetails(`
     <h4>تفاصيل الطلب</h4>
@@ -5012,14 +6897,29 @@ function renderOrderDetails(orderData, orderId) {
     <div><span class="kv"><b>العميل:</b> ${escapeHtml(client?.name || orderData.clientName || clientId || '-')}</span><span class="kv"><b>المندوب:</b> ${escapeHtml(driver?.name || driverId || 'غير معين')}</span></div>
     <div><span class="kv"><b>المطعم:</b> ${escapeHtml(restaurant?.name || restaurantId || '-')}</span><span class="kv"><b>الإجمالي:</b> ${escapeHtml(orderData.total ?? orderData.totalPrice ?? '-')}</span></div>
     <div><span class="kv"><b>المطعم على الخريطة:</b> ${restaurantGeo ? 'متاح' : 'غير متاح'}</span><span class="kv"><b>المندوب على الخريطة:</b> ${driverGeo ? 'متاح' : 'غير متاح'}</span><span class="kv"><b>العميل على الخريطة:</b> ${clientGeo ? 'متاح' : 'غير متاح'}</span></div>
+    <div><span class="kv"><b>نوع المسار:</b> ${escapeHtml(routeStateLabel)}</span></div>
     <div style="margin-top:6px; padding:8px 10px; border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc;"><b>متابعة ذكية:</b> ${escapeHtml(trackingInsight)}</div>
+    ${missingPieces.length ? `<div class="map-alert-note"><b>تنبيه مكاني:</b> ${escapeHtml(missingPieces.join(' | '))}</div>` : ''}
     <div><b>العناصر:</b><ul>${items}</ul></div>
-  `);
+  `, {
+    orderId,
+    selection: {
+      type: 'order',
+      id: orderId,
+      label: `الطلب ${formatUnifiedOrderCode(orderData.orderNumber, orderData.orderId, orderId)}`
+    }
+  });
 }
 
 function focusMapOnOrder(orderId) {
   const orderEntry = mapState.orders.get(orderId);
   if (!orderEntry || !liveMap) return;
+
+  if (!canDisplayOrderOnMap(orderEntry.data || {}, orderId)) {
+    clearSelectedOrderOnMap();
+    setMapDetails('<p class="muted">هذا الطلب مكتمل، لذلك لا يظهر داخل تبويب الخريطة إلا إذا تم فتحه من تبويب إدارة الطلبات.</p>');
+    return;
+  }
 
   selectedOrderOnMapId = orderId;
   const orderData = orderEntry.data || {};
@@ -5049,7 +6949,8 @@ function focusMapOnOrder(orderId) {
   refreshOrderLines();
 }
 
-function openOrderOnMap(orderId) {
+function openOrderOnMap(orderId, options = {}) {
+  allowCompletedSelectedOrderOnMap = options.allowCompleted === true;
   selectedOrderOnMapId = orderId;
   activateTab('map');
   setTimeout(() => {
@@ -5071,7 +6972,9 @@ function renderEntityDetails(type, id, data, context = null) {
       <div><span class="kv"><b>الحالة:</b> ${available ? 'متاح' : 'غير متاح'}</span><span class="kv"><b>الإحداثيات:</b> ${escapeHtml(formatGeoInline(driverGeo))}</span></div>
       <div><b>طلبات نشطة:</b> ${orders.length}</div>
       <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(formatUnifiedOrderCode(o.data.orderNumber, o.data.orderId, o.id))} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
-    `);
+    `, {
+      selection: { type: 'driver', id, label: `المندوب ${name}` }
+    });
     return;
   }
 
@@ -5084,11 +6987,14 @@ function renderEntityDetails(type, id, data, context = null) {
       <div><span class="kv"><b>الإحداثيات:</b> ${escapeHtml(formatGeoInline(clientGeo))}</span></div>
       <div><b>طلبات نشطة:</b> ${orders.length}</div>
       <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(formatUnifiedOrderCode(o.data.orderNumber, o.data.orderId, o.id))} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
-    `);
+    `, {
+      selection: { type: 'client', id, label: `العميل ${name}` }
+    });
     return;
   }
 
   const restaurantGeo = context?.geo || getRestaurantGeo(id, data);
+  const missingReasons = restaurantGeo ? [] : describeRestaurantMapGap(id, data);
   const addressName = String(context?.addressData?.addressName || '').trim();
   const addressCity = String(context?.addressData?.city || '').trim();
   const addressLine = [addressName, addressCity].filter(Boolean).join(' - ');
@@ -5101,25 +7007,34 @@ function renderEntityDetails(type, id, data, context = null) {
     <div><span class="kv"><b>الاسم:</b> ${escapeHtml(name)}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.phone || '-')}</span></div>
     <div><span class="kv"><b>الحالة:</b> ${escapeHtml(data.temporarilyClosed ? 'مغلق مؤقتًا' : 'مفتوح')}</span><span class="kv"><b>الإحداثيات:</b> ${escapeHtml(formatGeoInline(restaurantGeo))}</span></div>
     ${addressMeta}
+    ${missingReasons.length ? `<div class="map-alert-note"><b>سبب غياب الموقع:</b> ${escapeHtml(missingReasons.join(' | '))}</div>` : ''}
     <div><b>طلبات نشطة:</b> ${orders.length}</div>
     <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(formatUnifiedOrderCode(o.data.orderNumber, o.data.orderId, o.id))} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
-  `);
+  `, {
+    selection: {
+      type: 'restaurant',
+      id,
+      label: `المطعم ${name}`,
+      context,
+      fallbackData: data
+    }
+  });
 }
 
 function buildMarkerIcon({ type, variant = 'default' }) {
   const glyphByType = {
-    driver: 'D',
-    client: 'C',
-    restaurant: 'R',
-    order: 'O',
+    driver: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 12h5v9h6v-9h5Z"></path></svg>',
+    client: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4.418 0-8 2.239-8 5v1h16v-1c0-2.761-3.582-5-8-5Z"></path></svg>',
+    restaurant: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v4H4Zm1 6h14v10H5Zm3 2v2h2v-2Zm4 0v2h2v-2Z"></path></svg>',
+    order: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 4.63 7 13 7 13s7-8.37 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5Z"></path></svg>',
   };
 
   return window.L.divIcon({
     className: 'map-pin-shell',
     html: `<div class="map-pin map-pin--${type} map-pin--${variant}"><span>${glyphByType[type] || '•'}</span></div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    popupAnchor: [0, -14],
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -16],
     tooltipAnchor: [12, -12],
   });
 }
@@ -5128,6 +7043,7 @@ function setOrUpdateMarker(stateMap, id, latLng, markerOptions, label, onClick) 
   if (!liveMap) return;
   const existing = stateMap.get(id);
   const icon = buildMarkerIcon(markerOptions || {});
+  const layerType = markerOptions?.type || 'orders';
 
   if (existing) {
     existing.setLatLng(latLng);
@@ -5137,23 +7053,35 @@ function setOrUpdateMarker(stateMap, id, latLng, markerOptions, label, onClick) 
     return;
   }
 
-  const marker = window.L.marker(latLng, { icon }).addTo(liveMap);
+  const marker = window.L.marker(latLng, { icon });
   marker.bindTooltip(label);
   marker.bindPopup(label);
   marker.on('click', onClick);
+  addMarkerToLayer(layerType, marker);
   stateMap.set(id, marker);
 }
 
 function removeMissingMarkers(stateMap, validIds) {
   stateMap.forEach((marker, id) => {
     if (!validIds.has(id)) {
-      marker.remove();
+      const type = id.startsWith('orphan:') ? 'restaurants' : stateMap === markerState.drivers
+        ? 'drivers'
+        : stateMap === markerState.clients
+          ? 'clients'
+          : stateMap === markerState.restaurants
+            ? 'restaurants'
+            : 'orders';
+      removeMarkerFromLayer(type, marker);
       stateMap.delete(id);
     }
   });
 }
 
 function refreshDriverMarkers() {
+  if (!shouldDisplayMapLayer('drivers')) {
+    removeMissingMarkers(markerState.drivers, new Set());
+    return;
+  }
   const validIds = new Set();
   mapState.drivers.forEach(({ data }, id) => {
     const geo = extractGeo(data, ['location', 'currentLocation', 'lastLocation', 'liveLocation', 'address.location']);
@@ -5173,6 +7101,10 @@ function refreshDriverMarkers() {
 }
 
 function refreshClientMarkers() {
+  if (!shouldDisplayMapLayer('clients')) {
+    removeMissingMarkers(markerState.clients, new Set());
+    return;
+  }
   const activeClientIds = new Set(
     activeOrdersFor((order) => !!order.clientId)
       .map((order) => order.data.clientId)
@@ -5198,7 +7130,13 @@ function refreshClientMarkers() {
 }
 
 function refreshRestaurantMarkers() {
+  if (!shouldDisplayMapLayer('restaurants')) {
+    mapUiState.hiddenRestaurants = [];
+    removeMissingMarkers(markerState.restaurants, new Set());
+    return;
+  }
   const validIds = new Set();
+  const hiddenRestaurants = [];
   mapState.restaurants.forEach(({ data }, id) => {
     const openState = data.temporarilyClosed ? 'closed' : 'open';
     const addresses = mapState.restaurantAddresses.get(id);
@@ -5217,7 +7155,10 @@ function refreshRestaurantMarkers() {
     }
 
     const geo = chosenAddressEntry?.geo || getRestaurantGeo(id, data);
-    if (!geo) return;
+    if (!geo) {
+      hiddenRestaurants.push({ id, reasons: describeRestaurantMapGap(id, data) });
+      return;
+    }
 
     const markerId = id;
     const chosenAddressName = String(chosenAddressEntry?.data?.addressName || '').trim();
@@ -5278,13 +7219,19 @@ function refreshRestaurantMarkers() {
     );
   });
 
+  mapUiState.hiddenRestaurants = hiddenRestaurants;
+
   removeMissingMarkers(markerState.restaurants, validIds);
 }
 
 function refreshOrderMarkers() {
+  if (!shouldDisplayMapLayer('orders')) {
+    removeMissingMarkers(markerState.orders, new Set());
+    return;
+  }
   const validIds = new Set();
   mapState.orders.forEach(({ data }, id) => {
-    if (!isActiveOrder(data) && id !== selectedOrderOnMapId) return;
+    if ((!matchesMapOrderFilter(data) && id !== selectedOrderOnMapId) || !canDisplayOrderOnMap(data, id)) return;
     const geo = extractGeo(data, ['deliveryLocation', 'clientLocation', 'address.location']);
     if (!geo) return;
     validIds.add(id);
@@ -5292,9 +7239,13 @@ function refreshOrderMarkers() {
       markerState.orders,
       id,
       [geo.lat, geo.lng],
-      { type: 'order', variant: 'active' },
+      { type: 'order', variant: selectedOrderOnMapId === id ? 'selected' : 'active' },
       `طلب: ${formatUnifiedOrderCode(data.orderNumber, data.orderId, id)}`,
-      () => renderOrderDetails(data, id)
+      () => {
+        selectedOrderOnMapId = id;
+        renderOrderDetails(data, id);
+        refreshOrderLines();
+      }
     );
   });
   removeMissingMarkers(markerState.orders, validIds);
@@ -5333,27 +7284,39 @@ function setOrUpdateOrderLine(orderId, points, options) {
   if (!liveMap) return;
   const existing = lineState.orders.get(orderId);
   if (existing) {
-    existing.setLatLngs(points);
-    existing.setStyle(options);
+    existing.polyline.setLatLngs(points);
+    existing.polyline.setStyle(options);
+    existing.routeKey = options.routeKey || existing.routeKey || '';
+    existing.mode = options.routeMode || existing.mode || 'straight';
     return;
   }
   const polyline = window.L.polyline(points, options).addTo(liveMap);
-  lineState.orders.set(orderId, polyline);
+  lineState.orders.set(orderId, {
+    polyline,
+    routeKey: options.routeKey || '',
+    mode: options.routeMode || 'straight',
+  });
 }
 
 function removeMissingOrderLines(validIds) {
-  lineState.orders.forEach((polyline, id) => {
+  lineState.orders.forEach((entry, id) => {
     if (!validIds.has(id)) {
-      polyline.remove();
+      entry.polyline.remove();
       lineState.orders.delete(id);
     }
   });
 }
 
 function refreshOrderLines() {
+  if (!shouldDisplayMapLayer('orders')) {
+    removeMissingOrderLines(new Set());
+    return;
+  }
   const validIds = new Set();
+  const routedOrderBudget = 8;
+  let routedOrderCount = 0;
   mapState.orders.forEach(({ data }, id) => {
-    if (!isActiveOrder(data) && id !== selectedOrderOnMapId) return;
+    if ((!matchesMapOrderFilter(data) && id !== selectedOrderOnMapId) || !canDisplayOrderOnMap(data, id)) return;
 
     const restaurantGeo = getRestaurantGeoByOrder(data);
     const driverGeo = getDriverGeoByOrder(data);
@@ -5379,11 +7342,18 @@ function refreshOrderLines() {
     validIds.add(id);
     const withDriver = Boolean(driverGeo);
     const isSelected = selectedOrderOnMapId && selectedOrderOnMapId === id;
-    setOrUpdateOrderLine(id, points, {
+    const shouldUseActualRoute = Boolean(isSelected || routedOrderCount < routedOrderBudget);
+    const resolvedRoute = resolveOrderRoutePoints(id, points, shouldUseActualRoute);
+    if ((resolvedRoute.mode === 'actual' || resolvedRoute.mode === 'loading') && !isSelected) {
+      routedOrderCount += 1;
+    }
+    setOrUpdateOrderLine(id, resolvedRoute.points, {
+      routeKey: resolvedRoute.routeKey,
+      routeMode: resolvedRoute.mode,
       color: isSelected ? '#2563eb' : (withDriver ? '#f59e0b' : '#ef4444'),
       weight: isSelected ? 5 : 3,
       opacity: isSelected ? 0.95 : 0.75,
-      dashArray: withDriver ? null : '6 6'
+      dashArray: resolvedRoute.mode === 'actual' ? null : (withDriver ? null : '6 6')
     });
   });
 
@@ -5391,19 +7361,38 @@ function refreshOrderLines() {
 }
 
 function refreshMapLayers() {
+  syncMapUiStateFromInputs();
+
+  if (selectedOrderOnMapId) {
+    const selectedOrderData = mapState.orders.get(selectedOrderOnMapId)?.data;
+    if (!selectedOrderData || !canDisplayOrderOnMap(selectedOrderData, selectedOrderOnMapId)) {
+      clearSelectedOrderOnMap();
+    }
+  }
+
   refreshDriverMarkers();
   refreshClientMarkers();
   refreshRestaurantMarkers();
   refreshOrderMarkers();
   refreshOrderLines();
 
-  if (selectedOrderOnMapId && mapState.orders.has(selectedOrderOnMapId)) {
+  if (currentMapSelection && mapUiState.pinDetails) {
+    renderCurrentMapSelection();
+  } else if (selectedOrderOnMapId && mapState.orders.has(selectedOrderOnMapId)) {
     const current = mapState.orders.get(selectedOrderOnMapId);
     renderOrderDetails(current.data || {}, selectedOrderOnMapId);
   }
 
+  if (mapUiState.followSelectedOrder && selectedOrderOnMapId && mapState.orders.has(selectedOrderOnMapId)) {
+    const orderMarker = markerState.orders.get(selectedOrderOnMapId);
+    if (orderMarker && liveMap) {
+      liveMap.setView(orderMarker.getLatLng(), Math.max(liveMap.getZoom(), 15), { animate: true });
+    }
+  }
+
   refreshMapLegendSummary();
   renderMapSearchResults();
+  renderMapEventFeed();
   refreshMapViewport();
 }
 
@@ -5420,10 +7409,13 @@ async function mountMap() {
 
   if (!liveMap) {
     liveMap = window.L.map('liveMap').setView([33.3152, 44.3661], 11);
-    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap'
-    }).addTo(liveMap);
+    ensureMarkerLayers();
+    syncMapUiStateFromInputs();
+    applyMapBaseLayer();
+    if (!mapScaleControlAdded) {
+      window.L.control.scale({ imperial: false, position: 'bottomright' }).addTo(liveMap);
+      mapScaleControlAdded = true;
+    }
 
     liveMap.on('dragstart zoomstart', () => {
       mapAutoFitted = true;
@@ -5440,12 +7432,49 @@ async function mountMap() {
         div.style.lineHeight = '1.6';
         div.style.fontSize = '12px';
         div.innerHTML =
-          'D أخضر: مندوب متاح<br/>D رمادي: مندوب غير متاح<br/>C أزرق: عميل نشط<br/>R برتقالي: مطعم مفتوح<br/>R بني: مطعم مغلق<br/>O أحمر: موقع طلب نشط';
+          'أخضر: مندوب متاح<br/>رمادي: مندوب غير متاح<br/>أزرق: عميل نشط<br/>برتقالي: مطعم مفتوح<br/>بني: مطعم مغلق<br/>أحمر أو أزرق نابض: طلب محدد أو نشط';
         return div;
       };
       legend.addTo(liveMap);
       mapLegendControlAdded = true;
     }
+
+    void ensureLeafletMarkerCluster()
+      .then(() => {
+        if (!window.L?.markerClusterGroup || !liveMap) return;
+        rebuildMarkerLayers();
+        requestRefreshMapLayers();
+      })
+      .catch(() => {
+      });
+  }
+
+  if (!mapUiBound) {
+    mapUiBound = true;
+    mapSearchInput?.addEventListener('input', () => renderMapSearchResults());
+    mapOrderStatusFilter?.addEventListener('change', () => requestRefreshMapLayers());
+    mapStyleSelect?.addEventListener('change', () => {
+      syncMapUiStateFromInputs();
+      applyMapBaseLayer();
+      requestRefreshMapLayers();
+    });
+    [mapLayerDriversInput, mapLayerClientsInput, mapLayerRestaurantsInput, mapLayerOrdersInput, mapFollowSelectedOrderInput, mapPinDetailsInput]
+      .filter(Boolean)
+      .forEach((input) => {
+        input.addEventListener('change', () => {
+          syncMapUiStateFromInputs();
+          requestRefreshMapLayers();
+        });
+      });
+    mapFullscreenBtn?.addEventListener('click', () => {
+      void toggleMapFullscreen();
+    });
+    document.addEventListener('fullscreenchange', () => {
+      updateMapFullscreenButton();
+      setTimeout(() => {
+        if (liveMap) liveMap.invalidateSize();
+      }, 180);
+    });
   }
 
   if (mapBootstrapped) {
@@ -5455,12 +7484,15 @@ async function mountMap() {
   mapBootstrapped = true;
 
   setMapDetails('<p class="muted">اختر علامة على الخريطة لعرض التفاصيل.</p>');
+  renderMapEventFeed();
+  updateMapSelectionBanner('لا يوجد عنصر مثبت حاليًا.');
+  updateMapFullscreenButton();
 
   unsubscribers.push(
     onSnapshot(collection(db, 'drivers'), (snap) => {
       mapState.drivers.clear();
       snap.docs.forEach((d) => mapState.drivers.set(d.id, { id: d.id, data: d.data() }));
-      refreshMapLayers();
+      requestRefreshMapLayers();
     })
   );
 
@@ -5468,7 +7500,7 @@ async function mountMap() {
     onSnapshot(collection(db, 'clients'), (snap) => {
       mapState.clients.clear();
       snap.docs.forEach((d) => mapState.clients.set(d.id, { id: d.id, data: d.data() }));
-      refreshMapLayers();
+      requestRefreshMapLayers();
     })
   );
 
@@ -5476,7 +7508,7 @@ async function mountMap() {
     onSnapshot(collection(db, 'restaurants'), (snap) => {
       mapState.restaurants.clear();
       snap.docs.forEach((d) => mapState.restaurants.set(d.id, { id: d.id, data: d.data() }));
-      refreshMapLayers();
+      requestRefreshMapLayers();
       void backfillRestaurantAddressesForMissingRestaurants();
     })
   );
@@ -5505,7 +7537,7 @@ async function mountMap() {
           mapState.restaurantAddresses.set(restaurantId, byRestaurant);
         });
 
-        refreshMapLayers();
+        requestRefreshMapLayers();
         void backfillRestaurantAddressesForMissingRestaurants();
       },
       (error) => {
@@ -5520,7 +7552,20 @@ async function mountMap() {
     onSnapshot(collection(db, 'orders'), (snap) => {
       mapState.orders.clear();
       snap.docs.forEach((d) => mapState.orders.set(d.id, { id: d.id, data: d.data() }));
-      refreshMapLayers();
+      snap.docChanges().slice(0, 4).forEach((change) => {
+        const data = change.doc.data() || {};
+        if (!matchesMapOrderFilter(data) && change.type !== 'removed') return;
+        const code = formatUnifiedOrderCode(data.orderNumber, data.orderId, change.doc.id);
+        const status = String(data.orderStatus || data.status || 'غير محددة');
+        pushMapEvent({
+          type: 'order',
+          id: change.doc.id,
+          level: change.type === 'removed' ? 'danger' : change.type === 'added' ? 'info' : 'warning',
+          title: `الطلب ${code}`,
+          description: change.type === 'removed' ? 'تمت إزالته من القائمة الحية.' : `آخر حالة: ${status}`
+        });
+      });
+      requestRefreshMapLayers();
     })
   );
 }
@@ -5534,6 +7579,121 @@ async function safeGetDocs(q) {
   }
 }
 
+function isPendingApprovalCandidate(data = {}) {
+  const values = [data.approvalStatus, data.status, data.reviewStatus]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+  return values.some((value) => ['pending', 'pending_review', 'under_review', 'submitted', 'new'].includes(value));
+}
+
+function collectPendingApprovalEntries({
+  courierApps = [],
+  storeApps = [],
+  fallbackDrivers = [],
+  fallbackStores = [],
+} = {}) {
+  const entries = [];
+  const pendingDriverIds = new Set(courierApps.map((docSnap) => {
+    const data = docSnap.data() || {};
+    return String(data.driverId || data.ownerUid || data.uid || docSnap.id || '').trim();
+  }).filter(Boolean));
+  const pendingStoreIds = new Set(storeApps.map((docSnap) => {
+    const data = docSnap.data() || {};
+    return String(data.restaurantId || data.ownerUid || data.uid || docSnap.id || '').trim();
+  }).filter(Boolean));
+
+  courierApps.forEach((docSnap) => {
+    const data = docSnap.data() || {};
+    entries.push({
+      id: `courier-app:${docSnap.id}`,
+      title: 'طلب اعتماد مندوب جديد',
+      body: `المندوب ${data.name || data.phone || docSnap.id} بانتظار المراجعة.`,
+    });
+  });
+
+  storeApps.forEach((docSnap) => {
+    const data = docSnap.data() || {};
+    entries.push({
+      id: `store-app:${docSnap.id}`,
+      title: 'طلب اعتماد متجر جديد',
+      body: `المتجر ${data.name || data.phone || docSnap.id} بانتظار المراجعة.`,
+    });
+  });
+
+  fallbackDrivers
+    .filter((docSnap) => !pendingDriverIds.has(docSnap.id))
+    .forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      entries.push({
+        id: `driver-entity:${docSnap.id}`,
+        title: 'مندوب بحالة اعتماد معلقة',
+        body: `المندوب ${data.name || data.phone || docSnap.id} ما زال بانتظار الاعتماد.`,
+      });
+    });
+
+  fallbackStores
+    .filter((docSnap) => !pendingStoreIds.has(docSnap.id))
+    .forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      entries.push({
+        id: `store-entity:${docSnap.id}`,
+        title: 'متجر بحالة اعتماد معلقة',
+        body: `المتجر ${data.name || data.phone || docSnap.id} ما زال بانتظار الاعتماد.`,
+      });
+    });
+
+  return entries;
+}
+
+function syncPendingApprovalsState(entries = []) {
+  opsCenterState.pendingApprovals = entries.length;
+  const nextIds = new Set(entries.map((item) => item.id));
+  const prevIds = opsCenterState.pendingApprovalIds;
+
+  nextIds.forEach((id) => {
+    if (!prevIds.has(id) && opsCenterState.bootstrapped.pendingApprovals) {
+      const item = entries.find((entry) => entry.id === id);
+      pushOpsAlert(`pending:${id}`, item?.title || 'طلب اعتماد جديد', item?.body || 'يوجد طلب اعتماد جديد بانتظار المراجعة.', 'warning');
+    }
+  });
+
+  opsCenterState.pendingApprovalIds = nextIds;
+  opsCenterState.bootstrapped.pendingApprovals = true;
+  renderOpsPriorityCards();
+}
+
+function refreshPendingApprovalRealtimeState() {
+  syncPendingApprovalsState(collectPendingApprovalEntries({
+    courierApps: pendingRealtimeState.courierApps,
+    storeApps: pendingRealtimeState.storeApps,
+    fallbackDrivers: pendingRealtimeState.fallbackDrivers,
+    fallbackStores: pendingRealtimeState.fallbackStores,
+  }));
+}
+
+function mountPendingApprovalRealtime() {
+  if (pendingRealtimeBound) return;
+  pendingRealtimeBound = true;
+
+  const attach = (key, queryRef, filterFn = null) => {
+    unsubscribers.push(
+      onSnapshot(queryRef, (snap) => {
+        pendingRealtimeState[key] = typeof filterFn === 'function'
+          ? snap.docs.filter((docSnap) => filterFn(docSnap.data() || {}))
+          : snap.docs;
+        refreshPendingApprovalRealtimeState();
+      }, (err) => {
+        console.warn(`pending realtime listener failed: ${key}`, err);
+      })
+    );
+  };
+
+  attach('courierApps', collection(db, 'courierApplications'), isPendingApprovalCandidate);
+  attach('storeApps', collection(db, 'restaurantApplications'), isPendingApprovalCandidate);
+  attach('fallbackDrivers', query(collection(db, 'drivers'), where('approvalStatus', '==', 'pending')));
+  attach('fallbackStores', query(collection(db, 'restaurants'), where('approvalStatus', '==', 'pending')));
+}
+
 async function mountPending() {
   const [courierApps, storeApps, fallbackDriverSnap, fallbackStoreSnap] = await Promise.all([
     getPendingDocs('courierApplications'),
@@ -5542,8 +7702,12 @@ async function mountPending() {
     safeGetDocs(query(collection(db, 'restaurants'), where('approvalStatus', '==', 'pending')))
   ]);
 
-  opsCenterState.pendingApprovals = courierApps.length + storeApps.length + fallbackDriverSnap.docs.length + fallbackStoreSnap.docs.length;
-  renderOpsPriorityCards();
+  syncPendingApprovalsState(collectPendingApprovalEntries({
+    courierApps,
+    storeApps,
+    fallbackDrivers: fallbackDriverSnap.docs,
+    fallbackStores: fallbackStoreSnap.docs,
+  }));
 
   const pendingDriverIds = new Set(courierApps.map((d) => {
     const data = d.data() || {};
@@ -5755,13 +7919,7 @@ async function mountPending() {
     btn.addEventListener('click', async () => {
       const restaurantId = btn.getAttribute('data-approve-menu-request');
       if (!restaurantId) return;
-      await updateDoc(doc(db, 'restaurants', restaurantId), {
-        pendingApproval: false,
-        menuApproved: true,
-        menuEverApproved: true,
-        menuApprovedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      await setMenuApprovalDirect({ restaurantId, approved: true });
       await mountPending();
     });
   });
@@ -5770,12 +7928,7 @@ async function mountPending() {
     btn.addEventListener('click', async () => {
       const restaurantId = btn.getAttribute('data-reject-menu-request');
       if (!restaurantId) return;
-      await updateDoc(doc(db, 'restaurants', restaurantId), {
-        pendingApproval: false,
-        menuApproved: false,
-        menuRejectedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      await setMenuApprovalDirect({ restaurantId, approved: false });
       await mountPending();
     });
   });
@@ -5840,22 +7993,27 @@ function mountNotifications() {
 async function mountAll() {
   statsGrid.innerHTML = '';
   financeGrid.innerHTML = '';
-  mountDashboard();
-  mountFinance();
-  mountManagement();
-  mountAdmins();
-  mountNotifications();
-  mountSupport();
-  try {
-    await mountPending();
-  } catch (err) {
-    console.error('mountPending failed', err);
+  if (hasAdminPermission('dashboard')) mountDashboard();
+  if (hasAdminPermission('finance')) mountFinance();
+  if (hasAdminPermission('orders')) mountManagement();
+  if (hasAdminPermission('admins') || hasAdminPermission('config')) mountAdmins();
+  if (hasAdminPermission('notifications')) mountNotifications();
+  if (hasAdminPermission('support')) mountSupport();
+  if (hasAdminPermission('approvals')) {
+    mountPendingApprovalRealtime();
+    try {
+      await mountPending();
+    } catch (err) {
+      console.error('mountPending failed', err);
+    }
   }
 }
 
 onAuthStateChanged(auth, async (user) => {
   clearSubscriptions();
   if (!user) {
+    currentAdminProfile = null;
+    currentAdminPermissions = new Set();
     authTransitionInProgress = false;
     if (preservedLoginStatus?.message) {
       setLoginStatus(preservedLoginStatus.message, preservedLoginStatus.tone || 'error');

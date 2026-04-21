@@ -7,6 +7,7 @@ import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart'
     show formatUnifiedOrderCode, OrderStatusPalette;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../helpers/courier_runtime_helpers.dart';
 
 import 'chat_screen.dart' show ChatScreen;
 import 'courier_go_to_restaurant_screen.dart';
@@ -31,6 +32,7 @@ class CourierOrderDetailsScreen extends StatefulWidget {
 class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   Map<String, dynamic>? orderData;
   double deliveryFee = 0;
+  CourierMarkerIcons? _markerIcons;
 
   double get _driverBaseFee {
     try {
@@ -78,6 +80,12 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   @override
   void initState() {
     super.initState();
+    loadCourierMarkerIcons().then((icons) {
+      if (!mounted) return;
+      setState(() {
+        _markerIcons = icons;
+      });
+    });
     _loadOrderData();
   }
 
@@ -314,18 +322,18 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
         title: const Text('تفاصيل الطلب',
             style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: AppThemeArabic.clientPrimary,
+                color: AppThemeArabic.courierPrimary,
                 fontFamily: 'Tajawal',
                 fontSize: 20)),
         backgroundColor: Colors.white,
         elevation: 1,
         centerTitle: true,
-        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        iconTheme: const IconThemeData(color: AppThemeArabic.courierPrimary),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
         ),
       ),
-      backgroundColor: AppThemeArabic.clientBackground,
+      backgroundColor: AppThemeArabic.courierBackground,
       body: data == null
           ? const Center(child: CircularProgressIndicator())
           : Builder(builder: (context) {
@@ -356,57 +364,35 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
 
               final restaurantToClientKm =
                   (restaurantLocation != null && clientLocation != null)
-                      ? _calculateDistance(
-                          restaurantLocation.latitude,
-                          restaurantLocation.longitude,
-                          clientLocation.latitude,
-                          clientLocation.longitude,
-                        )
+                      ? courierHaversineKm(restaurantLocation, clientLocation)
                       : null;
 
               final driverToRestaurantKm =
                   (driverLocation != null && restaurantLocation != null)
-                      ? _calculateDistance(
-                          driverLocation.latitude,
-                          driverLocation.longitude,
-                          restaurantLocation.latitude,
-                          restaurantLocation.longitude,
-                        )
+                      ? courierHaversineKm(driverLocation, restaurantLocation)
                       : null;
 
-              final markers = <Marker>{
-                if (restaurantLocation != null)
-                  Marker(
-                    markerId: const MarkerId('restaurant'),
-                    position: restaurantLocation,
-                    infoWindow: const InfoWindow(title: 'المطعم'),
-                    icon: BitmapDescriptor.defaultMarkerWithHue(
-                        BitmapDescriptor.hueOrange),
-                  ),
-                if (clientLocation != null)
-                  Marker(
-                    markerId: const MarkerId('client'),
-                    position: clientLocation,
-                    infoWindow: const InfoWindow(title: 'العميل'),
-                    icon: BitmapDescriptor.defaultMarkerWithHue(
-                        BitmapDescriptor.hueAzure),
-                  ),
-                if (driverLocation != null)
-                  Marker(
-                    markerId: const MarkerId('driver'),
-                    position: driverLocation,
-                    infoWindow: const InfoWindow(title: 'موقعك'),
-                    icon: BitmapDescriptor.defaultMarkerWithHue(
-                        BitmapDescriptor.hueGreen),
-                  ),
-              };
+              final markers = buildCourierTripMarkers(
+                restaurantLocation: restaurantLocation,
+                clientLocation: clientLocation,
+                driverLocation: driverLocation,
+                showDriverMarker: true,
+                icons: _markerIcons,
+              );
 
               final polylines = <Polyline>{
+                if (driverLocation != null && restaurantLocation != null)
+                  Polyline(
+                    polylineId: const PolylineId('driver_restaurant'),
+                    points: [driverLocation, restaurantLocation],
+                    color: AppThemeArabic.courierAccent,
+                    width: 5,
+                  ),
                 if (restaurantLocation != null && clientLocation != null)
                   Polyline(
                     polylineId: const PolylineId('restaurant_client'),
                     points: [restaurantLocation, clientLocation],
-                    color: AppThemeArabic.clientPrimary,
+                    color: AppThemeArabic.courierPrimary,
                     width: 5,
                   ),
               };
@@ -433,7 +419,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w800,
-                            color: AppThemeArabic.clientPrimary,
+                            color: AppThemeArabic.courierPrimary,
                             fontFamily: 'Tajawal',
                           ),
                         ),
@@ -463,11 +449,12 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        if (markers.length >= 2)
+                        if (restaurantLocation != null ||
+                            clientLocation != null)
                           ClipRRect(
                             borderRadius: BorderRadius.circular(14),
                             child: SizedBox(
-                              height: 250,
+                              height: 280,
                               child: GoogleMap(
                                 initialCameraPosition: CameraPosition(
                                   target: restaurantLocation ?? clientLocation!,
@@ -475,14 +462,64 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                                 ),
                                 markers: markers,
                                 polylines: polylines,
-                                zoomControlsEnabled: false,
-                                myLocationButtonEnabled: false,
+                                zoomControlsEnabled: true,
+                                myLocationEnabled: true,
+                                myLocationButtonEnabled: true,
+                                compassEnabled: true,
+                                rotateGesturesEnabled: true,
+                                tiltGesturesEnabled: true,
+                                mapToolbarEnabled: false,
                               ),
                             ),
                           )
                         else
                           const Text('لا توجد بيانات موقع كافية لعرض الخريطة'),
                         const SizedBox(height: 12),
+                        if (restaurantLocation != null ||
+                            clientLocation != null)
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: AppThemeArabic.courierPrimary
+                                      .withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.storefront_rounded, size: 16),
+                                    SizedBox(width: 6),
+                                    Text('المطعم'),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: AppThemeArabic.courierAccent
+                                      .withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.person_rounded, size: 16),
+                                    SizedBox(width: 6),
+                                    Text('العميل'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        if (restaurantLocation != null ||
+                            clientLocation != null)
+                          const SizedBox(height: 12),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -490,18 +527,18 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                             if (driverToRestaurantKm != null)
                               Chip(
                                 label: Text(
-                                  'يبعد المطعم عنك: ${driverToRestaurantKm.toStringAsFixed(1)} كم',
+                                  'يبعد المطعم عنك: ${courierFormatDistance(driverToRestaurantKm)}',
                                 ),
                               ),
                             if (restaurantToClientKm != null)
                               Chip(
                                 label: Text(
-                                  'يبعد العميل عن المطعم: ${restaurantToClientKm.toStringAsFixed(1)} كم',
+                                  'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
                                 ),
                               ),
                             Chip(
                                 label: Text(
-                                    'رسومك: ${deliveryFee.toStringAsFixed(0)} ج.س')),
+                                    'رسومك: ${courierFormatMoney(deliveryFee)} ج.س')),
                           ],
                         ),
                       ],
@@ -514,7 +551,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                       icon: const Icon(Icons.check_circle_outline),
                       label: const Text('قبول العرض وبدء الرحلة'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppThemeArabic.clientSuccess,
+                        backgroundColor: AppThemeArabic.courierAccent,
                         foregroundColor: Colors.white,
                         minimumSize: const Size.fromHeight(52),
                         shape: RoundedRectangleBorder(
@@ -541,7 +578,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                       icon: const Icon(Icons.navigation_outlined),
                       label: const Text('فتح شاشة التنفيذ الاحترافية'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppThemeArabic.clientPrimary,
+                        backgroundColor: AppThemeArabic.courierPrimary,
                         foregroundColor: Colors.white,
                         minimumSize: const Size.fromHeight(52),
                         shape: RoundedRectangleBorder(
@@ -581,7 +618,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                       icon: const Icon(Icons.chat_bubble_outline),
                       label: const Text('الدردشة مع العميل'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppThemeArabic.clientAccent,
+                        backgroundColor: AppThemeArabic.courierAccent,
                         foregroundColor: Colors.white,
                         minimumSize: const Size.fromHeight(52),
                         shape: RoundedRectangleBorder(

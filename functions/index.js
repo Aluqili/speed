@@ -15,6 +15,17 @@ const COURIER_OFFER_TIMEOUT_SECONDS = 40;
 const ASSIGNMENT_CYCLE_RESET_SECONDS = 120;
 const MAX_DRIVER_RESTAURANT_DISTANCE_KM = 20;
 const BOOTSTRAP_ADMIN_EMAILS = ['admin@speedstar.com', 'speedstarapp0@gmail.com'];
+const ADMIN_PERMISSION_KEYS = [
+  'dashboard',
+  'finance',
+  'orders',
+  'map',
+  'approvals',
+  'support',
+  'notifications',
+  'config',
+  'admins',
+];
 const PRICING_RECALC_WINDOW_MINUTES = 180;
 const PRICING_RECALC_LIMIT = 250;
 const PRICING_REMOTE_CACHE_MS = 60 * 1000;
@@ -70,22 +81,55 @@ function isAdminAuth(auth) {
   return isStaticAdminEmail(email);
 }
 
-async function isAdminUid(uid) {
-  if (!uid) return false;
+function normalizeAdminPermissions(rawPermissions, { fallbackToAll = true } = {}) {
+  const items = Array.isArray(rawPermissions) ? rawPermissions : [];
+  const normalized = items
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter((item) => ADMIN_PERMISSION_KEYS.includes(item));
+
+  if (normalized.length) {
+    return Array.from(new Set(normalized));
+  }
+
+  return fallbackToAll ? [...ADMIN_PERMISSION_KEYS] : [];
+}
+
+async function getAdminAccessProfileByUid(uid) {
+  if (!uid) {
+    return { allowed: false, permissions: [] };
+  }
 
   try {
     const userRecord = await admin.auth().getUser(uid);
     const email = String(userRecord.email || '').toLowerCase().trim();
     if (isStaticAdminEmail(email)) {
-      return true;
+      return {
+        allowed: true,
+        permissions: [...ADMIN_PERMISSION_KEYS],
+        isStaticAdmin: true,
+      };
     }
   } catch (_) {
   }
 
   const adminSnap = await db.collection('admins').doc(uid).get();
-  if (!adminSnap.exists) return false;
+  if (!adminSnap.exists) {
+    return { allowed: false, permissions: [] };
+  }
+
   const data = adminSnap.data() || {};
-  return data.role === 'admin' || data.active === true;
+  const allowed = data.role === 'admin' || data.active === true;
+  return {
+    allowed,
+    permissions: normalizeAdminPermissions(data.permissions, { fallbackToAll: true }),
+    data,
+    isStaticAdmin: false,
+  };
+}
+
+async function isAdminUid(uid) {
+  const profile = await getAdminAccessProfileByUid(uid);
+  return profile.allowed === true;
 }
 
 async function canBootstrapFirstAdmin(auth) {
@@ -180,6 +224,36 @@ function parseArabicClockTime(rawValue) {
   if (hour < 0 || hour > 23) return null;
 
   return { hour, minute };
+}
+
+function getTimestampMillis(value) {
+  if (!value) return 0;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function getKhartoumDayKey(value = Date.now()) {
+  const date = value instanceof Date ? value : new Date(value);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Khartoum',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const partMap = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value])
+  );
+
+  return `${partMap.year || '0000'}-${partMap.month || '00'}-${partMap.day || '00'}`;
 }
 
 function extractWorkingHourRanges(dayData, status) {
@@ -307,11 +381,13 @@ function extractFcmTokens(data) {
 
 function notificationPayloadToData(payload, role, userId) {
   const notificationType = String(payload?.type || '').trim().toLowerCase();
+  const isPickupReadyNotice = notificationType === 'courier_pickup_ready';
   const isOrderUrgent =
+    !isPickupReadyNotice && (
     notificationType.includes('order')
     || notificationType.includes('offer')
     || notificationType.includes('pickup')
-    || notificationType.includes('courier');
+    || notificationType.includes('courier'));
   const normalizedRole = String(role || '').trim().toLowerCase();
   const isStore = normalizedRole === 'store';
   const androidChannelId = isOrderUrgent && isStore
@@ -343,11 +419,13 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
   }
 
   const notificationType = String(payload?.type || '').trim().toLowerCase();
+  const isPickupReadyNotice = notificationType === 'courier_pickup_ready';
   const isOrderUrgent =
+    !isPickupReadyNotice && (
     notificationType.includes('order')
     || notificationType.includes('offer')
     || notificationType.includes('pickup')
-    || notificationType.includes('courier');
+    || notificationType.includes('courier'));
   const storeOrdersChannelId = 'speedstar_store_orders_incoming_v6';
   const sharedOrdersChannelId = 'speedstar_orders_incoming_v1';
   const androidChannelId = normalizedRole === 'client'
@@ -501,6 +579,52 @@ function walletTransactionCollection(role, targetId) {
   return null;
 }
 
+function isDeliveredOrderStatus(raw) {
+  return normalizeOrderStatusForNotification(raw) === 'delivered';
+}
+
+async function syncCourierWalletSummary(driverId) {
+  const normalizedDriverId = String(driverId || '').trim();
+  if (!normalizedDriverId) return;
+
+  const driverRef = db.collection('drivers').doc(normalizedDriverId);
+  const [driverSnap, ordersSnap] = await Promise.all([
+    driverRef.get(),
+    db.collection('orders').where('assignedDriverId', '==', normalizedDriverId).get(),
+  ]);
+
+  if (!driverSnap.exists) return;
+
+  let deliveredOrdersCount = 0;
+  let walletLifetimeEarnings = 0;
+
+  ordersSnap.docs.forEach((orderSnap) => {
+    const order = orderSnap.data() || {};
+    if (!isDeliveredOrderStatus(order.orderStatus || order.status)) {
+      return;
+    }
+
+    deliveredOrdersCount += 1;
+    walletLifetimeEarnings += Math.max(
+      0,
+      Math.round(toSafeNumber(order.deliveryFeeForDriver ?? order.deliveryFee)),
+    );
+  });
+
+  const driverData = driverSnap.data() || {};
+  const walletTransferredTotal = Math.max(
+    0,
+    Math.round(toSafeNumber(driverData.walletTransferredTotal)),
+  );
+
+  await driverRef.set({
+    walletPendingBalance: Math.max(0, walletLifetimeEarnings - walletTransferredTotal),
+    walletDeliveredOrdersCount: deliveredOrdersCount,
+    walletLifetimeEarnings,
+    walletSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
 function normalizeOrderStatusForNotification(raw) {
   const status = String(raw || '').trim();
   const map = {
@@ -613,9 +737,17 @@ function evaluatePromocode(promo, context, userId) {
     return { ok: false, reason: 'new-orders-only' };
   }
 
+  const discountScope = String(promo.discountScope || 'order_total').trim().toLowerCase();
+  if (!['order_total', 'delivery_fee'].includes(discountScope)) {
+    return { ok: false, reason: 'invalid-discount-scope' };
+  }
+
   const itemName = String(promo.itemName || '').trim();
-  let discountBase = context.baseTotal;
-  if (itemName) {
+  let discountBase = discountScope === 'delivery_fee'
+    ? Math.max(0, context.deliveryFee)
+    : context.baseTotal;
+
+  if (discountScope !== 'delivery_fee' && itemName) {
     const matchedItem = context.itemNames.find((name) => name === itemName);
     if (!matchedItem) {
       return { ok: false, reason: 'item-mismatch' };
@@ -642,7 +774,7 @@ function evaluatePromocode(promo, context, userId) {
     discountAmount = Math.min(discountAmount, maxDiscount);
   }
 
-  discountAmount = Math.max(0, Math.min(discountAmount, context.baseTotal));
+  discountAmount = Math.max(0, Math.min(discountAmount, discountBase));
   const totalAfterDiscount = Math.max(0, context.baseTotal - discountAmount);
 
   return {
@@ -652,6 +784,7 @@ function evaluatePromocode(promo, context, userId) {
     totalAfterDiscount,
     promoSnapshot: {
       code,
+      discountScope,
       discountType,
       discountValue,
       maxDiscount: maxDiscount || null,
@@ -1128,14 +1261,7 @@ exports.redeemPromocodeForClientOrder = onCall({ region: REGION }, async (reques
 });
 
 exports.sendAdminNotification = onCall({ region: REGION }, async (request) => {
-  if (!request.auth?.uid) {
-    throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
-  }
-
-  const isAdminAllowed = isAdminAuth(request.auth) || await isAdminUid(request.auth.uid);
-  if (!isAdminAllowed) {
-    throw new HttpsError('permission-denied', 'ليس لديك صلاحية إرسال إشعارات عامة.');
-  }
+  await ensureAdminCallable(request, 'ليس لديك صلاحية إرسال إشعارات عامة.', 'notifications');
 
   const data = request.data || {};
   const targetType = String(data.targetType || 'all').trim().toLowerCase();
@@ -1193,14 +1319,7 @@ exports.sendAdminNotification = onCall({ region: REGION }, async (request) => {
 });
 
 exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
-  if (!request.auth?.uid) {
-    throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
-  }
-
-  const isAdminAllowed = isAdminAuth(request.auth) || await isAdminUid(request.auth.uid);
-  if (!isAdminAllowed) {
-    throw new HttpsError('permission-denied', 'ليس لديك صلاحية التحويل.');
-  }
+  await ensureAdminCallable(request, 'ليس لديك صلاحية التحويل.', 'finance');
 
   const role = normalizeWalletTargetRole(request.data?.role);
   const targetId = String(request.data?.targetId || '').trim();
@@ -1327,14 +1446,7 @@ exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
 });
 
 exports.reviewClientWalletRecharge = onCall({ region: REGION }, async (request) => {
-  if (!request.auth?.uid) {
-    throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
-  }
-
-  const isAdminAllowed = isAdminAuth(request.auth) || await isAdminUid(request.auth.uid);
-  if (!isAdminAllowed) {
-    throw new HttpsError('permission-denied', 'ليس لديك صلاحية مراجعة شحن المحفظة.');
-  }
+  await ensureAdminCallable(request, 'ليس لديك صلاحية مراجعة شحن المحفظة.', 'finance');
 
   const rechargeId = String(request.data?.rechargeId || '').trim();
   const decision = String(request.data?.decision || '').trim().toLowerCase();
@@ -1455,14 +1567,7 @@ exports.reviewClientWalletRecharge = onCall({ region: REGION }, async (request) 
 });
 
 exports.reviewOrderPaymentEvidence = onCall({ region: REGION }, async (request) => {
-  if (!request.auth?.uid) {
-    throw new HttpsError('unauthenticated', 'Authentication is required');
-  }
-
-  const isAdminAllowed = isAdminAuth(request.auth) || await isAdminUid(request.auth.uid);
-  if (!isAdminAllowed) {
-    throw new HttpsError('permission-denied', 'Only admins can review payment evidence');
-  }
+  await ensureAdminCallable(request, 'Only finance admins can review payment evidence', 'finance');
 
   const orderId = String(request.data?.orderId || '').trim();
   const decision = String(request.data?.decision || '').trim().toLowerCase();
@@ -2003,6 +2108,67 @@ exports.settleClientWalletOnPaidOrder = onDocumentUpdated(
   }
 );
 
+exports.syncCourierWalletOnOrderUpdate = onDocumentUpdated(
+  {
+    region: REGION,
+    document: 'orders/{orderId}',
+  },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+
+    const beforeDriverId = String(before.assignedDriverId || '').trim();
+    const afterDriverId = String(after.assignedDriverId || '').trim();
+    const beforeDelivered = isDeliveredOrderStatus(before.orderStatus || before.status);
+    const afterDelivered = isDeliveredOrderStatus(after.orderStatus || after.status);
+    const beforeDriverFee = Math.round(toSafeNumber(before.deliveryFeeForDriver ?? before.deliveryFee));
+    const afterDriverFee = Math.round(toSafeNumber(after.deliveryFeeForDriver ?? after.deliveryFee));
+
+    const shouldSync =
+      beforeDriverId !== afterDriverId
+      || beforeDelivered !== afterDelivered
+      || (afterDelivered && beforeDriverFee !== afterDriverFee);
+
+    if (!shouldSync) return;
+
+    const driverIds = Array.from(new Set([beforeDriverId, afterDriverId].filter(Boolean)));
+    await Promise.all(driverIds.map((driverId) => syncCourierWalletSummary(driverId)));
+  }
+);
+
+exports.repairCourierAvailabilitySessionFromHeartbeat = onDocumentUpdated(
+  {
+    region: REGION,
+    document: 'drivers/{driverId}',
+  },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+
+    if (after.available !== true) return;
+
+    const beforeHeartbeatMs = getTimestampMillis(before.lastLocationUpdate);
+    const afterHeartbeatMs = getTimestampMillis(after.lastLocationUpdate);
+    const startedMs = getTimestampMillis(after.availabilityCurrentStartedAt);
+
+    if (startedMs > 0) return;
+    if (afterHeartbeatMs <= 0 || afterHeartbeatMs === beforeHeartbeatMs) return;
+
+    const todayKey = getKhartoumDayKey(afterHeartbeatMs);
+    const currentDayKey = String(after.availabilityDayKey || '').trim();
+    const patch = {
+      availabilityCurrentStartedAt: admin.firestore.Timestamp.fromMillis(afterHeartbeatMs),
+    };
+
+    if (currentDayKey !== todayKey) {
+      patch.availabilityDayKey = todayKey;
+      patch.availabilityTodayMs = 0;
+    }
+
+    await event.data.after.ref.set(patch, { merge: true });
+  }
+);
+
 function isWaitingCourierStatus(status) {
   return status === 'courier_searching' || status === 'قيد التجهيز';
 }
@@ -2342,17 +2508,157 @@ function parseRemoteNumberParam(param, fallbackValue) {
   return Number.isFinite(raw) ? raw : fallbackValue;
 }
 
-async function ensureAdminCallable(request, deniedMessage) {
+async function ensureAdminCallable(request, deniedMessage, requiredPermission = '') {
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Authentication is required');
   }
 
   const callerUid = request.auth.uid;
   const callerEmail = String(request.auth.token?.email || '').toLowerCase().trim();
-  const callerIsAdmin = (await isAdminUid(callerUid)) || isStaticAdminEmail(callerEmail);
-  if (!callerIsAdmin) {
+  const profile = isStaticAdminEmail(callerEmail)
+    ? { allowed: true, permissions: [...ADMIN_PERMISSION_KEYS] }
+    : await getAdminAccessProfileByUid(callerUid);
+  if (!profile.allowed) {
     throw new HttpsError('permission-denied', deniedMessage || 'Only admins can perform this action');
   }
+
+  if (requiredPermission) {
+    const permissions = normalizeAdminPermissions(profile.permissions, { fallbackToAll: true });
+    if (!permissions.includes(String(requiredPermission || '').trim().toLowerCase())) {
+      throw new HttpsError('permission-denied', deniedMessage || 'You do not have access to this admin action');
+    }
+  }
+}
+
+function isActiveOrderLifecycleStatus(statusRaw) {
+  const status = String(statusRaw || '').trim().toLowerCase();
+  return [
+    'pending',
+    'store_pending',
+    'courier_searching',
+    'courier_offer_pending',
+    'courier_assigned',
+    'accepted',
+    'pickup_ready',
+    'picked_up',
+    'arrived_to_client',
+    'قيد المراجعة',
+    'بانتظار المطعم',
+    'قيد التجهيز',
+    'قيد التوصيل',
+  ].includes(status);
+}
+
+async function deleteQueryInBatches(queryRef, batchSize = 200) {
+  let deleted = 0;
+
+  while (true) {
+    const snap = await queryRef.limit(batchSize).get();
+    if (snap.empty) break;
+
+    const batch = db.batch();
+    snap.docs.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+    await batch.commit();
+    deleted += snap.size;
+
+    if (snap.size < batchSize) break;
+  }
+
+  return deleted;
+}
+
+async function recursiveDeleteIfExists(docRef) {
+  const snap = await docRef.get();
+  if (!snap.exists) return false;
+  await db.recursiveDelete(docRef);
+  return true;
+}
+
+async function countBlockingOrdersForManagedUser(role, uid) {
+  if (role === 'client') {
+    const ordersSnap = await db.collection('orders').where('clientId', '==', uid).limit(300).get();
+    return ordersSnap.docs.filter((docSnap) => isActiveOrderLifecycleStatus(getStatus(docSnap.data() || {}))).length;
+  }
+
+  if (role === 'courier') {
+    const [assignedSnap, offeredSnap] = await Promise.all([
+      db.collection('orders').where('assignedDriverId', '==', uid).limit(300).get(),
+      db.collection('orders').where('offeredDriverId', '==', uid).limit(300).get(),
+    ]);
+
+    const seen = new Set();
+    let count = 0;
+
+    [...assignedSnap.docs, ...offeredSnap.docs].forEach((docSnap) => {
+      if (seen.has(docSnap.id)) return;
+      seen.add(docSnap.id);
+      if (isActiveOrderLifecycleStatus(getStatus(docSnap.data() || {}))) {
+        count += 1;
+      }
+    });
+
+    return count;
+  }
+
+  return 0;
+}
+
+async function cleanupManagedUserLinkedDocuments(role, uid) {
+  let deletedNotifications = 0;
+  let deletedDriverNotifications = 0;
+  let deletedSupportMessages = 0;
+
+  if (role === 'client') {
+    deletedSupportMessages += await deleteQueryInBatches(
+      db.collection('supportMessages').where('clientId', '==', uid)
+    );
+  }
+
+  if (role === 'courier') {
+    deletedNotifications += await deleteQueryInBatches(
+      db.collection('notifications').where('driverId', '==', uid)
+    );
+    deletedDriverNotifications += await deleteQueryInBatches(
+      db.collection('driverNotifications').where('driverId', '==', uid)
+    );
+    deletedSupportMessages += await deleteQueryInBatches(
+      db.collection('supportMessages').where('actorUid', '==', uid)
+    );
+  }
+
+  return {
+    deletedNotifications,
+    deletedDriverNotifications,
+    deletedSupportMessages,
+  };
+}
+
+function hasOwnValue(object, key) {
+  return Object.prototype.hasOwnProperty.call(object || {}, key);
+}
+
+function normalizeManagedTextValue(raw, maxLength = 500) {
+  return String(raw ?? '').trim().slice(0, maxLength);
+}
+
+function normalizeManagedEmailValue(raw) {
+  const email = String(raw ?? '').trim().toLowerCase();
+  if (!email) return '';
+  if (!email.includes('@')) {
+    throw new HttpsError('invalid-argument', 'البريد الإلكتروني غير صالح');
+  }
+  return email;
+}
+
+function normalizeManagedNumberValue(raw, fieldLabel) {
+  if (raw == null || raw === '') return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    throw new HttpsError('invalid-argument', `${fieldLabel} يجب أن يكون رقمًا صالحًا`);
+  }
+  return value;
 }
 
 function normalizeRolloutToken(raw) {
@@ -3210,14 +3516,7 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
 });
 
 exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
-  if (!request.auth?.uid) {
-    throw new HttpsError('unauthenticated', 'Authentication is required');
-  }
-
-  const isAdminAllowed = isAdminAuth(request.auth) || await isAdminUid(request.auth.uid);
-  if (!isAdminAllowed) {
-    throw new HttpsError('permission-denied', 'Only admins can manage orders');
-  }
+  await ensureAdminCallable(request, 'Only order admins can manage orders', 'orders');
 
   const orderId = String(request.data?.orderId || '').trim();
   const action = String(request.data?.action || '').trim().toLowerCase();
@@ -3417,6 +3716,307 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
   return result;
 });
 
+exports.deleteManagedUserAccount = onCall({ region: REGION }, async (request) => {
+  await ensureAdminCallable(request, 'Only order admins can delete managed accounts', 'orders');
+
+  const role = normalizeAudienceRole(request.data?.role);
+  const uid = String(request.data?.uid || '').trim();
+
+  if (!uid || !['client', 'courier'].includes(role)) {
+    throw new HttpsError('invalid-argument', 'role and uid are required');
+  }
+
+  const collectionName = role === 'client' ? 'clients' : 'drivers';
+  const roleRef = db.collection(collectionName).doc(uid);
+  const roleSnap = await roleRef.get();
+
+  let authRecord = null;
+  try {
+    authRecord = await admin.auth().getUser(uid);
+  } catch (error) {
+    if (error?.code !== 'auth/user-not-found') {
+      throw error;
+    }
+  }
+
+  if (!roleSnap.exists && !authRecord) {
+    throw new HttpsError('not-found', 'User account was not found');
+  }
+
+  const authEmail = String(authRecord?.email || '').toLowerCase().trim();
+  const adminSnap = await db.collection('admins').doc(uid).get();
+  if (adminSnap.exists || isStaticAdminEmail(authEmail)) {
+    throw new HttpsError('failed-precondition', 'This account is protected and cannot be deleted here');
+  }
+
+  const blockingOrders = await countBlockingOrdersForManagedUser(role, uid);
+  if (blockingOrders > 0) {
+    throw new HttpsError('failed-precondition', 'لا يمكن حذف الحساب لوجود طلبات نشطة مرتبطة به');
+  }
+
+  const linkedCleanup = await cleanupManagedUserLinkedDocuments(role, uid);
+  const [roleDeleted, userDocDeleted] = await Promise.all([
+    recursiveDeleteIfExists(roleRef),
+    recursiveDeleteIfExists(db.collection('users').doc(uid)),
+  ]);
+
+  let authDeleted = false;
+  if (authRecord) {
+    await admin.auth().deleteUser(uid);
+    authDeleted = true;
+  }
+
+  logger.info('deleteManagedUserAccount completed', {
+    role,
+    uid,
+    requestedBy: request.auth?.uid || '',
+    roleDeleted,
+    userDocDeleted,
+    authDeleted,
+    ...linkedCleanup,
+  });
+
+  return {
+    ok: true,
+    role,
+    uid,
+    roleDeleted,
+    userDocDeleted,
+    authDeleted,
+    ...linkedCleanup,
+  };
+});
+
+exports.updateManagedUserProfile = onCall({ region: REGION }, async (request) => {
+  await ensureAdminCallable(request, 'Only order admins can update managed accounts', 'orders');
+
+  const role = normalizeAudienceRole(request.data?.role);
+  const uid = String(request.data?.uid || '').trim();
+  const rawFields = request.data?.fields;
+
+  if (!uid || !['client', 'courier', 'store'].includes(role)) {
+    throw new HttpsError('invalid-argument', 'role and uid are required');
+  }
+
+  if (!rawFields || typeof rawFields !== 'object' || Array.isArray(rawFields)) {
+    throw new HttpsError('invalid-argument', 'fields object is required');
+  }
+
+  const collectionName = role === 'client'
+    ? 'clients'
+    : role === 'courier'
+      ? 'drivers'
+      : 'restaurants';
+  const roleRef = db.collection(collectionName).doc(uid);
+  const roleSnap = await roleRef.get();
+  if (!roleSnap.exists) {
+    throw new HttpsError('not-found', 'Managed account was not found');
+  }
+
+  const roleData = roleSnap.data() || {};
+  const authUid = role === 'store'
+    ? String(roleData.ownerUid || uid).trim() || uid
+    : uid;
+
+  let authRecord = null;
+  if (authUid) {
+    try {
+      authRecord = await admin.auth().getUser(authUid);
+    } catch (error) {
+      if (error?.code !== 'auth/user-not-found') {
+        throw error;
+      }
+    }
+  }
+
+  const rolePatch = {};
+  const userPatch = {};
+  const applicationPatch = {};
+  let authEmail = '';
+  let authDisplayName = '';
+  let addressNameToSync = null;
+
+  if (hasOwnValue(rawFields, 'name')) {
+    const value = normalizeManagedTextValue(rawFields.name, 160);
+    rolePatch.name = value;
+    userPatch.name = value;
+    userPatch.displayName = value;
+    applicationPatch.name = value;
+    authDisplayName = value;
+    if (role === 'client') {
+      rolePatch.displayName = value;
+    }
+  }
+
+  if (hasOwnValue(rawFields, 'phone')) {
+    const value = normalizeManagedTextValue(rawFields.phone, 40);
+    rolePatch.phone = value;
+    userPatch.phone = value;
+    applicationPatch.phone = value;
+  }
+
+  if (hasOwnValue(rawFields, 'email')) {
+    const value = normalizeManagedEmailValue(rawFields.email);
+    rolePatch.email = value;
+    userPatch.email = value;
+    applicationPatch.email = value;
+    authEmail = value;
+  }
+
+  if (role === 'client') {
+    if (hasOwnValue(rawFields, 'address')) {
+      const value = normalizeManagedTextValue(rawFields.address, 300);
+      rolePatch.defaultAddressText = value;
+      rolePatch.address = value;
+      userPatch.defaultAddressText = value;
+      userPatch.address = value;
+      addressNameToSync = value;
+    }
+  }
+
+  if (role === 'courier') {
+    if (hasOwnValue(rawFields, 'vehicleType')) {
+      const value = normalizeManagedTextValue(rawFields.vehicleType, 120);
+      rolePatch.vehicleType = value;
+      applicationPatch.vehicleType = value;
+    }
+    if (hasOwnValue(rawFields, 'vehiclePlate')) {
+      const value = normalizeManagedTextValue(rawFields.vehiclePlate, 80);
+      rolePatch.vehiclePlate = value;
+      applicationPatch.vehiclePlate = value;
+    }
+    if (hasOwnValue(rawFields, 'nationalIdNumber')) {
+      const value = normalizeManagedTextValue(rawFields.nationalIdNumber, 80);
+      rolePatch.nationalIdNumber = value;
+      applicationPatch.nationalIdNumber = value;
+    }
+    if (hasOwnValue(rawFields, 'region')) {
+      const value = normalizeManagedTextValue(rawFields.region, 120);
+      rolePatch.region = value;
+    }
+    if (hasOwnValue(rawFields, 'idImageUrl')) {
+      const value = normalizeManagedTextValue(rawFields.idImageUrl, 2000);
+      rolePatch.idImageUrl = value;
+      applicationPatch.idImageUrl = value;
+    }
+  }
+
+  if (role === 'store') {
+    if (hasOwnValue(rawFields, 'commercialRecordNumber')) {
+      const value = normalizeManagedTextValue(rawFields.commercialRecordNumber, 120);
+      rolePatch.commercialRecordNumber = value;
+      applicationPatch.commercialRecordNumber = value;
+    }
+    if (hasOwnValue(rawFields, 'address')) {
+      const value = normalizeManagedTextValue(rawFields.address, 300);
+      rolePatch.address = value;
+      userPatch.address = value;
+      addressNameToSync = value;
+    }
+    if (hasOwnValue(rawFields, 'deliveryDiscountPercentage')) {
+      rolePatch.deliveryDiscountPercentage = normalizeManagedNumberValue(
+        rawFields.deliveryDiscountPercentage,
+        'نسبة الخصم'
+      );
+    }
+    if (hasOwnValue(rawFields, 'coverImageUrl')) {
+      rolePatch.coverImageUrl = normalizeManagedTextValue(rawFields.coverImageUrl, 2000);
+    }
+    if (hasOwnValue(rawFields, 'logoImageUrl')) {
+      rolePatch.logoImageUrl = normalizeManagedTextValue(rawFields.logoImageUrl, 2000);
+    }
+  }
+
+  const updatedFieldNames = Object.keys(rolePatch);
+  if (!updatedFieldNames.length) {
+    throw new HttpsError('invalid-argument', 'No supported fields were provided');
+  }
+
+  if (authEmail && !authRecord) {
+    throw new HttpsError('failed-precondition', 'لا يمكن تحديث البريد لأن حساب Auth غير موجود');
+  }
+
+  if (authRecord && (authEmail || hasOwnValue(rawFields, 'name'))) {
+    try {
+      await admin.auth().updateUser(authUid, {
+        ...(authEmail ? { email: authEmail } : {}),
+        ...(hasOwnValue(rawFields, 'name') ? { displayName: authDisplayName || null } : {}),
+      });
+    } catch (error) {
+      const message = String(error?.message || error || 'Failed to update Firebase Auth');
+      throw new HttpsError('failed-precondition', message);
+    }
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await roleRef.set({
+    ...rolePatch,
+    updatedAt: now,
+    updatedByAdminUid: request.auth.uid,
+    updatedByAdminEmail: String(request.auth.token?.email || '').trim().toLowerCase(),
+  }, { merge: true });
+
+  let userDocUpdated = false;
+  if (Object.keys(userPatch).length) {
+    const userRef = db.collection('users').doc(uid);
+    const userSnap = await userRef.get();
+    if (userSnap.exists) {
+      await userRef.set({
+        ...userPatch,
+        updatedAt: now,
+      }, { merge: true });
+      userDocUpdated = true;
+    }
+  }
+
+  let applicationUpdated = false;
+  if (Object.keys(applicationPatch).length) {
+    const applicationCollectionName = role === 'courier'
+      ? 'courierApplications'
+      : role === 'store'
+        ? 'restaurantApplications'
+        : '';
+    if (applicationCollectionName) {
+      const appRef = db.collection(applicationCollectionName).doc(uid);
+      const appSnap = await appRef.get();
+      if (appSnap.exists) {
+        await appRef.set({
+          ...applicationPatch,
+          updatedAt: now,
+        }, { merge: true });
+        applicationUpdated = true;
+      }
+    }
+  }
+
+  let addressUpdated = false;
+  if (addressNameToSync != null) {
+    const defaultAddressId = String(roleData.defaultAddressId || '').trim();
+    if (defaultAddressId) {
+      const addressRef = roleRef.collection('addresses').doc(defaultAddressId);
+      const addressSnap = await addressRef.get();
+      if (addressSnap.exists) {
+        await addressRef.set({
+          addressName: addressNameToSync,
+          updatedAt: now,
+        }, { merge: true });
+        addressUpdated = true;
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    role,
+    uid,
+    updatedFields: updatedFieldNames,
+    authUpdated: Boolean(authRecord && (authEmail || hasOwnValue(rawFields, 'name'))),
+    userDocUpdated,
+    applicationUpdated,
+    addressUpdated,
+  };
+});
+
 exports.setUserAdminRole = onCall({ region: REGION }, async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Authentication is required');
@@ -3425,6 +4025,7 @@ exports.setUserAdminRole = onCall({ region: REGION }, async (request) => {
   const callerUid = request.auth.uid;
   const callerEmail = String(request.auth.token?.email || '').toLowerCase().trim();
   const { email, uid, active } = request.data || {};
+  const permissions = normalizeAdminPermissions(request.data?.permissions, { fallbackToAll: false });
   const targetEmail = String(email || '').toLowerCase().trim();
   const targetUid = String(uid || '').trim();
   const activeFlag = active !== false;
@@ -3437,6 +4038,9 @@ exports.setUserAdminRole = onCall({ region: REGION }, async (request) => {
   const bootstrapAllowed = callerIsAdmin ? false : await canBootstrapFirstAdmin(request.auth);
   if (!callerIsAdmin && !bootstrapAllowed) {
     throw new HttpsError('permission-denied', 'Only admins can grant admin role');
+  }
+  if (!bootstrapAllowed) {
+    await ensureAdminCallable(request, 'Only privileged admins can manage admin roles', 'admins');
   }
 
   let userRecord;
@@ -3466,6 +4070,7 @@ exports.setUserAdminRole = onCall({ region: REGION }, async (request) => {
     email: String(userRecord.email || '').toLowerCase(),
     role: 'admin',
     active: activeFlag,
+    permissions: permissions.length ? permissions : [...ADMIN_PERMISSION_KEYS],
     updatedAt: now,
     ...(existing.exists ? {} : { createdAt: now }),
     updatedBy: callerUid,
@@ -3609,6 +4214,9 @@ exports.submitCourierApplication = onCall({ region: REGION }, async (request) =>
     approvalStatus: 'pending',
     isApproved: false,
     available: false,
+    availabilityDayKey: '',
+    availabilityTodayMs: 0,
+    availabilityCurrentStartedAt: null,
     submittedAt: now,
     updatedAt: now,
   }, { merge: true });
@@ -3760,17 +4368,9 @@ exports.respondStoreChangeRequest = onCall({ region: REGION }, async (request) =
 });
 
 exports.approveRestaurantApplication = onCall({ region: REGION }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError('unauthenticated', 'Authentication is required');
-  }
+  await ensureAdminCallable(request, 'Only approval admins can approve applications', 'approvals');
 
   const callerUid = request.auth.uid;
-  const callerEmail = String(request.auth.token?.email || '').toLowerCase().trim();
-  const callerIsAdmin = await isAdminUid(callerUid);
-  const staticAdminAllowed = isStaticAdminEmail(callerEmail);
-  if (!callerIsAdmin && !staticAdminAllowed) {
-    throw new HttpsError('permission-denied', 'Only admins can approve applications');
-  }
 
   const applicationId = String(request.data?.applicationId || '').trim();
   if (!applicationId) {
@@ -3861,17 +4461,9 @@ exports.approveRestaurantApplication = onCall({ region: REGION }, async (request
 });
 
 exports.approveCourierApplication = onCall({ region: REGION }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError('unauthenticated', 'Authentication is required');
-  }
+  await ensureAdminCallable(request, 'Only approval admins can approve applications', 'approvals');
 
   const callerUid = request.auth.uid;
-  const callerEmail = String(request.auth.token?.email || '').toLowerCase().trim();
-  const callerIsAdmin = await isAdminUid(callerUid);
-  const staticAdminAllowed = isStaticAdminEmail(callerEmail);
-  if (!callerIsAdmin && !staticAdminAllowed) {
-    throw new HttpsError('permission-denied', 'Only admins can approve applications');
-  }
 
   const applicationId = String(request.data?.applicationId || '').trim();
   if (!applicationId) {
@@ -3951,6 +4543,9 @@ exports.approveCourierApplication = onCall({ region: REGION }, async (request) =
     approvalStatus: 'approved',
     isApproved: true,
     available: false,
+    availabilityDayKey: '',
+    availabilityTodayMs: 0,
+    availabilityCurrentStartedAt: null,
     updatedAt: now,
     createdAt: now,
   }, { merge: true });
@@ -3964,17 +4559,7 @@ exports.approveCourierApplication = onCall({ region: REGION }, async (request) =
 });
 
 exports.normalizeStateIdsBatch = onCall({ region: REGION }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError('unauthenticated', 'Authentication is required');
-  }
-
-  const callerUid = request.auth.uid;
-  const callerEmail = String(request.auth.token?.email || '').toLowerCase().trim();
-  const callerIsAdmin = await isAdminUid(callerUid);
-  const staticAdminAllowed = isStaticAdminEmail(callerEmail);
-  if (!callerIsAdmin && !staticAdminAllowed) {
-    throw new HttpsError('permission-denied', 'Only admins can normalize states');
-  }
+  await ensureAdminCallable(request, 'Only config admins can normalize states', 'config');
 
   const rawCollections = Array.isArray(request.data?.collections)
     ? request.data.collections
@@ -4081,7 +4666,7 @@ exports.normalizeStateIdsBatch = onCall({ region: REGION }, async (request) => {
 });
 
 exports.getAdminRemoteConfigSettings = onCall({ region: REGION }, async (request) => {
-  await ensureAdminCallable(request, 'Only admins can read remote config');
+  await ensureAdminCallable(request, 'Only config admins can read remote config', 'config');
 
   const includeParameters = request.data?.includeParameters !== false;
   const template = await admin.remoteConfig().getTemplate();
@@ -4124,7 +4709,7 @@ exports.getAdminRemoteConfigSettings = onCall({ region: REGION }, async (request
 });
 
 exports.updateAdminRemoteConfigSettings = onCall({ region: REGION }, async (request) => {
-  await ensureAdminCallable(request, 'Only admins can update remote config');
+  await ensureAdminCallable(request, 'Only config admins can update remote config', 'config');
 
   const payload = request.data || {};
   const rollout = payload.rollout && typeof payload.rollout === 'object' ? payload.rollout : null;

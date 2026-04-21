@@ -9,6 +9,7 @@ import 'package:flutter/gestures.dart';
 import 'dart:math' as math;
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
+import '../helpers/courier_runtime_helpers.dart';
 
 import 'chat_screen.dart';
 import 'courier_go_to_client_screen.dart';
@@ -283,6 +284,22 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
           }
         }
       }
+
+      final driverDoc = await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(driverId)
+          .get();
+      final driverData = driverDoc.data() ?? <String, dynamic>{};
+      final loc = driverData['location'];
+      if (loc is GeoPoint) {
+        data['driverLat'] = loc.latitude;
+        data['driverLng'] = loc.longitude;
+      } else if (loc is Map<String, dynamic>) {
+        data['driverLat'] = (loc['lat'] as num?)?.toDouble() ??
+            (loc['latitude'] as num?)?.toDouble();
+        data['driverLng'] = (loc['lng'] as num?)?.toDouble() ??
+            (loc['longitude'] as num?)?.toDouble();
+      }
     } catch (e) {
       debugPrint('CourierGoToRestaurantScreen enrichment failed: $e');
     }
@@ -452,8 +469,9 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 22,
-            backgroundColor: AppThemeArabic.clientPrimary.withOpacity(0.12),
-            child: Icon(icon, color: AppThemeArabic.clientPrimary),
+            backgroundColor:
+                AppThemeArabic.courierPrimary.withValues(alpha: 0.12),
+            child: Icon(icon, color: AppThemeArabic.courierPrimary),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -484,12 +502,12 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppThemeArabic.clientBackground,
+      backgroundColor: AppThemeArabic.courierBackground,
       appBar: AppBar(
         title: const Text(
           'الذهاب إلى المطعم',
           style: TextStyle(
-              color: AppThemeArabic.clientPrimary,
+              color: AppThemeArabic.courierPrimary,
               fontWeight: FontWeight.bold,
               fontSize: 20,
               fontFamily: 'Tajawal'),
@@ -497,7 +515,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
         backgroundColor: Colors.white,
         elevation: 1,
         centerTitle: true,
-        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        iconTheme: const IconThemeData(color: AppThemeArabic.courierPrimary),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
         ),
@@ -584,6 +602,24 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
               : null;
           final LatLng? clientLocation =
               hasClientLocation ? LatLng(clientLat, clientLng) : null;
+          final double? driverLat =
+              (orderData['driverLat'] as num?)?.toDouble();
+          final double? driverLng =
+              (orderData['driverLng'] as num?)?.toDouble();
+          final LatLng? driverLocation = driverLat != null && driverLng != null
+              ? LatLng(driverLat, driverLng)
+              : null;
+          final driverToRestaurantKm =
+              (driverLocation != null && restaurantLocation != null)
+                  ? courierHaversineKm(driverLocation, restaurantLocation)
+                  : null;
+          final restaurantToClientKm =
+              (restaurantLocation != null && clientLocation != null)
+                  ? courierHaversineKm(restaurantLocation, clientLocation)
+                  : null;
+          final driverFee = courierToDouble(
+            orderData['deliveryFeeForDriver'] ?? orderData['deliveryFee'],
+          );
 
           _saveCurrentStage('going_to_restaurant');
 
@@ -605,7 +641,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                   icon: const Icon(Icons.chat_bubble_outline),
                   label: const Text('الدردشة مع العميل'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppThemeArabic.clientAccent,
+                    backgroundColor: AppThemeArabic.courierAccent,
                     foregroundColor: Colors.white,
                     minimumSize: const Size.fromHeight(50),
                     shape: RoundedRectangleBorder(
@@ -618,13 +654,13 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppThemeArabic.clientSurface,
+                  color: AppThemeArabic.courierSurface,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   children: [
                     const Icon(Icons.store,
-                        color: AppThemeArabic.clientPrimary, size: 28),
+                        color: AppThemeArabic.courierPrimary, size: 28),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -640,74 +676,140 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (driverToRestaurantKm != null)
+                    Chip(
+                      label: Text(
+                        'يبعد المطعم عنك: ${courierFormatDistance(driverToRestaurantKm)}',
+                      ),
+                    ),
+                  if (restaurantToClientKm != null)
+                    Chip(
+                      label: Text(
+                        'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
+                      ),
+                    ),
+                  if (driverFee > 0)
+                    Chip(
+                      label: Text(
+                        'رسوم التوصيل: ${courierFormatMoney(driverFee)} ج.س',
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
               if (hasRestaurantLocation) ...[
                 ClipRRect(
                   borderRadius: BorderRadius.circular(14),
                   child: SizedBox(
                     height: 260,
-                    child: GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: restaurantLocation!,
-                        zoom: hasClientLocation ? 12 : 15,
-                      ),
-                      markers: {
-                        Marker(
-                          markerId: const MarkerId('restaurant'),
-                          position: restaurantLocation,
-                          infoWindow: const InfoWindow(title: '🍽️ المطعم'),
-                          icon: BitmapDescriptor.defaultMarkerWithHue(
-                            BitmapDescriptor.hueRed,
+                    child: FutureBuilder<CourierMarkerIcons>(
+                      future: loadCourierMarkerIcons(),
+                      builder: (context, iconSnap) {
+                        return GoogleMap(
+                          initialCameraPosition: CameraPosition(
+                            target: restaurantLocation!,
+                            zoom: hasClientLocation ? 12 : 15,
                           ),
-                        ),
-                        if (clientLocation != null)
-                          Marker(
-                            markerId: const MarkerId('client'),
-                            position: clientLocation,
-                            infoWindow: const InfoWindow(title: '🏠 العميل'),
-                            icon: BitmapDescriptor.defaultMarkerWithHue(
-                              BitmapDescriptor.hueGreen,
-                            ),
+                          markers: buildCourierTripMarkers(
+                            restaurantLocation: restaurantLocation,
+                            clientLocation: clientLocation,
+                            icons: iconSnap.data,
                           ),
-                      },
-                      polylines: clientLocation == null
-                          ? const {}
-                          : {
-                              Polyline(
-                                polylineId:
-                                    const PolylineId('restaurant_client'),
-                                points: [restaurantLocation, clientLocation],
-                                color: AppThemeArabic.clientPrimary,
-                                width: 4,
-                              ),
-                            },
-                      onMapCreated: (controller) {
-                        final points = <LatLng>[
-                          restaurantLocation,
-                          if (clientLocation != null) clientLocation,
-                        ];
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          _fitCameraToPoints(controller, points);
-                        });
-                      },
-                      zoomControlsEnabled: false,
-                      myLocationButtonEnabled: false,
-                      gestureRecognizers: <Factory<
-                          OneSequenceGestureRecognizer>>{
-                        Factory<OneSequenceGestureRecognizer>(
-                            () => EagerGestureRecognizer()),
+                          polylines: clientLocation == null
+                              ? const {}
+                              : {
+                                  Polyline(
+                                    polylineId:
+                                        const PolylineId('restaurant_client'),
+                                    points: [
+                                      restaurantLocation,
+                                      clientLocation
+                                    ],
+                                    color: AppThemeArabic.courierPrimary,
+                                    width: 6,
+                                  ),
+                                },
+                          onMapCreated: (controller) {
+                            final points = <LatLng>[
+                              restaurantLocation,
+                              if (clientLocation != null) clientLocation,
+                            ];
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              _fitCameraToPoints(controller, points);
+                            });
+                          },
+                          zoomControlsEnabled: true,
+                          myLocationEnabled: true,
+                          myLocationButtonEnabled: true,
+                          compassEnabled: true,
+                          rotateGesturesEnabled: true,
+                          tiltGesturesEnabled: true,
+                          mapToolbarEnabled: false,
+                          gestureRecognizers: <Factory<
+                              OneSequenceGestureRecognizer>>{
+                            Factory<OneSequenceGestureRecognizer>(
+                                () => EagerGestureRecognizer()),
+                          },
+                        );
                       },
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppThemeArabic.courierPrimary
+                            .withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.storefront_rounded, size: 16),
+                          SizedBox(width: 6),
+                          Text('المطعم'),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppThemeArabic.courierAccent
+                            .withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.person_rounded, size: 16),
+                          SizedBox(width: 6),
+                          Text('العميل'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
                 Align(
                   alignment: Alignment.center,
                   child: Material(
-                    color: AppThemeArabic.clientPrimary,
+                    color: AppThemeArabic.courierPrimary,
                     shape: const CircleBorder(),
                     child: InkWell(
                       customBorder: const CircleBorder(),
-                      onTap: () => _openGoogleMaps(context, restaurantLocation),
+                      onTap: () =>
+                          _openGoogleMaps(context, restaurantLocation!),
                       child: const Padding(
                         padding: EdgeInsets.all(16),
                         child: Icon(
@@ -764,7 +866,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                 },
                 text: 'استلام الطلب',
                 icon: const Icon(Icons.check_circle),
-                color: AppThemeArabic.clientSuccess,
+                color: AppThemeArabic.courierAccent,
                 shape: GFButtonShape.pills,
                 fullWidthButton: true,
                 size: GFSize.LARGE,

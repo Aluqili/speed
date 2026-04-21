@@ -44,6 +44,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String get _sourceApp => 'courier';
 
+  String get _messagesCollection =>
+      _isSupportChat ? 'supportMessages' : 'chats';
+
   int _timestampMillis(dynamic value) {
     if (value is Timestamp) return value.millisecondsSinceEpoch;
     return 0;
@@ -176,7 +179,9 @@ class _ChatScreenState extends State<ChatScreen> {
       if (imageUrl != null) 'imageUrl': imageUrl,
     };
 
-    await FirebaseFirestore.instance.collection('supportMessages').add(message);
+    await FirebaseFirestore.instance
+        .collection(_messagesCollection)
+        .add(message);
 
     _messageController.clear();
     if (_scrollController.hasClients) {
@@ -249,18 +254,18 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (!_chatEnabled && _isSupportChat) {
       return Scaffold(
-        backgroundColor: AppThemeArabic.clientBackground,
+        backgroundColor: AppThemeArabic.courierBackground,
         appBar: AppBar(
           title: const Text('الدردشة',
               style: TextStyle(
-                  color: AppThemeArabic.clientPrimary,
+                  color: AppThemeArabic.courierPrimary,
                   fontWeight: FontWeight.bold,
                   fontSize: 20,
                   fontFamily: 'Tajawal')),
           backgroundColor: Colors.white,
           centerTitle: true,
           elevation: 1,
-          iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+          iconTheme: const IconThemeData(color: AppThemeArabic.courierPrimary),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
           ),
@@ -278,13 +283,13 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     return Scaffold(
-      backgroundColor: AppThemeArabic.clientBackground,
+      backgroundColor: AppThemeArabic.courierBackground,
       appBar: AppBar(
         title: Text(otherUserName.isNotEmpty ? otherUserName : 'تحميل...'),
         backgroundColor: Colors.white,
         elevation: 1,
         centerTitle: true,
-        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+        iconTheme: const IconThemeData(color: AppThemeArabic.courierPrimary),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
         ),
@@ -295,14 +300,14 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Text(
               _isSupportChat ? 'محادثة دعم' : 'محادثة مباشرة',
               style: const TextStyle(
-                  color: AppThemeArabic.clientTextSecondary, fontSize: 12),
+                  color: AppThemeArabic.courierTextSecondary, fontSize: 12),
             ),
           ),
         ),
         actions: [
           PopupMenuButton(
             icon: const Icon(Icons.add_photo_alternate,
-                color: AppThemeArabic.clientPrimary),
+                color: AppThemeArabic.courierPrimary),
             onSelected: (source) {
               _pickAndSendImage(source == 'camera'
                   ? ImageSource.camera
@@ -320,7 +325,7 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
-                  .collection('supportMessages')
+                  .collection(_messagesCollection)
                   .where('conversationId', isEqualTo: widget.chatId)
                   .snapshots(),
               builder: (context, snapshot) {
@@ -366,7 +371,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             maxWidth: MediaQuery.of(context).size.width * 0.7),
                         decoration: BoxDecoration(
                           color: isMe
-                              ? AppThemeArabic.clientSurface
+                              ? AppThemeArabic.courierSurface
                               : Theme.of(context)
                                   .colorScheme
                                   .surfaceContainerHighest,
@@ -448,7 +453,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.send,
-                      color: AppThemeArabic.clientPrimary),
+                      color: AppThemeArabic.courierPrimary),
                   onPressed: _messageController.text.trim().isEmpty
                       ? null
                       : () => _sendMessage(text: _messageController.text),

@@ -15,6 +15,7 @@ import 'client_notifications_screen.dart';
 import 'address_selection_screen.dart';
 import 'add_new_address_screen.dart';
 import 'chat_screen.dart';
+import 'client_support_screen.dart';
 
 class ClientHomeTab extends StatefulWidget {
   final String clientId;
@@ -399,39 +400,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     }
     final enabledStates = _enabledStatesFromRemote;
     return enabledStates.contains(clientState);
-  }
-
-  Future<Map<String, String>> _resolveSupportChatData() async {
-    var chatId = '${widget.clientId}-support';
-    var clientName = 'عميل';
-
-    try {
-      final clientDoc = await FirebaseFirestore.instance
-          .collection('clients')
-          .doc(widget.clientId)
-          .get();
-      final clientData = clientDoc.data() ?? <String, dynamic>{};
-      final savedChatId =
-          (clientData['lastSupportConversationId'] ?? '').toString().trim();
-      final savedClientName =
-          (clientData['name'] ?? clientData['fullName'] ?? '')
-              .toString()
-              .trim();
-
-      if (savedChatId.isNotEmpty) {
-        chatId = savedChatId;
-      }
-      if (savedClientName.isNotEmpty) {
-        clientName = savedClientName;
-      }
-    } catch (_) {
-      // Keep fallbacks.
-    }
-
-    return {
-      'chatId': chatId,
-      'clientName': clientName,
-    };
   }
 
   // دالة لجلب جميع الوجبات من subcollection full_menu لكل مطعم
@@ -1451,18 +1419,11 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
               await _openLoginScreen();
               return;
             }
-            final supportChat = await _resolveSupportChatData();
             if (!context.mounted) return;
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => ChatScreen(
-                  currentUserId: widget.clientId,
-                  otherUserId: 'support',
-                  currentUserRole: 'client',
-                  chatId: supportChat['chatId'] ?? '${widget.clientId}-support',
-                  currentUserName: supportChat['clientName'] ?? 'عميل',
-                ),
+                builder: (_) => ClientSupportScreen(userId: widget.clientId),
               ),
             );
           },

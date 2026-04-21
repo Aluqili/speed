@@ -32,10 +32,10 @@ class CourierApp extends StatelessWidget {
           valueListenable: themeController.accentSeed,
           builder: (context, seed, __) {
             final theme = seed != null
-                ? AppThemeArabic.fromSeed(seed)
+                ? AppThemeArabic.courierFromSeed(seed)
                 : AppThemeArabic.courierTheme;
             final darkTheme = seed != null
-                ? AppThemeArabic.fromSeed(seed, dark: true)
+                ? AppThemeArabic.courierFromSeed(seed, dark: true)
                 : AppThemeArabic.courierDarkTheme;
             return MaterialApp(
               title: 'SpeedStar Courier',
@@ -96,7 +96,7 @@ class _InitGateCourierState extends State<_InitGateCourier> {
       final defaults = <String, Object>{
         ...OpsRuntimeConfig.defaultFlagsFor('courier'),
         ...AppUpdateConfig.defaultFlagsFor('courier'),
-        'accent_seed': 'E85D2A',
+        'accent_seed': '8B5E34',
         'courier_root_url': '',
         'courier_maintenance_mode': false,
         'courier_maintenance_message': 'التطبيق تحت الصيانة. حاول لاحقًا.',
@@ -122,7 +122,8 @@ class _InitGateCourierState extends State<_InitGateCourier> {
       if (maintenanceText.isNotEmpty) {
         _maintenanceMessage = maintenanceText;
       }
-      if (accent.isNotEmpty) {
+      final normalizedAccent = accent.replaceAll('#', '').trim().toUpperCase();
+      if (accent.isNotEmpty && normalizedAccent != '2563EB') {
         final seed = parseColorHex(accent);
         ThemeController.instance.setAccentSeed(seed);
       }
@@ -143,7 +144,7 @@ class _InitGateCourierState extends State<_InitGateCourier> {
             title: 'SpeedStar Courier',
             subtitle: 'انطلق بسرعة وخلك جاهز لأي طلب ⚡',
             imageAsset: 'assets/branding/app_icon_courier.png.jpeg',
-            accent: Color(0xFFE85D2A),
+            accent: AppThemeArabic.courierPrimary,
           );
         }
         if (_maintenanceMode) {
@@ -192,7 +193,7 @@ class _InitSplash extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFFFF4EE), Colors.white],
+            colors: [Color(0xFFFFF7F0), Color(0xFFFFFCFA)],
           ),
         ),
         child: Center(

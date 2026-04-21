@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
@@ -8,7 +7,7 @@ import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 import '../الخدمات/guest_location_service.dart';
 import 'client_wallet_screen.dart';
 import 'client_settings_screen.dart';
-import 'chat_screen.dart';
+import 'client_support_screen.dart';
 import 'address_selection_screen.dart';
 
 class ClientAccountTab extends StatefulWidget {
@@ -63,31 +62,6 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
   }
 
   Future<void> _openSupportChat(BuildContext context) async {
-    String chatId = '${widget.clientId}-support';
-    String clientName = 'عميل';
-
-    try {
-      final clientDoc = await FirebaseFirestore.instance
-          .collection('clients')
-          .doc(widget.clientId)
-          .get();
-      final clientData = clientDoc.data() ?? <String, dynamic>{};
-      final savedChatId =
-          (clientData['lastSupportConversationId'] ?? '').toString().trim();
-      final savedClientName =
-          (clientData['name'] ?? clientData['fullName'] ?? '')
-              .toString()
-              .trim();
-      if (savedChatId.isNotEmpty) {
-        chatId = savedChatId;
-      }
-      if (savedClientName.isNotEmpty) {
-        clientName = savedClientName;
-      }
-    } catch (_) {
-      // Fallback to the default support conversation id.
-    }
-
     if (!context.mounted) {
       return;
     }
@@ -95,13 +69,7 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          currentUserId: widget.clientId,
-          otherUserId: 'support',
-          currentUserRole: 'client',
-          chatId: chatId,
-          currentUserName: clientName,
-        ),
+        builder: (_) => ClientSupportScreen(userId: widget.clientId),
       ),
     );
   }

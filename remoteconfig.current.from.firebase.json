@@ -1,4 +1,4 @@
-{
+﻿{
   "parameters": {
     "ops_force_update_enabled": {
       "defaultValue": {
@@ -14,7 +14,7 @@
     },
     "ops_update_message": {
       "defaultValue": {
-        "value": "ÙŠÙˆØ¬Ø¯ ØªØ­Ø¯ÙŠØ« Ø¬Ø¯ÙŠØ¯ Ù…Ù‡Ù… Ù„ØªØ­Ø³ÙŠÙ† Ø§Ù„Ø£Ø¯Ø§Ø¡. Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø§Ù„ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¢Ù†."
+        "value": "???? ????? ???? ??? ?????? ??????. ?????? ??????? ????."
       },
       "valueType": "STRING"
     },
@@ -32,19 +32,19 @@
     },
     "client_min_build_android": {
       "defaultValue": {
-        "value": "11"
+        "value": "14"
       },
       "valueType": "NUMBER"
     },
     "client_update_message": {
       "defaultValue": {
-        "value": "ÙŠØ±Ø¬Ù‰ ØªØ­Ø¯ÙŠØ« ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ù„Ù„Ø§Ø³ØªÙ…Ø±Ø§Ø±."
+        "value": "??? ?????? ????? ????? ????? ?????? ??? ????? 14 ????????."
       },
       "valueType": "STRING"
     },
     "client_update_url_android": {
       "defaultValue": {
-        "value": "https://speedstarapp.web.app/downloads/client-android.apk"
+        "value": "https://play.google.com/store/apps/details?id=com.aluqili.speedstar.client"
       },
       "valueType": "STRING"
     },
@@ -56,13 +56,13 @@
     },
     "store_min_build_android": {
       "defaultValue": {
-        "value": "7"
+        "value": "4"
       },
       "valueType": "NUMBER"
     },
     "store_update_message": {
       "defaultValue": {
-        "value": "ÙŠØ±Ø¬Ù‰ ØªØ­Ø¯ÙŠØ« ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ù…ØªØ¬Ø± Ù„Ù„Ø§Ø³ØªÙ…Ø±Ø§Ø±."
+        "value": "???? ????? ????? ?????? ?????????."
       },
       "valueType": "STRING"
     },
@@ -86,7 +86,7 @@
     },
     "courier_update_message": {
       "defaultValue": {
-        "value": "ÙŠØ±Ø¬Ù‰ ØªØ­Ø¯ÙŠØ« ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ù…Ù†Ø¯ÙˆØ¨ Ù„Ù„Ø§Ø³ØªÙ…Ø±Ø§Ø±."
+        "value": "???? ????? ????? ??????? ?????????."
       },
       "valueType": "STRING"
     },
@@ -134,7 +134,7 @@
     },
     "client_state_rollout_block_message": {
       "defaultValue": {
-        "value": "Ù„Ø³Ù‡ Ù…Ø§ Ø¬ÙŠÙ†Ø§ÙƒÙ… ÙÙŠ Ø§Ù„ÙˆÙ„Ø§ÙŠØ© ÙŠØ§ ØºØ§Ù„ÙŠ\nØªØ§Ø¨Ø¹Ù†Ø§ Ø¹Ù„Ù‰ Ù…Ù†ØµØ§Øª Ø§Ù„ØªÙˆØ§ØµÙ„ Ø¹Ø´Ø§Ù† ØªØ¹Ø±Ù Ø­Ù†Ø¬ÙŠÙƒÙ… Ù…ØªÙŠÙ†\nÙˆÙ‚Ø±ÙŠØ¨Ø§ Ø­Ù†ØµÙ„ÙƒÙ….. Ø§Ù†ØªØ¸Ø±ÙˆÙ†Ø§!"
+        "value": "??? ?? ?????? ?? ??????? ?? ????\n?????? ??? ????? ??????? ???? ???? ?????? ????\n?????? ??????.. ????????!"
       },
       "valueType": "STRING"
     },
@@ -174,5 +174,14 @@
       },
       "valueType": "NUMBER"
     }
+  },
+  "version": {
+    "versionNumber": "30",
+    "updateTime": "2026-04-17T13:00:21.820784Z",
+    "updateUser": {
+      "email": "aluqili7@gmail.com"
+    },
+    "updateOrigin": "REST_API",
+    "updateType": "FORCED_UPDATE"
   }
 }

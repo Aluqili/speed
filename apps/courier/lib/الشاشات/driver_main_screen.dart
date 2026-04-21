@@ -1,5 +1,5 @@
-import '../helpers/location_utils.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
@@ -21,12 +21,11 @@ import 'courier_earnings_screen.dart';
 import 'courier_order_details_screen.dart';
 import 'courier_order_process_screen.dart';
 import 'courier_wallet_screen.dart';
-import 'manual_location_picker.dart';
 import 'chat_screen.dart';
 import 'courier_notifications_screen.dart';
 
-const Color primaryColor = AppThemeArabic.clientPrimary;
-const Color backgroundColor = AppThemeArabic.clientBackground;
+const Color primaryColor = AppThemeArabic.courierPrimary;
+const Color backgroundColor = AppThemeArabic.courierBackground;
 
 class CourierDashboardScreen extends StatefulWidget {
   final String driverId;
@@ -63,11 +62,54 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
   final AudioPlayer _ringtonePlayer = AudioPlayer();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   DateTime? _lastBackPressed;
-  Set<Marker> _allMarkers = {};
-  bool _showManualLocation = false;
-  bool _isManualLocation = false;
-  int _gpsFailCount = 0;
-  static const int _maxGpsTries = 3;
+  Set<Circle> _restaurantCircles = {};
+
+  String _todayAvailabilityKey([DateTime? value]) {
+    final now = value ?? DateTime.now();
+    final month = now.month.toString().padLeft(2, '0');
+    final day = now.day.toString().padLeft(2, '0');
+    return '${now.year}-$month-$day';
+  }
+
+  int _timestampMillis(dynamic value) {
+    if (value is Timestamp) return value.toDate().millisecondsSinceEpoch;
+    if (value is DateTime) return value.millisecondsSinceEpoch;
+    if (value is int) return value;
+    return 0;
+  }
+
+  Map<String, dynamic> _buildAvailabilityPatch(Map<String, dynamic> data, bool nextAvailable) {
+    final now = DateTime.now();
+    final todayKey = _todayAvailabilityKey(now);
+    final todayStartMs = DateTime(now.year, now.month, now.day).millisecondsSinceEpoch;
+    final currentDayKey = (data['availabilityDayKey'] ?? '').toString();
+    final currentStartedMs = _timestampMillis(data['availabilityCurrentStartedAt']);
+    var totalTodayMs = currentDayKey == todayKey
+        ? ((data['availabilityTodayMs'] as num?)?.round() ?? 0)
+        : 0;
+
+    if (!nextAvailable && currentStartedMs > 0) {
+      final effectiveStartMs = math.max(currentStartedMs, todayStartMs);
+      totalTodayMs += now.millisecondsSinceEpoch - effectiveStartMs;
+    }
+
+    return {
+      'available': nextAvailable,
+      'availabilityDayKey': todayKey,
+      'availabilityTodayMs': totalTodayMs < 0 ? 0 : totalTodayMs,
+      'availabilityCurrentStartedAt': nextAvailable ? Timestamp.now() : null,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  Future<void> _ensureAvailabilityTrackingSeed(Map<String, dynamic> data) async {
+    if (data['available'] == true && data['availabilityCurrentStartedAt'] == null) {
+      await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(widget.driverId)
+          .update(_buildAvailabilityPatch(data, true));
+    }
+  }
 
   @override
   void initState() {
@@ -293,67 +335,13 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
       final pos = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.high);
       _handleGpsLocation(pos);
-    } catch (e) {
-      _gpsFailCount++;
-      if (_gpsFailCount >= _maxGpsTries) {
-        setState(() => _showManualLocation = true);
-      }
-    }
+    } catch (_) {}
     _locationSubscription = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
     ).listen(_handleGpsLocation);
   }
 
   void _handleGpsLocation(Position position) async {
-    // تحقق من المناطق غير المأهولة باستخدام geocoding
-    final bool uninhabited =
-        await isUninhabitedByGeocoding(position.latitude, position.longitude);
-    debugPrint(
-        'موقع المندوب: lat=${position.latitude}, lng=${position.longitude}, uninhabited=$uninhabited');
-    if (uninhabited) {
-      setState(() {
-        _showManualLocation = true;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'تم اكتشاف أنك في منطقة غير مأهولة أو غير معروفة، يمكنك تحديد الموقع يدويًا.')),
-      );
-      return;
-    }
-    // إذا كان المستخدم في وضع الموقع اليدوي، لا تحدث الموقع إلا إذا عاد الموقع طبيعيًا
-    if (_isManualLocation) {
-      // إذا تحسن الموقع (دقة أقل من 50 متر مثلاً)، أعد التتبع التلقائي
-      if (position.accuracy < 50) {
-        setState(() {
-          _isManualLocation = false;
-          _showManualLocation = false;
-          _currentLocation = LatLng(position.latitude, position.longitude);
-        });
-        if (_mapCreated) {
-          _mapController
-              ?.animateCamera(CameraUpdate.newLatLng(_currentLocation));
-        }
-        FirebaseFirestore.instance
-            .collection('drivers')
-            .doc(widget.driverId)
-            .update({
-          'location': GeoPoint(position.latitude, position.longitude),
-          'lastLocationUpdate': FieldValue.serverTimestamp(),
-        });
-      }
-      return;
-    }
-    // إذا كان الموقع غير دقيق أو فيه تشويش (accuracy > 100 متر)
-    if (position.accuracy > 100) {
-      _gpsFailCount++;
-      if (_gpsFailCount >= _maxGpsTries) {
-        setState(() => _showManualLocation = true);
-      }
-    } else {
-      _gpsFailCount = 0;
-      setState(() => _showManualLocation = false);
-    }
     setState(
         () => _currentLocation = LatLng(position.latitude, position.longitude));
     if (_mapCreated) {
@@ -395,17 +383,23 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
         .doc(widget.driverId)
         .get();
     if (doc.exists) {
+      final data = doc.data() ?? <String, dynamic>{};
+      _ensureAvailabilityTrackingSeed(data);
       setState(
-          () => isAvailable = (doc.data()?['available'] as bool?) ?? false);
+          () => isAvailable = (data['available'] as bool?) ?? false);
     }
   }
 
   Future<void> _toggleAvailability(bool v) async {
     setState(() => isAvailable = v);
-    await FirebaseFirestore.instance
-        .collection('drivers')
-        .doc(widget.driverId)
-        .update({'available': v, 'currentOrderId': null});
+    final driverRef = FirebaseFirestore.instance.collection('drivers').doc(widget.driverId);
+    final snapshot = await driverRef.get();
+    final data = snapshot.data() ?? <String, dynamic>{};
+    final patch = _buildAvailabilityPatch(data, v);
+    if (!v) {
+      patch['currentOrderId'] = null;
+    }
+    await driverRef.update(patch);
   }
 
   Future<void> _confirmAndLogout() async {
@@ -434,17 +428,24 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
     try {
-      await FirebaseFirestore.instance
-          .collection('drivers')
-          .doc(widget.driverId)
-          .update({'available': false});
+      final driverRef = FirebaseFirestore.instance.collection('drivers').doc(widget.driverId);
+      final snapshot = await driverRef.get();
+      final data = snapshot.data() ?? <String, dynamic>{};
+      final patch = _buildAvailabilityPatch(data, false);
+      patch['currentOrderId'] = null;
+      await driverRef.update(patch);
     } catch (e) {
       // إذا لم يوجد المستند، أنشئه مع available=false
       if (e.toString().contains('not-found')) {
         await FirebaseFirestore.instance
             .collection('drivers')
             .doc(widget.driverId)
-            .set({'available': false}, SetOptions(merge: true));
+            .set({
+          'available': false,
+          'availabilityDayKey': _todayAvailabilityKey(),
+          'availabilityTodayMs': 0,
+          'availabilityCurrentStartedAt': null,
+        }, SetOptions(merge: true));
       } else {
         debugPrint('Firestore logout update error: ' + e.toString());
       }
@@ -478,10 +479,119 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     return true;
   }
 
+  LatLng? _extractMapLocation(Map<String, dynamic> data) {
+    final rawLocation = data['location'];
+    if (rawLocation is GeoPoint) {
+      return LatLng(rawLocation.latitude, rawLocation.longitude);
+    }
+    if (rawLocation is Map<String, dynamic>) {
+      final lat = (rawLocation['lat'] as num?)?.toDouble() ??
+          (rawLocation['latitude'] as num?)?.toDouble();
+      final lng = (rawLocation['lng'] as num?)?.toDouble() ??
+          (rawLocation['longitude'] as num?)?.toDouble();
+      if (lat != null && lng != null) return LatLng(lat, lng);
+    }
+
+    final lat = (data['lat'] as num?)?.toDouble() ??
+        (data['latitude'] as num?)?.toDouble() ??
+        (data['restaurantLat'] as num?)?.toDouble();
+    final lng = (data['lng'] as num?)?.toDouble() ??
+        (data['longitude'] as num?)?.toDouble() ??
+        (data['restaurantLng'] as num?)?.toDouble();
+
+    if (lat == null || lng == null) return null;
+    return LatLng(lat, lng);
+  }
+
+  bool _isRestaurantOpen(Map<String, dynamic> data) {
+    final temporarilyClosed = data['temporarilyClosed'] == true;
+    final approvalStatus = (data['approvalStatus'] ?? '').toString().trim();
+    final isActive = data['active'] != false;
+    return !temporarilyClosed &&
+        isActive &&
+        (approvalStatus.isEmpty || approvalStatus == 'approved');
+  }
+
+  Future<Map<String, int>> _loadRestaurantDemandMap() async {
+    QuerySnapshot<Map<String, dynamic>> ordersSnapshot;
+    try {
+      ordersSnapshot = await FirebaseFirestore.instance
+          .collection('orders')
+          .orderBy('createdAt', descending: true)
+          .limit(250)
+          .get();
+    } catch (_) {
+      ordersSnapshot = await FirebaseFirestore.instance
+          .collection('orders')
+          .limit(250)
+          .get();
+    }
+
+    final counts = <String, int>{};
+    for (final doc in ordersSnapshot.docs) {
+      final data = doc.data();
+      final restaurantId = (data['restaurantId'] ?? '').toString().trim();
+      final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
+      if (restaurantId.isEmpty || status == 'cancelled' || status == 'ملغي') {
+        continue;
+      }
+      counts.update(restaurantId, (value) => value + 1, ifAbsent: () => 1);
+    }
+    return counts;
+  }
+
   Future<void> _loadAllLocations() async {
-    setState(() {
-      _allMarkers = {};
-    });
+    try {
+      final restaurantsSnapshot =
+          await FirebaseFirestore.instance.collection('restaurants').get();
+      final demandMap = await _loadRestaurantDemandMap();
+
+      final circles = <Circle>{};
+
+      final maxDemand =
+          demandMap.values.isEmpty ? 0 : demandMap.values.reduce(math.max);
+      final popularThreshold =
+          maxDemand <= 0 ? 999999 : math.max(3, (maxDemand * 0.5).ceil());
+
+      for (final doc in restaurantsSnapshot.docs) {
+        final data = doc.data();
+        if (!_isRestaurantOpen(data)) continue;
+
+        final position = _extractMapLocation(data);
+        if (position == null) continue;
+
+        final restaurantId = doc.id;
+        final demandCount = demandMap[restaurantId] ?? 0;
+        final isPopular = demandCount >= popularThreshold;
+
+        circles.add(
+          Circle(
+            circleId: CircleId('restaurant_open_$restaurantId'),
+            center: position,
+            radius: isPopular ? 240 : 180,
+            fillColor: (isPopular
+                    ? AppThemeArabic.courierPrimary
+                    : AppThemeArabic.courierAccent)
+                .withValues(alpha: isPopular ? 0.28 : 0.14),
+            strokeColor: (isPopular
+                    ? AppThemeArabic.courierPrimary
+                    : AppThemeArabic.courierAccent)
+                .withValues(alpha: isPopular ? 0.7 : 0.38),
+            strokeWidth: isPopular ? 2 : 1,
+          ),
+        );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _restaurantCircles = circles;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _restaurantCircles = {};
+      });
+    }
   }
 
   @override
@@ -534,7 +644,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                       borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
                     leading: const Icon(Icons.history,
-                        color: AppThemeArabic.clientPrimary),
+                        color: AppThemeArabic.courierPrimary),
                     title: Text('سجل الطلبات',
                         style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
@@ -552,7 +662,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                       borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
                     leading: const Icon(Icons.person,
-                        color: AppThemeArabic.clientTextPrimary),
+                        color: AppThemeArabic.courierTextPrimary),
                     title:
                         Text('الحساب', style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
@@ -570,7 +680,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                       borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
                     leading: const Icon(Icons.monetization_on,
-                        color: AppThemeArabic.clientAccent),
+                        color: AppThemeArabic.courierAccent),
                     title:
                         Text('أرباحي', style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
@@ -588,7 +698,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                       borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
                     leading: const Icon(Icons.assignment_turned_in,
-                        color: AppThemeArabic.clientPrimary),
+                        color: AppThemeArabic.courierPrimary),
                     title: Text('عرض الطلب الحالي',
                         style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () async {
@@ -645,7 +755,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                       borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
                     leading: const Icon(Icons.account_balance_wallet,
-                        color: AppThemeArabic.clientAccent),
+                        color: AppThemeArabic.courierAccent),
                     title:
                         Text('محفظتي', style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
@@ -667,7 +777,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                             style: TextStyle(
                                 color: Colors.white, fontFamily: 'Tajawal')),
                         backgroundColor: isAvailable
-                            ? AppThemeArabic.clientSuccess
+                            ? AppThemeArabic.courierAccent
                             : AppThemeArabic.clientError,
                         avatar: Icon(
                             isAvailable ? Icons.check_circle : Icons.cancel,
@@ -677,7 +787,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                       Switch(
                         value: isAvailable,
                         onChanged: _toggleAvailability,
-                        activeColor: AppThemeArabic.clientSuccess,
+                        activeColor: AppThemeArabic.courierAccent,
                       ),
                     ],
                   ),
@@ -705,21 +815,22 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
             backgroundColor: Colors.white,
             elevation: 1,
             centerTitle: true,
-            iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+            iconTheme:
+                const IconThemeData(color: AppThemeArabic.courierPrimary),
             shape: const RoundedRectangleBorder(
               borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
             ),
             leading: IconButton(
-                icon:
-                    const Icon(Icons.menu, color: AppThemeArabic.clientPrimary),
+                icon: const Icon(Icons.menu,
+                    color: AppThemeArabic.courierPrimary),
                 onPressed: () => _scaffoldKey.currentState!.openDrawer()),
             title: Row(children: [
               const Icon(Icons.delivery_dining,
-                  color: AppThemeArabic.clientPrimary),
+                  color: AppThemeArabic.courierPrimary),
               const SizedBox(width: 8),
               Text(isAvailable ? 'أنت متاح ✅' : 'غير متاح ',
                   style: const TextStyle(
-                      color: AppThemeArabic.clientTextPrimary,
+                      color: AppThemeArabic.courierTextPrimary,
                       fontWeight: FontWeight.bold)),
             ]),
             actions: [
@@ -743,7 +854,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                       clipBehavior: Clip.none,
                       children: [
                         const Icon(Icons.notifications_none,
-                            color: AppThemeArabic.clientPrimary),
+                            color: AppThemeArabic.courierPrimary),
                         if (unreadCount > 0)
                           Positioned(
                             right: -3,
@@ -771,27 +882,27 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                           ),
                       ],
                     ),
-                      onPressed: () async {
-                        final unreadDocs = docs.where((doc) {
-                          final data = doc.data();
-                          final isRead =
-                              data['read'] == true || data['isRead'] == true;
-                          return !isRead;
-                        });
+                    onPressed: () async {
+                      final unreadDocs = docs.where((doc) {
+                        final data = doc.data();
+                        final isRead =
+                            data['read'] == true || data['isRead'] == true;
+                        return !isRead;
+                      });
 
-                        if (unreadDocs.isNotEmpty) {
-                          final batch = FirebaseFirestore.instance.batch();
-                          for (final doc in unreadDocs) {
-                            batch.update(doc.reference, {
-                              'read': true,
-                              'isRead': true,
-                              'readAt': FieldValue.serverTimestamp(),
-                            });
-                          }
-                          try {
-                            await batch.commit();
-                          } catch (_) {}
+                      if (unreadDocs.isNotEmpty) {
+                        final batch = FirebaseFirestore.instance.batch();
+                        for (final doc in unreadDocs) {
+                          batch.update(doc.reference, {
+                            'read': true,
+                            'isRead': true,
+                            'readAt': FieldValue.serverTimestamp(),
+                          });
                         }
+                        try {
+                          await batch.commit();
+                        } catch (_) {}
+                      }
 
                       Navigator.push(
                         context,
@@ -806,7 +917,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
               ),
               IconButton(
                 icon: const Icon(Icons.support_agent,
-                    color: AppThemeArabic.clientPrimary),
+                    color: AppThemeArabic.courierPrimary),
                 tooltip: 'الدعم',
                 onPressed: () async {
                   final doc = await FirebaseFirestore.instance
@@ -854,83 +965,79 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                     }),
                     myLocationEnabled: true,
                     myLocationButtonEnabled: true,
-                    markers: _allMarkers,
+                    zoomControlsEnabled: true,
+                    compassEnabled: true,
+                    rotateGesturesEnabled: true,
+                    tiltGesturesEnabled: true,
+                    circles: _restaurantCircles,
+                    markers: const <Marker>{},
                   ),
                 ),
               ),
-              if (_showManualLocation)
-                Positioned(
-                  bottom: 24,
-                  right: 24,
-                  left: 24,
-                  child: Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.location_on),
-                        label: const Text('تحديد الموقع يدويًا'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppThemeArabic.clientPrimary,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        onPressed: () async {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('تنبيه هام'),
-                              content: const Text(
-                                  'تحديد الموقع يدويًا هو لضمان وصول الطلب إليك وتجنب التشويش. إذا علمنا أنك استخدمت موقعًا خاطئًا أو وهميًا سيتم إغلاق حسابك نهائيًا.'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(context, false),
-                                  child: const Text('إلغاء'),
-                                ),
-                                ElevatedButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  child: const Text('متابعة'),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (confirm != true) return;
-                          final LatLng? picked = await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ManualLocationPicker(
-                                  initialLocation: _currentLocation),
-                            ),
-                          );
-                          if (picked != null) {
-                            setState(() {
-                              _currentLocation = picked;
-                              _isManualLocation = true;
-                            });
-                            _mapController
-                                ?.animateCamera(CameraUpdate.newLatLng(picked));
-                            FirebaseFirestore.instance
-                                .collection('drivers')
-                                .doc(widget.driverId)
-                                .update({
-                              'location':
-                                  GeoPoint(picked.latitude, picked.longitude),
-                              'lastLocationUpdate':
-                                  FieldValue.serverTimestamp(),
-                            });
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('تم تحديث الموقع يدويًا')));
-                          }
-                        },
+              Positioned(
+                top: 18,
+                left: 18,
+                right: 18,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 14,
+                        offset: Offset(0, 6),
                       ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: AppThemeArabic.courierPrimary
+                                .withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.near_me_rounded,
+                            color: AppThemeArabic.courierPrimary,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'لوحة المندوب',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontFamily: 'Tajawal',
+                                  color: AppThemeArabic.courierTextPrimary,
+                                ),
+                              ),
+                              Text(
+                                'الخريطة تعرض موقعك الحالي وطبقات المطاعم المفتوحة والأكثر نشاطًا.',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'Tajawal',
+                                  color: AppThemeArabic.courierTextSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
+              ),
             ],
           ),
         ),

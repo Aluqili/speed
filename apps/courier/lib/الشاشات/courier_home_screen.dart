@@ -27,6 +27,53 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
   bool _loadingAvailability = true;
   final Location location = Location();
 
+  String _todayAvailabilityKey([DateTime? value]) {
+    final now = value ?? DateTime.now();
+    final month = now.month.toString().padLeft(2, '0');
+    final day = now.day.toString().padLeft(2, '0');
+    return '${now.year}-$month-$day';
+  }
+
+  int _timestampMillis(dynamic value) {
+    if (value is Timestamp) return value.toDate().millisecondsSinceEpoch;
+    if (value is DateTime) return value.millisecondsSinceEpoch;
+    if (value is int) return value;
+    return 0;
+  }
+
+  Map<String, dynamic> _buildAvailabilityPatch(Map<String, dynamic> data, bool nextAvailable) {
+    final now = DateTime.now();
+    final todayKey = _todayAvailabilityKey(now);
+    final todayStartMs = DateTime(now.year, now.month, now.day).millisecondsSinceEpoch;
+    final currentDayKey = (data['availabilityDayKey'] ?? '').toString();
+    final currentStartedMs = _timestampMillis(data['availabilityCurrentStartedAt']);
+    var totalTodayMs = currentDayKey == todayKey
+        ? ((data['availabilityTodayMs'] as num?)?.round() ?? 0)
+        : 0;
+
+    if (!nextAvailable && currentStartedMs > 0) {
+      final effectiveStartMs = currentStartedMs < todayStartMs ? todayStartMs : currentStartedMs;
+      totalTodayMs += now.millisecondsSinceEpoch - effectiveStartMs;
+    }
+
+    return {
+      'available': nextAvailable,
+      'availabilityDayKey': todayKey,
+      'availabilityTodayMs': totalTodayMs < 0 ? 0 : totalTodayMs,
+      'availabilityCurrentStartedAt': nextAvailable ? Timestamp.now() : null,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  Future<void> _ensureAvailabilityTrackingSeed(Map<String, dynamic> data) async {
+    if (data['available'] == true && data['availabilityCurrentStartedAt'] == null) {
+      await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(widget.driverId)
+          .update(_buildAvailabilityPatch(data, true));
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -43,15 +90,22 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
         .get()
         .then((doc) {
       if (doc.exists) {
+        final data = doc.data() ?? <String, dynamic>{};
+        _ensureAvailabilityTrackingSeed(data);
         setState(() {
-          isAvailable = (doc.data()?['available'] as bool?) ?? false;
+          isAvailable = (data['available'] as bool?) ?? false;
           _loadingAvailability = false;
         });
       } else {
         FirebaseFirestore.instance
             .collection('drivers')
             .doc(widget.driverId)
-            .set({'available': false});
+            .set({
+          'available': false,
+          'availabilityDayKey': _todayAvailabilityKey(),
+          'availabilityTodayMs': 0,
+          'availabilityCurrentStartedAt': null,
+        });
         setState(() {
           isAvailable = false;
           _loadingAvailability = false;
@@ -107,10 +161,13 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
       }
     }
     setState(() => isAvailable = value);
+    final driverRef = FirebaseFirestore.instance.collection('drivers').doc(widget.driverId);
+    final snapshot = await driverRef.get();
+    final data = snapshot.data() ?? <String, dynamic>{};
     await FirebaseFirestore.instance
         .collection('drivers')
         .doc(widget.driverId)
-        .update({'available': value});
+      .update(_buildAvailabilityPatch(data, value));
   }
 
   // عرض إشعار محلي
