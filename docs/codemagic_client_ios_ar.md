@@ -1,18 +1,22 @@
-# إعداد Codemagic لتطبيق العميل iOS من ويندوز
+# إعداد Codemagic لتطبيقات SpeedStar iOS من ويندوز
 
-هذا الدليل يجهز لك بناء iOS لتطبيق العميل من غير Mac محلي.
+هذا الدليل يجهز لك بناء iOS لتطبيقات العميل والمتجر والمندوب من غير Mac محلي.
 
 الملفات التي يعتمد عليها هذا المسار:
 
 - `codemagic.yaml`
 - `apps/client/ios/Flutter/Secrets.xcconfig`
 - `apps/client/ios/Runner/GoogleService-Info.plist`
+- `apps/store/ios/Flutter/Secrets.xcconfig`
+- `apps/store/ios/Runner/GoogleService-Info.plist`
+- `apps/courier/ios/Flutter/Secrets.xcconfig`
+- `apps/courier/ios/Runner/GoogleService-Info.plist`
 
 لكن بما أن الملفات السرية المحلية لا يجب أن تدخل Git، فإن Codemagic سيولدها أثناء البناء من متغيرات سرية.
 
 ## ما الذي أضفناه
 
-يوجد الآن في الجذر ملف `codemagic.yaml` وفيه مساران:
+يوجد الآن في الجذر ملف `codemagic.yaml` وفيه ستة مسارات:
 
 1. `client_ios_validate`
    - يبني iOS بدون توقيع.
@@ -22,15 +26,33 @@
    - يبني IPA موقعة بعد ضبط التوقيع داخل Codemagic.
    - هدفه إخراج ملف IPA جاهز للرفع.
 
+3. `store_ios_validate`
+   - يبني iOS للمتجر بدون توقيع.
+   - هدفه التأكد أن المشروع يجهز على macOS سحابي بشكل صحيح.
+
+4. `store_ios_release_ipa`
+   - يبني IPA موقعة للمتجر بعد ضبط التوقيع داخل Codemagic.
+   - هدفه إخراج ملف IPA جاهز للرفع.
+
+5. `courier_ios_validate`
+   - يبني iOS للمندوب بدون توقيع.
+   - هدفه التأكد أن المشروع يجهز على macOS سحابي بشكل صحيح.
+
+6. `courier_ios_release_ipa`
+   - يبني IPA موقعة للمندوب بعد ضبط التوقيع داخل Codemagic.
+   - هدفه إخراج ملف IPA جاهز للرفع.
+
 ## قبل البدء
 
 تأكد من الآتي:
 
 - Bundle ID هو `com.speedstar.client`
-- لديك تطبيق iOS مضاف في Firebase
-- لديك ملف `GoogleService-Info.plist` الخاص بالعميل
+- Bundle ID للمتجر هو `com.speedstar.store`
+- Bundle ID للمندوب هو `com.speedstar.courier`
+- لديك تطبيق iOS مضاف في Firebase لكل تطبيق
+- لديك ملف `GoogleService-Info.plist` لكل تطبيق
 - لديك حساب Apple Developer مفعل
-- لديك App Store Connect app record لتطبيق العميل
+- لديك App Store Connect app record لكل تطبيق تريد رفعه
 
 ## 1) إضافة المشروع إلى Codemagic
 
@@ -42,13 +64,31 @@
 
 ## 2) تجهيز المتغيرات السرية
 
-أنشئ Group في Codemagic باسم مقترح مثل `speedstar_client_ios` ثم أضف داخله:
+أنشئ Groups داخل Codemagic بهذا الشكل:
+
+- `speedstar_client_ios`
+- `speedstar_store_ios`
+- `speedstar_courier_ios`
+
+ثم أضف المتغيرات التالية:
 
 - `CLIENT_IOS_MAPS_API_KEY`
   - القيمة: مفتاح Google Maps iOS الخاص بتطبيق العميل
 
 - `CLIENT_IOS_GOOGLE_SERVICE_INFO_PLIST_B64`
   - القيمة: محتوى ملف `GoogleService-Info.plist` بعد تحويله إلى Base64
+
+- `STORE_IOS_MAPS_API_KEY`
+  - القيمة: مفتاح Google Maps iOS الخاص بتطبيق المتجر
+
+- `STORE_IOS_GOOGLE_SERVICE_INFO_PLIST_B64`
+  - القيمة: محتوى ملف `GoogleService-Info.plist` الخاص بالمتجر بعد تحويله إلى Base64
+
+- `COURIER_IOS_MAPS_API_KEY`
+  - القيمة: مفتاح Google Maps iOS الخاص بتطبيق المندوب
+
+- `COURIER_IOS_GOOGLE_SERVICE_INFO_PLIST_B64`
+  - القيمة: محتوى ملف `GoogleService-Info.plist` الخاص بالمندوب بعد تحويله إلى Base64
 
 ### كيف تحول plist إلى Base64 على ويندوز PowerShell
 
@@ -62,9 +102,11 @@
 
 ## 3) أول بناء آمن: Validate
 
-ابدأ أولاً بالـ workflow التالي:
+ابدأ أولاً بالـ workflow المناسب لكل تطبيق:
 
 - `client_ios_validate`
+- `store_ios_validate`
+- `courier_ios_validate`
 
 هذا المسار لا يحتاج توقيع iOS بعد، لكنه يتأكد من:
 
@@ -77,7 +119,7 @@
 
 ## 4) إعداد توقيع iOS داخل Codemagic
 
-حتى يعمل المسار `client_ios_release_ipa` تحتاج ضبط iOS signing في Codemagic.
+حتى تعمل مسارات `*_ios_release_ipa` تحتاج ضبط iOS signing في Codemagic.
 
 يوجد طريقتان، والأفضل لك هنا هو المسار الآلي:
 
@@ -88,18 +130,23 @@
    - ملف المفتاح `.p8`
 3. داخل Codemagic افتح Team Settings أو App Settings ثم Apple Developer Portal integration.
 4. اربط API key هناك.
-5. فعّل إدارة ملفات التوقيع الخاصة بـ iOS للتطبيق `com.speedstar.client`.
+5. فعّل إدارة ملفات التوقيع الخاصة بـ iOS للتطبيقات:
+   - `com.speedstar.client`
+   - `com.speedstar.store`
+   - `com.speedstar.courier`
 
 مهم:
 
-- أول مرة قد تحتاج التأكد أن Bundle ID موجود أصلًا في Apple Developer.
+- أول مرة قد تحتاج التأكد أن كل Bundle ID موجود أصلًا في Apple Developer.
 - إذا كانت شهادة التوقيع أو provisioning profile غير موجودة، Codemagic يمكنه إنشاؤها أو جلبها بحسب إعدادات الحساب.
 
 ## 5) بناء IPA موقعة
 
-بعد نجاح التوقيع داخل Codemagic، شغل هذا المسار:
+بعد نجاح التوقيع داخل Codemagic، شغل المسار المناسب:
 
 - `client_ios_release_ipa`
+- `store_ios_release_ipa`
+- `courier_ios_release_ipa`
 
 هذا المسار يقوم بـ:
 
@@ -117,7 +164,7 @@
 1. ترفعها يدويًا إلى App Store Connect
 2. أضيف لك خطوة نشر TestFlight مباشرة داخل `codemagic.yaml`
 
-أنا أنصح أن نجعل أول تشغيل يقتصر على:
+أنا أنصح أن نجعل أول تشغيل لكل تطبيق يقتصر على:
 
 - Validate
 - ثم Signed IPA
