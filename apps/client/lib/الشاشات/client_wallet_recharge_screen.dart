@@ -7,9 +7,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:get/get.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:intl/intl.dart';
+
+import '../الخدمات/payment_app_launcher.dart';
 
 class ClientWalletRechargeScreen extends StatefulWidget {
   final String clientId;
@@ -184,47 +185,15 @@ class _ClientWalletRechargeScreenState
   }
 
   Future<void> _launchPaymentApp() async {
-    final candidates = <String>[
-      if (Platform.isAndroid) (_openUrlsAndroid[_selectedMethod] ?? '').trim(),
-      if (Platform.isIOS) (_openUrlsIos[_selectedMethod] ?? '').trim(),
-      (_openUrls[_selectedMethod] ?? '').trim(),
-    ].where((value) => value.isNotEmpty).toSet().toList();
-
-    if (candidates.isEmpty) {
-      Get.snackbar(
-        'تنبيه',
-        'لا يوجد رابط فتح مباشر لهذه الطريقة حالياً.',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return;
-    }
-
-    var launched = false;
-    for (final rawUrl in candidates) {
-      final uri = Uri.tryParse(rawUrl);
-      if (uri == null) {
-        continue;
-      }
-      try {
-        launched = await launchUrl(
-          uri,
-          mode: LaunchMode.externalApplication,
-        );
-      } catch (_) {
-        launched = false;
-      }
-      if (launched) {
-        break;
-      }
-    }
-
-    if (!launched) {
-      Get.snackbar(
-        'تعذر الفتح',
-        'تعذر فتح التطبيق مباشرة على هذا الجهاز.',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-    }
+    await launchPaymentApp(
+      context,
+      PaymentAppLaunchConfig(
+        method: _selectedMethod,
+        androidUrl: (_openUrlsAndroid[_selectedMethod] ?? '').trim(),
+        iosUrl: (_openUrlsIos[_selectedMethod] ?? '').trim(),
+        genericUrl: (_openUrls[_selectedMethod] ?? '').trim(),
+      ),
+    );
   }
 
   Future<void> _copySelectedAccount() async {

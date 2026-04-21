@@ -102,8 +102,7 @@ class PushNotificationService {
   Future<void> _ensureLocalNotificationsInitialized({
     required bool withTapHandler,
   }) async {
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings('ic_stat_speedstar');
     const iosSettings = DarwinInitializationSettings();
     const initSettings = InitializationSettings(
       android: androidSettings,
@@ -310,6 +309,7 @@ class PushNotificationService {
         channelDescription: isOrderAlert
             ? 'تنبيهات الطلبات الجديدة والعروض الفورية'
             : 'تنبيهات الطلبات والتحديثات',
+        icon: 'ic_stat_speedstar',
         importance: Importance.max,
         priority: Priority.max,
         playSound: true,

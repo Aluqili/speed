@@ -55,7 +55,7 @@ class OrderAlertForegroundService : Service() {
 		)
 
 		return NotificationCompat.Builder(this, SERVICE_CHANNEL_ID)
-			.setSmallIcon(applicationInfo.icon)
+			.setSmallIcon(R.drawable.ic_stat_speedstar)
 			.setContentTitle(title)
 			.setContentText(body)
 			.setCategory(NotificationCompat.CATEGORY_ALARM)

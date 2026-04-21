@@ -24,8 +24,7 @@ class PushNotificationService {
   Future<void> initialize() async {
     if (_initialized) return;
 
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings('ic_stat_speedstar');
     const iosSettings = DarwinInitializationSettings();
     const initSettings = InitializationSettings(
       android: androidSettings,
@@ -108,10 +107,11 @@ class PushNotificationService {
     final body =
         (message.notification?.body ?? message.data['body'] ?? '').toString();
     final type = (message.data['type'] ?? '').toString().toLowerCase();
+    final isPickupReadyNotice = type == 'courier_pickup_ready';
     final isOrderAlert = type.contains('order') ||
         type.contains('offer') ||
-        type.contains('pickup') ||
-        type.contains('courier');
+        (!isPickupReadyNotice && type.contains('pickup')) ||
+        (!isPickupReadyNotice && type.contains('courier'));
     final androidChannelId = isOrderAlert ? _ordersChannelId : _channelId;
 
     final details = NotificationDetails(
@@ -121,6 +121,7 @@ class PushNotificationService {
         channelDescription: isOrderAlert
             ? 'تنبيهات الطلبات الجديدة والعروض الفورية'
             : 'تنبيهات الطلبات والتحديثات',
+        icon: 'ic_stat_speedstar',
         importance: Importance.max,
         priority: Priority.max,
         playSound: true,

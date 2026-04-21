@@ -23,8 +23,7 @@ class PushNotificationService {
   Future<void> initialize() async {
     if (_initialized) return;
 
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings('ic_stat_speedstar');
     const iosSettings = DarwinInitializationSettings();
     const initSettings = InitializationSettings(
       android: androidSettings,
@@ -102,6 +101,7 @@ class PushNotificationService {
         _channelId,
         'SpeedStar Alerts',
         channelDescription: 'تنبيهات الطلبات والتحديثات',
+        icon: 'ic_stat_speedstar',
         importance: Importance.max,
         priority: Priority.high,
         playSound: true,

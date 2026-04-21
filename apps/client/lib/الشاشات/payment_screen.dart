@@ -6,10 +6,10 @@ import 'package:getwidget/getwidget.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 
+import '../الخدمات/payment_app_launcher.dart';
 import '../الخدمات/promocode_service.dart';
 import 'cart_provider.dart';
 import 'client_order_details_screen.dart';
@@ -212,52 +212,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return (_settings?['${method}OpenUrlIos'] ?? '').toString().trim();
   }
 
-  List<String> _paymentOpenUrlCandidates(String method) {
-    final candidates = <String>[];
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      candidates.add(_paymentOpenUrlAndroid(method));
-    }
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-      candidates.add(_paymentOpenUrlIos(method));
-    }
-    candidates.add(_paymentOpenUrl(method));
-    return candidates
-        .where((value) => value.trim().isNotEmpty)
-        .toSet()
-        .toList();
-  }
-
   Future<void> _launchPaymentApp(String method) async {
-    final candidates = _paymentOpenUrlCandidates(method);
-    if (candidates.isEmpty) {
-      if (!mounted) return;
-      GFToast.showToast(
-          'لا يوجد رابط فتح مباشر مضبوط لهذه الطريقة حالياً.', context);
-      return;
-    }
-
-    var launched = false;
-    for (final rawUrl in candidates) {
-      final uri = Uri.tryParse(rawUrl);
-      if (uri == null) {
-        continue;
-      }
-      try {
-        launched = await launchUrl(
-          uri,
-          mode: LaunchMode.externalApplication,
-        );
-      } catch (_) {
-        launched = false;
-      }
-      if (launched) {
-        break;
-      }
-    }
-
-    if (!launched && mounted) {
-      GFToast.showToast('تعذر فتح التطبيق مباشرة على هذا الجهاز.', context);
-    }
+    await launchPaymentApp(
+      context,
+      PaymentAppLaunchConfig(
+        method: method,
+        androidUrl: _paymentOpenUrlAndroid(method),
+        iosUrl: _paymentOpenUrlIos(method),
+        genericUrl: _paymentOpenUrl(method),
+      ),
+    );
   }
 
   Future<void> _copyPaymentAccount(String method) async {
