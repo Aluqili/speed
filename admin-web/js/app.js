@@ -74,6 +74,10 @@ const dashboardQuickActions = document.getElementById('dashboardQuickActions');
 const statsGrid = document.getElementById('statsGrid');
 const opsPriorityGrid = document.getElementById('opsPriorityGrid');
 const opsAlertFeed = document.getElementById('opsAlertFeed');
+const opsAudioEnabledInput = document.getElementById('opsAudioEnabledInput');
+const opsAudioTestBtn = document.getElementById('opsAudioTestBtn');
+const opsNotificationPermissionBtn = document.getElementById('opsNotificationPermissionBtn');
+const opsAudioStatus = document.getElementById('opsAudioStatus');
 const publicMetricsTotalGrid = document.getElementById('publicMetricsTotalGrid');
 const publicMetricsTodayGrid = document.getElementById('publicMetricsTodayGrid');
 const publicMetricsUpdatedAt = document.getElementById('publicMetricsUpdatedAt');
@@ -130,7 +134,13 @@ const supportRoot = document.getElementById('supportRoot');
 const supportConversationList = document.getElementById('supportConversationList');
 const supportConversationHeader = document.getElementById('supportConversationHeader');
 const supportMessagesPane = document.getElementById('supportMessagesPane');
+const supportComposer = document.getElementById('supportComposer');
 const supportReplyInput = document.getElementById('supportReplyInput');
+const supportAttachImageBtn = document.getElementById('supportAttachImageBtn');
+const supportImageInput = document.getElementById('supportImageInput');
+const supportImagePreview = document.getElementById('supportImagePreview');
+const supportImagePreviewImg = document.getElementById('supportImagePreviewImg');
+const supportRemoveImageBtn = document.getElementById('supportRemoveImageBtn');
 const supportSendBtn = document.getElementById('supportSendBtn');
 const supportToggleStatusBtn = document.getElementById('supportToggleStatusBtn');
 const supportMarkReadBtn = document.getElementById('supportMarkReadBtn');
@@ -387,6 +397,9 @@ let supportConversations = [];
 let supportMessagesByConversation = new Map();
 let supportSelectedConversationId = '';
 let supportUiBound = false;
+let supportPendingImageFile = null;
+let supportPendingImagePreviewUrl = '';
+let supportSendInFlight = false;
 let notificationFormBound = false;
 let authTransitionInProgress = false;
 let preservedLoginStatus = null;
@@ -461,6 +474,10 @@ const mapUiState = {
 };
 let clientDirectoryCache = [];
 const activeSubpanelByPortal = {};
+const opsAlertPrefsKey = 'speedstar-admin-ops-audio-enabled';
+let opsAudioContext = null;
+let opsSpeechPrimed = false;
+let opsAudioControlsBound = false;
 
 const opsCenterState = {
   activeOrders: 0,
@@ -1012,6 +1029,125 @@ function syncEnvUi() {
 }
 
 syncEnvUi();
+bindOpsAudioControls();
+
+function loadOpsAudioPreference() {
+  try {
+    const stored = window.localStorage.getItem(opsAlertPrefsKey);
+    return stored == null ? true : stored === '1';
+  } catch (_) {
+    return true;
+  }
+}
+
+function saveOpsAudioPreference(enabled) {
+  try {
+    window.localStorage.setItem(opsAlertPrefsKey, enabled ? '1' : '0');
+  } catch (_) {
+  }
+}
+
+function isOpsAudioEnabled() {
+  return opsAudioEnabledInput ? opsAudioEnabledInput.checked === true : true;
+}
+
+function renderOpsAudioStatus(message) {
+  if (!opsAudioStatus) return;
+  if (message) {
+    opsAudioStatus.textContent = message;
+    return;
+  }
+  const browserPermission = typeof Notification === 'undefined' ? 'غير مدعوم' : Notification.permission;
+  opsAudioStatus.textContent = isOpsAudioEnabled()
+    ? `التنبيه الصوتي مفعل. حالة إشعارات المتصفح: ${browserPermission}. أبق الصفحة مفتوحة لسماع التنبيهات الجديدة.`
+    : 'التنبيه الصوتي متوقف حاليًا. يمكنك تفعيله لسماع رسائل الدعم والإيصالات الجديدة بصوت منطوق.';
+}
+
+function ensureOpsAudioContext() {
+  if (typeof window === 'undefined') return null;
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return null;
+  if (!opsAudioContext) {
+    opsAudioContext = new AudioCtor();
+  }
+  if (opsAudioContext.state === 'suspended') {
+    opsAudioContext.resume().catch(() => {});
+  }
+  return opsAudioContext;
+}
+
+function playOpsChime() {
+  const ctx = ensureOpsAudioContext();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(740, now);
+  oscillator.frequency.linearRampToValueAtTime(988, now + 0.16);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.09, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+  oscillator.connect(gain);
+  gain.connect(ctx.destination);
+  oscillator.start(now);
+  oscillator.stop(now + 0.45);
+}
+
+function speakOpsAlert(text) {
+  if (typeof window === 'undefined' || !window.speechSynthesis || !text) return;
+  try {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ar-SA';
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    const voices = window.speechSynthesis.getVoices();
+    const arabicVoice = voices.find((voice) => String(voice.lang || '').toLowerCase().startsWith('ar'));
+    if (arabicVoice) {
+      utterance.voice = arabicVoice;
+      utterance.lang = arabicVoice.lang || 'ar-SA';
+    }
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+    opsSpeechPrimed = true;
+  } catch (_) {
+  }
+}
+
+function playOpsAlertCue(title, body) {
+  if (!isOpsAudioEnabled()) return;
+  playOpsChime();
+  const spoken = [title, body].filter(Boolean).join('. ');
+  speakOpsAlert(spoken);
+}
+
+function bindOpsAudioControls() {
+  if (opsAudioControlsBound) return;
+  if (opsAudioEnabledInput) {
+    opsAudioEnabledInput.checked = loadOpsAudioPreference();
+    opsAudioEnabledInput.addEventListener('change', () => {
+      saveOpsAudioPreference(opsAudioEnabledInput.checked === true);
+      if (opsAudioEnabledInput.checked) {
+        ensureOpsAudioContext();
+      } else if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      renderOpsAudioStatus();
+    });
+  }
+  opsAudioTestBtn?.addEventListener('click', async () => {
+    ensureOpsAudioContext();
+    primeBrowserNotificationsPermission();
+    playOpsAlertCue('تنبيه تجريبي من لوحة التحكم', 'سيصلك هذا الصوت عند وجود رسالة دعم جديدة أو إيصال جديد للمراجعة.');
+    renderOpsAudioStatus('تم تشغيل التنبيه التجريبي. إذا سمعت الصوت والنطق فالنظام جاهز.');
+  });
+  opsNotificationPermissionBtn?.addEventListener('click', async () => {
+    primeBrowserNotificationsPermission();
+    renderOpsAudioStatus();
+  });
+  opsAudioControlsBound = true;
+  renderOpsAudioStatus();
+}
 
 function formatOpsTime(value) {
   const date = value instanceof Date ? value : new Date();
@@ -1083,6 +1219,7 @@ function pushOpsAlert(key, title, body, level = 'info') {
   opsCenterState.alerts = opsCenterState.alerts.slice(0, 20);
   renderOpsAlertFeed();
   maybeNotifyBrowser(title, body);
+  playOpsAlertCue(title, body);
 }
 
 function syncOpsCollectionState(kind, nextIds, payloadBuilder) {
@@ -4978,6 +5115,47 @@ function mountSupport() {
     return;
   }
 
+  const clearSupportPendingImage = () => {
+    supportPendingImageFile = null;
+    if (supportPendingImagePreviewUrl) {
+      URL.revokeObjectURL(supportPendingImagePreviewUrl);
+      supportPendingImagePreviewUrl = '';
+    }
+    if (supportImageInput) {
+      supportImageInput.value = '';
+    }
+    if (supportImagePreview) {
+      supportImagePreview.hidden = true;
+    }
+    if (supportImagePreviewImg) {
+      supportImagePreviewImg.removeAttribute('src');
+    }
+  };
+
+  const renderSupportPendingImage = () => {
+    if (!supportImagePreview || !supportImagePreviewImg) return;
+    if (!supportPendingImageFile || !supportPendingImagePreviewUrl) {
+      supportImagePreview.hidden = true;
+      supportImagePreviewImg.removeAttribute('src');
+      return;
+    }
+    supportImagePreviewImg.src = supportPendingImagePreviewUrl;
+    supportImagePreview.hidden = false;
+  };
+
+  const mountComposerInActiveThread = () => {
+    if (!supportComposer) return;
+    const slot = supportMessagesPane.querySelector('.support-thread-composer-slot');
+    if (!slot) {
+      supportComposer.hidden = true;
+      return;
+    }
+    slot.appendChild(supportComposer);
+    supportComposer.hidden = false;
+    supportComposer.classList.add('support-composer--inline');
+    renderSupportPendingImage();
+  };
+
   const scrollMessageNearComposer = (messageElement) => {
     if (!supportMessagesPane || !messageElement) return;
     const composerVisualGap = 28;
@@ -5122,6 +5300,7 @@ function mountSupport() {
     if (!supportSelectedConversationId) {
       supportConversationHeader.textContent = 'اختر محادثة من القائمة لعرض التفاصيل.';
       supportMessagesPane.innerHTML = '<div class="muted">لا توجد محادثة محددة.</div>';
+      if (supportComposer) supportComposer.hidden = true;
       supportToggleStatusBtn.disabled = true;
       if (supportMarkReadBtn) supportMarkReadBtn.disabled = true;
       supportSendBtn.disabled = true;
@@ -5132,6 +5311,7 @@ function mountSupport() {
     if (!convo) {
       supportConversationHeader.textContent = 'المحادثة غير متاحة حاليًا.';
       supportMessagesPane.innerHTML = '<div class="muted">لم يتم العثور على بيانات هذه المحادثة.</div>';
+      if (supportComposer) supportComposer.hidden = true;
       supportToggleStatusBtn.disabled = true;
       if (supportMarkReadBtn) supportMarkReadBtn.disabled = true;
       supportSendBtn.disabled = true;
@@ -5156,13 +5336,19 @@ function mountSupport() {
       <span class="kv"><b>الحالة:</b> ${convo.status === 'closed' ? 'مغلقة' : 'مفتوحة'}</span>
     `;
 
-    supportMessagesPane.innerHTML = messages.length
+    const messagesMarkup = messages.length
       ? messages.map((msg, index) => {
           const mine = msg.senderType === 'admin' || msg.senderId === (auth.currentUser?.uid || '');
           const isUnreadForAdmin = !mine && (msg.timestampMillis || 0) > latestReadMillis;
-          const body = msg.imageUrl
-            ? `<a href="${escapeHtml(msg.imageUrl)}" target="_blank" rel="noopener">📷 صورة مرفقة</a>`
-            : escapeHtml(msg.message || '-');
+          const textBody = String(msg.message || '').trim()
+            ? `<div class="support-bubble-text">${escapeHtml(msg.message || '')}</div>`
+            : '';
+          const imageBody = msg.imageUrl
+            ? `<a class="support-bubble-image-link" href="${escapeHtml(msg.imageUrl)}" target="_blank" rel="noopener"><img class="support-bubble-image" src="${escapeHtml(msg.imageUrl)}" alt="صورة مرفقة" /></a>`
+            : '';
+          const body = textBody || imageBody
+            ? `${textBody}${imageBody}`
+            : '<div class="muted">رسالة بدون محتوى.</div>';
           return `
             <div class="support-bubble ${mine ? 'mine' : ''}" data-support-message-index="${index}" ${isUnreadForAdmin ? 'data-support-unread="true"' : ''}>
               <div class="support-bubble-head">${escapeHtml(msg.senderName || msg.senderType || msg.senderId || 'مستخدم')}</div>
@@ -5172,6 +5358,14 @@ function mountSupport() {
           `;
         }).join('')
       : '<div class="muted">لا توجد رسائل بعد.</div>';
+
+    supportMessagesPane.innerHTML = `
+      <div class="support-thread">
+        <div class="support-message-list">${messagesMarkup}</div>
+        <div class="support-thread-composer-slot"></div>
+      </div>
+    `;
+    mountComposerInActiveThread();
 
     const firstUnreadMessage = supportMessagesPane.querySelector('[data-support-unread="true"]');
     const latestExternalMessage = Array.from(supportMessagesPane.querySelectorAll('.support-bubble:not(.mine)')).pop();
@@ -5200,12 +5394,16 @@ function mountSupport() {
     const convo = supportConversations.find((item) => item.id === supportSelectedConversationId);
     const isClosed = !convo || convo.status === 'closed';
     const hasText = String(supportReplyInput?.value || '').trim().length > 0;
-    supportSendBtn.disabled = isClosed || !hasText;
+    const hasAttachment = !!supportPendingImageFile;
+    if (supportReplyInput) supportReplyInput.disabled = isClosed || supportSendInFlight;
+    if (supportAttachImageBtn) supportAttachImageBtn.disabled = isClosed || supportSendInFlight;
+    if (supportImageInput) supportImageInput.disabled = isClosed || supportSendInFlight;
+    supportSendBtn.disabled = isClosed || supportSendInFlight || (!hasText && !hasAttachment);
   };
 
   const sendReply = async () => {
     const text = String(supportReplyInput?.value || '').trim();
-    if (!text || !supportSelectedConversationId) return;
+    if ((!text && !supportPendingImageFile) || !supportSelectedConversationId) return;
 
     const convo = supportConversations.find((item) => item.id === supportSelectedConversationId);
     if (!convo || convo.status === 'closed') return;
@@ -5217,6 +5415,15 @@ function mountSupport() {
     }
 
     try {
+      supportSendInFlight = true;
+      syncComposerState();
+      let imageUrl = '';
+      if (supportPendingImageFile) {
+        imageUrl = await uploadImageToCloudinary(supportPendingImageFile) || '';
+        if (!imageUrl) {
+          throw new Error('تعذر رفع الصورة المرفقة. حاول مرة أخرى.');
+        }
+      }
       await addDoc(collection(db, 'supportMessages'), {
         conversationId: convo.id,
         chatKind: 'support',
@@ -5229,14 +5436,19 @@ function mountSupport() {
         participantsKey: [userId, 'support'].sort(),
         timestamp: serverTimestamp(),
         message: text,
+        ...(imageUrl ? { imageUrl } : {}),
         status: 'open',
       });
       supportReplyInput.value = '';
+      clearSupportPendingImage();
       syncComposerState();
       supportMessagesPane.scrollTop = supportMessagesPane.scrollHeight;
       supportReplyInput?.focus({ preventScroll: true });
     } catch (err) {
       alert(`تعذر إرسال الرد: ${err.message || err}`);
+    } finally {
+      supportSendInFlight = false;
+      syncComposerState();
     }
   };
 
@@ -5268,6 +5480,35 @@ function mountSupport() {
     supportAppFilter?.addEventListener('change', () => renderConversationList());
     supportStatusFilter?.addEventListener('change', () => renderConversationList());
     supportReplyInput?.addEventListener('input', () => syncComposerState());
+    supportAttachImageBtn?.addEventListener('click', () => {
+      if (supportAttachImageBtn.disabled) return;
+      supportImageInput?.click();
+    });
+    supportImageInput?.addEventListener('change', () => {
+      const file = supportImageInput.files && supportImageInput.files.length ? supportImageInput.files[0] : null;
+      if (!file) {
+        clearSupportPendingImage();
+        syncComposerState();
+        return;
+      }
+      if (!String(file.type || '').startsWith('image/')) {
+        alert('الملف المختار ليس صورة صالحة.');
+        clearSupportPendingImage();
+        syncComposerState();
+        return;
+      }
+      if (supportPendingImagePreviewUrl) {
+        URL.revokeObjectURL(supportPendingImagePreviewUrl);
+      }
+      supportPendingImageFile = file;
+      supportPendingImagePreviewUrl = URL.createObjectURL(file);
+      renderSupportPendingImage();
+      syncComposerState();
+    });
+    supportRemoveImageBtn?.addEventListener('click', () => {
+      clearSupportPendingImage();
+      syncComposerState();
+    });
     supportSendBtn?.addEventListener('click', sendReply);
     supportToggleStatusBtn?.addEventListener('click', toggleStatus);
     supportMarkReadBtn?.addEventListener('click', async () => {
@@ -5296,6 +5537,7 @@ function mountSupport() {
 
   supportConversationList.innerHTML = '<div class="muted" style="padding:10px;">جاري تحميل المحادثات...</div>';
   supportMessagesPane.innerHTML = '<div class="muted">اختر محادثة من القائمة.</div>';
+  if (supportComposer) supportComposer.hidden = true;
 
   const supportQ = query(collection(db, 'supportMessages'), orderBy('timestamp', 'desc'), limit(2000));
   unsubscribers.push(

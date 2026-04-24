@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./css/styles.css?v=20260422-admin-visual-polish" />
+    <link rel="stylesheet" href="./css/styles.css?v=20260425-admin-mobile-ui-fix" />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -207,6 +207,15 @@
           <div class="card">
             <h3>مركز التنبيهات التشغيلية</h3>
             <p class="muted">تنبيهات حيّة للإيصالات الجديدة، شحن المحافظ، الدعم الفني، وأي عناصر تحتاج تدخلك فورًا.</p>
+            <div class="ops-alert-controls">
+              <label class="ops-alert-toggle">
+                <input id="opsAudioEnabledInput" type="checkbox" checked />
+                <span>تشغيل التنبيه الصوتي المنطوق</span>
+              </label>
+              <button id="opsAudioTestBtn" class="btn ghost" type="button">تجربة الصوت</button>
+              <button id="opsNotificationPermissionBtn" class="btn ghost" type="button">تفعيل إذن إشعارات المتصفح</button>
+            </div>
+            <div id="opsAudioStatus" class="muted ops-audio-status">سيتم تشغيل صوت وتنبيه منطوق عند وصول رسائل دعم جديدة أو عناصر مراجعة جديدة ما دامت الصفحة مفتوحة.</div>
             <div id="opsAlertFeed" class="ops-alert-feed muted">جاري تجهيز مركز التنبيهات...</div>
           </div>
           <div class="stats" id="statsGrid"></div>
@@ -984,10 +993,16 @@
                   <button id="supportMarkReadBtn" class="btn ghost" type="button">تعليم المحادثة كمقروءة</button>
                 </div>
                 <div id="supportMessagesPane" class="support-messages-pane"></div>
-                <div class="support-composer">
+                <div id="supportComposer" class="support-composer" hidden>
                   <div class="support-composer-hint muted">للإرسال السريع استخدم Ctrl + Enter</div>
+                  <div id="supportImagePreview" class="support-image-preview" hidden>
+                    <img id="supportImagePreviewImg" class="support-image-preview-img" alt="معاينة الصورة المرفقة" />
+                    <button id="supportRemoveImageBtn" class="btn ghost" type="button">إزالة الصورة</button>
+                  </div>
                   <textarea id="supportReplyInput" rows="3" placeholder="اكتب ردك هنا..."></textarea>
+                  <input id="supportImageInput" type="file" accept="image/*" hidden />
                   <div class="support-composer-actions">
+                    <button id="supportAttachImageBtn" class="btn ghost" type="button">إرفاق صورة</button>
                     <button id="supportToggleStatusBtn" class="btn ghost" type="button">إغلاق المحادثة</button>
                     <button id="supportSendBtn" class="btn primary" type="button">إرسال الرد</button>
                   </div>
