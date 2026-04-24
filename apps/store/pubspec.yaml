@@ -1,6 +1,6 @@
 name: speedstar_store_app
 description: Store app for SpeedStar
-version: 0.1.1+7
+version: 0.1.1+8
 publish_to: none
 environment:
   sdk: ">=3.3.0 <4.0.0"
