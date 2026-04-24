@@ -51,6 +51,8 @@
 	<string>SpeedStar uses your camera to capture delivery verification and profile images.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SpeedStar uses your location for live courier tracking and delivery navigation.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SpeedStar may continue using your location while deliveries are active to keep live courier tracking and navigation accurate for orders in progress.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>SpeedStar saves generated images to your photo library when requested.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
