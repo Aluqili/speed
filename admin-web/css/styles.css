@@ -1233,6 +1233,34 @@ tbody tr:hover {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 250, 251, 0.94));
 }
 
+.admin-menu-manager h3,
+.admin-menu-manager h4 {
+  font-size: 1.2rem;
+}
+
+.admin-menu-manager label,
+.admin-menu-manager .field-label,
+.admin-menu-manager .hint,
+.admin-menu-manager small {
+  font-size: 1rem;
+}
+
+.admin-menu-manager input,
+.admin-menu-manager select,
+.admin-menu-manager textarea {
+  font-size: 1rem;
+}
+
+.admin-menu-manager .btn {
+  font-size: 1rem;
+}
+
+.admin-menu-manager table,
+.admin-menu-manager th,
+.admin-menu-manager td {
+  font-size: 0.98rem;
+}
+
 .admin-menu-create-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
