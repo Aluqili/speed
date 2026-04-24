@@ -67,6 +67,82 @@ let pricingRemoteConfigCache = {
   expiresAtMillis: 0,
 };
 
+function getTelegramConfig() {
+  const botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  const rawChatIds = String(process.env.TELEGRAM_CHAT_IDS || process.env.TELEGRAM_CHAT_ID || '').trim();
+  const chatIds = rawChatIds
+    .split(',')
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+
+  return {
+    botToken,
+    chatIds,
+    enabled: Boolean(botToken && chatIds.length),
+  };
+}
+
+function escapeTelegramHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+function formatTelegramMoney(value) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount)) return '-';
+  return `${amount.toLocaleString('en-US')} ج.س`;
+}
+
+async function sendTelegramMessageHtml(htmlText) {
+  const config = getTelegramConfig();
+  if (!config.enabled) {
+    logger.info('Telegram alerts skipped because TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_IDS is missing.');
+    return { sent: 0, skipped: true };
+  }
+
+  const results = await Promise.allSettled(
+    config.chatIds.map(async (chatId) => {
+      const response = await fetch(`https://api.telegram.org/bot${config.botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: htmlText,
+          parse_mode: 'HTML',
+          disable_notification: false,
+          disable_web_page_preview: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(`Telegram send failed (${response.status}): ${body}`);
+      }
+    })
+  );
+
+  const failed = results.filter((item) => item.status === 'rejected');
+  if (failed.length) {
+    failed.forEach((item) => logger.error('Telegram send error', item.reason));
+  }
+
+  return {
+    sent: results.length - failed.length,
+    failed: failed.length,
+  };
+}
+
+async function sendTelegramOpsAlert(title, lines = []) {
+  const normalizedLines = Array.isArray(lines)
+    ? lines.map((line) => String(line || '').trim()).filter(Boolean)
+    : [];
+  const html = [`<b>${escapeTelegramHtml(title)}</b>`, ...normalizedLines.map((line) => escapeTelegramHtml(line))].join('\n');
+  return sendTelegramMessageHtml(html);
+}
+
 function createTemporaryPassword() {
   return `${crypto.randomBytes(6).toString('base64url')}Aa1!`;
 }
@@ -2071,6 +2147,96 @@ exports.enforceManualPaymentReviewOnOrderUpdate = onDocumentUpdated(
       paidAt: admin.firestore.FieldValue.delete(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
+  }
+);
+
+exports.notifyTelegramOnPaymentReviewRequired = onDocumentUpdated(
+  {
+    region: REGION,
+    document: 'orders/{orderId}',
+  },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+    const orderId = String(event.params?.orderId || '').trim();
+
+    const beforeRequired = before.paymentReviewRequired === true;
+    const afterRequired = after.paymentReviewRequired === true;
+    const decision = String(after.paymentReviewDecision || '').trim().toLowerCase();
+    const paymentStatus = normalizePaymentStatus(after.paymentStatus);
+
+    if (!orderId || beforeRequired || !afterRequired) return;
+    if (decision && decision !== 'pending') return;
+    if (paymentStatus !== 'under_review') return;
+    if (!hasPaymentEvidence(after)) return;
+
+    await sendTelegramOpsAlert('تنبيه مراجعة إيصال جديد', [
+      `رقم الطلب: ${orderId}`,
+      `العميل: ${String(after.clientName || after.clientId || 'غير معروف')}`,
+      `المتجر: ${String(after.restaurantName || after.restaurantId || 'غير معروف')}`,
+      `المبلغ: ${formatTelegramMoney(after.total || after.totalPrice || after.orderTotal || 0)}`,
+      `مرجع العملية: ${String(after.transactionReference || '-').trim() || '-'}`,
+      'الحالة: الإيصال بانتظار المراجعة في لوحة الأدمن.',
+    ]);
+  }
+);
+
+exports.notifyTelegramOnSupportMessageCreated = onDocumentCreated(
+  {
+    region: REGION,
+    document: 'supportMessages/{messageId}',
+  },
+  async (event) => {
+    const data = event.data?.data() || {};
+    const senderType = String(data.senderType || '').trim().toLowerCase();
+    const conversationId = String(data.conversationId || '').trim();
+
+    if (!conversationId) return;
+    if (senderType === 'admin') return;
+
+    const sourceAppRaw = String(data.sourceApp || '').trim().toLowerCase();
+    const sourceApp = sourceAppRaw === 'courier'
+      ? 'المندوب'
+      : sourceAppRaw === 'store'
+        ? 'المتجر'
+        : 'العميل';
+    const senderName = String(data.senderName || data.senderId || 'مستخدم').trim();
+    const messageText = String(data.message || '').trim();
+    const preview = messageText || (data.imageUrl ? 'صورة مرفقة' : 'رسالة جديدة بدون نص');
+
+    await sendTelegramOpsAlert('رسالة دعم جديدة', [
+      `المصدر: ${sourceApp}`,
+      `المرسل: ${senderName}`,
+      `المحادثة: ${conversationId}`,
+      `المحتوى: ${preview}`,
+      'الحالة: تحتاج فتح مركز الدعم الفني في الأدمن.',
+    ]);
+  }
+);
+
+exports.notifyTelegramOnWalletRechargeCreated = onDocumentCreated(
+  {
+    region: REGION,
+    document: 'wallet_recharges/{rechargeId}',
+  },
+  async (event) => {
+    const data = event.data?.data() || {};
+    const rechargeId = String(event.params?.rechargeId || '').trim();
+    if (!rechargeId) return;
+
+    const status = String(data.status || '').trim().toLowerCase();
+    const reviewStatus = String(data.reviewStatus || '').trim().toLowerCase();
+    if (['approved', 'rejected', 'paid'].includes(status) || ['approved', 'rejected'].includes(reviewStatus)) {
+      return;
+    }
+
+    await sendTelegramOpsAlert('طلب شحن محفظة جديد', [
+      `رقم الطلب: ${rechargeId}`,
+      `العميل: ${String(data.clientName || data.clientId || 'غير معروف')}`,
+      `المبلغ: ${formatTelegramMoney(data.amount || 0)}`,
+      `طريقة الدفع: ${String(data.method || data.paymentMethod || '-').trim() || '-'}`,
+      'الحالة: الطلب بانتظار المراجعة في القسم المالي.',
+    ]);
   }
 );
 
