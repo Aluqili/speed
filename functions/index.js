@@ -405,6 +405,12 @@ function hasPaymentEvidence(order) {
   );
 }
 
+function isPendingPaymentReviewOrder(order) {
+  const paymentStatus = normalizePaymentStatus(order?.paymentStatus);
+  const decision = String(order?.paymentReviewDecision || '').trim().toLowerCase();
+  return paymentStatus === 'under_review' || decision === 'pending';
+}
+
 function roleCollectionRef(normalizedRole) {
   if (normalizedRole === 'client') return db.collection('clients');
   if (normalizedRole === 'courier') return db.collection('drivers');
@@ -2160,14 +2166,10 @@ exports.notifyTelegramOnPaymentReviewRequired = onDocumentUpdated(
     const after = event.data?.after?.data() || {};
     const orderId = String(event.params?.orderId || '').trim();
 
-    const beforeRequired = before.paymentReviewRequired === true;
-    const afterRequired = after.paymentReviewRequired === true;
-    const decision = String(after.paymentReviewDecision || '').trim().toLowerCase();
-    const paymentStatus = normalizePaymentStatus(after.paymentStatus);
+    const wasPendingReview = isPendingPaymentReviewOrder(before);
+    const isPendingReview = isPendingPaymentReviewOrder(after);
 
-    if (!orderId || beforeRequired || !afterRequired) return;
-    if (decision && decision !== 'pending') return;
-    if (paymentStatus !== 'under_review') return;
+    if (!orderId || wasPendingReview || !isPendingReview) return;
     if (!hasPaymentEvidence(after)) return;
 
     await sendTelegramOpsAlert('تنبيه مراجعة إيصال جديد', [
