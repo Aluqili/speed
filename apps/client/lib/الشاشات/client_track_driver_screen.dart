@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import 'chat_screen.dart';
+import '../الخدمات/unread_messages_service.dart';
 
 class ClientTrackDriverScreen extends StatefulWidget {
   final String orderId;
@@ -487,6 +488,8 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
             driverPhone: driverPhone,
             canCall: driverPhone.isNotEmpty,
             canChat: clientId.isNotEmpty,
+            chatId: _generateChatId(clientId, driverId),
+            clientId: clientId,
             onCall: () => _callDriver(driverPhone),
             onChat: () => Navigator.push(
               context,
@@ -569,6 +572,8 @@ class _DriverBottomPanel extends StatelessWidget {
     required this.driverPhone,
     required this.canCall,
     required this.canChat,
+    required this.chatId,
+    required this.clientId,
     required this.onCall,
     required this.onChat,
   });
@@ -577,6 +582,8 @@ class _DriverBottomPanel extends StatelessWidget {
   final String driverPhone;
   final bool canCall;
   final bool canChat;
+  final String chatId;
+  final String clientId;
   final VoidCallback onCall;
   final VoidCallback onChat;
 
@@ -653,12 +660,22 @@ class _DriverBottomPanel extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _ActionButton(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  label: 'دردشة',
-                  enabled: canChat,
-                  filled: false,
-                  onTap: onChat,
+                child: StreamBuilder<int>(
+                  stream: canChat && chatId.isNotEmpty && clientId.isNotEmpty
+                      ? UnreadMessagesService.unreadDirectChatStream(
+                          clientId, chatId)
+                      : Stream.value(0),
+                  builder: (context, snap) {
+                    final unread = snap.data ?? 0;
+                    return _ActionButton(
+                      icon: Icons.chat_bubble_outline_rounded,
+                      label: 'دردشة',
+                      enabled: canChat,
+                      filled: false,
+                      badge: unread,
+                      onTap: onChat,
+                    );
+                  },
                 ),
               ),
               const SizedBox(width: 12),
@@ -668,6 +685,7 @@ class _DriverBottomPanel extends StatelessWidget {
                   label: 'اتصال',
                   enabled: canCall,
                   filled: true,
+                  badge: 0,
                   onTap: onCall,
                 ),
               ),
@@ -686,6 +704,7 @@ class _ActionButton extends StatelessWidget {
     required this.enabled,
     required this.filled,
     required this.onTap,
+    this.badge = 0,
   });
 
   final IconData icon;
@@ -693,6 +712,7 @@ class _ActionButton extends StatelessWidget {
   final bool enabled;
   final bool filled;
   final VoidCallback onTap;
+  final int badge;
 
   static const Color _primary = AppThemeArabic.clientPrimary;
 
@@ -714,29 +734,56 @@ class _ActionButton extends StatelessWidget {
               ? null
               : Border.all(color: enabled ? _primary : Colors.grey[300]!),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            Icon(icon,
-                size: 18,
-                color: !enabled
-                    ? Colors.grey[400]
-                    : filled
-                        ? Colors.white
-                        : _primary),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: !enabled
-                    ? Colors.grey[400]
-                    : filled
-                        ? Colors.white
-                        : _primary,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon,
+                    size: 18,
+                    color: !enabled
+                        ? Colors.grey[400]
+                        : filled
+                            ? Colors.white
+                            : _primary),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: !enabled
+                        ? Colors.grey[400]
+                        : filled
+                            ? Colors.white
+                            : _primary,
+                  ),
+                ),
+              ],
             ),
+            if (badge > 0)
+              Positioned(
+                top: -8,
+                right: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: Text(
+                    badge > 99 ? '+99' : '$badge',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

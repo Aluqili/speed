@@ -38,11 +38,21 @@ class _ChatScreenState extends State<ChatScreen> {
   String _otherUserName = '';
   bool _sendingImage = false;
 
+  // ─── تحديد الـ collection الصحيحة ─────────────────────────────────────────
+  // المندوب يكتب في 'chats' للدردشة المباشرة
+  // والدعم الفني في 'supportMessages'
+  bool get _isSupportChat =>
+      widget.otherUserId == 'support' ||
+      widget.chatId.contains('-support');
+
+  String get _collection => _isSupportChat ? 'supportMessages' : 'chats';
+
   @override
   void initState() {
     super.initState();
     _messageController.addListener(() => setState(() {}));
     _fetchOtherUserName();
+    _markAsRead();
   }
 
   @override
@@ -77,12 +87,25 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) setState(() => _otherUserName = 'المستخدم');
   }
 
-  /// The chat is stored in `supportMessages` collection.
-  /// We query by `conversationId` (equality filter — no composite index needed)
-  /// and sort client-side by timestamp.
+  /// تسجيل آخر وقت قراءة للمحادثة
+  Future<void> _markAsRead() async {
+    if (widget.currentUserId.isEmpty || widget.chatId.isEmpty) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('clients')
+          .doc(widget.currentUserId)
+          .collection('chatReadStatus')
+          .doc(widget.chatId)
+          .set(
+            {'lastReadAt': FieldValue.serverTimestamp()},
+            SetOptions(merge: true),
+          );
+    } catch (_) {}
+  }
+
   Stream<List<Map<String, dynamic>>> get _messagesStream =>
       FirebaseFirestore.instance
-          .collection('supportMessages')
+          .collection(_collection)
           .where('conversationId', isEqualTo: widget.chatId)
           .snapshots()
           .map((snap) {
@@ -107,7 +130,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final message = {
       'conversationId': widget.chatId,
-      'chatKind': 'direct',
+      'chatKind': _isSupportChat ? 'support' : 'direct',
       'sourceApp': 'client',
       'senderId': widget.currentUserId,
       'senderType': widget.currentUserRole.isNotEmpty
@@ -122,8 +145,10 @@ class _ChatScreenState extends State<ChatScreen> {
       if (imageUrl != null) 'imageUrl': imageUrl,
     };
 
-    await FirebaseFirestore.instance.collection('supportMessages').add(message);
+    await FirebaseFirestore.instance.collection(_collection).add(message);
     _messageController.clear();
+    // تحديث وقت القراءة عند الإرسال أيضاً
+    _markAsRead();
     _scrollToBottom();
   }
 
@@ -241,8 +266,10 @@ class _ChatScreenState extends State<ChatScreen> {
                       fontWeight: FontWeight.bold),
                   overflow: TextOverflow.ellipsis,
                 ),
-                const Text('عبر الدردشة الفورية',
-                    style: TextStyle(fontSize: 11, color: Colors.grey)),
+                Text(
+                  _isSupportChat ? 'الدعم الفني' : 'عبر الدردشة الفورية',
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
               ],
             ),
           ),
@@ -310,6 +337,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
         if (messages.isNotEmpty) {
           _scrollToBottom();
+          // تحديث وقت القراءة عند وصول رسائل جديدة
+          _markAsRead();
         }
 
         if (messages.isEmpty) {
@@ -527,3 +556,4 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 }
+

@@ -14,6 +14,7 @@ import 'client_cart_screen.dart';
 import 'cart_provider.dart';
 import 'client_favorites_tab.dart';
 import 'client_order_tracking_screen.dart';
+import '../الخدمات/unread_messages_service.dart';
 
 class ClientHomeScreen extends StatefulWidget {
   final String clientId;
@@ -238,6 +239,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
             bottomNavigationBar: _BottomNav(
               selectedIndex: _selectedIndex,
               accentColor: _accentColor,
+              clientId: widget.clientId,
               onTap: _onItemTapped,
             ),
           ),
@@ -253,10 +255,12 @@ class _BottomNav extends StatelessWidget {
   const _BottomNav({
     required this.selectedIndex,
     required this.accentColor,
+    required this.clientId,
     required this.onTap,
   });
 
   final int selectedIndex;
+  final String clientId;
   final Color accentColor;
   final ValueChanged<int> onTap;
 
@@ -301,7 +305,16 @@ class _BottomNav extends StatelessWidget {
               const SizedBox(width: 64),
               // الثالث + الرابع
               Expanded(child: _navItem(_items[2], 2)),
-              Expanded(child: _navItem(_items[3], 3)),
+              // تاب الحساب مع شارة رسائل الدعم
+              Expanded(
+                child: StreamBuilder<int>(
+                  stream: clientId.isNotEmpty
+                      ? UnreadMessagesService.unreadSupportStream(clientId)
+                      : Stream.value(0),
+                  builder: (context, snap) =>
+                      _navItem(_items[3], 3, badge: snap.data ?? 0),
+                ),
+              ),
             ],
           ),
         ),
@@ -311,8 +324,9 @@ class _BottomNav extends StatelessWidget {
 
   Widget _navItem(
     ({IconData icon, IconData activeIcon, String label}) item,
-    int index,
-  ) {
+    int index, {
+    int badge = 0,
+  }) {
     final isActive = selectedIndex == index;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -324,21 +338,48 @@ class _BottomNav extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-              decoration: BoxDecoration(
-                color: isActive
-                    ? accentColor.withValues(alpha: 0.12)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                isActive ? item.activeIcon : item.icon,
-                size: 22,
-                color: isActive ? accentColor : const Color(0xFFAEAEB2),
-              ),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? accentColor.withValues(alpha: 0.12)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    isActive ? item.activeIcon : item.icon,
+                    size: 22,
+                    color: isActive ? accentColor : const Color(0xFFAEAEB2),
+                  ),
+                ),
+                if (badge > 0)
+                  Positioned(
+                    top: -4,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      child: Text(
+                        badge > 9 ? '9+' : '$badge',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 3),
             Text(
