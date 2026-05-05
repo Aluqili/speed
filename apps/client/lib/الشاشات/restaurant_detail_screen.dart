@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:getwidget/getwidget.dart';
 import 'package:provider/provider.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'cart_provider.dart';
@@ -804,6 +803,36 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     );
   }
 
+  Widget _qtyButton({
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: enabled
+              ? primaryColor.withOpacity(0.08)
+              : const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: enabled
+                ? primaryColor.withOpacity(0.3)
+                : const Color(0xFFE5E7EB),
+          ),
+        ),
+        child: Icon(
+          icon,
+          size: 18,
+          color: enabled ? primaryColor : Colors.grey[400],
+        ),
+      ),
+    );
+  }
+
   Widget _buildMenuItemCard({
     required QueryDocumentSnapshot doc,
     required Map<String, dynamic> data,
@@ -1011,87 +1040,87 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        GFIconButton(
-                          icon: const Icon(Icons.add, size: 18),
-                          onPressed: (isClosed || data['available'] == false)
-                              ? null
-                              : () async {
-                                  if (hasSizes) {
-                                    await _showSizePickerAndAddToCart(
-                                      cartProvider: cartProvider,
-                                      docId: doc.id,
-                                      itemName: itemName,
-                                      sizes: sizes,
-                                    );
-                                    return;
-                                  }
-                                  // أول إضافة: اسأل عن ملاحظات
-                                  if (quantity == 0) {
-                                    await _showNotesAndAddToCart(
-                                      cartProvider: cartProvider,
-                                      itemId: itemId,
-                                      docId: doc.id,
-                                      itemName: itemName,
-                                      itemPrice: itemPrice,
-                                    );
-                                  } else {
-                                    await cartProvider.addToCartSimple(
-                                      widget.restaurantId,
-                                      itemId,
-                                      itemName,
-                                      itemPrice,
-                                      menuItemId: doc.id,
-                                    );
-                                  }
-                                },
-                          color: primaryColor,
-                          type: GFButtonType.outline2x,
-                          size: GFSize.SMALL,
-                          shape: GFIconButtonShape.circle,
+                        _qtyButton(
+                          icon: Icons.add_rounded,
+                          enabled: !isClosed && data['available'] != false,
+                          onTap: () async {
+                            if (hasSizes) {
+                              await _showSizePickerAndAddToCart(
+                                cartProvider: cartProvider,
+                                docId: doc.id,
+                                itemName: itemName,
+                                sizes: sizes,
+                              );
+                              return;
+                            }
+                            if (quantity == 0) {
+                              await _showNotesAndAddToCart(
+                                cartProvider: cartProvider,
+                                itemId: itemId,
+                                docId: doc.id,
+                                itemName: itemName,
+                                itemPrice: itemPrice,
+                              );
+                            } else {
+                              await cartProvider.addToCartSimple(
+                                widget.restaurantId,
+                                itemId,
+                                itemName,
+                                itemPrice,
+                                menuItemId: doc.id,
+                              );
+                            }
+                          },
                         ),
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: Text(
                             quantity.toString(),
                             style: const TextStyle(
                               color: textColorPrimary,
-                              fontSize: 15,
+                              fontSize: 16,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
-                        GFIconButton(
-                          icon: const Icon(Icons.remove, size: 18),
-                          onPressed: (isClosed ||
-                                  data['available'] == false ||
-                                  quantity <= 0)
-                              ? null
-                              : () async {
-                                  if (hasSizes) {
-                                    await _showSizePickerAndRemoveFromCart(
-                                      cartProvider: cartProvider,
-                                      restaurantId: widget.restaurantId,
-                                      docId: doc.id,
-                                      itemName: itemName,
-                                    );
-                                    return;
-                                  }
-                                  await cartProvider.removeOneItem(itemId);
-                                },
-                          color: primaryColor,
-                          type: GFButtonType.outline2x,
-                          size: GFSize.SMALL,
-                          shape: GFIconButtonShape.circle,
+                        _qtyButton(
+                          icon: Icons.remove_rounded,
+                          enabled: !isClosed &&
+                              data['available'] != false &&
+                              quantity > 0,
+                          onTap: () async {
+                            if (hasSizes) {
+                              await _showSizePickerAndRemoveFromCart(
+                                cartProvider: cartProvider,
+                                restaurantId: widget.restaurantId,
+                                docId: doc.id,
+                                itemName: itemName,
+                              );
+                              return;
+                            }
+                            await cartProvider.removeOneItem(itemId);
+                          },
                         ),
                         const Spacer(),
-                        Text(
-                          quantity > 0 ? 'في السلة: $quantity' : 'أضف للسلة',
-                          style: TextStyle(
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
                             color: quantity > 0
-                                ? primaryColor
-                                : textColorSecondary,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
+                                ? primaryColor.withOpacity(0.1)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            quantity > 0 ? 'في السلة: $quantity' : 'أضف للسلة',
+                            style: TextStyle(
+                              color: quantity > 0
+                                  ? primaryColor
+                                  : textColorSecondary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                       ],
@@ -1377,31 +1406,69 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 7,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.16),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    _restaurantRatingText(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12,
-                                    ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // حالة المطعم
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.85),
+                                    borderRadius: BorderRadius.circular(999),
                                   ),
-                                  const SizedBox(width: 6),
-                                  const Icon(Icons.star_rounded,
-                                      color: accentColor, size: 18),
-                                ],
-                              ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 6,
+                                        height: 6,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        isClosed ? 'مغلق الآن' : 'مفتوح الآن',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                // التقييم
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.16),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        _restaurantRatingText(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 5),
+                                      const Icon(Icons.star_rounded,
+                                          color: accentColor, size: 16),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 10),
                             Text(
@@ -1602,18 +1669,69 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
           ],
         ),
         floatingActionButton: cartProvider.cartItems.isNotEmpty
-            ? FloatingActionButton.extended(
-                backgroundColor: primaryColor,
-                icon: const Icon(Icons.shopping_cart),
-                label: const Text('تأكيد الطلب'),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const ClientCartScreen(),
-                    ),
-                  );
-                },
+            ? GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const ClientCartScreen()),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: primaryColor,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: primaryColor.withOpacity(0.35),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${cartProvider.totalPrice.toStringAsFixed(2)} ج.س',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${cartProvider.cartItems.fold(0, (s, i) => s + i.quantity)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Icon(Icons.shopping_cart_rounded,
+                          color: Colors.white, size: 20),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'السلة',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               )
             : null,
       ),
