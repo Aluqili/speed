@@ -1041,41 +1041,92 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                 itemBuilder: (_, i) => _buildCartItem(cart, cart.cartItems[i]),
               ),
         bottomNavigationBar: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: Colors.grey))),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 20,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
+            // مؤشر السحب
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
             _buildRow('قيمة الطلب', '${total.toStringAsFixed(2)} ج.س'),
+            const SizedBox(height: 6),
             _buildRow(
               'رسوم التوصيل',
               _loadingDelivery ? null : '${_deliveryFee.toStringAsFixed(2)} ج.س',
               loading: _loadingDelivery,
             ),
-            if (displayLargeOrderFee > 0)
+            if (displayLargeOrderFee > 0) ...[
+              const SizedBox(height: 6),
               _buildRow('رسوم الطلبات الكبيرة',
                   '${displayLargeOrderFee.toStringAsFixed(2)} ج.س'),
-            const Divider(),
-            _buildRow('الإجمالي النهائي', '${withDel.toStringAsFixed(2)} ج.س',
-                bold: true),
-            const SizedBox(height: 12),
+            ],
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Divider(height: 1),
+            ),
+            _buildRow(
+              'الإجمالي النهائي',
+              '${withDel.toStringAsFixed(2)} ج.س',
+              bold: true,
+              largeValue: true,
+            ),
+            const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
+              height: 54,
               child: ElevatedButton(
                 onPressed:
                     _loadingDelivery ? null : () => _onCheckoutPressed(cart),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.grey[300],
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30)),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                      borderRadius: BorderRadius.circular(16)),
+                  elevation: 0,
                   textStyle: const TextStyle(
-                      fontSize: 18,
-                      fontFamily: 'Tajawal',
-                      fontWeight: FontWeight.bold),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700),
                 ),
-                child: const Text('اختيار طريقة الدفع',
-                    style: TextStyle(color: Colors.white)),
+                child: _loadingDelivery
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2.5),
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('اختيار طريقة الدفع'),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${withDel.toStringAsFixed(2)} ج.س',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                                fontSize: 14),
+                          ),
+                        ],
+                      ),
               ),
             ),
           ]),
@@ -1137,131 +1188,220 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     );
   }
 
-  Widget _buildCartItem(CartProvider cart, CartItem item) => Card(
-        margin: const EdgeInsets.only(bottom: 16),
+  Widget _buildCartItem(CartProvider cart, CartItem item) {
+    final hasNotes = item.notes?.isNotEmpty == true;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
         color: cardColor,
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.055),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // زر حذف
+                GestureDetector(
+                  onTap: () {
+                    cart.removeFromCart(item);
+                    _calculateDeliveryFee();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.delete_outline_rounded,
+                        size: 18, color: Colors.red.shade400),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // اسم الصنف والسعر
                 Expanded(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text(item.name,
+                      Text(
+                        item.name,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: Color(0xFF1A1D26),
+                        ),
+                      ),
+                      if ((item.sizeLabel ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          'الحجم: ${item.sizeLabel}',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: Color(0xFF1A1D26),
-                              fontFamily: 'Tajawal')),
-                      if ((item.sizeLabel ?? '').isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            'الحجم: ${item.sizeLabel}',
-                            style: const TextStyle(
-                              color: Color(0xFF6B7280),
-                              fontSize: 13,
+                              color: Color(0xFF6B7280), fontSize: 12),
+                        ),
+                      ],
+                      const SizedBox(height: 6),
+                      Text(
+                        '${item.price.toStringAsFixed(2)} ج.س',
+                        style: const TextStyle(
+                          color: primaryColor,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // ملاحظات
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _editItemNotes(cart, item),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: hasNotes
+                            ? const Color(0xFFFFF3EE)
+                            : const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: hasNotes
+                              ? primaryColor.withValues(alpha: 0.25)
+                              : Colors.grey.withValues(alpha: 0.15),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.sticky_note_2_outlined,
+                            size: 13,
+                            color: hasNotes ? primaryColor : Colors.grey,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              hasNotes
+                                  ? item.notes!
+                                  : 'ملاحظة خاصة...',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: hasNotes
+                                    ? const Color(0xFF1A1D26)
+                                    : Colors.grey,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        ),
-                      const SizedBox(height: 4),
-                      Text('${item.price.toStringAsFixed(2)} ج.س',
-                          style: const TextStyle(
-                              color: Color(0xFF6B7280), fontSize: 14)),
-                    ],
+                          Icon(Icons.edit_outlined,
+                              size: 12, color: Colors.grey[400]),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-                IconButton(
-                    onPressed: () {
-                      cart.removeFromCart(item);
-                      _calculateDeliveryFee();
-                    },
-                    icon: const Icon(Icons.remove_circle_outline),
-                    color: Colors.red),
-                Text('${item.quantity}',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16)),
-                IconButton(
-                    onPressed: () {
-                      cart.addToCart(item);
-                      _calculateDeliveryFee();
-                    },
-                    icon: const Icon(Icons.add_circle_outline),
-                    color: Colors.green),
-              ]),
-              // ─── ملاحظات العنصر ──────────────────────────────────
-              GestureDetector(
-                onTap: () => _editItemNotes(cart, item),
-                child: Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                const SizedBox(width: 12),
+                // عداد الكمية
+                Container(
                   decoration: BoxDecoration(
-                    color: (item.notes?.isNotEmpty == true)
-                        ? const Color(0xFFFFF3EE)
-                        : const Color(0xFFF5F5F5),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color: (item.notes?.isNotEmpty == true)
-                            ? AppThemeArabic.clientPrimary
-                                .withValues(alpha: 0.3)
-                            : Colors.grey.withValues(alpha: 0.2)),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.sticky_note_2_outlined,
-                        size: 14,
-                        color: (item.notes?.isNotEmpty == true)
-                            ? AppThemeArabic.clientPrimary
-                            : Colors.grey,
+                      _qtyBtn(
+                        icon: Icons.add_rounded,
+                        onTap: () {
+                          cart.addToCart(item);
+                          _calculateDeliveryFee();
+                        },
                       ),
-                      const SizedBox(width: 6),
-                      Expanded(
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
-                          (item.notes?.isNotEmpty == true)
-                              ? item.notes!
-                              : 'إضافة ملاحظة خاصة...',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: (item.notes?.isNotEmpty == true)
-                                  ? const Color(0xFF1A1D26)
-                                  : Colors.grey),
+                          '${item.quantity}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            color: Color(0xFF1A1D26),
+                          ),
                         ),
                       ),
-                      Icon(Icons.edit_outlined,
-                          size: 13, color: Colors.grey[400]),
+                      _qtyBtn(
+                        icon: Icons.remove_rounded,
+                        onTap: item.quantity <= 1
+                            ? null
+                            : () {
+                                cart.removeOneItem(item.id);
+                                _calculateDeliveryFee();
+                              },
+                      ),
                     ],
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ),
-      );
+      ),
+    );
+  }
+
+  Widget _qtyBtn({required IconData icon, VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Icon(
+          icon,
+          size: 16,
+          color: onTap == null ? Colors.grey[300] : primaryColor,
+        ),
+      ),
+    );
+  }
 
   Widget _buildRow(String label, String? value,
-          {bool bold = false, bool loading = false}) =>
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child:
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text(label,
-              style: TextStyle(
-                  fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
-          loading
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : Text(value ?? '',
-                  style: TextStyle(
-                      fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
-        ]),
-      );
+          {bool bold = false, bool loading = false, bool largeValue = false}) =>
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        loading
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : Text(
+                value ?? '',
+                style: TextStyle(
+                  fontWeight: bold ? FontWeight.w800 : FontWeight.normal,
+                  fontSize: largeValue ? 17 : 14,
+                  color: bold ? const Color(0xFF1A1D26) : const Color(0xFF6B7280),
+                ),
+              ),
+        Text(
+          label,
+          style: TextStyle(
+            fontWeight: bold ? FontWeight.w700 : FontWeight.normal,
+            fontSize: largeValue ? 15 : 14,
+            color: bold ? const Color(0xFF1A1D26) : const Color(0xFF6B7280),
+          ),
+        ),
+      ]);
 }

@@ -197,6 +197,7 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
         'icon': Icons.account_balance_wallet,
         'title': 'رصيد المحفظة',
         'subtitle': 'عرض رصيدك الحالي وشحن المحفظة',
+        'color': const Color(0xFF10B981),
         'onTap': () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -208,6 +209,7 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
         'icon': Icons.location_on,
         'title': 'عناويني',
         'subtitle': 'إدارة العناوين الخاصة بك',
+        'color': const Color(0xFF3B82F6),
         'onTap': () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -223,6 +225,7 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
         'icon': Icons.settings,
         'title': 'الإعدادات',
         'subtitle': 'تغيير اللغة، الإشعارات...',
+        'color': const Color(0xFF8B5CF6),
         'onTap': () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const ClientSettingsScreen()),
@@ -232,12 +235,14 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
         'icon': Icons.support_agent,
         'title': 'خدمة العملاء',
         'subtitle': 'تواصل معنا للمساعدة',
+        'color': primaryColor,
         'onTap': () => _openSupportChat(context),
       },
       {
         'icon': Icons.logout,
         'title': 'تسجيل الخروج',
         'subtitle': 'الخروج من الحساب',
+        'color': Colors.red,
         'onTap': () => _signOut(context),
       },
     ];
@@ -255,6 +260,7 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
               'title': 'حفظ موقع التصفح الحالي',
               'subtitle':
                   'إضافة ${guestLocation.addressName} إلى عناوينك المحفوظة',
+              'color': const Color(0xFFF59E0B),
               'onTap': () => _saveGuestLocationToAddresses(context),
             },
           );
@@ -276,32 +282,52 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
                 }
                 final item = items[index - 1];
                 final isLogout = item['title'] == 'تسجيل الخروج';
+                final iconColor = (item['color'] as Color?) ?? primaryColor;
                 return Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.grey.withValues(alpha: 0.05),
-                        blurRadius: 6,
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
                     ],
                   ),
                   child: ListTile(
-                    leading: Icon(item['icon'] as IconData,
-                        color: isLogout ? Colors.red : primaryColor),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 4),
+                    leading: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: iconColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: Icon(
+                        item['icon'] as IconData,
+                        color: iconColor,
+                        size: 22,
+                      ),
+                    ),
                     title: Text(
                       item['title'] as String,
                       style: TextStyle(
-                          fontWeight: FontWeight.w500,
-                          color: isLogout ? Colors.red : null),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        color: isLogout ? Colors.red : const Color(0xFF1A1D26),
+                      ),
                     ),
-                    subtitle: Text(item['subtitle'] as String),
+                    subtitle: Text(
+                      item['subtitle'] as String,
+                      style: const TextStyle(
+                          fontSize: 12, color: Color(0xFF9CA3AF)),
+                    ),
                     trailing: Icon(
-                      Icons.arrow_forward_ios,
-                      size: 16,
-                      color: isLogout ? Colors.red[200] : Colors.grey,
+                      Icons.arrow_forward_ios_rounded,
+                      size: 14,
+                      color: isLogout ? Colors.red[200] : Colors.grey[400],
                     ),
                     onTap: item['onTap'] as VoidCallback,
                   ),

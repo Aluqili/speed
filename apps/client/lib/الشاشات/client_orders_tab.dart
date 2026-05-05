@@ -196,142 +196,234 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
     final canRateOrder = canSubmitOrderRating(data);
     final isDelivered =
         orderStatus == 'delivered' || orderStatus == 'تم التوصيل';
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Icon(Icons.receipt, color: primaryColor),
-            const SizedBox(width: 8),
-            Text(
-              displayOrderNumber.isEmpty ? orderId : displayOrderNumber,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const Spacer(),
-            Text(
-              createdAt != null
-                  ? '${createdAt.day}/${createdAt.month}/${createdAt.year}'
-                  : 'غير متاح',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ]),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Icon(Icons.storefront, size: 18, color: primaryColor),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  restaurantName.isEmpty ? 'غير معروف' : restaurantName,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
+    final isTracking = orderStatus == 'courier_assigned' ||
+        orderStatus == 'pickup_ready' ||
+        orderStatus == 'قيد التوصيل' ||
+        orderStatus == 'picked_up' ||
+        orderStatus == 'arrived_to_client';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.055),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
-          const SizedBox(height: 12),
-          Row(children: [
-            const Icon(Icons.monetization_on, size: 18, color: primaryColor),
-            const SizedBox(width: 4),
-            Text('$total ج.س', style: const TextStyle(fontSize: 14)),
-            const Spacer(),
-            Chip(
-              label: Text(displayStatus,
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, color: statusColor)),
-              backgroundColor: statusColor.withOpacity(0.15),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ─── رأس البطاقة: الحالة والتاريخ ─────────────────────
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.06),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
             ),
-          ]),
-          const SizedBox(height: 16),
-          Row(children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          ClientOrderDetailsScreen(orderId: orderId),
-                    ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Row(
+              children: [
+                Text(
+                  createdAt != null
+                      ? '${createdAt.day}/${createdAt.month}/${createdAt.year}'
+                      : '',
+                  style:
+                      const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
                 ),
-                icon: const Icon(Icons.info_outline),
-                label: const Text('تفاصيل'),
-              ),
+                const Spacer(),
+                Container(
+                  width: 7,
+                  height: 7,
+                  margin: const EdgeInsets.only(left: 6),
+                  decoration: BoxDecoration(
+                      color: statusColor, shape: BoxShape.circle),
+                ),
+                Text(
+                  displayStatus,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
-            if (canRateOrder) ...[
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    showOrderRatingSheet(
+          ),
+          const Divider(height: 1, thickness: 0.5),
+
+          // ─── جسم البطاقة: المطعم والمبلغ ──────────────────────
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                // إجمالي الطلب
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'الإجمالي',
+                      style: TextStyle(
+                          color: Color(0xFF9CA3AF), fontSize: 11),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$total ج.س',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 14),
+                // اسم المطعم ورقم الطلب
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        restaurantName.isEmpty ? 'غير معروف' : restaurantName,
+                        textAlign: TextAlign.right,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: Color(0xFF1A1D26),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        displayOrderNumber.isEmpty ? orderId : displayOrderNumber,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                            color: Color(0xFF9CA3AF), fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // أيقونة المطعم
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.storefront_rounded,
+                      color: primaryColor, size: 20),
+                ),
+              ],
+            ),
+          ),
+
+          // ─── أزرار الإجراء ─────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            child: Row(children: [
+              // زر إعادة الطلب أو التتبع أو التقييم
+              if (canRateOrder) ...[
+                Expanded(
+                  child: _actionButton(
+                    label: 'تقييم الطلب',
+                    icon: Icons.star_rounded,
+                    outline: true,
+                    onTap: () => showOrderRatingSheet(
                       context,
                       orderId: orderId,
                       orderData: data,
-                    );
-                  },
-                  icon: const Icon(Icons.star_rate_rounded),
-                  label: const Text('قيّم'),
+                    ),
+                  ),
                 ),
-              ),
-            ] else if (orderStatus == 'courier_assigned' ||
-                orderStatus == 'pickup_ready' ||
-                orderStatus == 'قيد التوصيل' ||
-                orderStatus == 'picked_up' ||
-                orderStatus == 'arrived_to_client') ...[
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.push(
+                const SizedBox(width: 10),
+              ] else if (isTracking) ...[
+                Expanded(
+                  child: _actionButton(
+                    label: 'تتبع المندوب',
+                    icon: Icons.location_on_rounded,
+                    outline: true,
+                    onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) =>
                             ClientTrackDriverScreen(orderId: orderId),
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.location_on_outlined),
-                  label: const Text('تتبع'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: primaryColor,
-                    side: BorderSide(color: primaryColor),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
                     ),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
                   ),
                 ),
-              ),
-            ] else if (isDelivered) ...[
-              const SizedBox(width: 12),
+                const SizedBox(width: 10),
+              ] else if (isDelivered) ...[
+                Expanded(
+                  child: _actionButton(
+                    label: 'إعادة الطلب',
+                    icon: Icons.replay_rounded,
+                    outline: true,
+                    onTap: () => _reorder(context, data),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
               Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _reorder(context, data),
-                  icon: const Icon(Icons.replay_rounded),
-                  label: const Text('إعادة الطلب'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: primaryColor,
-                    side: BorderSide(color: primaryColor),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                child: _actionButton(
+                  label: 'التفاصيل',
+                  icon: Icons.receipt_long_rounded,
+                  outline: false,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          ClientOrderDetailsScreen(orderId: orderId),
+                    ),
                   ),
                 ),
               ),
-            ],
-          ]),
-        ]),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _actionButton({
+    required String label,
+    required IconData icon,
+    required bool outline,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: outline ? Colors.transparent : primaryColor,
+          borderRadius: BorderRadius.circular(12),
+          border: outline
+              ? Border.all(color: primaryColor.withValues(alpha: 0.5))
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                size: 15,
+                color: outline ? primaryColor : Colors.white),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: outline ? primaryColor : Colors.white,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

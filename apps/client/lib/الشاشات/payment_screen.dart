@@ -920,6 +920,105 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
+  Widget _sectionLabel(String label) => Text(
+        label,
+        style: const TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 15,
+          color: Color(0xFF1A1D26),
+        ),
+      );
+
+  Widget _summaryRow(String label, String value,
+      {Color valueColor = const Color(0xFF374151),
+      bool bold = false,
+      bool large = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              color: valueColor,
+              fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+              fontSize: large ? 17 : 14,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            label,
+            style: TextStyle(
+              color: bold ? const Color(0xFF1A1D26) : const Color(0xFF6B7280),
+              fontWeight: bold ? FontWeight.w700 : FontWeight.normal,
+              fontSize: large ? 15 : 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryCard({
+    required double subtotal,
+    required double deliveryFee,
+    required double largeOrderFee,
+    required double totalWithDelivery,
+    required num discount,
+    required double walletRequestedAmount,
+    required double walletBalance,
+    required double amountDueAfterWallet,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          _summaryRow(
+              'قيمة الأصناف', '${subtotal.toStringAsFixed(2)} ج.س'),
+          _summaryRow(
+              'رسوم التوصيل', '${deliveryFee.toStringAsFixed(2)} ج.س'),
+          if (largeOrderFee > 0)
+            _summaryRow('رسوم الطلبات الكبيرة',
+                '${largeOrderFee.toStringAsFixed(2)} ج.س'),
+          if (discount > 0)
+            _summaryRow('خصم الرمز الترويجي',
+                '-${discount.toString()} ج.س',
+                valueColor: Colors.green),
+          if (walletRequestedAmount > 0)
+            _summaryRow(
+                'خصم المحفظة',
+                '-${walletRequestedAmount.toStringAsFixed(2)} ج.س',
+                valueColor: Colors.green),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 6),
+            child: Divider(height: 1),
+          ),
+          _summaryRow(
+            walletRequestedAmount > 0
+                ? 'المبلغ المتبقي للدفع'
+                : 'الإجمالي',
+            '${(walletRequestedAmount > 0 ? amountDueAfterWallet : totalWithDelivery).toStringAsFixed(2)} ج.س',
+            valueColor: primaryColor,
+            bold: true,
+            large: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     if (_settings == null) {
@@ -1000,98 +1099,141 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 body: SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // تفاصيل الطلب بنظام أسدال
-                      ExpansionTile(
-                        title: const Text('تفاصيل الطلب',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                                color: primaryColor,
-                                fontFamily: 'Tajawal')),
-                        backgroundColor: cardColor,
-                        collapsedBackgroundColor: cardColor,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16)),
-                        children: [
-                          ...items.map((item) => ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: backgroundColor,
-                                  child: Text(
-                                    item['quantity'] != null
-                                        ? '${item['quantity']}'
-                                        : '؟',
-                                    style: const TextStyle(
-                                        color: primaryColor,
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                                title: Text(
-                                  (() {
-                                    final name = (item['name'] ?? 'غير متوفر')
-                                        .toString();
-                                    final sizeLabel = (item['sizeLabel'] ?? '')
-                                        .toString()
-                                        .trim();
-                                    if (sizeLabel.isEmpty) return name;
-                                    return '$name - $sizeLabel';
-                                  })(),
-                                  style: const TextStyle(
-                                      fontFamily: 'Tajawal',
-                                      fontWeight: FontWeight.bold),
-                                ),
-                                trailing: Text(
-                                  item['price'] != null
-                                      ? '${item['price'].toString()} ج.س'
-                                      : 'غير متوفر',
-                                  style: const TextStyle(
-                                      color: primaryColor,
-                                      fontWeight: FontWeight.bold),
-                                ),
-                              )),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // إدخال الرمز الترويجي
-                      const Text('رمز العرض أو الخصم',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: primaryColor,
-                              fontFamily: 'Tajawal')),
+                      // ─── ملخص الطلب ───────────────────────────────────
+                      _sectionLabel('ملخص الطلب'),
                       const SizedBox(height: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TextField(
-                            controller: _promocodeController,
-                            decoration: InputDecoration(
-                              hintText: 'ادخل الرمز هنا',
-                              filled: true,
-                              fillColor: cardColor,
-                              border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ),
+                      _summaryCard(
+                        subtotal: subtotal,
+                        deliveryFee: deliveryFee,
+                        largeOrderFee: largeOrderFee,
+                        totalWithDelivery: totalWithDelivery.toDouble(),
+                        discount: _discount,
+                        walletRequestedAmount: walletRequestedAmount,
+                        walletBalance: walletBalance,
+                        amountDueAfterWallet: amountDueAfterWallet,
+                      ),
+                      const SizedBox(height: 6),
+                      // تفاصيل الأصناف (أسدال)
+                      Theme(
+                        data: Theme.of(context)
+                            .copyWith(dividerColor: Colors.transparent),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: cardColor,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              )
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                final messenger = ScaffoldMessenger.of(context);
+                          child: ExpansionTile(
+                            tilePadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 0),
+                            title: Text(
+                              'عرض تفاصيل الأصناف (${items.length})',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                            iconColor: primaryColor,
+                            collapsedIconColor: Colors.grey,
+                            children: items.map((item) {
+                              final name =
+                                  (item['name'] ?? 'غير متوفر').toString();
+                              final sizeLabel =
+                                  (item['sizeLabel'] ?? '').toString().trim();
+                              final qty = item['quantity']?.toString() ?? '1';
+                              final price = item['price'] != null
+                                  ? '${item['price']} ج.س'
+                                  : '';
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 6),
+                                child: Row(
+                                  children: [
+                                    Text(price,
+                                        style: const TextStyle(
+                                            color: primaryColor,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 13)),
+                                    const Spacer(),
+                                    Flexible(
+                                      child: Text(
+                                        sizeLabel.isEmpty
+                                            ? '$name × $qty'
+                                            : '$name ($sizeLabel) × $qty',
+                                        textAlign: TextAlign.right,
+                                        style: const TextStyle(
+                                            fontSize: 13,
+                                            color: Color(0xFF374151)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // ─── رمز الخصم ────────────────────────────────────
+                      _sectionLabel('رمز الخصم'),
+                      const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: cardColor,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 8,
+                            )
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _promocodeController,
+                                textAlign: TextAlign.right,
+                                decoration: InputDecoration(
+                                  hintText: 'أدخل رمز الخصم...',
+                                  hintStyle: const TextStyle(
+                                      color: Color(0xFF9CA3AF), fontSize: 14),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 14),
+                                  suffixIcon: _promoData != null
+                                      ? const Icon(Icons.check_circle_rounded,
+                                          color: Colors.green, size: 20)
+                                      : null,
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () async {
+                                final messenger =
+                                    ScaffoldMessenger.of(context);
                                 setState(() {
                                   _promoError = null;
                                   _promoData = null;
                                   _discount = 0;
                                 });
-                                final code = _promocodeController.text.trim();
+                                final code =
+                                    _promocodeController.text.trim();
                                 if (code.isEmpty) return;
                                 final restaurantId =
                                     (data['restaurantId'] ?? '').toString();
-                                final promo =
-                                    await _promocodeService!.validatePromocode(
+                                final promo = await _promocodeService!
+                                    .validatePromocode(
                                   code: code,
                                   subtotal: subtotal,
                                   deliveryFee: deliveryFee,
@@ -1100,27 +1242,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   items: items,
                                   isNewOrder: widget.orderId == null,
                                 );
-                                if (!mounted) {
-                                  return;
-                                }
+                                if (!mounted) return;
                                 if (promo == null || promo['ok'] != true) {
                                   setState(() {
-                                    _promoError = _promoReasonMessage(
-                                      promo == null
-                                          ? 'invalid-code'
-                                          : promo['reason']?.toString(),
-                                    );
+                                    _promoError = _promoReasonMessage(promo ==
+                                            null
+                                        ? 'invalid-code'
+                                        : promo['reason']?.toString());
                                     _promoData = null;
                                     _discount = 0;
                                   });
-                                  messenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text(_promoError!,
-                                          style: const TextStyle(
-                                              fontFamily: 'Tajawal')),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
+                                  messenger.showSnackBar(SnackBar(
+                                    content: Text(_promoError!),
+                                    backgroundColor: Colors.red,
+                                  ));
                                 } else {
                                   final discount =
                                       (promo['discountAmount'] as num?) ?? 0;
@@ -1129,271 +1264,119 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                     _discount = discount;
                                     _promoError = null;
                                   });
-                                  messenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                          'تم تطبيق الرمز بنجاح! الخصم: -${discount.toString()} ج.س',
-                                          style: const TextStyle(
-                                              fontFamily: 'Tajawal')),
-                                      backgroundColor: Colors.green,
-                                    ),
-                                  );
+                                  messenger.showSnackBar(SnackBar(
+                                    content: Text(
+                                        'تم تطبيق الخصم: -${discount.toString()} ج.س'),
+                                    backgroundColor: Colors.green,
+                                  ));
                                 }
                               },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: primaryColor,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
+                              child: Container(
+                                margin: const EdgeInsets.all(6),
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 18, vertical: 12),
-                              ),
-                              child: const Text('تطبيق',
+                                    horizontal: 18, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: primaryColor,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Text(
+                                  'تطبيق',
                                   style: TextStyle(
-                                      color: Colors.white,
-                                      fontFamily: 'Tajawal',
-                                      fontWeight: FontWeight.bold)),
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       if (_promoError != null)
                         Padding(
-                          padding: const EdgeInsets.only(top: 6),
+                          padding: const EdgeInsets.only(top: 6, right: 4),
                           child: Text(_promoError!,
                               style: const TextStyle(
-                                  color: Colors.red, fontFamily: 'Tajawal')),
+                                  color: Colors.red, fontSize: 12)),
                         ),
                       if (_promoData != null)
                         Padding(
-                          padding: const EdgeInsets.only(top: 6),
+                          padding: const EdgeInsets.only(top: 6, right: 4),
                           child: Text(
                               'تم تطبيق الخصم: -${_discount.toString()} ج.س',
                               style: const TextStyle(
                                   color: Colors.green,
-                                  fontFamily: 'Tajawal',
-                                  fontWeight: FontWeight.bold)),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12)),
                         ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
 
-                      // صندوق القيم بشكل احترافي
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 14, horizontal: 18),
-                        decoration: BoxDecoration(
-                          color: cardColor,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(color: Colors.black12, blurRadius: 4)
-                          ],
-                        ),
-                        child: Column(
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text('قيمة الأصناف',
-                                    style: TextStyle(
-                                        fontFamily: 'Tajawal',
-                                        fontWeight: FontWeight.bold)),
-                                Text('${subtotal.toStringAsFixed(2)} ج.س',
-                                    style: const TextStyle(
-                                        color: primaryColor,
-                                        fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text('رسوم التوصيل',
-                                    style: TextStyle(
-                                        fontFamily: 'Tajawal',
-                                        fontWeight: FontWeight.bold)),
-                                Text('${deliveryFee.toStringAsFixed(2)} ج.س',
-                                    style: const TextStyle(
-                                        color: primaryColor,
-                                        fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                            if (largeOrderFee > 0)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text('رسوم الطلبات الكبيرة',
-                                        style: TextStyle(
-                                            fontFamily: 'Tajawal',
-                                            fontWeight: FontWeight.bold)),
-                                    Text(
-                                        '${largeOrderFee.toStringAsFixed(2)} ج.س',
-                                        style: const TextStyle(
-                                            color: primaryColor,
-                                            fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ),
-                            if (_discount > 0)
-                              Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 4),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text('الخصم',
-                                        style: TextStyle(
-                                            fontFamily: 'Tajawal',
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.green)),
-                                    Text('-${_discount.toString()} ج.س',
-                                        style: const TextStyle(
-                                            color: Colors.green,
-                                            fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ),
-                            if (walletRequestedAmount > 0)
-                              Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 4),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text('رصيد المحفظة الحالي',
-                                        style: TextStyle(
-                                            fontFamily: 'Tajawal',
-                                            fontWeight: FontWeight.bold)),
-                                    Text(
-                                        '${walletBalance.toStringAsFixed(2)} ج.س',
-                                        style: const TextStyle(
-                                            color: primaryColor,
-                                            fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ),
-                            if (walletRequestedAmount > 0)
-                              Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 4),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text('سيخصم من المحفظة عند الدفع',
-                                        style: TextStyle(
-                                            fontFamily: 'Tajawal',
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.green)),
-                                    Text(
-                                        '-${walletRequestedAmount.toStringAsFixed(2)} ج.س',
-                                        style: const TextStyle(
-                                            color: Colors.green,
-                                            fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ),
-                            const Divider(),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text('الإجمالي قبل المحفظة',
-                                    style: TextStyle(
-                                        fontFamily: 'Tajawal',
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16)),
-                                Text(
-                                    '${totalWithDelivery.toStringAsFixed(2)} ج.س',
-                                    style: const TextStyle(
-                                        color: primaryColor,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16)),
-                              ],
-                            ),
-                            if (walletRequestedAmount > 0)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 10),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text('المبلغ المتبقي للدفع الآن',
-                                        style: TextStyle(
-                                            fontFamily: 'Tajawal',
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                            color: primaryColor)),
-                                    Text(
-                                      '${amountDueAfterWallet.toStringAsFixed(2)} ج.س',
-                                      style: const TextStyle(
-                                          color: primaryColor,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      // طرق الدفع أفقي
-                      const Text('اختر طريقة الدفع',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: primaryColor,
-                              fontFamily: 'Tajawal')),
-                      const SizedBox(height: 8),
+                      // ─── طريقة الدفع ──────────────────────────────────
+                      _sectionLabel('اختر طريقة الدفع'),
+                      const SizedBox(height: 10),
                       SizedBox(
-                        height: 80,
+                        height: 96,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
+                          reverse: true,
                           itemCount: methods.length,
                           separatorBuilder: (_, __) =>
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 10),
                           itemBuilder: (context, idx) {
                             final m = methods[idx];
-                            final label = _paymentMethodLabel(m);
-                            final icon = _paymentMethodIcon(m);
                             final selected = _selectedMethod == m;
                             return GestureDetector(
-                              onTap: () => setState(() => _selectedMethod = m),
+                              onTap: () =>
+                                  setState(() => _selectedMethod = m),
                               child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 18, vertical: 10),
+                                duration:
+                                    const Duration(milliseconds: 180),
+                                width: 100,
                                 decoration: BoxDecoration(
                                   color: selected
-                                      ? primaryColor.withValues(alpha: 0.12)
+                                      ? primaryColor
                                       : cardColor,
-                                  borderRadius: BorderRadius.circular(18),
+                                  borderRadius:
+                                      BorderRadius.circular(16),
                                   border: Border.all(
-                                      color: selected
-                                          ? primaryColor
-                                          : Colors.grey.shade300,
-                                      width: selected ? 2 : 1),
+                                    color: selected
+                                        ? primaryColor
+                                        : const Color(0xFFE5E7EB),
+                                    width: selected ? 2 : 1,
+                                  ),
                                   boxShadow: selected
                                       ? [
                                           BoxShadow(
-                                              color: primaryColor.withValues(
-                                                  alpha: 0.08),
-                                              blurRadius: 4)
+                                            color: primaryColor
+                                                .withValues(alpha: 0.25),
+                                            blurRadius: 12,
+                                            offset: const Offset(0, 4),
+                                          ),
                                         ]
                                       : [],
                                 ),
                                 child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
                                   children: [
-                                    Icon(icon, color: primaryColor, size: 28),
+                                    Icon(
+                                      _paymentMethodIcon(m),
+                                      size: 30,
+                                      color: selected
+                                          ? Colors.white
+                                          : primaryColor,
+                                    ),
                                     const SizedBox(height: 6),
-                                    Text(label,
-                                        style: const TextStyle(
-                                            fontFamily: 'Tajawal',
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 15)),
+                                    Text(
+                                      _paymentMethodLabel(m),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                        color: selected
+                                            ? Colors.white
+                                            : const Color(0xFF374151),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -1401,126 +1384,181 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           },
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      // إظهار بيانات الطريقة المختارة فقط
+                      const SizedBox(height: 14),
+
+                      // ─── تفاصيل الطريقة المختارة ──────────────────────
                       if (_selectedMethod != null)
                         Container(
                           width: double.infinity,
-                          margin: const EdgeInsets.only(bottom: 18),
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 12, horizontal: 18),
+                          padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: cardColor,
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(16),
                             boxShadow: [
-                              BoxShadow(color: Colors.black12, blurRadius: 2)
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildSelectedMethodDetails(
-                                method: _selectedMethod!,
-                                walletBalance: walletBalance,
-                                walletRequestedAmount: walletRequestedAmount,
-                                amountDueAfterWallet: amountDueAfterWallet,
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3),
                               ),
                             ],
                           ),
-                        ),
-                      if (_selectedMethod != 'wallet') ...[
-                        const Text('رفع صورة الإيصال',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: primaryColor,
-                                fontFamily: 'Tajawal')),
-                        const SizedBox(height: 8),
-                        if (_proofUrl != null)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.network(_proofUrl!, height: 120),
+                          child: _buildSelectedMethodDetails(
+                            method: _selectedMethod!,
+                            walletBalance: walletBalance,
+                            walletRequestedAmount: walletRequestedAmount,
+                            amountDueAfterWallet: amountDueAfterWallet,
                           ),
+                        ),
+                      const SizedBox(height: 20),
+
+                      // ─── رفع الإيصال ──────────────────────────────────
+                      if (_selectedMethod != 'wallet') ...[
+                        _sectionLabel('إيصال الدفع'),
                         const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _pickProof,
-                            icon: const Icon(Icons.upload, color: Colors.white),
-                            label: const Text('اختر صورة الإيصال',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontFamily: 'Tajawal',
-                                    fontWeight: FontWeight.bold)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryColor,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(30)),
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              textStyle: const TextStyle(fontSize: 16),
+                        // صورة الإيصال أو placeholder
+                        GestureDetector(
+                          onTap: _pickProof,
+                          child: Container(
+                            height: 130,
+                            decoration: BoxDecoration(
+                              color: _proofUrl != null
+                                  ? Colors.transparent
+                                  : const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: _proofUrl != null
+                                    ? primaryColor.withValues(alpha: 0.4)
+                                    : const Color(0xFFD1D5DB),
+                                width: 1.5,
+                                // dashed look via strokeAlign not available; use solid
+                              ),
+                            ),
+                            child: _proofUrl != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(15),
+                                    child: Image.network(
+                                      _proofUrl!,
+                                      fit: BoxFit.cover,
+                                      width: double.infinity,
+                                    ),
+                                  )
+                                : Column(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.cloud_upload_rounded,
+                                          size: 36,
+                                          color: Colors.grey[400]),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'اضغط لرفع صورة الإيصال',
+                                        style: TextStyle(
+                                          color: Colors.grey[500],
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                        if (_proofUrl != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: TextButton.icon(
+                              onPressed: _pickProof,
+                              icon: const Icon(Icons.edit_rounded, size: 14),
+                              label: const Text('تغيير الإيصال',
+                                  style: TextStyle(fontSize: 12)),
+                              style: TextButton.styleFrom(
+                                  foregroundColor: primaryColor),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 12),
                         TextField(
                           controller: _transactionRefController,
+                          textAlign: TextAlign.right,
                           decoration: InputDecoration(
                             labelText: 'الرقم المرجعي للعملية',
                             hintText: 'مثال: TXN-123456',
+                            prefixIcon: const Icon(Icons.tag_rounded,
+                                size: 18, color: primaryColor),
                             filled: true,
                             fillColor: cardColor,
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(
+                                  color: Color(0xFFE5E7EB)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(
+                                  color: primaryColor, width: 1.5),
                             ),
                           ),
                         ),
                       ] else ...[
                         Container(
-                          width: double.infinity,
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
                             color: const Color(0xFFE8F5E9),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(14),
+                            border:
+                                Border.all(color: Colors.green.shade200),
                           ),
-                          child: Text(
-                            amountDueAfterWallet > 0
-                                ? 'لا يمكن إكمال الطلب بالمحفظة فقط لأن المبلغ المتبقي ${amountDueAfterWallet.toStringAsFixed(2)} ج.س.'
-                                : 'لن تحتاج إلى رفع إيصال لأن الطلب سيُعتمد من المحفظة مباشرة.',
-                            style: const TextStyle(
-                              fontFamily: 'Tajawal',
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.check_circle_rounded,
+                                  color: Colors.green, size: 18),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  amountDueAfterWallet > 0
+                                      ? 'رصيد المحفظة غير كافٍ للإكمال، يرجى اختيار طريقة أخرى.'
+                                      : 'سيُعتمد الطلب تلقائياً من المحفظة دون الحاجة لرفع إيصال.',
+                                  style: const TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
-                      const SizedBox(height: 24),
-                      // زر إرسال الدفع
+                      const SizedBox(height: 28),
+
+                      // ─── زر الإرسال ───────────────────────────────────
                       SizedBox(
-                        width: double.infinity,
+                        height: 56,
                         child: ElevatedButton(
                           onPressed: _submitting ? null : _submitPayment,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: primaryColor,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: Colors.grey[300],
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30)),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                                borderRadius: BorderRadius.circular(16)),
+                            elevation: 0,
                             textStyle: const TextStyle(
-                                fontSize: 18,
-                                fontFamily: 'Tajawal',
-                                fontWeight: FontWeight.bold),
-                            elevation: 2,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                           child: _submitting
                               ? const SizedBox(
                                   height: 22,
                                   width: 22,
                                   child: CircularProgressIndicator(
-                                      color: Colors.white, strokeWidth: 2))
-                              : const Text('إرسال الدفع',
-                                  style: TextStyle(color: Colors.white)),
+                                      color: Colors.white, strokeWidth: 2.5))
+                              : const Text('تأكيد وإرسال الدفع'),
                         ),
                       ),
+                      const SizedBox(height: 16),
                     ],
                   ),
                 ),
