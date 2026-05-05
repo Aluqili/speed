@@ -258,8 +258,12 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _calculateDeliveryFee());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await FirebaseRemoteConfig.instance.fetchAndActivate();
+      } catch (_) {}
+      if (mounted) _calculateDeliveryFee();
+    });
   }
 
   @override

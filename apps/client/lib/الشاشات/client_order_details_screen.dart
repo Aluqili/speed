@@ -205,6 +205,13 @@ class ClientOrderDetailsScreen extends StatelessWidget {
             final totalWithDelivery =
                 (data['totalWithDelivery'] as num?)?.toDouble() ??
                     (total + delivery + largeOrderFee);
+            final walletUsedAmount =
+                (data['walletUsedAmount'] as num?)?.toDouble() ??
+                (data['walletRequestedAmount'] as num?)?.toDouble() ?? 0.0;
+            final discountAmount =
+                (data['discountAmount'] as num?)?.toDouble() ?? 0.0;
+            final amountPaidExternal =
+                (data['externalPaidAmount'] as num?)?.toDouble() ?? 0.0;
             final rawPaymentStatus =
                 (data['paymentStatus'] as String?)?.trim() ?? '';
             final rawOrderStatus =
@@ -471,9 +478,27 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                     if (largeOrderFee > 0)
                       _buildRow('رسوم الطلبات الكبيرة',
                           '${largeOrderFee.toStringAsFixed(2)} ج.س'),
-                    _buildRow('الإجمالي الكلي',
+                    if (discountAmount > 0)
+                      _buildRow('خصم الرمز الترويجي',
+                          '-${discountAmount.toStringAsFixed(2)} ج.س',
+                          valueColor: Colors.green),
+                    _buildRow('الإجمالي',
                         '${totalWithDelivery.toStringAsFixed(2)} ج.س',
-                        bold: true),
+                        bold: walletUsedAmount <= 0),
+                    if (walletUsedAmount > 0) ...[
+                      _buildRow('خصم المحفظة',
+                          '-${walletUsedAmount.toStringAsFixed(2)} ج.س',
+                          valueColor: Colors.green),
+                      _buildRow(
+                          'المبلغ المدفوع فعلياً',
+                          amountPaidExternal <= 0
+                              ? 'مدفوع بالكامل من المحفظة'
+                              : '${amountPaidExternal.toStringAsFixed(2)} ج.س',
+                          bold: true,
+                          valueColor: amountPaidExternal <= 0
+                              ? Colors.green
+                              : AppColors.primaryColor),
+                    ],
                     const Divider(height: 32),
 
                     // رقم الطلب بشكل بارز أسفل معلومات الطلب
@@ -661,7 +686,9 @@ class ClientOrderDetailsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildRow(String label, String value, {bool bold = false}) => Padding(
+  Widget _buildRow(String label, String value,
+          {bool bold = false, Color? valueColor}) =>
+      Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child:
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
@@ -671,7 +698,8 @@ class ClientOrderDetailsScreen extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-              color: bold ? AppColors.primaryColor : Colors.black87,
+              color: valueColor ??
+                  (bold ? AppColors.primaryColor : Colors.black87),
             ),
           ),
         ]),

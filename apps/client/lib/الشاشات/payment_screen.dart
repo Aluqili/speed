@@ -590,6 +590,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
         .collection('orders')
         .doc(widget.orderId!)
         .get();
+    if (!doc.exists || doc.data() == null) {
+      throw Exception('الطلب غير موجود');
+    }
     return doc.data()!;
   }
 
@@ -679,14 +682,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
       imageQuality: 70,
     );
     if (img == null) return;
-    final resp = await _cloudinary.uploadFile(
-      CloudinaryFile.fromFile(
-        img.path,
-        resourceType: CloudinaryResourceType.Image,
-      ),
-    );
-    if (!mounted) return;
-    setState(() => _proofUrl = resp.secureUrl);
+    try {
+      final resp = await _cloudinary.uploadFile(
+        CloudinaryFile.fromFile(
+          img.path,
+          resourceType: CloudinaryResourceType.Image,
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _proofUrl = resp.secureUrl);
+    } catch (e) {
+      if (!mounted) return;
+      GFToast.showToast('فشل رفع الإيصال، حاول مرة أخرى.', context);
+    }
   }
 
   Future<void> _submitPayment() async {

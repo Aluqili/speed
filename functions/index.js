@@ -493,7 +493,9 @@ async function sendTelegramPaymentReviewAlert(orderId, after) {
   const storeName = String(after.restaurantName || after.restaurantId || 'غير معروف').trim();
   const paymentMethod = String(after.paymentMethod || after.method || '-').trim() || '-';
   const transactionReference = String(after.transactionReference || '-').trim() || '-';
-  const amountLabel = formatTelegramMoney(after.total || after.totalPrice || after.orderTotal || 0);
+  const amountLabel = formatTelegramMoney(
+    after.totalWithDelivery || after.totalBeforeDiscount || after.total || after.totalPrice || after.orderTotal || 0
+  );
   const proofImageUrl = String(after.proofImageUrl || '').trim();
   const htmlLines = [
     'تم استلام إيصال دفع جديد ويحتاج إلى مراجعة مالية من لوحة الأدمن.',
