@@ -355,40 +355,81 @@ class _InfoCard extends StatelessWidget {
   final double total;
   final String? driverName;
 
+  static const _primary = AppThemeArabic.clientPrimary;
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         boxShadow: const [
-          BoxShadow(color: Color(0x14000000), blurRadius: 8, offset: Offset(0, 2))
+          BoxShadow(
+              color: Color(0x0E000000), blurRadius: 12, offset: Offset(0, 4))
         ],
       ),
       child: Column(
         children: [
-          _Row(
-              icon: Icons.receipt_long_outlined,
-              label: 'رقم الطلب',
-              value: orderCode),
-          const Divider(height: 16),
-          _Row(
-              icon: Icons.storefront_outlined,
-              label: 'المطعم',
-              value: restaurantName),
-          const Divider(height: 16),
-          _Row(
-              icon: Icons.payments_outlined,
-              label: 'الإجمالي',
-              value: '${total.toStringAsFixed(2)} ج.س'),
-          if (driverName != null) ...[
-            const Divider(height: 16),
-            _Row(
-                icon: Icons.delivery_dining_outlined,
-                label: 'المندوب',
-                value: driverName!),
-          ],
+          // رأس البطاقة - اسم المطعم
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: _primary.withValues(alpha: 0.06),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(18)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: _primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.storefront_rounded,
+                      size: 16, color: _primary),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    restaurantName,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: Color(0xFF1A1D26)),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  '${total.toStringAsFixed(2)} ج.س',
+                  style: const TextStyle(
+                    color: _primary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // تفاصيل إضافية
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              children: [
+                _Row(
+                    icon: Icons.receipt_long_outlined,
+                    label: 'رقم الطلب',
+                    value: orderCode),
+                if (driverName != null) ...[
+                  const Divider(height: 14, thickness: 0.5),
+                  _Row(
+                      icon: Icons.delivery_dining_outlined,
+                      label: 'المندوب',
+                      value: driverName!),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );

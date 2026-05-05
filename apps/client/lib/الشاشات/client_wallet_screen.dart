@@ -183,32 +183,27 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () => Navigator.push(
+                          child: _WalletActionTile(
+                            icon: Icons.add_rounded,
+                            label: 'شحن المحفظة',
+                            color: const Color(0xFF10B981),
+                            onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => ClientWalletRechargeScreen(
                                     clientId: widget.clientId),
                               ),
                             ),
-                            icon: const Icon(Icons.add_circle_outline),
-                            label: const Text('شحن المحفظة'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _primary,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14),
-                              textStyle: const TextStyle(
-                                  fontWeight: FontWeight.bold),
-                            ),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: balance <= 0
+                          child: _WalletActionTile(
+                            icon: Icons.arrow_upward_rounded,
+                            label: 'سحب رصيد',
+                            color: Colors.orange,
+                            enabled: balance > 0,
+                            onTap: balance <= 0
                                 ? null
                                 : () => Navigator.push(
                                       context,
@@ -220,54 +215,33 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                                         ),
                                       ),
                                     ),
-                            icon: const Icon(Icons.arrow_circle_up_rounded),
-                            label: const Text('سحب رصيد'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange,
-                              foregroundColor: Colors.white,
-                              disabledBackgroundColor:
-                                  Colors.orange.withValues(alpha: 0.3),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14),
-                              textStyle: const TextStyle(
-                                  fontWeight: FontWeight.bold),
-                            ),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => Navigator.push(
+                          child: _WalletActionTile(
+                            icon: Icons.history_rounded,
+                            label: 'السجل الكامل',
+                            color: _primary,
+                            onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => ClientWalletHistoryScreen(
                                     clientId: widget.clientId),
                               ),
                             ),
-                            icon: const Icon(Icons.history_rounded),
-                            label: const Text('السجل'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: _primary,
-                              side: const BorderSide(color: _primary),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14),
-                            ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
 
                     // ─── آخر طلبات الشحن ───────────────────────────
                     if (rechargeDocs.isNotEmpty) ...[
-                      const Text(
-                        'آخر طلبات الشحن',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16),
+                      _SectionLabel(
+                        title: 'آخر طلبات الشحن',
+                        icon: Icons.add_circle_rounded,
+                        color: const Color(0xFF10B981),
                       ),
                       const SizedBox(height: 10),
                       ...rechargeDocs.map((doc) {
@@ -365,11 +339,11 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
 
                     // ─── طلبات السحب ───────────────────────────────
                     if (withdrawalDocs.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      const Text(
-                        'طلبات السحب',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16),
+                      const SizedBox(height: 16),
+                      _SectionLabel(
+                        title: 'طلبات السحب',
+                        icon: Icons.arrow_upward_rounded,
+                        color: Colors.orange,
                       ),
                       const SizedBox(height: 10),
                       ...withdrawalDocs.map((doc) {
@@ -475,6 +449,100 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
           },
         ),
       ),
+    );
+  }
+}
+
+// ─── Wallet action tile ─────────────────────────────────────────────────────
+
+class _WalletActionTile extends StatelessWidget {
+  const _WalletActionTile({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColor = enabled ? color : color.withValues(alpha: 0.35);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: effectiveColor.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+              color: effectiveColor.withValues(alpha: 0.25), width: 1),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: effectiveColor.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: effectiveColor, size: 20),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: effectiveColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Section label ──────────────────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({
+    required this.title,
+    required this.icon,
+    required this.color,
+  });
+
+  final String title;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Spacer(),
+        Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+        ),
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 14, color: color),
+        ),
+      ],
     );
   }
 }
