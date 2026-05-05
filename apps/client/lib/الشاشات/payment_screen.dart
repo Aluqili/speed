@@ -254,7 +254,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   style: const TextStyle(
                     fontFamily: 'Tajawal',
                     fontWeight: FontWeight.bold,
-                    fontSize: 18,
+                    fontSize: 15,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -1087,7 +1087,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       style: TextStyle(
                           color: primaryColor,
                           fontWeight: FontWeight.bold,
-                          fontSize: 20,
+                          fontSize: 18,
                           fontFamily: 'Tajawal')),
                   iconTheme: const IconThemeData(color: primaryColor),
                   shape: const RoundedRectangleBorder(

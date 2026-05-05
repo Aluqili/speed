@@ -166,7 +166,7 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
                         'حسابك غير مسجل بعد',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 21,
+                          fontSize: 17,
                           fontWeight: FontWeight.w800,
                         ),
                       ),

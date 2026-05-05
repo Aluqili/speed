@@ -72,7 +72,7 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
               style: TextStyle(
                   color: _ClientOrdersTabState.primaryColor,
                   fontWeight: FontWeight.bold,
-                  fontSize: 20,
+                  fontSize: 18,
                   fontFamily: 'Tajawal')),
           iconTheme:
               const IconThemeData(color: _ClientOrdersTabState.primaryColor),

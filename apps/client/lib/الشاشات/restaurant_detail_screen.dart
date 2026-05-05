@@ -167,7 +167,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
             const Text(
               'العروض الحالية',
               style: TextStyle(
-                fontSize: 18,
+                fontSize: 15,
                 fontWeight: FontWeight.w800,
                 color: textColorPrimary,
               ),
@@ -792,7 +792,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
           Text(
             section.title,
             style: const TextStyle(
-              fontSize: 18,
+              fontSize: 15,
               fontWeight: FontWeight.w800,
               color: textColorPrimary,
             ),
@@ -1476,7 +1476,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 24,
+                                fontSize: 20,
                                 shadows: [
                                   Shadow(
                                     color: Colors.black54,
@@ -1507,7 +1507,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                       'استكشف الأصناف',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: 22,
+                        fontSize: 17,
                         color: textColorPrimary,
                       ),
                       textAlign: TextAlign.right,

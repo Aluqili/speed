@@ -153,7 +153,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                           Text(
                             '${balance.toStringAsFixed(2)} ج.س',
                             style: const TextStyle(
-                              fontSize: 36,
+                              fontSize: 28,
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                             ),
