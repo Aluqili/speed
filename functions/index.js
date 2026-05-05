@@ -67,13 +67,40 @@ let pricingRemoteConfigCache = {
   expiresAtMillis: 0,
 };
 
-function getTelegramConfig() {
-  const botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
-  const rawChatIds = String(process.env.TELEGRAM_CHAT_IDS || process.env.TELEGRAM_CHAT_ID || '').trim();
-  const chatIds = rawChatIds
+const TELEGRAM_CHAT_ENV_KEYS_BY_CATEGORY = {
+  all: ['TELEGRAM_CHAT_IDS_ALL'],
+  finance: ['TELEGRAM_CHAT_IDS_FINANCE', 'TELEGRAM_CHAT_ID_FINANCE'],
+  support: ['TELEGRAM_CHAT_IDS_SUPPORT', 'TELEGRAM_CHAT_ID_SUPPORT'],
+  operations: ['TELEGRAM_CHAT_IDS_OPERATIONS', 'TELEGRAM_CHAT_ID_OPERATIONS', 'TELEGRAM_CHAT_IDS_OPS', 'TELEGRAM_CHAT_ID_OPS'],
+};
+
+function parseTelegramChatIds(rawValue) {
+  return String(rawValue || '')
+    .trim()
     .split(',')
     .map((item) => String(item || '').trim())
     .filter(Boolean);
+}
+
+function getTelegramRecipients(category = 'operations') {
+  const normalizedCategory = String(category || 'operations').trim().toLowerCase();
+  const allChatIds = TELEGRAM_CHAT_ENV_KEYS_BY_CATEGORY.all
+    .flatMap((key) => parseTelegramChatIds(process.env[key]));
+  const categoryChatIds = (TELEGRAM_CHAT_ENV_KEYS_BY_CATEGORY[normalizedCategory] || [])
+    .flatMap((key) => parseTelegramChatIds(process.env[key]));
+  const legacyChatIds = parseTelegramChatIds(process.env.TELEGRAM_CHAT_IDS || process.env.TELEGRAM_CHAT_ID || '');
+
+  const resolved = [...allChatIds, ...categoryChatIds];
+  if (!resolved.length) {
+    return Array.from(new Set(legacyChatIds));
+  }
+
+  return Array.from(new Set(resolved));
+}
+
+function getTelegramConfig(category = 'operations') {
+  const botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  const chatIds = getTelegramRecipients(category);
 
   return {
     botToken,
@@ -96,10 +123,10 @@ function formatTelegramMoney(value) {
   return `${amount.toLocaleString('en-US')} ج.س`;
 }
 
-async function sendTelegramMessageHtml(htmlText) {
-  const config = getTelegramConfig();
+async function sendTelegramMessageHtml(htmlText, { category = 'operations' } = {}) {
+  const config = getTelegramConfig(category);
   if (!config.enabled) {
-    logger.info('Telegram alerts skipped because TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_IDS is missing.');
+    logger.info('Telegram alerts skipped because TELEGRAM_BOT_TOKEN or chat ids are missing for category.', { category });
     return { sent: 0, skipped: true };
   }
 
@@ -135,12 +162,51 @@ async function sendTelegramMessageHtml(htmlText) {
   };
 }
 
-async function sendTelegramOpsAlert(title, lines = []) {
+async function sendTelegramPhotoHtml(photoUrl, htmlCaption, { category = 'operations' } = {}) {
+  const config = getTelegramConfig(category);
+  if (!config.enabled) {
+    logger.info('Telegram photo alerts skipped because TELEGRAM_BOT_TOKEN or chat ids are missing for category.', { category });
+    return { sent: 0, skipped: true };
+  }
+
+  const results = await Promise.allSettled(
+    config.chatIds.map(async (chatId) => {
+      const response = await fetch(`https://api.telegram.org/bot${config.botToken}/sendPhoto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          photo: photoUrl,
+          caption: htmlCaption,
+          parse_mode: 'HTML',
+          disable_notification: false,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(`Telegram sendPhoto failed (${response.status}): ${body}`);
+      }
+    })
+  );
+
+  const failed = results.filter((item) => item.status === 'rejected');
+  if (failed.length) {
+    failed.forEach((item) => logger.error('Telegram sendPhoto error', item.reason));
+  }
+
+  return {
+    sent: results.length - failed.length,
+    failed: failed.length,
+  };
+}
+
+async function sendTelegramOpsAlert(title, lines = [], { category = 'operations' } = {}) {
   const normalizedLines = Array.isArray(lines)
     ? lines.map((line) => String(line || '').trim()).filter(Boolean)
     : [];
   const html = [`<b>${escapeTelegramHtml(title)}</b>`, ...normalizedLines.map((line) => escapeTelegramHtml(line))].join('\n');
-  return sendTelegramMessageHtml(html);
+  return sendTelegramMessageHtml(html, { category });
 }
 
 function createTemporaryPassword() {
@@ -409,6 +475,60 @@ function isPendingPaymentReviewOrder(order) {
   const paymentStatus = normalizePaymentStatus(order?.paymentStatus);
   const decision = String(order?.paymentReviewDecision || '').trim().toLowerCase();
   return paymentStatus === 'under_review' || decision === 'pending';
+}
+
+function isPendingWalletRechargeRequest(entry) {
+  const status = String(entry?.status || '').trim().toLowerCase();
+  const reviewStatus = String(entry?.reviewStatus || '').trim().toLowerCase();
+  if (['approved', 'rejected', 'paid'].includes(status)) return false;
+  if (['approved', 'rejected'].includes(reviewStatus)) return false;
+  return status === 'pending_review' || reviewStatus === 'pending' || (!status && !reviewStatus);
+}
+
+async function sendTelegramPaymentReviewAlert(orderId, after) {
+  if (!orderId || !hasPaymentEvidence(after)) return;
+
+  const orderReference = formatUnifiedOrderCode(after.orderNumber || after.orderId, orderId);
+  const clientName = String(after.clientName || after.clientId || 'غير معروف').trim();
+  const storeName = String(after.restaurantName || after.restaurantId || 'غير معروف').trim();
+  const paymentMethod = String(after.paymentMethod || after.method || '-').trim() || '-';
+  const transactionReference = String(after.transactionReference || '-').trim() || '-';
+  const amountLabel = formatTelegramMoney(after.total || after.totalPrice || after.orderTotal || 0);
+  const proofImageUrl = String(after.proofImageUrl || '').trim();
+  const htmlLines = [
+    'تم استلام إيصال دفع جديد ويحتاج إلى مراجعة مالية من لوحة الأدمن.',
+    '',
+    `<b>رقم الطلب:</b> ${escapeTelegramHtml(orderReference)}`,
+    `<b>العميل:</b> ${escapeTelegramHtml(clientName)}`,
+    `<b>المتجر:</b> ${escapeTelegramHtml(storeName)}`,
+    `<b>المبلغ:</b> ${escapeTelegramHtml(amountLabel)}`,
+    `<b>طريقة الدفع:</b> ${escapeTelegramHtml(paymentMethod)}`,
+    `<b>مرجع العملية:</b> ${escapeTelegramHtml(transactionReference)}`,
+    '',
+    'الحالة الحالية: بانتظار المراجعة المالية.',
+  ];
+  const htmlCaption = `<b>تنبيه مراجعة إيصال دفع</b>\n${htmlLines.join('\n')}`;
+
+  if (proofImageUrl) {
+    const photoResult = await sendTelegramPhotoHtml(proofImageUrl, htmlCaption, { category: 'finance' });
+    if (!photoResult.failed) {
+      return;
+    }
+  }
+
+  await sendTelegramMessageHtml(`${htmlCaption}\n<b>رابط الإيصال:</b> ${escapeTelegramHtml(proofImageUrl || '-')}`, { category: 'finance' });
+}
+
+async function sendTelegramWalletRechargeAlert(rechargeId, data) {
+  if (!rechargeId) return;
+
+  await sendTelegramOpsAlert('طلب شحن محفظة جديد', [
+    `رقم الطلب: ${rechargeId}`,
+    `العميل: ${String(data.clientName || data.clientId || 'غير معروف')}`,
+    `المبلغ: ${formatTelegramMoney(data.amount || 0)}`,
+    `طريقة الدفع: ${String(data.method || data.paymentMethod || '-').trim() || '-'}`,
+    'الحالة: الطلب بانتظار المراجعة في القسم المالي.',
+  ], { category: 'finance' });
 }
 
 function roleCollectionRef(normalizedRole) {
@@ -1527,6 +1647,102 @@ exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
   };
 });
 
+// ─── طلبات سحب المحفظة ────────────────────────────────────────────────────
+
+exports.reviewClientWalletWithdrawal = onCall({ region: REGION }, async (request) => {
+  await ensureAdminCallable(request, 'ليس لديك صلاحية مراجعة طلبات السحب.', 'finance');
+
+  const withdrawalId = String(request.data?.withdrawalId || '').trim();
+  const decision = String(request.data?.decision || '').trim().toLowerCase();
+  const note = String(request.data?.note || '').trim();
+
+  if (!withdrawalId || !['approve', 'reject'].includes(decision)) {
+    throw new HttpsError('invalid-argument', 'withdrawalId و decision(approve/reject) مطلوبان.');
+  }
+
+  const withdrawalRef = db.collection('wallet_withdrawals').doc(withdrawalId);
+  const nowTs = admin.firestore.FieldValue.serverTimestamp();
+
+  const result = await db.runTransaction(async (tx) => {
+    const withdrawalSnap = await tx.get(withdrawalRef);
+    if (!withdrawalSnap.exists) {
+      throw new HttpsError('not-found', 'طلب السحب غير موجود.');
+    }
+
+    const withdrawal = withdrawalSnap.data() || {};
+    const clientId = String(withdrawal.clientId || '').trim();
+    const amount = Number(withdrawal.amount || 0);
+    const currentStatus = String(withdrawal.status || '').trim().toLowerCase();
+
+    if (!clientId) throw new HttpsError('failed-precondition', 'طلب السحب لا يحتوي على clientId.');
+    if (!Number.isFinite(amount) || amount <= 0) throw new HttpsError('failed-precondition', 'قيمة السحب غير صالحة.');
+    if (['approved', 'rejected', 'completed'].includes(currentStatus)) {
+      throw new HttpsError('failed-precondition', 'تمت مراجعة هذا الطلب مسبقًا.');
+    }
+
+    const clientRef = db.collection('clients').doc(clientId);
+    const clientSnap = await tx.get(clientRef);
+    if (!clientSnap.exists) throw new HttpsError('not-found', 'العميل غير موجود.');
+
+    const clientData = clientSnap.data() || {};
+    const currentBalance = toSafeNumber(
+      clientData.walletBalance ?? clientData.wallet ?? clientData.balance ?? 0
+    );
+
+    if (decision === 'approve' && currentBalance < amount) {
+      throw new HttpsError('failed-precondition', `رصيد العميل (${currentBalance}) أقل من المبلغ المطلوب (${amount}).`);
+    }
+
+    tx.set(withdrawalRef, {
+      status: decision === 'approve' ? 'approved' : 'rejected',
+      reviewNote: note,
+      reviewedAt: nowTs,
+      reviewedByAdminUid: request.auth.uid,
+      reviewedByAdminEmail: String(request.auth.token?.email || ''),
+      updatedAt: nowTs,
+    }, { merge: true });
+
+    if (decision === 'approve') {
+      const nextBalance = currentBalance - amount;
+      tx.set(clientRef, {
+        walletBalance: nextBalance,
+        wallet: nextBalance,
+        updatedAt: nowTs,
+      }, { merge: true });
+      tx.set(clientRef.collection('walletTransactions').doc(), {
+        type: 'withdrawal',
+        withdrawalId,
+        amount: -amount,
+        balanceBefore: currentBalance,
+        balanceAfter: nextBalance,
+        paymentMethod: withdrawal.paymentMethod || '',
+        accountNumber: withdrawal.accountNumber || '',
+        accountHolderName: withdrawal.accountHolderName || '',
+        createdAt: nowTs,
+      });
+      return { clientId, amount, nextBalance, decision };
+    }
+
+    return { clientId, amount, nextBalance: currentBalance, decision };
+  });
+
+  const title = result.decision === 'approve'
+    ? '✅ تمت الموافقة على طلب سحبك'
+    : '❌ تم رفض طلب سحبك';
+  const body = result.decision === 'approve'
+    ? `تمت الموافقة على سحب ${result.amount} ج.س من محفظتك. سيتم تحويل المبلغ قريباً.`
+    : `تم رفض طلب سحب المحفظة${note ? `: ${note}` : '.'}`;
+
+  await sendNotificationToSingleUser('client', result.clientId, buildNotificationPayload({
+    title, body,
+    type: 'wallet_withdrawal_review',
+    source: 'admin-finance',
+    extra: { withdrawalAmount: result.amount, withdrawalDecision: result.decision },
+  })).catch(() => {});
+
+  return { ok: true, decision: result.decision, clientId: result.clientId, amount: result.amount, nextBalance: result.nextBalance };
+});
+
 exports.reviewClientWalletRecharge = onCall({ region: REGION }, async (request) => {
   await ensureAdminCallable(request, 'ليس لديك صلاحية مراجعة شحن المحفظة.', 'finance');
 
@@ -2170,16 +2386,20 @@ exports.notifyTelegramOnPaymentReviewRequired = onDocumentUpdated(
     const isPendingReview = isPendingPaymentReviewOrder(after);
 
     if (!orderId || wasPendingReview || !isPendingReview) return;
-    if (!hasPaymentEvidence(after)) return;
+    await sendTelegramPaymentReviewAlert(orderId, after);
+  }
+);
 
-    await sendTelegramOpsAlert('تنبيه مراجعة إيصال جديد', [
-      `رقم الطلب: ${orderId}`,
-      `العميل: ${String(after.clientName || after.clientId || 'غير معروف')}`,
-      `المتجر: ${String(after.restaurantName || after.restaurantId || 'غير معروف')}`,
-      `المبلغ: ${formatTelegramMoney(after.total || after.totalPrice || after.orderTotal || 0)}`,
-      `مرجع العملية: ${String(after.transactionReference || '-').trim() || '-'}`,
-      'الحالة: الإيصال بانتظار المراجعة في لوحة الأدمن.',
-    ]);
+exports.notifyTelegramOnPaymentReviewCreated = onDocumentCreated(
+  {
+    region: REGION,
+    document: 'orders/{orderId}',
+  },
+  async (event) => {
+    const after = event.data?.data() || {};
+    const orderId = String(event.params?.orderId || '').trim();
+    if (!orderId || !isPendingPaymentReviewOrder(after)) return;
+    await sendTelegramPaymentReviewAlert(orderId, after);
   }
 );
 
@@ -2212,7 +2432,7 @@ exports.notifyTelegramOnSupportMessageCreated = onDocumentCreated(
       `المحادثة: ${conversationId}`,
       `المحتوى: ${preview}`,
       'الحالة: تحتاج فتح مركز الدعم الفني في الأدمن.',
-    ]);
+    ], { category: 'support' });
   }
 );
 
@@ -2224,21 +2444,24 @@ exports.notifyTelegramOnWalletRechargeCreated = onDocumentCreated(
   async (event) => {
     const data = event.data?.data() || {};
     const rechargeId = String(event.params?.rechargeId || '').trim();
-    if (!rechargeId) return;
+    if (!rechargeId || !isPendingWalletRechargeRequest(data)) return;
+    await sendTelegramWalletRechargeAlert(rechargeId, data);
+  }
+);
 
-    const status = String(data.status || '').trim().toLowerCase();
-    const reviewStatus = String(data.reviewStatus || '').trim().toLowerCase();
-    if (['approved', 'rejected', 'paid'].includes(status) || ['approved', 'rejected'].includes(reviewStatus)) {
-      return;
-    }
-
-    await sendTelegramOpsAlert('طلب شحن محفظة جديد', [
-      `رقم الطلب: ${rechargeId}`,
-      `العميل: ${String(data.clientName || data.clientId || 'غير معروف')}`,
-      `المبلغ: ${formatTelegramMoney(data.amount || 0)}`,
-      `طريقة الدفع: ${String(data.method || data.paymentMethod || '-').trim() || '-'}`,
-      'الحالة: الطلب بانتظار المراجعة في القسم المالي.',
-    ]);
+exports.notifyTelegramOnWalletRechargeQueued = onDocumentUpdated(
+  {
+    region: REGION,
+    document: 'wallet_recharges/{rechargeId}',
+  },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+    const rechargeId = String(event.params?.rechargeId || '').trim();
+    const wasPending = isPendingWalletRechargeRequest(before);
+    const isPending = isPendingWalletRechargeRequest(after);
+    if (!rechargeId || wasPending || !isPending) return;
+    await sendTelegramWalletRechargeAlert(rechargeId, after);
   }
 );
 
@@ -3745,6 +3968,54 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
       offerStartedAt: admin.firestore.FieldValue.delete(),
       offerExpiresAt: admin.firestore.FieldValue.delete(),
     }, { merge: true });
+
+    // ─── استرداد تلقائي للمحفظة إذا كان الطلب مدفوعاً ──────────────────
+    const walletUsed = Math.max(0, Math.round(toSafeNumber(order.walletUsedAmount || order.walletRequestedAmount || 0)));
+    const payMethod = String(order.paymentMethod || '').trim().toLowerCase();
+    const payStatus = normalizePaymentStatus(order.paymentStatus);
+    const isPrepaid = payStatus === 'paid' || payStatus === 'under_review';
+    const clientId = String(order.clientId || '').trim();
+
+    if (clientId && isPrepaid && (walletUsed > 0 || payMethod === 'wallet')) {
+      const refundAmount = walletUsed > 0 ? walletUsed : Math.round(toSafeNumber(order.totalWithDelivery || order.total || 0));
+      if (refundAmount > 0) {
+        try {
+          const clientRef = db.collection('clients').doc(clientId);
+          await db.runTransaction(async (tx) => {
+            const clientSnap = await tx.get(clientRef);
+            const clientData = clientSnap.data() || {};
+            const currentBalance = toSafeNumber(
+              clientData.walletBalance ?? clientData.wallet ?? clientData.balance ?? 0
+            );
+            const nextBalance = currentBalance + refundAmount;
+            tx.set(clientRef, {
+              walletBalance: nextBalance,
+              wallet: nextBalance,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+            tx.set(db.collection('clients').doc(clientId).collection('walletTransactions').doc(), {
+              type: 'refund',
+              orderId,
+              amount: refundAmount,
+              balanceBefore: currentBalance,
+              balanceAfter: nextBalance,
+              reason: 'order_cancelled',
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          });
+          await orderRef.set({ walletRefundedAmount: refundAmount, walletRefundedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          await sendNotificationToSingleUser('client', clientId, buildNotificationPayload({
+            title: '💰 تم استرداد المبلغ إلى محفظتك',
+            body: `تم إلغاء طلبك وإعادة ${refundAmount} ج.س إلى محفظتك.`,
+            type: 'wallet_refund',
+            source: 'admin-order-cancel',
+            orderId,
+          })).catch(() => {});
+        } catch (refundErr) {
+          logger.warn('adminManageOrder wallet refund failed', { orderId, clientId, refundAmount, error: refundErr?.message });
+        }
+      }
+    }
 
     result = {
       ...result,

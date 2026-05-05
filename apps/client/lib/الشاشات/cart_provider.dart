@@ -12,6 +12,7 @@ class CartItem {
   final String description;
   int quantity;
   final double price;
+  String? notes;
 
   CartItem({
     required this.id,
@@ -23,6 +24,7 @@ class CartItem {
     required this.description,
     required this.quantity,
     required this.price,
+    this.notes,
   });
 
   Map<String, dynamic> toMap() => {
@@ -35,6 +37,7 @@ class CartItem {
         'description': description,
         'quantity': quantity,
         'price': price,
+        if (notes != null && notes!.isNotEmpty) 'notes': notes,
       };
 
   factory CartItem.fromMap(Map<String, dynamic> m) => CartItem(
@@ -47,6 +50,7 @@ class CartItem {
         description: m['description'] ?? '',
         quantity: (m['quantity'] as num?)?.toInt() ?? 1,
         price: (m['price'] as num?)?.toDouble() ?? 0.0,
+        notes: m['notes']?.toString(),
       );
 
   @override
@@ -120,7 +124,7 @@ class CartProvider extends ChangeNotifier {
   // دوال مساعدة لاستخدامها في restaurant_detail_screen.dart
   Future<void> addToCartSimple(
           String restaurantId, String itemId, String name, double price,
-          {String? menuItemId, String? sizeKey, String? sizeLabel}) =>
+          {String? menuItemId, String? sizeKey, String? sizeLabel, String? notes}) =>
       addToCart(CartItem(
         id: itemId,
         restaurantId: restaurantId,
@@ -131,7 +135,16 @@ class CartProvider extends ChangeNotifier {
         description: '',
         quantity: 1,
         price: price,
+        notes: notes,
       ));
+
+  Future<void> updateNotes(String itemId, String notes) async {
+    final idx = _cartItems.indexWhere((i) => i.id == itemId);
+    if (idx < 0) return;
+    _cartItems[idx].notes = notes.trim().isEmpty ? null : notes.trim();
+    await _saveCart();
+    notifyListeners();
+  }
 
   Future<void> removeOneItem(String itemId) async {
     final idx = _cartItems.indexWhere((i) => i.id == itemId);

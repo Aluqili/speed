@@ -1,10 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
-import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+
+import '../الخدمات/cloudinary_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
@@ -27,364 +29,500 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final TextEditingController _messageController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
-  final cloudinary =
-      CloudinaryPublic('dvnzloec6', 'flutter_unsigned', cache: false);
-  String otherUserName = '';
+  static const Color _primary = AppThemeArabic.clientPrimary;
 
-  int _timestampMillis(dynamic value) {
-    if (value is Timestamp) return value.millisecondsSinceEpoch;
-    return 0;
-  }
+  final _messageController = TextEditingController();
+  final _scrollController = ScrollController();
+  final _cloudinary = CloudinaryService.build();
 
-  void _onMessageChanged() {
-    if (!mounted) return;
-    setState(() {});
-  }
+  String _otherUserName = '';
+  bool _sendingImage = false;
 
   @override
   void initState() {
     super.initState();
-    _messageController.addListener(_onMessageChanged);
+    _messageController.addListener(() => setState(() {}));
     _fetchOtherUserName();
   }
 
-  Future<String?> _findUserNameInCollection(
-      String collection, String userId) async {
-    try {
-      final directDoc = await FirebaseFirestore.instance
-          .collection(collection)
-          .doc(userId)
-          .get();
-      if (directDoc.exists) {
-        final data = directDoc.data() ?? <String, dynamic>{};
-        final name =
-            (data['name'] ?? data['fullName'] ?? data['displayName'] ?? '')
-                .toString()
-                .trim();
-        if (name.isNotEmpty) return name;
-      }
-
-      final candidateFields = ['ownerUid', 'uid', 'userId'];
-      for (final field in candidateFields) {
-        final query = await FirebaseFirestore.instance
-            .collection(collection)
-            .where(field, isEqualTo: userId)
-            .limit(1)
-            .get();
-        if (query.docs.isNotEmpty) {
-          final data = query.docs.first.data();
-          final name =
-              (data['name'] ?? data['fullName'] ?? data['displayName'] ?? '')
-                  .toString()
-                  .trim();
-          if (name.isNotEmpty) return name;
-        }
-      }
-    } catch (_) {
-      // Ignore and continue fallback chain
-    }
-    return null;
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
+
+  // ─── data ──────────────────────────────────────────────────────────────────
 
   Future<void> _fetchOtherUserName() async {
-    final fallbackCollections = ['clients', 'drivers', 'restaurants'];
-    for (final col in fallbackCollections) {
-      final name = await _findUserNameInCollection(col, widget.otherUserId);
-      if (name != null && name.isNotEmpty) {
-        if (!mounted) return;
-        setState(() {
-          otherUserName = name;
+    for (final col in ['clients', 'drivers', 'restaurants']) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection(col)
+            .doc(widget.otherUserId)
+            .get();
+        if (doc.exists) {
+          final d = doc.data() ?? {};
+          final name =
+              (d['name'] ?? d['fullName'] ?? d['displayName'] ?? '')
+                  .toString()
+                  .trim();
+          if (name.isNotEmpty) {
+            if (mounted) setState(() => _otherUserName = name);
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+    if (mounted) setState(() => _otherUserName = 'المستخدم');
+  }
+
+  /// The chat is stored in `supportMessages` collection.
+  /// We query by `conversationId` (equality filter — no composite index needed)
+  /// and sort client-side by timestamp.
+  Stream<List<Map<String, dynamic>>> get _messagesStream =>
+      FirebaseFirestore.instance
+          .collection('supportMessages')
+          .where('conversationId', isEqualTo: widget.chatId)
+          .snapshots()
+          .map((snap) {
+        final docs = snap.docs
+            .map((d) => {'_id': d.id, ...d.data()})
+            .toList();
+        docs.sort((a, b) {
+          final at = _tsMillis(a['timestamp']);
+          final bt = _tsMillis(b['timestamp']);
+          return at.compareTo(bt);
         });
-        return;
-      }
-    }
+        return docs;
+      });
 
-    if (!mounted) return;
-    setState(() {
-      otherUserName = 'المستخدم';
-    });
+  int _tsMillis(dynamic v) {
+    if (v is Timestamp) return v.millisecondsSinceEpoch;
+    return 0;
   }
 
-  Future<String> _detectUserType(String userId) async {
-    final firestore = FirebaseFirestore.instance;
-    if ((await firestore.collection('clients').doc(userId).get()).exists)
-      return 'عميل';
-    if ((await firestore.collection('drivers').doc(userId).get()).exists)
-      return 'مندوب';
-    if ((await firestore.collection('restaurants').doc(userId).get()).exists)
-      return 'مطعم';
-    return 'غير معروف';
-  }
-
-  void _sendMessage({String? text, String? imageUrl}) async {
+  Future<void> _sendMessage({String? text, String? imageUrl}) async {
     if ((text == null || text.trim().isEmpty) && imageUrl == null) return;
-
-    String senderType = widget.currentUserRole;
-    if (senderType.isEmpty || senderType == 'غير معروف') {
-      senderType = await _detectUserType(widget.currentUserId);
-    }
 
     final message = {
       'conversationId': widget.chatId,
       'chatKind': 'direct',
       'sourceApp': 'client',
       'senderId': widget.currentUserId,
-      'senderType': senderType,
+      'senderType': widget.currentUserRole.isNotEmpty
+          ? widget.currentUserRole
+          : 'client',
       'senderName': widget.currentUserName,
       'receiverId': widget.otherUserId,
       'participants': [widget.currentUserId, widget.otherUserId],
-      'participantsKey': [widget.currentUserId, widget.otherUserId]..sort(),
+      'participantsKey': ([widget.currentUserId, widget.otherUserId]..sort()),
       'timestamp': FieldValue.serverTimestamp(),
-      if (text != null) 'message': text.trim(),
+      if (text != null && text.trim().isNotEmpty) 'message': text.trim(),
       if (imageUrl != null) 'imageUrl': imageUrl,
     };
 
     await FirebaseFirestore.instance.collection('supportMessages').add(message);
-
     _messageController.clear();
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent + 100,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    }
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent + 200,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   Future<void> _pickAndSendImage(ImageSource source) async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: source, imageQuality: 70);
-    if (pickedFile == null) return;
-
-    final file = File(pickedFile.path);
-
+    final picked = await picker.pickImage(source: source, imageQuality: 70);
+    if (picked == null) return;
+    setState(() => _sendingImage = true);
     try {
-      final response = await cloudinary.uploadFile(
-        CloudinaryFile.fromFile(file.path,
+      final response = await _cloudinary.uploadFile(
+        CloudinaryFile.fromFile(File(picked.path).path,
             resourceType: CloudinaryResourceType.Image),
       );
-      _sendMessage(imageUrl: response.secureUrl);
+      await _sendMessage(imageUrl: response.secureUrl);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشل رفع الصورة: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('فشل رفع الصورة: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _sendingImage = false);
     }
   }
 
-  void _showImagePreview(String imageUrl) {
+  void _showImagePreview(String url) {
     showDialog(
       context: context,
       builder: (_) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(12),
         child: GestureDetector(
           onTap: () => Navigator.pop(context),
-          child: InteractiveViewer(
-            child: Image.network(imageUrl),
-          ),
+          child: InteractiveViewer(child: Image.network(url)),
         ),
       ),
     );
   }
 
-  String _formatTimestamp(Timestamp? timestamp) {
-    if (timestamp == null) return '';
-    final date = timestamp.toDate();
+  String _formatTime(dynamic ts) {
+    if (ts == null) return '';
+    final date = (ts as Timestamp).toDate().toLocal();
     return intl.DateFormat('hh:mm a', 'ar').format(date);
   }
 
-  @override
-  void dispose() {
-    _messageController.removeListener(_onMessageChanged);
-    _messageController.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
+  // ─── build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     if (widget.currentUserId.isEmpty ||
         widget.otherUserId.isEmpty ||
         widget.chatId.isEmpty) {
-      return const Scaffold(
-        body:
-            Center(child: Text('⚠️ لا يمكن فتح الدردشة بسبب نقص في المعرفات')),
+      return Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
+          appBar: AppBar(
+              backgroundColor: _primary,
+              title: const Text('دردشة',
+                  style: TextStyle(color: Colors.white))),
+          body: const Center(
+              child: Text('تعذر فتح الدردشة — بيانات غير مكتملة.')),
+        ),
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(otherUserName.isNotEmpty ? otherUserName : 'تحميل...'),
-        backgroundColor: AppThemeArabic.clientPrimary,
-        actions: [
-          PopupMenuButton(
-            icon: const Icon(Icons.add_photo_alternate, color: Colors.white),
-            onSelected: (source) {
-              _pickAndSendImage(source == 'camera'
-                  ? ImageSource.camera
-                  : ImageSource.gallery);
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'camera', child: Text('الكاميرا')),
-              const PopupMenuItem(value: 'gallery', child: Text('المعرض')),
-            ],
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF0F0F0),
+        appBar: _buildAppBar(),
+        body: Column(
+          children: [
+            Expanded(child: _buildMessagesList()),
+            _buildInputBar(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  AppBar _buildAppBar() {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0.5,
+      centerTitle: false,
+      iconTheme: const IconThemeData(color: Colors.black87),
+      title: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: _primary.withValues(alpha: 0.12),
+            child: const Icon(Icons.person_rounded, color: _primary, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _otherUserName.isNotEmpty ? _otherUserName : '...',
+                  style: const TextStyle(
+                      color: Colors.black87,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const Text('عبر الدردشة الفورية',
+                    style: TextStyle(fontSize: 11, color: Colors.grey)),
+              ],
+            ),
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('supportMessages')
-            .where('conversationId', isEqualTo: widget.chatId)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('حدث خطأ في تحميل الرسائل: ${snapshot.error}'),
+      actions: [
+        if (!_sendingImage)
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.add_photo_alternate_outlined,
+                color: Colors.black87),
+            onSelected: (v) => _pickAndSendImage(
+                v == 'camera' ? ImageSource.camera : ImageSource.gallery),
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                  value: 'camera',
+                  child: Row(children: [
+                    Icon(Icons.camera_alt_outlined),
+                    SizedBox(width: 8),
+                    Text('الكاميرا')
+                  ])),
+              PopupMenuItem(
+                  value: 'gallery',
+                  child: Row(children: [
+                    Icon(Icons.photo_library_outlined),
+                    SizedBox(width: 8),
+                    Text('المعرض')
+                  ])),
+            ],
+          )
+        else
+          const Padding(
+            padding: EdgeInsets.all(12),
+            child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+        const SizedBox(width: 4),
+      ],
+    );
+  }
+
+  Widget _buildMessagesList() {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _messagesStream,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
+                const SizedBox(height: 8),
+                Text('تعذر تحميل الرسائل',
+                    style: TextStyle(color: Colors.grey[600])),
+              ],
+            ),
+          );
+        }
+
+        final messages = snap.data ?? [];
+
+        if (messages.isNotEmpty) {
+          _scrollToBottom();
+        }
+
+        if (messages.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.chat_bubble_outline_rounded,
+                    size: 56, color: Colors.grey[300]),
+                const SizedBox(height: 12),
+                Text('لا توجد رسائل بعد',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 14)),
+                const SizedBox(height: 4),
+                Text('ابدأ المحادثة الآن',
+                    style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+          itemCount: messages.length,
+          itemBuilder: (context, i) {
+            final msg = messages[i];
+            final isMe = msg['senderId'] == widget.currentUserId;
+            final showName = !isMe &&
+                (_otherUserName.isNotEmpty &&
+                    (msg['senderName'] ?? '').toString().isNotEmpty);
+            return _MessageBubble(
+              message: msg,
+              isMe: isMe,
+              showSenderName: showName,
+              senderName: (msg['senderName'] ?? _otherUserName).toString(),
+              time: _formatTime(msg['timestamp']),
+              onImageTap: _showImagePreview,
             );
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          },
+        );
+      },
+    );
+  }
 
-          final messages = snapshot.data!.docs.toList()
-            ..sort((a, b) {
-              final aData = a.data() as Map<String, dynamic>;
-              final bData = b.data() as Map<String, dynamic>;
-              return _timestampMillis(aData['timestamp'])
-                  .compareTo(_timestampMillis(bData['timestamp']));
-            });
-
-          if (messages.isNotEmpty) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (_scrollController.hasClients) {
-                _scrollController.jumpTo(
-                  _scrollController.position.maxScrollExtent,
-                );
-              }
-            });
-          }
-
-          return Column(
-            children: [
-              Expanded(
-                child: messages.isEmpty
-                    ? const Center(child: Text('لا توجد رسائل بعد'))
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(12),
-                        itemCount: messages.length,
-                        itemBuilder: (context, index) {
-                          final data =
-                              messages[index].data() as Map<String, dynamic>;
-                          final isMe = data['senderId'] == widget.currentUserId;
-                          return Align(
-                            alignment: isMe
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(vertical: 4),
-                              padding: const EdgeInsets.all(10),
-                              constraints: BoxConstraints(
-                                maxWidth:
-                                    MediaQuery.of(context).size.width * 0.7,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isMe
-                                    ? const Color(0xFFFFF3E0)
-                                    : const Color(0xFFE0E0E0),
-                                borderRadius: BorderRadius.only(
-                                  topLeft: const Radius.circular(12),
-                                  topRight: const Radius.circular(12),
-                                  bottomLeft: Radius.circular(isMe ? 12 : 0),
-                                  bottomRight: Radius.circular(isMe ? 0 : 12),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (!isMe &&
-                                      (data['senderName'] ?? '')
-                                          .toString()
-                                          .isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
-                                      child: Text(
-                                        (data['senderName'] ?? '').toString(),
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.black54,
-                                        ),
-                                      ),
-                                    ),
-                                  if (data['imageUrl'] != null)
-                                    GestureDetector(
-                                      onTap: () =>
-                                          _showImagePreview(data['imageUrl']),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Image.network(
-                                          data['imageUrl'],
-                                          height: 180,
-                                          width: 180,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    Text(
-                                      (data['message'] ?? data['text'] ?? '')
-                                          .toString(),
-                                      style: const TextStyle(fontSize: 16),
-                                    ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    _formatTimestamp(data['timestamp']),
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+  Widget _buildInputBar() {
+    return Container(
+      color: Colors.white,
+      padding: EdgeInsets.fromLTRB(
+          12, 8, 12, MediaQuery.of(context).padding.bottom + 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFF4F4F4),
+                borderRadius: BorderRadius.circular(24),
               ),
-              const Divider(height: 1),
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _messageController,
-                        textInputAction: TextInputAction.send,
-                        decoration: InputDecoration(
-                          hintText: 'اكتب رسالتك...',
-                          border: const OutlineInputBorder(),
-                        ),
-                        onSubmitted: (_) =>
-                            _sendMessage(text: _messageController.text),
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        Icons.send,
-                        color: AppThemeArabic.clientPrimary,
-                      ),
-                      onPressed: _messageController.text.trim().isEmpty
-                          ? null
-                          : () => _sendMessage(text: _messageController.text),
-                    ),
-                  ],
+              child: TextField(
+                controller: _messageController,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) =>
+                    _sendMessage(text: _messageController.text),
+                maxLines: null,
+                style: const TextStyle(fontSize: 15),
+                decoration: const InputDecoration(
+                  hintText: 'اكتب رسالتك...',
+                  hintStyle:
+                      TextStyle(color: Colors.grey, fontSize: 14),
+                  border: InputBorder.none,
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 ),
               ),
-            ],
-          );
-        },
+            ),
+          ),
+          const SizedBox(width: 8),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: _messageController.text.trim().isNotEmpty
+                  ? _primary
+                  : Colors.grey[300],
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.send_rounded, size: 20),
+              color: Colors.white,
+              onPressed: _messageController.text.trim().isEmpty
+                  ? null
+                  : () => _sendMessage(text: _messageController.text),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Message Bubble ────────────────────────────────────────────────────────
+
+class _MessageBubble extends StatelessWidget {
+  const _MessageBubble({
+    required this.message,
+    required this.isMe,
+    required this.showSenderName,
+    required this.senderName,
+    required this.time,
+    required this.onImageTap,
+  });
+
+  final Map<String, dynamic> message;
+  final bool isMe;
+  final bool showSenderName;
+  final String senderName;
+  final String time;
+  final void Function(String url) onImageTap;
+
+  static const _primary = AppThemeArabic.clientPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = (message['message'] ?? message['text'] ?? '').toString();
+    final imageUrl = message['imageUrl'] as String?;
+
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: EdgeInsets.only(
+            bottom: 8,
+            right: isMe ? 0 : 40,
+            left: isMe ? 40 : 0),
+        constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.72),
+        child: Column(
+          crossAxisAlignment:
+              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            if (showSenderName)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2, right: 4, left: 4),
+                child: Text(senderName,
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: _primary)),
+              ),
+            Container(
+              padding: imageUrl != null
+                  ? EdgeInsets.zero
+                  : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: isMe ? _primary : Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(18),
+                  topRight: const Radius.circular(18),
+                  bottomLeft: Radius.circular(isMe ? 18 : 4),
+                  bottomRight: Radius.circular(isMe ? 4 : 18),
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                      color: Color(0x14000000),
+                      blurRadius: 4,
+                      offset: Offset(0, 1))
+                ],
+              ),
+              child: imageUrl != null
+                  ? GestureDetector(
+                      onTap: () => onImageTap(imageUrl),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.only(
+                          topLeft: const Radius.circular(18),
+                          topRight: const Radius.circular(18),
+                          bottomLeft: Radius.circular(isMe ? 18 : 4),
+                          bottomRight: Radius.circular(isMe ? 4 : 18),
+                        ),
+                        child: Image.network(imageUrl,
+                            width: 200,
+                            height: 200,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (_, child, progress) =>
+                                progress == null
+                                    ? child
+                                    : const SizedBox(
+                                        width: 200,
+                                        height: 200,
+                                        child: Center(
+                                            child:
+                                                CircularProgressIndicator()))),
+                      ),
+                    )
+                  : Text(
+                      text,
+                      style: TextStyle(
+                          fontSize: 15,
+                          color: isMe ? Colors.white : Colors.black87,
+                          height: 1.4),
+                    ),
+            ),
+            if (time.isNotEmpty)
+              Padding(
+                padding:
+                    const EdgeInsets.only(top: 3, right: 4, left: 4),
+                child: Text(
+                  time,
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.grey[500]),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

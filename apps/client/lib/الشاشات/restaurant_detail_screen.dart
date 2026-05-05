@@ -55,6 +55,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   ];
 
   String? _selectedCategory;
+  String _searchQuery = '';
+  final _searchController = TextEditingController();
   bool isClosed = false;
   String statusText = '';
   Color statusColor = Colors.green;
@@ -73,6 +75,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   @override
   void dispose() {
     _restaurantSubscription?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -669,6 +672,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   }
 
   List<_MenuSection> _buildMenuSections(List<QueryDocumentSnapshot> docs) {
+    final q = _searchQuery.trim().toLowerCase();
     final grouped = <String, List<QueryDocumentSnapshot>>{};
     for (final doc in _sortMenuDocs(docs)) {
       final data = doc.data() as Map<String, dynamic>;
@@ -676,6 +680,12 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
           _canonicalCategoryLabel((data['category'] ?? '').toString());
       if (_selectedCategory != null && category != _selectedCategory) {
         continue;
+      }
+      if (q.isNotEmpty) {
+        final name = (data['name'] ?? '').toString().toLowerCase();
+        final desc =
+            (data['description'] ?? data['details'] ?? '').toString().toLowerCase();
+        if (!name.contains(q) && !desc.contains(q)) continue;
       }
       grouped.putIfAbsent(category, () => <QueryDocumentSnapshot>[]).add(doc);
     }
@@ -842,6 +852,13 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                         width: 104,
                         height: 104,
                         fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 104,
+                          height: 104,
+                          color: const Color(0xFFF3F4F6),
+                          child:
+                              Icon(Icons.fastfood, color: Colors.grey[500], size: 34),
+                        ),
                       )
                     : Container(
                         width: 104,
@@ -1008,13 +1025,24 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                     );
                                     return;
                                   }
-                                  await cartProvider.addToCartSimple(
-                                    widget.restaurantId,
-                                    itemId,
-                                    itemName,
-                                    itemPrice,
-                                    menuItemId: doc.id,
-                                  );
+                                  // أول إضافة: اسأل عن ملاحظات
+                                  if (quantity == 0) {
+                                    await _showNotesAndAddToCart(
+                                      cartProvider: cartProvider,
+                                      itemId: itemId,
+                                      docId: doc.id,
+                                      itemName: itemName,
+                                      itemPrice: itemPrice,
+                                    );
+                                  } else {
+                                    await cartProvider.addToCartSimple(
+                                      widget.restaurantId,
+                                      itemId,
+                                      itemName,
+                                      itemPrice,
+                                      menuItemId: doc.id,
+                                    );
+                                  }
                                 },
                           color: primaryColor,
                           type: GFButtonType.outline2x,
@@ -1136,6 +1164,76 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     }
   }
 
+  Future<void> _showNotesAndAddToCart({
+    required CartProvider cartProvider,
+    required String itemId,
+    required String docId,
+    required String itemName,
+    required double itemPrice,
+  }) async {
+    final notesController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text('إضافة $itemName'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('ملاحظات خاصة (اختياري)',
+                  style:
+                      TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: notesController,
+                textDirection: TextDirection.rtl,
+                maxLines: 2,
+                autofocus: false,
+                decoration: InputDecoration(
+                  hintText: 'مثال: بدون بصل، حار جداً...',
+                  hintStyle: const TextStyle(fontSize: 13),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 8),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                notesController.dispose();
+                Navigator.pop(ctx, false);
+              },
+              child: const Text('تخطي'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('إضافة للسلة'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      await cartProvider.addToCartSimple(
+        widget.restaurantId,
+        itemId,
+        itemName,
+        itemPrice,
+        menuItemId: docId,
+        notes: notesController.text.trim().isEmpty
+            ? null
+            : notesController.text.trim(),
+      );
+    }
+    notesController.dispose();
+  }
+
   Future<void> _showSizePickerAndAddToCart({
     required CartProvider cartProvider,
     required String docId,
@@ -1149,49 +1247,84 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
 
     String selected =
         orderedKeys.contains('medium') ? 'medium' : orderedKeys.first;
+    final notesController = TextEditingController();
+
     final picked = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('اختر حجم $itemName'),
-        content: StatefulBuilder(
-          builder: (context, setInnerState) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: orderedKeys
-                  .map(
-                    (key) => RadioListTile<String>(
-                      value: key,
-                      groupValue: selected,
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setInnerState(() => selected = value);
-                      },
-                      title: Text(_sizeLabel(key)),
-                      subtitle: Text(
-                        '${NumberFormat.decimalPattern().format(sizes[key])} ج.س',
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text('أضف $itemName للسلة'),
+          content: StatefulBuilder(
+            builder: (context, setInnerState) {
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ...orderedKeys.map(
+                      (key) => RadioListTile<String>(
+                        value: key,
+                        groupValue: selected,
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setInnerState(() => selected = value);
+                        },
+                        title: Text(_sizeLabel(key)),
+                        subtitle: Text(
+                          '${NumberFormat.decimalPattern().format(sizes[key])} ج.س',
+                        ),
                       ),
                     ),
-                  )
-                  .toList(),
-            );
-          },
+                    const Divider(height: 20),
+                    const Text('ملاحظات خاصة (اختياري)',
+                        style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: notesController,
+                      textDirection: TextDirection.rtl,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        hintText: 'مثال: بدون بصل، حار جداً...',
+                        hintStyle: const TextStyle(fontSize: 13),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                notesController.dispose();
+                Navigator.pop(context);
+              },
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, selected),
+              child: const Text('إضافة للسلة'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, selected),
-            child: const Text('إضافة'),
-          ),
-        ],
       ),
     );
 
-    if (picked == null) return;
+    if (picked == null) {
+      notesController.dispose();
+      return;
+    }
     final price = sizes[picked];
-    if (price == null) return;
+    if (price == null) {
+      notesController.dispose();
+      return;
+    }
 
     final variantId = '${widget.restaurantId}_${docId}_$picked';
     await cartProvider.addToCartSimple(
@@ -1202,7 +1335,11 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       menuItemId: docId,
       sizeKey: picked,
       sizeLabel: _sizeLabel(picked),
+      notes: notesController.text.trim().isEmpty
+          ? null
+          : notesController.text.trim(),
     );
+    notesController.dispose();
   }
 
   @override
@@ -1320,6 +1457,37 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                     ),
                     _buildOfferHighlightsSection(),
                     const SizedBox(height: 14),
+                    // ─── حقل البحث ────────────────────────────────────
+                    TextField(
+                      controller: _searchController,
+                      textDirection: TextDirection.rtl,
+                      onChanged: (v) => setState(() => _searchQuery = v),
+                      decoration: InputDecoration(
+                        hintText: 'ابحث في القائمة...',
+                        hintStyle: const TextStyle(
+                            color: Colors.grey, fontSize: 14),
+                        prefixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.close,
+                                    color: Colors.grey, size: 20),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : const Icon(Icons.search,
+                                color: Colors.grey, size: 20),
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     FutureBuilder<QuerySnapshot>(
                       future: FirebaseFirestore.instance
                           .collection('restaurants')

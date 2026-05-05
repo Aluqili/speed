@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
@@ -44,10 +45,37 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
   }
 
   void _signOut(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('تسجيل الخروج'),
+          content: const Text('هل أنت متأكد من الخروج من حسابك؟'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red),
+              child: const Text('خروج',
+                  style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+
     await FirebaseAuth.instance.signOut();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('userType'); // لا نحذف الطلب الحالي
+    await prefs.remove('userType');
 
+    if (!context.mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
         builder: (_) => const LoginScreenArabic(
@@ -238,40 +266,138 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
             backgroundColor: Colors.grey[100],
             body: ListView.separated(
               padding: const EdgeInsets.all(16),
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemCount: items.length + 1,
+              separatorBuilder: (_, i) =>
+                  i == 0 ? const SizedBox(height: 20) : const SizedBox(height: 12),
               itemBuilder: (context, index) {
-                final item = items[index];
+                // ─── رأس بيانات المستخدم ────────────────────────
+                if (index == 0) {
+                  return _UserHeader(clientId: widget.clientId);
+                }
+                final item = items[index - 1];
+                final isLogout = item['title'] == 'تسجيل الخروج';
                 return Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.grey.withOpacity(0.05),
+                        color: Colors.grey.withValues(alpha: 0.05),
                         blurRadius: 6,
                         offset: const Offset(0, 2),
                       ),
                     ],
                   ),
                   child: ListTile(
-                    leading:
-                        Icon(item['icon'] as IconData, color: primaryColor),
+                    leading: Icon(item['icon'] as IconData,
+                        color: isLogout ? Colors.red : primaryColor),
                     title: Text(
                       item['title'] as String,
-                      style: const TextStyle(fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: isLogout ? Colors.red : null),
                     ),
                     subtitle: Text(item['subtitle'] as String),
-                    trailing: const Icon(
+                    trailing: Icon(
                       Icons.arrow_forward_ios,
                       size: 16,
-                      color: Colors.grey,
+                      color: isLogout ? Colors.red[200] : Colors.grey,
                     ),
                     onTap: item['onTap'] as VoidCallback,
                   ),
                 );
               },
             ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─── رأس بيانات المستخدم ──────────────────────────────────────────────────
+
+class _UserHeader extends StatelessWidget {
+  const _UserHeader({required this.clientId});
+  final String clientId;
+
+  static const _primary = AppThemeArabic.clientPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('clients')
+          .doc(clientId)
+          .snapshots(),
+      builder: (context, snap) {
+        final data = snap.data?.data() as Map<String, dynamic>?;
+        final name = (data?['name'] ?? data?['fullName'] ?? data?['displayName'] ?? '')
+            .toString()
+            .trim();
+        final email = (data?['email'] ?? '').toString().trim();
+        final phone = (data?['phone'] ?? data?['phoneNumber'] ?? '').toString().trim();
+        final photoUrl = (data?['photoUrl'] ?? data?['profileImage'] ?? '').toString().trim();
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_primary, _primary.withValues(alpha: 0.75)],
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
+            ),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            children: [
+              // صورة المستخدم
+              CircleAvatar(
+                radius: 32,
+                backgroundColor: Colors.white.withValues(alpha: 0.2),
+                backgroundImage:
+                    photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+                child: photoUrl.isEmpty
+                    ? Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : '؟',
+                        style: const TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name.isNotEmpty ? name : 'مستخدم',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 17),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (email.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(email,
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontSize: 12),
+                          overflow: TextOverflow.ellipsis),
+                    ] else if (phone.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(phone,
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontSize: 12)),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
         );
       },

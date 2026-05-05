@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
+import '../الخدمات/cloudinary_service.dart';
+
 class ClientSupportScreen extends StatefulWidget {
   final String userId;
 
@@ -20,8 +22,7 @@ class ClientSupportScreen extends StatefulWidget {
 class _ClientSupportScreenState extends State<ClientSupportScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
-  final cloudinary =
-      CloudinaryPublic('dvnzloec6', 'flutter_unsigned', cache: false);
+  final cloudinary = CloudinaryService.build();
   static const _primaryColor = AppThemeArabic.clientPrimary;
   static const _closedSupportTicketMessage =
       'أغلق الدعم الفني هذه التذكرة. يمكنك قراءة المحادثة السابقة فقط.';

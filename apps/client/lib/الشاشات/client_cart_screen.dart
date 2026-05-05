@@ -1,6 +1,6 @@
-import 'address_selection_screen.dart';
 // lib/screens/client_cart_screen.dart
 
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +11,7 @@ import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 
 import '../الخدمات/guest_location_service.dart';
+import 'address_selection_screen.dart';
 import 'cart_provider.dart';
 import 'payment_screen.dart';
 
@@ -26,6 +27,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
   double _largeOrderFee = 0.0;
   bool _loadingDelivery = true;
   CartProvider? _prevCart;
+  Timer? _deliveryFeeDebounce;
+  int _deliveryFeeGeneration = 0;
   static const double _defaultMaxAllowedCrossCheckDistanceKm = 120;
   static const double _defaultLargeItemThreshold = 10000;
   static const double _defaultLargeItemFeeBase = 500;
@@ -261,6 +264,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
   @override
   void dispose() {
+    _deliveryFeeDebounce?.cancel();
     _prevCart?.removeListener(_handleCartChanged);
     super.dispose();
   }
@@ -282,10 +286,14 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
   void _handleCartChanged() {
     if (!mounted) return;
-    _calculateDeliveryFee();
+    _deliveryFeeDebounce?.cancel();
+    _deliveryFeeDebounce = Timer(const Duration(milliseconds: 600), () {
+      if (mounted) _calculateDeliveryFee();
+    });
   }
 
   Future<void> _calculateDeliveryFee() async {
+    final generation = ++_deliveryFeeGeneration;
     final cart = Provider.of<CartProvider?>(context, listen: false);
     final estimatedLargeOrderFee =
         cart == null ? 0.0 : _calculateLargeOrderFee(cart);
@@ -297,7 +305,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     setState(() => _loadingDelivery = true);
     try {
       if (cart == null) {
-        if (mounted) {
+        if (mounted && generation == _deliveryFeeGeneration) {
           setState(() {
             _deliveryFee = 0.0;
             _largeOrderFee = 0.0;
@@ -308,26 +316,30 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       }
 
       if (cart.cartItems.isEmpty) {
-        setState(() {
-          _deliveryFee = 0.0;
-          _largeOrderFee = 0.0;
-          _loadingDelivery = false;
-        });
+        if (generation == _deliveryFeeGeneration) {
+          setState(() {
+            _deliveryFee = 0.0;
+            _largeOrderFee = 0.0;
+            _loadingDelivery = false;
+          });
+        }
         return;
       }
       if (user == null || user.isAnonymous) {
-        setState(() {
-          _deliveryFee = 0.0;
-          _largeOrderFee = estimatedLargeOrderFee;
-          _loadingDelivery = false;
-        });
+        if (generation == _deliveryFeeGeneration) {
+          setState(() {
+            _deliveryFee = 0.0;
+            _largeOrderFee = estimatedLargeOrderFee;
+            _loadingDelivery = false;
+          });
+        }
         return;
       }
       final clientDoc = await FirebaseFirestore.instance
           .collection('clients')
           .doc(user.uid)
           .get();
-      if (!mounted) {
+      if (!mounted || generation != _deliveryFeeGeneration) {
         return;
       }
       final addrId = clientDoc.data()?['defaultAddressId'];
@@ -348,7 +360,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
           .collection('addresses')
           .doc(addrId)
           .get();
-      if (!mounted) {
+      if (!mounted || generation != _deliveryFeeGeneration) {
         return;
       }
       if (!addrDoc.exists) {
@@ -376,7 +388,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
           .collection('restaurants')
           .doc(restId)
           .get();
-      if (!mounted) {
+      if (!mounted || generation != _deliveryFeeGeneration) {
         return;
       }
       final restData = restDoc.data() ?? <String, dynamic>{};
@@ -418,14 +430,16 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
               _driverFeeByDistance(distance) + _deliveryPlatformMarginFixed,
             );
 
-      setState(() {
-        _deliveryFee = fee;
-        _largeOrderFee = estimatedLargeOrderFee;
-        _loadingDelivery = false;
-      });
+      if (mounted && generation == _deliveryFeeGeneration) {
+        setState(() {
+          _deliveryFee = fee;
+          _largeOrderFee = estimatedLargeOrderFee;
+          _loadingDelivery = false;
+        });
+      }
     } on FirebaseException catch (e, stack) {
       debugPrint('Error calculating delivery fee: $e\n$stack');
-      if (!mounted) {
+      if (!mounted || generation != _deliveryFeeGeneration) {
         return;
       }
       setState(() {
@@ -441,7 +455,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       );
     } catch (e, stack) {
       debugPrint('Error calculating delivery fee: $e\n$stack');
-      if (!mounted) {
+      if (!mounted || generation != _deliveryFeeGeneration) {
         return;
       }
       setState(() {
@@ -989,9 +1003,38 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
           automaticallyImplyLeading: true,
         ),
         body: cart.cartItems.isEmpty
-            ? const Center(
-                child: Text('السلة فارغة',
-                    style: TextStyle(fontSize: 18, color: Colors.grey)))
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.shopping_basket_outlined,
+                        size: 72, color: Colors.grey[300]),
+                    const SizedBox(height: 16),
+                    const Text('سلتك فارغة',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A1D26))),
+                    const SizedBox(height: 8),
+                    Text('أضف وجبات من المطاعم لتبدأ طلبك',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 14)),
+                    const SizedBox(height: 24),
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      label: const Text('تصفح المطاعم'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: primaryColor,
+                        side: const BorderSide(color: primaryColor),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              )
             : ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: cart.cartItems.length,
@@ -1006,9 +1049,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
             _buildRow('قيمة الطلب', '${total.toStringAsFixed(2)} ج.س'),
             _buildRow(
               'رسوم التوصيل',
-              _loadingDelivery
-                  ? 'جاري الحساب...'
-                  : '${_deliveryFee.toStringAsFixed(2)} ج.س',
+              _loadingDelivery ? null : '${_deliveryFee.toStringAsFixed(2)} ج.س',
+              loading: _loadingDelivery,
             ),
             if (displayLargeOrderFee > 0)
               _buildRow('رسوم الطلبات الكبيرة',
@@ -1042,6 +1084,59 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     );
   }
 
+  Future<void> _editItemNotes(CartProvider cart, CartItem item) async {
+    final controller = TextEditingController(text: item.notes ?? '');
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text('ملاحظة: ${item.name}'),
+          content: TextField(
+            controller: controller,
+            textDirection: TextDirection.rtl,
+            maxLines: 3,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: 'مثال: بدون بصل، حار جداً...',
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 8),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                controller.dispose();
+                Navigator.pop(ctx);
+              },
+              child: const Text('إلغاء'),
+            ),
+            if (item.notes?.isNotEmpty == true)
+              TextButton(
+                onPressed: () async {
+                  await cart.updateNotes(item.id, '');
+                  controller.dispose();
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: const Text('حذف الملاحظة',
+                    style: TextStyle(color: Colors.red)),
+              ),
+            ElevatedButton(
+              onPressed: () async {
+                await cart.updateNotes(item.id, controller.text);
+                controller.dispose();
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCartItem(CartProvider cart, CartItem item) => Card(
         margin: const EdgeInsets.only(bottom: 16),
         color: cardColor,
@@ -1049,66 +1144,124 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Row(children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item.name,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Color(0xFF1A1D26),
-                          fontFamily: 'Tajawal')),
-                  if ((item.sizeLabel ?? '').isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        'الحجم: ${item.sizeLabel}',
-                        style: const TextStyle(
-                          color: Color(0xFF6B7280),
-                          fontSize: 13,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(item.name,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Color(0xFF1A1D26),
+                              fontFamily: 'Tajawal')),
+                      if ((item.sizeLabel ?? '').isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'الحجم: ${item.sizeLabel}',
+                            style: const TextStyle(
+                              color: Color(0xFF6B7280),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 4),
+                      Text('${item.price.toStringAsFixed(2)} ج.س',
+                          style: const TextStyle(
+                              color: Color(0xFF6B7280), fontSize: 14)),
+                    ],
+                  ),
+                ),
+                IconButton(
+                    onPressed: () {
+                      cart.removeFromCart(item);
+                      _calculateDeliveryFee();
+                    },
+                    icon: const Icon(Icons.remove_circle_outline),
+                    color: Colors.red),
+                Text('${item.quantity}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16)),
+                IconButton(
+                    onPressed: () {
+                      cart.addToCart(item);
+                      _calculateDeliveryFee();
+                    },
+                    icon: const Icon(Icons.add_circle_outline),
+                    color: Colors.green),
+              ]),
+              // ─── ملاحظات العنصر ──────────────────────────────────
+              GestureDetector(
+                onTap: () => _editItemNotes(cart, item),
+                child: Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: (item.notes?.isNotEmpty == true)
+                        ? const Color(0xFFFFF3EE)
+                        : const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: (item.notes?.isNotEmpty == true)
+                            ? AppThemeArabic.clientPrimary
+                                .withValues(alpha: 0.3)
+                            : Colors.grey.withValues(alpha: 0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.sticky_note_2_outlined,
+                        size: 14,
+                        color: (item.notes?.isNotEmpty == true)
+                            ? AppThemeArabic.clientPrimary
+                            : Colors.grey,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          (item.notes?.isNotEmpty == true)
+                              ? item.notes!
+                              : 'إضافة ملاحظة خاصة...',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: (item.notes?.isNotEmpty == true)
+                                  ? const Color(0xFF1A1D26)
+                                  : Colors.grey),
                         ),
                       ),
-                    ),
-                  const SizedBox(height: 4),
-                  Text('${item.price.toStringAsFixed(2)} ج.س',
-                      style: const TextStyle(
-                          color: Color(0xFF6B7280), fontSize: 14)),
-                ],
+                      Icon(Icons.edit_outlined,
+                          size: 13, color: Colors.grey[400]),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            IconButton(
-                onPressed: () {
-                  cart.removeFromCart(item);
-                  _calculateDeliveryFee();
-                },
-                icon: const Icon(Icons.remove_circle_outline),
-                color: Colors.red),
-            Text('${item.quantity}',
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            IconButton(
-                onPressed: () {
-                  cart.addToCart(item);
-                  _calculateDeliveryFee();
-                },
-                icon: const Icon(Icons.add_circle_outline),
-                color: Colors.green),
-          ]),
+            ],
+          ),
         ),
       );
 
-  Widget _buildRow(String label, String value, {bool bold = false}) => Padding(
+  Widget _buildRow(String label, String? value,
+          {bool bold = false, bool loading = false}) =>
+      Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child:
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Text(label,
               style: TextStyle(
                   fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
-          Text(value,
-              style: TextStyle(
-                  fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
+          loading
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : Text(value ?? '',
+                  style: TextStyle(
+                      fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
         ]),
       );
 }

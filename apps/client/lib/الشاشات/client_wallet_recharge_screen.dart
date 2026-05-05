@@ -8,9 +8,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:get/get.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
-import 'package:intl/intl.dart';
 
 import '../الخدمات/payment_app_launcher.dart';
+import '../الخدمات/cloudinary_service.dart';
 
 class ClientWalletRechargeScreen extends StatefulWidget {
   final String clientId;
@@ -42,7 +42,7 @@ class _ClientWalletRechargeScreenState
   List<String> _enabledMethods = const ['bankk', 'ocash', 'fawry'];
   bool _accountsLoading = true;
   final picker = ImagePicker();
-  final _cloudinary = CloudinaryPublic('dvnzloec6', 'flutter_unsigned');
+  final _cloudinary = CloudinaryService.build();
   final Color primaryColor = AppThemeArabic.clientPrimary;
   final Color backgroundColor = AppThemeArabic.clientBackground;
 

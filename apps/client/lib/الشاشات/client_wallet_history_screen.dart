@@ -94,7 +94,7 @@ class _ClientWalletHistoryScreenState extends State<ClientWalletHistoryScreen> {
             return ListView.builder(
               itemCount: docs.length,
               itemBuilder: (context, index) {
-                final data = docs[index].data() as Map<String, dynamic>;
+                final data = docs[index].data();
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

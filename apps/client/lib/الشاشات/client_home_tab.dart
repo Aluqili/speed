@@ -14,7 +14,6 @@ import 'restaurant_detail_screen.dart';
 import 'client_notifications_screen.dart';
 import 'address_selection_screen.dart';
 import 'add_new_address_screen.dart';
-import 'chat_screen.dart';
 import 'client_support_screen.dart';
 
 class ClientHomeTab extends StatefulWidget {
@@ -1314,11 +1313,21 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                           },
                         ),
                       ),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 12, bottom: 4),
+                          child: FutureBuilder<List<Map<String, dynamic>>>(
+                            future: mealsFuture,
+                            builder: (context, snap) =>
+                                _buildQuickCategoryBar(snap.data ?? const []),
+                          ),
+                        ),
+                      ),
                       if (featuredRestaurants.isNotEmpty)
                         SliverToBoxAdapter(
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 16.0, vertical: 4),
+                                horizontal: 16.0, vertical: 12),
                             child: _buildOfferSectionHeader(),
                           ),
                         ),
@@ -1408,26 +1417,83 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
 
   Widget _buildTopBar(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        // زر الدعم في الأعلى
-        IconButton(
-          icon: const Icon(Icons.support_agent, color: primaryColor, size: 28),
-          tooltip: 'تواصل مع الدعم',
-          onPressed: () async {
-            if (_isGuest) {
-              await _openLoginScreen();
-              return;
-            }
-            if (!context.mounted) return;
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ClientSupportScreen(userId: widget.clientId),
+        // يسار: الإشعارات + الدعم
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isGuest)
+              IconButton(
+                icon: const Icon(Icons.notifications_none_rounded,
+                    size: 26, color: textColorPrimary),
+                onPressed: _openLoginScreen,
+              )
+            else
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: FirebaseFirestore.instance
+                    .collection('clients')
+                    .doc(widget.clientId)
+                    .collection('notifications')
+                    .orderBy('timestamp', descending: true)
+                    .limit(50)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  final hasUnread = (snapshot.data?.docs ?? const [])
+                      .any((doc) => doc.data()['isRead'] != true);
+                  return IconButton(
+                    icon: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Icon(Icons.notifications_none_rounded,
+                            size: 26, color: textColorPrimary),
+                        if (hasUnread)
+                          Positioned(
+                            top: 1,
+                            left: 0,
+                            child: Container(
+                              width: 9,
+                              height: 9,
+                              decoration: const BoxDecoration(
+                                color: primaryColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ClientNotificationsScreen(
+                            clientId: widget.clientId),
+                      ),
+                    ),
+                  );
+                },
               ),
-            );
-          },
+            IconButton(
+              icon: const Icon(Icons.headset_mic_outlined,
+                  size: 24, color: textColorSecondary),
+              tooltip: 'تواصل مع الدعم',
+              onPressed: () async {
+                if (_isGuest) {
+                  await _openLoginScreen();
+                  return;
+                }
+                if (!context.mounted) return;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        ClientSupportScreen(userId: widget.clientId),
+                  ),
+                );
+              },
+            ),
+          ],
         ),
+        const Spacer(),
+        // يمين: حبة الموقع
         GestureDetector(
           onTap: () async {
             if (_isGuest) {
@@ -1444,77 +1510,124 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                 ),
               ),
             );
-            // بعد العودة من شاشة العناوين، جلب العنوان الافتراضي من قاعدة البيانات
             await _refreshDefaultAddress();
           },
-          child: Row(
-            children: [
-              Text(
-                _currentDisplayedLocation,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                  color: textColorSecondary,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.07),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Icon(Icons.location_on_outlined, color: primaryColor, size: 20),
-            ],
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.keyboard_arrow_down_rounded,
+                    size: 18, color: primaryColor),
+                const SizedBox(width: 4),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 150),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'التوصيل إلى',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: textColorSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        _currentDisplayedLocation,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                          color: textColorPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.location_on_rounded,
+                      size: 15, color: primaryColor),
+                ),
+              ],
+            ),
           ),
         ),
-        if (_isGuest)
-          IconButton(
-            icon: Icon(Icons.notifications_none,
-                size: 28, color: textColorPrimary),
-            onPressed: _openLoginScreen,
-          )
-        else
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('clients')
-                .doc(widget.clientId)
-                .collection('notifications')
-                .orderBy('timestamp', descending: true)
-                .limit(50)
-                .snapshots(),
-            builder: (context, snapshot) {
-              final hasUnread = (snapshot.data?.docs ?? const [])
-                  .any((doc) => doc.data()['isRead'] != true);
-
-              return IconButton(
-                icon: Stack(
-                  children: [
-                    Icon(Icons.notifications_none,
-                        size: 28, color: textColorPrimary),
-                    if (hasUnread)
-                      Positioned(
-                        top: 2,
-                        left: 0,
-                        child: Container(
-                          width: 10,
-                          height: 10,
-                          decoration: const BoxDecoration(
-                            color: primaryColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      )
-                  ],
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ClientNotificationsScreen(
-                        clientId: widget.clientId,
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
       ],
+    );
+  }
+
+  Widget _buildQuickCategoryBar(List<Map<String, dynamic>> allMeals) {
+    final rawCats = _extractMealCategories(allMeals);
+    if (rawCats.isEmpty) return const SizedBox.shrink();
+    const allLabel = 'الكل';
+    final categories = [allLabel, ...rawCats];
+
+    return SizedBox(
+      height: 38,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        reverse: true,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: categories.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final cat = categories[i];
+          final isSelected = cat == allLabel
+              ? _selectedMealCategory == null
+              : _selectedMealCategory == cat;
+
+          return GestureDetector(
+            onTap: () => setState(
+                () => _selectedMealCategory = cat == allLabel ? null : cat),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: isSelected ? primaryColor : Colors.white,
+                borderRadius: BorderRadius.circular(19),
+                boxShadow: [
+                  BoxShadow(
+                    color: isSelected
+                        ? primaryColor.withValues(alpha: 0.28)
+                        : Colors.black.withValues(alpha: 0.06),
+                    blurRadius: isSelected ? 10 : 6,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text(
+                  cat,
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : textColorPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -1648,14 +1761,14 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       mainAxisSize: MainAxisSize.min,
       textDirection: TextDirection.rtl,
       children: [
-        Icon(icon, color: primaryColor, size: 24),
+        Icon(icon, color: primaryColor, size: 22),
         const SizedBox(width: 8),
         Text(
           title,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: color,
+          style: const TextStyle(
+            fontSize: 19,
+            fontWeight: FontWeight.w900,
+            color: textColorPrimary,
           ),
           textAlign: TextAlign.right,
         ),
@@ -1664,29 +1777,17 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
   }
 
   Widget _buildOfferSectionHeader() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
-          colors: [Color(0xFFFFF7ED), Color(0xFFFFFBF5)],
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-        ),
-        border: Border.all(color: accentColor.withOpacity(0.2)),
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _buildSectionHeader(Icons.local_fire_department_rounded,
-                      'عروضنا لك', textColorPrimary),
-                ],
-              ),
+          const Text(
+            'عروض مميزة 🔥',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w900,
+              color: textColorPrimary,
             ),
           ),
         ],
@@ -1696,24 +1797,20 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
 
   Widget _buildRestaurantSectionHeader() {
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.only(top: 4, bottom: 12),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _buildSectionHeader(
-                    Icons.storefront_rounded,
-                    'المطاعم',
-                    textColorPrimary,
-                  ),
-                ],
-              ),
+          const Text(
+            'المطاعم القريبة',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w900,
+              color: textColorPrimary,
             ),
           ),
+          const SizedBox(width: 8),
+          const Icon(Icons.storefront_rounded, color: primaryColor, size: 22),
         ],
       ),
     );
@@ -2664,169 +2761,194 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     ImageProvider? imageProvider,
   ) {
     final status = getRestaurantStatus(r);
-    final hoursSummary = getRestaurantHoursSummary(r);
     final isOpen = status.contains('مفتوح');
     final offerText = (r['offers'] ?? '').toString().trim();
-    final hasOfferText = offerText.isNotEmpty && offerText != 'null';
+    final hasOffer = (r['hasOffers'] == true) ||
+        (offerText.isNotEmpty && offerText != 'null');
+    final ratingLabel = _restaurantRatingLabel(r);
+    final distanceText = _distanceText(r['distanceKm'] as double?);
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(24),
+    return GestureDetector(
       onTap: () => _openRestaurantDetail(context, r),
       child: Container(
-        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
           color: cardColor,
-          border: Border.all(color: primaryColor.withOpacity(0.08)),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: const Color(0x140F172A),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
+              color: Colors.black.withValues(alpha: 0.055),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
           children: [
+            // المحتوى - يمين
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
-                    children: [
-                      _buildRestaurantFavoriteButton(r),
-                      const SizedBox(width: 8),
-                      _buildInfoPill(
-                        icon: isOpen
-                            ? Icons.check_circle_rounded
-                            : Icons.pause_circle_rounded,
-                        text: isOpen ? 'مفتوح الآن' : 'مغلق الآن',
-                        backgroundColor: isOpen
-                            ? openColor.withOpacity(0.14)
-                            : closedColor.withOpacity(0.14),
-                        foregroundColor: isOpen ? openColor : closedColor,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // اسم المطعم
+                    Text(
+                      r['name']?.toString() ?? '',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 17,
+                        color: textColorPrimary,
+                        height: 1.2,
                       ),
-                      const Spacer(),
-                      if (r['hasOffers'] == true || hasOfferText)
-                        _buildInfoPill(
-                          icon: Icons.local_offer_rounded,
-                          text: 'عرض',
-                          backgroundColor: accentColor.withOpacity(0.24),
-                          foregroundColor: textColorPrimary,
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    r['name']?.toString() ?? 'اسم غير متاح',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 18,
-                      color: textColorPrimary,
-                      height: 1.15,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.right,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    hasOfferText
-                        ? offerText
-                        : (hoursSummary.isNotEmpty ? hoursSummary : status),
-                    style: TextStyle(
-                      color: textColorSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      height: 1.35,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.right,
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _buildInfoPill(
-                        icon: Icons.access_time_rounded,
-                        text: status,
-                        backgroundColor: isOpen
-                            ? openColor.withOpacity(0.12)
-                            : closedColor.withOpacity(0.12),
-                        foregroundColor: isOpen ? openColor : closedColor,
-                      ),
-                      _buildInfoPill(
-                        icon: Icons.near_me_rounded,
-                        text: _distanceText(r['distanceKm'] as double?),
-                      ),
-                      _buildInfoPill(
-                        icon: Icons.star_rounded,
-                        text: _restaurantRatingLabel(r),
-                        backgroundColor: accentColor.withOpacity(0.18),
-                        foregroundColor: textColorPrimary,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.arrow_back_ios_new_rounded,
-                            size: 16, color: primaryColor),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'تصفح القائمة',
+                    const SizedBox(height: 6),
+                    // وصف / عرض
+                    if (hasOffer && offerText.isNotEmpty && offerText != 'null')
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          offerText,
                           style: TextStyle(
-                            color: primaryColor,
-                            fontWeight: FontWeight.w800,
+                            color: accentColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const Spacer(),
+                      ),
+                    // تقييم + مسافة
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        // المسافة
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.near_me_rounded,
+                                size: 13, color: textColorSecondary),
+                            const SizedBox(width: 3),
+                            Text(
+                              distanceText,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: textColorSecondary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(width: 12),
+                        // التقييم
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.star_rounded,
+                                size: 14, color: Color(0xFFFFC107)),
+                            const SizedBox(width: 3),
+                            Text(
+                              ratingLabel,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: textColorPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 14),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: SizedBox(
-                width: 108,
-                height: 132,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: _buildRestaurantHeroImage(imageProvider),
-                    ),
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.black.withOpacity(0.04),
-                              Colors.black.withOpacity(0.28),
+                    const SizedBox(height: 10),
+                    // الشارات السفلية: حالة + عرض
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (hasOffer)
+                          Container(
+                            margin: const EdgeInsets.only(right: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: accentColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.local_offer_rounded,
+                                    size: 11, color: accentColor),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'عرض',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: accentColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isOpen
+                                ? openColor.withValues(alpha: 0.1)
+                                : closedColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: isOpen ? openColor : closedColor,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                isOpen ? 'مفتوح' : 'مغلق',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: isOpen ? openColor : closedColor,
+                                ),
+                              ),
                             ],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
                           ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),
+              ),
+            ),
+            // الصورة - يسار في RTL
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20),
+                bottomLeft: Radius.circular(20),
+              ),
+              child: Stack(
+                children: [
+                  SizedBox(
+                    width: 110,
+                    height: 130,
+                    child: _buildRestaurantHeroImage(imageProvider),
+                  ),
+                  // زر المفضلة
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: _buildRestaurantFavoriteButton(r),
+                  ),
+                ],
               ),
             ),
           ],

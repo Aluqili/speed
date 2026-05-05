@@ -67,6 +67,7 @@ class _InitGateClientState extends State<_InitGateClient> {
 
   late Future<void> _initFuture;
   bool _maintenanceMode = false;
+  // ignore: unused_field
   bool _clientPhoneSignInEnabled = false;
   String _maintenanceMessage = 'التطبيق تحت الصيانة. حاول لاحقًا.';
   bool _forceUpdateRequired = false;
@@ -446,7 +447,7 @@ class _ClientHomeEntryPoint extends StatelessWidget {
           unawaited(PushNotificationService.instance.bindClient(user.uid));
         }
 
-        return ClientHomeScreen(clientId: isSignedIn ? user!.uid : '');
+        return ClientHomeScreen(clientId: isSignedIn ? user.uid : '');
       },
     );
   }

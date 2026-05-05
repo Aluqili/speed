@@ -11,6 +11,7 @@ import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 
 import '../الخدمات/payment_app_launcher.dart';
 import '../الخدمات/promocode_service.dart';
+import '../الخدمات/cloudinary_service.dart';
 import 'cart_provider.dart';
 import 'client_order_details_screen.dart';
 
@@ -36,7 +37,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   static const Color backgroundColor = AppThemeArabic.clientBackground;
   static const Color cardColor = Colors.white;
   static const String _paymentReviewStatus = 'قيد المراجعة';
-  final _cloudinary = CloudinaryPublic('dvnzloec6', 'flutter_unsigned');
+  final _cloudinary = CloudinaryService.build();
   String? _selectedMethod;
   String? _proofUrl;
   bool _submitting = false;
