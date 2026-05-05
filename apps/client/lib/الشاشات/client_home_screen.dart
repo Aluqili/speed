@@ -571,6 +571,7 @@ class _ActiveOrderBanner extends StatelessWidget {
       },
       child: Container(
         width: double.infinity,
+        margin: const EdgeInsets.only(top: 10),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
