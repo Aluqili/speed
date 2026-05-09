@@ -1,10 +1,10 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:flutter/material.dart';
+import '../الثيم/client_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import '../الخدمات/cloudinary_service.dart';
 
@@ -16,20 +16,20 @@ class ChatScreen extends StatefulWidget {
   final String currentUserName;
 
   const ChatScreen({
-    Key? key,
+    super.key,
     required this.currentUserId,
     required this.otherUserId,
     required this.currentUserRole,
     required this.chatId,
     required this.currentUserName,
-  }) : super(key: key);
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  static const Color _primary = AppThemeArabic.clientPrimary;
+  static const Color _primary = ClientColors.primary;
 
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
@@ -107,7 +107,7 @@ class _ChatScreenState extends State<ChatScreen> {
       FirebaseFirestore.instance
           .collection(_collection)
           .where('conversationId', isEqualTo: widget.chatId)
-          .snapshots()
+          .snapshots(includeMetadataChanges: true)
           .map((snap) {
         final docs = snap.docs
             .map((d) => {'_id': d.id, ...d.data()})
@@ -200,9 +200,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   String _formatTime(dynamic ts) {
-    if (ts == null) return '';
-    final date = (ts as Timestamp).toDate().toLocal();
-    return intl.DateFormat('hh:mm a', 'ar').format(date);
+    if (ts == null || ts is! Timestamp) return '';
+    try {
+      return intl.DateFormat('hh:mm a', 'ar').format(ts.toDate().toLocal());
+    } catch (_) {
+      return '';
+    }
   }
 
   // ─── build ─────────────────────────────────────────────────────────────────
@@ -228,7 +231,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF0F0F0),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: _buildAppBar(),
         body: Column(
           children: [
@@ -242,10 +245,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   AppBar _buildAppBar() {
     return AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       elevation: 0.5,
       centerTitle: false,
-      iconTheme: const IconThemeData(color: Colors.black87),
+      iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface),
       title: Row(
         children: [
           CircleAvatar(
@@ -260,15 +263,15 @@ class _ChatScreenState extends State<ChatScreen> {
               children: [
                 Text(
                   _otherUserName.isNotEmpty ? _otherUserName : '...',
-                  style: const TextStyle(
-                      color: Colors.black87,
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 15,
                       fontWeight: FontWeight.bold),
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
                   _isSupportChat ? 'الدعم الفني' : 'عبر الدردشة الفورية',
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ],
             ),
@@ -384,8 +387,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildInputBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       padding: EdgeInsets.fromLTRB(
           12, 8, 12, MediaQuery.of(context).padding.bottom + 8),
       child: Row(
@@ -393,7 +397,7 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                color: const Color(0xFFF4F4F4),
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(24),
               ),
               child: TextField(
@@ -402,14 +406,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 onSubmitted: (_) =>
                     _sendMessage(text: _messageController.text),
                 maxLines: null,
-                style: const TextStyle(fontSize: 15),
-                decoration: const InputDecoration(
+                style: TextStyle(fontSize: 15, color: Theme.of(context).colorScheme.onSurface),
+                decoration: InputDecoration(
                   hintText: 'اكتب رسالتك...',
-                  hintStyle:
-                      TextStyle(color: Colors.grey, fontSize: 14),
+                  hintStyle: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 14),
                   border: InputBorder.none,
                   contentPadding:
-                      EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 ),
               ),
             ),
@@ -422,7 +427,7 @@ class _ChatScreenState extends State<ChatScreen> {
             decoration: BoxDecoration(
               color: _messageController.text.trim().isNotEmpty
                   ? _primary
-                  : Colors.grey[300],
+                  : (isDark ? const Color(0xFF333333) : Colors.grey[300]),
               shape: BoxShape.circle,
             ),
             child: IconButton(
@@ -458,7 +463,7 @@ class _MessageBubble extends StatelessWidget {
   final String time;
   final void Function(String url) onImageTap;
 
-  static const _primary = AppThemeArabic.clientPrimary;
+  static const _primary = ClientColors.primary;
 
   @override
   Widget build(BuildContext context) {
@@ -482,7 +487,7 @@ class _MessageBubble extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 2, right: 4, left: 4),
                 child: Text(senderName,
-                    style: TextStyle(
+                    style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         color: _primary)),
@@ -492,7 +497,7 @@ class _MessageBubble extends StatelessWidget {
                   ? EdgeInsets.zero
                   : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: isMe ? _primary : Colors.white,
+                color: isMe ? _primary : Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(18),
                   topRight: const Radius.circular(18),
@@ -535,7 +540,7 @@ class _MessageBubble extends StatelessWidget {
                       text,
                       style: TextStyle(
                           fontSize: 15,
-                          color: isMe ? Colors.white : Colors.black87,
+                          color: isMe ? Colors.white : Theme.of(context).colorScheme.onSurface,
                           height: 1.4),
                     ),
             ),
@@ -547,7 +552,7 @@ class _MessageBubble extends StatelessWidget {
                   time,
                   style: TextStyle(
                       fontSize: 10,
-                      color: Colors.grey[500]),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ),
           ],

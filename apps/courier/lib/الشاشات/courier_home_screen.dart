@@ -16,7 +16,7 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterL
 class CourierHomeScreen extends StatefulWidget {
   final String driverId;
 
-  const CourierHomeScreen({Key? key, required this.driverId}) : super(key: key);
+  const CourierHomeScreen({super.key, required this.driverId});
 
   @override
   State<CourierHomeScreen> createState() => _CourierHomeScreenState();

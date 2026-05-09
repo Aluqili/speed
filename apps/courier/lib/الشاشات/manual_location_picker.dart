@@ -4,7 +4,7 @@ import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class ManualLocationPicker extends StatefulWidget {
   final LatLng initialLocation;
-  const ManualLocationPicker({Key? key, required this.initialLocation}) : super(key: key);
+  const ManualLocationPicker({super.key, required this.initialLocation});
 
   @override
   State<ManualLocationPicker> createState() => _ManualLocationPickerState();

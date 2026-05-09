@@ -12,7 +12,7 @@ class CourierEditProfileScreen extends StatefulWidget {
   final String driverId;
   final Map<String, dynamic> currentData; // البيانات الحالية
 
-  const CourierEditProfileScreen({Key? key, required this.driverId, required this.currentData}) : super(key: key);
+  const CourierEditProfileScreen({super.key, required this.driverId, required this.currentData});
 
   @override
   State<CourierEditProfileScreen> createState() => _CourierEditProfileScreenState();

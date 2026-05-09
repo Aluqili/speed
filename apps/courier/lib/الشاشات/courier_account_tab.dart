@@ -11,7 +11,7 @@ import 'courier_wallet_screen.dart';
 class CourierAccountTab extends StatefulWidget {
   final String driverId;
 
-  const CourierAccountTab({Key? key, required this.driverId}) : super(key: key);
+  const CourierAccountTab({super.key, required this.driverId});
 
   @override
   State<CourierAccountTab> createState() => _CourierAccountTabState();

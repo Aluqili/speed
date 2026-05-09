@@ -16,10 +16,10 @@ class CourierConfirmDeliveryScreen extends StatefulWidget {
   final String driverId;
 
   const CourierConfirmDeliveryScreen({
-    Key? key,
+    super.key,
     required this.orderId,
     required this.driverId,
-  }) : super(key: key);
+  });
 
   @override
   State<CourierConfirmDeliveryScreen> createState() =>

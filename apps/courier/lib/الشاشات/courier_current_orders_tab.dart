@@ -17,8 +17,7 @@ class CourierCurrentOrdersTab extends StatelessWidget {
     'وصل إلى العميل',
   ];
 
-  const CourierCurrentOrdersTab({Key? key, required this.driverId})
-      : super(key: key);
+  const CourierCurrentOrdersTab({super.key, required this.driverId});
 
   @override
   Widget build(BuildContext context) {

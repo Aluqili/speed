@@ -9,8 +9,7 @@ import 'courier_order_details_screen.dart';
 class CourierNewOrdersScreen extends StatelessWidget {
   final String driverId;
 
-  const CourierNewOrdersScreen({Key? key, required this.driverId})
-      : super(key: key);
+  const CourierNewOrdersScreen({super.key, required this.driverId});
 
   @override
   Widget build(BuildContext context) {

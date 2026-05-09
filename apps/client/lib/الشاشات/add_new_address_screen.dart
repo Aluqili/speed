@@ -1,11 +1,11 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../الثيم/client_theme.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'client_home_tab.dart'; // تأكد من استيراد الشاشة الرئيسية للعميل
 
 class AddNewAddressScreen extends StatefulWidget {
@@ -20,7 +20,7 @@ class AddNewAddressScreen extends StatefulWidget {
   final String? customSaveLabel;
 
   const AddNewAddressScreen({
-    Key? key,
+    super.key,
     required this.userId,
     required this.userType,
     this.editAddressId,
@@ -30,7 +30,7 @@ class AddNewAddressScreen extends StatefulWidget {
     this.resultOnly = false,
     this.customTitle,
     this.customSaveLabel,
-  }) : super(key: key);
+  });
 
   @override
   State<AddNewAddressScreen> createState() => _AddNewAddressScreenState();
@@ -48,7 +48,7 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
   bool _firstSaveAttempt = true;
   bool _locationSelected = false;
   String? _saveWarning;
-  final Color primaryColor = AppThemeArabic.clientPrimary;
+  final Color primaryColor = ClientColors.primary;
 
   bool get _isQuickLocationPicker => widget.resultOnly;
 
@@ -400,10 +400,10 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
             ),
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: Colors.white,
                 borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
+                    BorderRadius.vertical(top: Radius.circular(20)),
               ),
               child: Column(
                 children: [

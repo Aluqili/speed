@@ -1,6 +1,6 @@
-import 'package:cloud_functions/cloud_functions.dart';
+﻿import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import '../الثيم/client_theme.dart';
 
 const _ratingFunctionsRegion = 'me-central1';
 
@@ -164,7 +164,7 @@ class _OrderRatingSheetState extends State<_OrderRatingSheet> {
                     style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
-                      color: AppThemeArabic.clientTextPrimary,
+                      color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -172,7 +172,7 @@ class _OrderRatingSheetState extends State<_OrderRatingSheet> {
                     'تقييمك يساعدنا على إظهار المطاعم والمندوبين الأفضل بشكل حقيقي.',
                     textAlign: TextAlign.right,
                     style: TextStyle(
-                      color: AppThemeArabic.clientTextSecondary,
+                      color: ClientColors.textSecondary,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -213,7 +213,7 @@ class _OrderRatingSheetState extends State<_OrderRatingSheet> {
                     child: ElevatedButton(
                       onPressed: _isSubmitting ? null : _submit,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppThemeArabic.clientPrimary,
+                        backgroundColor: ClientColors.primary,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 15),
                         shape: RoundedRectangleBorder(
@@ -262,7 +262,7 @@ class _OrderRatingSheetState extends State<_OrderRatingSheet> {
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(22),
         border:
-            Border.all(color: AppThemeArabic.clientPrimary.withOpacity(0.08)),
+        Border.all(color: ClientColors.primary.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -279,7 +279,7 @@ class _OrderRatingSheetState extends State<_OrderRatingSheet> {
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
-                        color: AppThemeArabic.clientTextPrimary,
+                        color: Colors.white,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -287,7 +287,7 @@ class _OrderRatingSheetState extends State<_OrderRatingSheet> {
                       subtitle,
                       textAlign: TextAlign.right,
                       style: const TextStyle(
-                        color: AppThemeArabic.clientTextSecondary,
+                        color: ClientColors.textSecondary,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -300,10 +300,10 @@ class _OrderRatingSheetState extends State<_OrderRatingSheet> {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                  color: AppThemeArabic.clientPrimary.withOpacity(0.12),
+                  color: ClientColors.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: Icon(icon, color: AppThemeArabic.clientPrimary),
+                child: Icon(icon, color: ClientColors.primary),
               ),
             ],
           ),
@@ -327,8 +327,8 @@ class _OrderRatingSheetState extends State<_OrderRatingSheet> {
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
                       color: selected
-                          ? AppThemeArabic.clientAccent
-                          : Colors.grey.withOpacity(0.22),
+                          ? ClientColors.accent
+                          : Colors.grey.withValues(alpha: 0.22),
                     ),
                   ),
                   child: Row(
@@ -338,8 +338,8 @@ class _OrderRatingSheetState extends State<_OrderRatingSheet> {
                         '$starValue',
                         style: TextStyle(
                           color: selected
-                              ? AppThemeArabic.clientTextPrimary
-                              : AppThemeArabic.clientTextSecondary,
+                              ? Colors.white
+                              : ClientColors.textSecondary,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -348,7 +348,7 @@ class _OrderRatingSheetState extends State<_OrderRatingSheet> {
                         selected
                             ? Icons.star_rounded
                             : Icons.star_border_rounded,
-                        color: AppThemeArabic.clientAccent,
+                        color: ClientColors.accent,
                         size: 20,
                       ),
                     ],
@@ -369,16 +369,16 @@ class _OrderRatingSheetState extends State<_OrderRatingSheet> {
               fillColor: Colors.white,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: Colors.grey.withOpacity(0.18)),
+                borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.18)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: Colors.grey.withOpacity(0.18)),
+                borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.18)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
                 borderSide:
-                    const BorderSide(color: AppThemeArabic.clientPrimary),
+                    const BorderSide(color: ClientColors.primary),
               ),
             ),
           ),

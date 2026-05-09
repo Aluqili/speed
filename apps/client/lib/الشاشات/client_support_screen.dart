@@ -1,12 +1,12 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../الثيم/client_theme.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import '../الخدمات/cloudinary_service.dart';
 
@@ -23,7 +23,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final cloudinary = CloudinaryService.build();
-  static const _primaryColor = AppThemeArabic.clientPrimary;
+  static const _primaryColor = ClientColors.primary;
   static const _closedSupportTicketMessage =
       'أغلق الدعم الفني هذه التذكرة. يمكنك قراءة المحادثة السابقة فقط.';
   bool _loadingConversation = true;
@@ -37,10 +37,10 @@ class _ClientSupportScreenState extends State<ClientSupportScreen> {
 
   String get _actorUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  String _buildDefaultConversationId() => '${_actorUid}-support';
+  String _buildDefaultConversationId() => '$_actorUid-support';
 
   String _buildNewSupportChatId() {
-    return '${_actorUid}-support-${DateTime.now().millisecondsSinceEpoch}';
+    return '$_actorUid-support-${DateTime.now().millisecondsSinceEpoch}';
   }
 
   @override
@@ -220,28 +220,28 @@ class _ClientSupportScreenState extends State<ClientSupportScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loadingConversation) {
-      return const Scaffold(
-        backgroundColor: AppThemeArabic.clientBackground,
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: AppThemeArabic.clientBackground,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         resizeToAvoidBottomInset: true,
         appBar: AppBar(
           title: const Text('الدعم الفني',
               style: TextStyle(
-                  color: AppThemeArabic.clientPrimary,
+                  color: ClientColors.primary,
                   fontWeight: FontWeight.bold,
                   fontSize: 20,
                   fontFamily: 'Tajawal')),
-          backgroundColor: Colors.white,
+          backgroundColor: Theme.of(context).colorScheme.surface,
           centerTitle: true,
           elevation: 1,
-          iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+          iconTheme: const IconThemeData(color: ClientColors.primary),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
           ),
@@ -254,7 +254,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen> {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [AppThemeArabic.clientPrimary, Color(0xFF0EA5E9)],
+                  colors: [ClientColors.primary, Color(0xFF0EA5E9)],
                   begin: Alignment.topRight,
                   end: Alignment.bottomLeft,
                 ),
@@ -380,15 +380,17 @@ class _ClientSupportScreenState extends State<ClientSupportScreen> {
                                           vertical: 8, horizontal: 12),
                                       decoration: BoxDecoration(
                                         color: isMe
-                                            ? AppThemeArabic.clientSurface
+                                            ? (Theme.of(context).brightness == Brightness.dark
+                                                ? ClientColors.surface
+                                                : const Color(0xFFFF6B00))
                                             : Theme.of(context)
                                                 .colorScheme
                                                 .surfaceContainerHighest,
                                         borderRadius: BorderRadius.circular(18),
                                         border: Border.all(
                                           color: isMe
-                                              ? AppThemeArabic.clientPrimary
-                                                  .withOpacity(0.10)
+                                              ? ClientColors.primary
+                                                  .withValues(alpha: 0.10)
                                               : Colors.transparent,
                                         ),
                                       ),
@@ -406,10 +408,10 @@ class _ClientSupportScreenState extends State<ClientSupportScreen> {
                                               child: Text(
                                                 (m['senderName'] ?? '')
                                                     .toString(),
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 11,
                                                   fontWeight: FontWeight.bold,
-                                                  color: Colors.black54,
+                                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                                 ),
                                               ),
                                             ),
@@ -440,9 +442,9 @@ class _ClientSupportScreenState extends State<ClientSupportScreen> {
                                           const SizedBox(height: 4),
                                           Text(
                                             _formatTimestamp(m['timestamp']),
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                                 fontSize: 12,
-                                                color: Colors.grey),
+                                                color: Theme.of(context).colorScheme.onSurfaceVariant),
                                           ),
                                         ],
                                       ),
@@ -466,9 +468,9 @@ class _ClientSupportScreenState extends State<ClientSupportScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).cardColor,
                     borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: Colors.black12),
+                    border: Border.all(color: Theme.of(context).dividerColor),
                   ),
                   child: Row(
                     children: [
@@ -499,7 +501,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen> {
                           decoration: InputDecoration(
                             hintText: 'اكتب رسالتك...',
                             filled: true,
-                            fillColor: AppThemeArabic.clientSurface,
+                            fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(16),
                               borderSide: BorderSide.none,

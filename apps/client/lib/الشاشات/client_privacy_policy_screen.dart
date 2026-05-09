@@ -54,9 +54,9 @@ class ClientPrivacyPolicyScreen extends StatelessWidget {
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 8),
-                    SelectableText(
+                    const SelectableText(
                       _policyUrl,
-                      style: const TextStyle(color: Colors.blueAccent),
+                      style: TextStyle(color: Colors.blueAccent),
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(
@@ -87,9 +87,9 @@ class ClientPrivacyPolicyScreen extends StatelessWidget {
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 8),
-                    SelectableText(
+                    const SelectableText(
                       _deletionUrl,
-                      style: const TextStyle(color: Colors.blueAccent),
+                      style: TextStyle(color: Colors.blueAccent),
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(

@@ -14,10 +14,10 @@ class CourierOrderProcessScreen extends StatefulWidget {
   final String orderId;
   final String stage;
   const CourierOrderProcessScreen({
-    Key? key,
+    super.key,
     required this.orderId,
     required this.stage,
-  }) : super(key: key);
+  });
 
   @override
   State<CourierOrderProcessScreen> createState() =>

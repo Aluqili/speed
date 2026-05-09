@@ -124,7 +124,7 @@ Future<BitmapDescriptor> _buildCourierMarkerIcon({
   const iconSize = 56.0;
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);
-  final center = Offset(size / 2, size / 2);
+  const center = Offset(size / 2, size / 2);
 
   final shadowPaint = Paint()
     ..color = Colors.black.withValues(alpha: 0.14)
@@ -231,9 +231,9 @@ Future<bool> launchCourierPhoneCall(
 
   if (!context.mounted) return false;
   ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
+    const SnackBar(
       backgroundColor: AppThemeArabic.courierTextPrimary,
-      content: const Text('تعذر فتح الاتصال من هذا الجهاز أو الرقم غير مدعوم'),
+      content: Text('تعذر فتح الاتصال من هذا الجهاز أو الرقم غير مدعوم'),
     ),
   );
   return false;

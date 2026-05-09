@@ -8,8 +8,9 @@ class StoreOrdersHistoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: AppThemeArabic.storeBackground,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('سجل الطلبات'),
         centerTitle: true,
@@ -53,9 +54,11 @@ class StoreOrdersHistoryScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: theme.cardTheme.color ?? AppThemeArabic.storeSurface,
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.black12),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
+              ),
             ),
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,

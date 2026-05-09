@@ -101,6 +101,6 @@ class UnreadMessagesService {
 
     // نرجع true إذا أي منها > 0
     if (streams.isEmpty) return Stream.value(false);
-    return streams.first.map((count) => count > 0);
+    return streams.first.map((unreadCount) => unreadCount > 0);
   }
 }

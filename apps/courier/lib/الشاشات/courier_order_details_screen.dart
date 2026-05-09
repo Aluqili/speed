@@ -19,10 +19,10 @@ class CourierOrderDetailsScreen extends StatefulWidget {
   final String driverId;
 
   const CourierOrderDetailsScreen({
-    Key? key,
+    super.key,
     required this.orderId,
     required this.driverId,
-  }) : super(key: key);
+  });
 
   @override
   State<CourierOrderDetailsScreen> createState() =>
@@ -33,6 +33,13 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   Map<String, dynamic>? orderData;
   double deliveryFee = 0;
   CourierMarkerIcons? _markerIcons;
+  List<LatLng> _driverRestaurantRoute = const [];
+  List<LatLng> _restaurantClientRoute = const [];
+  double? _driverRestaurantRoadKm;
+  double? _restaurantClientRoadKm;
+  String _loadedRouteKey = '';
+  bool _fetchingRoutes = false;
+  GoogleMapController? _orderMapController;
 
   double get _driverBaseFee {
     try {
@@ -170,6 +177,181 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   }
 
   double _deg2rad(double deg) => deg * (pi / 180);
+
+  List<LatLng> _decodePolyline(String encoded) {
+    if (encoded.isEmpty) return const [];
+    final points = <LatLng>[];
+    var index = 0;
+    var lat = 0;
+    var lng = 0;
+
+    while (index < encoded.length) {
+      var shift = 0;
+      var result = 0;
+      int b;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20 && index < encoded.length);
+      lat += (result & 1) != 0 ? ~(result >> 1) : result >> 1;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20 && index < encoded.length);
+      lng += (result & 1) != 0 ? ~(result >> 1) : result >> 1;
+
+      points.add(LatLng(lat / 1e5, lng / 1e5));
+    }
+    return points;
+  }
+
+  Future<Map<String, dynamic>?> _estimateRoute(
+    LatLng origin,
+    LatLng destination,
+  ) async {
+    try {
+      final result = await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('estimateRoute')
+          .call({
+        'origin': {'lat': origin.latitude, 'lng': origin.longitude},
+        'destination': {
+          'lat': destination.latitude,
+          'lng': destination.longitude,
+        },
+      }).timeout(const Duration(seconds: 5));
+      return Map<String, dynamic>.from(result.data as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _fitOrderMapBounds({
+    required LatLng? driverLocation,
+    required LatLng? restaurantLocation,
+    required LatLng? clientLocation,
+  }) async {
+    final controller = _orderMapController;
+    if (controller == null) return;
+    final points = [
+      if (driverLocation != null) driverLocation,
+      if (restaurantLocation != null) restaurantLocation,
+      if (clientLocation != null) clientLocation,
+    ];
+    if (points.isEmpty) return;
+    if (points.length == 1) {
+      await controller.animateCamera(
+        CameraUpdate.newLatLngZoom(points.first, 14),
+      );
+      return;
+    }
+
+    var minLat = points.first.latitude;
+    var maxLat = points.first.latitude;
+    var minLng = points.first.longitude;
+    var maxLng = points.first.longitude;
+    for (final point in points.skip(1)) {
+      if (point.latitude < minLat) minLat = point.latitude;
+      if (point.latitude > maxLat) maxLat = point.latitude;
+      if (point.longitude < minLng) minLng = point.longitude;
+      if (point.longitude > maxLng) maxLng = point.longitude;
+    }
+
+    if (minLat == maxLat) {
+      minLat -= 0.002;
+      maxLat += 0.002;
+    }
+    if (minLng == maxLng) {
+      minLng -= 0.002;
+      maxLng += 0.002;
+    }
+
+    await controller.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        54,
+      ),
+    );
+  }
+
+  Future<void> _loadRoadRoutes({
+    required LatLng? driverLocation,
+    required LatLng? restaurantLocation,
+    required LatLng? clientLocation,
+  }) async {
+    if (_fetchingRoutes) return;
+    if (restaurantLocation == null || clientLocation == null) return;
+    final routeKey = [
+      driverLocation?.latitude.toStringAsFixed(6) ?? 'no-driver',
+      driverLocation?.longitude.toStringAsFixed(6) ?? 'no-driver',
+      restaurantLocation.latitude.toStringAsFixed(6),
+      restaurantLocation.longitude.toStringAsFixed(6),
+      clientLocation.latitude.toStringAsFixed(6),
+      clientLocation.longitude.toStringAsFixed(6),
+    ].join('|');
+    final hasCachedRestaurantClient = _restaurantClientRoute.length >= 2;
+    final hasCachedDriverRestaurant =
+        driverLocation == null || _driverRestaurantRoute.length >= 2;
+    if (_loadedRouteKey == routeKey &&
+        hasCachedRestaurantClient &&
+        hasCachedDriverRestaurant) {
+      return;
+    }
+
+    _fetchingRoutes = true;
+    try {
+      final driverRestaurant = driverLocation == null
+          ? null
+          : await _estimateRoute(driverLocation, restaurantLocation);
+      final restaurantClient =
+          await _estimateRoute(restaurantLocation, clientLocation);
+
+      List<LatLng> routePoints(
+        Map<String, dynamic>? route,
+        LatLng start,
+        LatLng end,
+      ) {
+        final decoded =
+            _decodePolyline((route?['encodedPolyline'] ?? '').toString());
+        return decoded.length >= 2 ? decoded : [start, end];
+      }
+
+      final restaurantClientKm =
+          ((restaurantClient?['distanceKm'] ?? 0) as num?)?.toDouble();
+
+      if (!mounted) return;
+      setState(() {
+        _loadedRouteKey = routeKey;
+        if (driverLocation != null) {
+          _driverRestaurantRoute = routePoints(
+            driverRestaurant,
+            driverLocation,
+            restaurantLocation,
+          );
+          _driverRestaurantRoadKm =
+              ((driverRestaurant?['distanceKm'] ?? 0) as num?)?.toDouble();
+        }
+        _restaurantClientRoute = routePoints(
+          restaurantClient,
+          restaurantLocation,
+          clientLocation,
+        );
+        _restaurantClientRoadKm = restaurantClientKm;
+        if (restaurantClientKm != null && restaurantClientKm > 0) {
+          deliveryFee = _driverFeeByDistance(restaurantClientKm);
+        }
+      });
+    } finally {
+      _fetchingRoutes = false;
+    }
+  }
 
   Future<void> _acceptOrder() async {
     if (orderData == null) return;
@@ -363,14 +545,26 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
               );
 
               final restaurantToClientKm =
-                  (restaurantLocation != null && clientLocation != null)
+                  _restaurantClientRoadKm ??
+                  (restaurantLocation != null && clientLocation != null
                       ? courierHaversineKm(restaurantLocation, clientLocation)
-                      : null;
+                      : null);
 
               final driverToRestaurantKm =
-                  (driverLocation != null && restaurantLocation != null)
+                  _driverRestaurantRoadKm ??
+                  (driverLocation != null && restaurantLocation != null
                       ? courierHaversineKm(driverLocation, restaurantLocation)
-                      : null;
+                      : null);
+
+              if (restaurantLocation != null && clientLocation != null) {
+                Future.microtask(
+                  () => _loadRoadRoutes(
+                    driverLocation: driverLocation,
+                    restaurantLocation: restaurantLocation,
+                    clientLocation: clientLocation,
+                  ),
+                );
+              }
 
               final markers = buildCourierTripMarkers(
                 restaurantLocation: restaurantLocation,
@@ -384,16 +578,26 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                 if (driverLocation != null && restaurantLocation != null)
                   Polyline(
                     polylineId: const PolylineId('driver_restaurant'),
-                    points: [driverLocation, restaurantLocation],
+                    points: _driverRestaurantRoute.length >= 2
+                        ? _driverRestaurantRoute
+                        : [driverLocation, restaurantLocation],
                     color: AppThemeArabic.courierAccent,
                     width: 5,
+                    startCap: Cap.roundCap,
+                    endCap: Cap.roundCap,
+                    jointType: JointType.round,
                   ),
                 if (restaurantLocation != null && clientLocation != null)
                   Polyline(
                     polylineId: const PolylineId('restaurant_client'),
-                    points: [restaurantLocation, clientLocation],
+                    points: _restaurantClientRoute.length >= 2
+                        ? _restaurantClientRoute
+                        : [restaurantLocation, clientLocation],
                     color: AppThemeArabic.courierPrimary,
                     width: 5,
+                    startCap: Cap.roundCap,
+                    endCap: Cap.roundCap,
+                    jointType: JointType.round,
                   ),
               };
 
@@ -460,6 +664,17 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                                   target: restaurantLocation ?? clientLocation!,
                                   zoom: 12.5,
                                 ),
+                                onMapCreated: (controller) {
+                                  _orderMapController = controller;
+                                  Future.delayed(
+                                    const Duration(milliseconds: 300),
+                                    () => _fitOrderMapBounds(
+                                      driverLocation: driverLocation,
+                                      restaurantLocation: restaurantLocation,
+                                      clientLocation: clientLocation,
+                                    ),
+                                  );
+                                },
                                 markers: markers,
                                 polylines: polylines,
                                 zoomControlsEnabled: true,

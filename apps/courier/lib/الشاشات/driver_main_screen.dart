@@ -29,8 +29,7 @@ const Color backgroundColor = AppThemeArabic.courierBackground;
 
 class CourierDashboardScreen extends StatefulWidget {
   final String driverId;
-  const CourierDashboardScreen({Key? key, required this.driverId})
-      : super(key: key);
+  const CourierDashboardScreen({super.key, required this.driverId});
 
   @override
   State<CourierDashboardScreen> createState() => _CourierDashboardScreenState();
@@ -314,7 +313,13 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
       await FirebaseFirestore.instance
           .collection('drivers')
           .doc(widget.driverId)
-          .update({'fcmToken': token});
+          .set({
+        'fcmToken': token,
+        'messagingToken': token,
+        'fcmTokens': FieldValue.arrayUnion([token]),
+        'deviceTokens': FieldValue.arrayUnion([token]),
+        'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     }
   }
 
@@ -447,7 +452,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
           'availabilityCurrentStartedAt': null,
         }, SetOptions(merge: true));
       } else {
-        debugPrint('Firestore logout update error: ' + e.toString());
+        debugPrint('Firestore logout update error: $e');
       }
     }
     await FirebaseAuth.instance.signOut();
@@ -618,7 +623,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                DrawerHeader(
+                const DrawerHeader(
                   decoration: BoxDecoration(color: primaryColor),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -645,7 +650,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   child: ListTile(
                     leading: const Icon(Icons.history,
                         color: AppThemeArabic.courierPrimary),
-                    title: Text('سجل الطلبات',
+                    title: const Text('سجل الطلبات',
                         style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
                         context,
@@ -664,7 +669,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                     leading: const Icon(Icons.person,
                         color: AppThemeArabic.courierTextPrimary),
                     title:
-                        Text('الحساب', style: TextStyle(fontFamily: 'Tajawal')),
+                        const Text('الحساب', style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -682,7 +687,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                     leading: const Icon(Icons.monetization_on,
                         color: AppThemeArabic.courierAccent),
                     title:
-                        Text('أرباحي', style: TextStyle(fontFamily: 'Tajawal')),
+                        const Text('أرباحي', style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -699,7 +704,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   child: ListTile(
                     leading: const Icon(Icons.assignment_turned_in,
                         color: AppThemeArabic.courierPrimary),
-                    title: Text('عرض الطلب الحالي',
+                    title: const Text('عرض الطلب الحالي',
                         style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () async {
                       final box = GetStorage();
@@ -757,7 +762,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                     leading: const Icon(Icons.account_balance_wallet,
                         color: AppThemeArabic.courierAccent),
                     title:
-                        Text('محفظتي', style: TextStyle(fontFamily: 'Tajawal')),
+                        const Text('محفظتي', style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -766,7 +771,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Divider(),
+                const Divider(),
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -774,7 +779,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                     children: [
                       Chip(
                         label: Text(isAvailable ? 'متاح للطلبات' : 'غير متاح',
-                            style: TextStyle(
+                            style: const TextStyle(
                                 color: Colors.white, fontFamily: 'Tajawal')),
                         backgroundColor: isAvailable
                             ? AppThemeArabic.courierAccent
@@ -792,7 +797,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                     ],
                   ),
                 ),
-                Divider(),
+                const Divider(),
                 Card(
                   margin:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -802,7 +807,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   child: ListTile(
                     leading: const Icon(Icons.logout,
                         color: AppThemeArabic.clientError),
-                    title: Text('تسجيل الخروج',
+                    title: const Text('تسجيل الخروج',
                         style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: _confirmAndLogout,
                   ),
@@ -947,7 +952,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
               Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(18),
-                  boxShadow: [
+                  boxShadow: const [
                     BoxShadow(
                         color: Colors.black12,
                         blurRadius: 12,
@@ -1009,12 +1014,12 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Expanded(
+                        const Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text(
+                              Text(
                                 'لوحة المندوب',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w800,
@@ -1024,7 +1029,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                               ),
                               Text(
                                 'الخريطة تعرض موقعك الحالي وطبقات المطاعم المفتوحة والأكثر نشاطًا.',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
                                   fontFamily: 'Tajawal',
                                   color: AppThemeArabic.courierTextSecondary,

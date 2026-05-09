@@ -1,13 +1,13 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../الثيم/client_theme.dart';
 import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'client_privacy_policy_screen.dart';
 
 class ClientSettingsScreen extends StatefulWidget {
-  const ClientSettingsScreen({Key? key}) : super(key: key);
+  const ClientSettingsScreen({super.key});
 
   @override
   State<ClientSettingsScreen> createState() => _ClientSettingsScreenState();
@@ -19,8 +19,7 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
   Map<String, dynamic>? userData;
   bool _isDeletingAccount = false;
 
-  static const Color primaryColor = AppThemeArabic.clientPrimary;
-  static const Color backgroundColor = AppThemeArabic.clientBackground;
+  static const Color primaryColor = ClientColors.primary;
 
   @override
   void initState() {
@@ -62,6 +61,9 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
   Future<void> _requestAccountDeletion() async {
     if (_isDeletingAccount) return;
 
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -85,7 +87,6 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
 
     if (confirm != true) return;
 
-    final messenger = ScaffoldMessenger.of(context);
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       messenger.showSnackBar(
@@ -122,7 +123,7 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
       messenger.showSnackBar(
         const SnackBar(content: Text('تم إرسال طلب حذف الحساب بنجاح')),
       );
-      Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
+      navigator.pushNamedAndRemoveUntil('/login', (_) => false);
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
@@ -138,7 +139,7 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: backgroundColor,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
           title: Text('settings'.tr,
               style: const TextStyle(
@@ -146,7 +147,7 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                   fontWeight: FontWeight.bold,
                   fontSize: 20,
                   fontFamily: 'Tajawal')),
-          backgroundColor: Colors.white,
+          backgroundColor: Theme.of(context).colorScheme.surface,
           centerTitle: true,
           iconTheme: const IconThemeData(color: primaryColor),
           elevation: 1,
@@ -157,7 +158,7 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
         body: Padding(
           padding: const EdgeInsets.all(20),
           child: Card(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             elevation: 3,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -184,11 +185,12 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                               value: 'English', child: Text('english'.tr)),
                         ],
                         onChanged: (val) {
-                          if (val != null)
+                          if (val != null) {
                             setState(() {
                               language = val;
                               _updateLocaleFromLanguage(val);
                             });
+                          }
                         },
                       ),
                     ],
@@ -228,7 +230,6 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                           icon: const Icon(Icons.edit, color: Colors.blue),
                           tooltip: 'تعديل الاسم',
                           onPressed: () async {
-                            final messenger = ScaffoldMessenger.of(context);
                             final newName = await showDialog<String>(
                               context: context,
                               builder: (context) {
@@ -261,7 +262,9 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                                   .update({'name': newName});
                               if (!mounted) return;
                               setState(() => userData!['name'] = newName);
-                              messenger.showSnackBar(const SnackBar(
+                              if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
                                   content: Text('تم تحديث الاسم')));
                             }
                           },
@@ -284,7 +287,6 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                           icon: const Icon(Icons.edit, color: Colors.blue),
                           tooltip: 'تعديل البريد الإلكتروني',
                           onPressed: () async {
-                            final messenger = ScaffoldMessenger.of(context);
                             final newEmail = await showDialog<String>(
                               context: context,
                               builder: (context) {
@@ -317,7 +319,9 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                                   .update({'email': newEmail});
                               if (!mounted) return;
                               setState(() => userData!['email'] = newEmail);
-                              messenger.showSnackBar(const SnackBar(
+                              if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
                                   content: Text('تم تحديث البريد الإلكتروني')));
                             }
                           },
@@ -339,7 +343,6 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                           icon: const Icon(Icons.edit, color: Colors.blue),
                           tooltip: 'تعديل رقم الجوال',
                           onPressed: () async {
-                            final messenger = ScaffoldMessenger.of(context);
                             final newPhone = await showDialog<String>(
                               context: context,
                               builder: (context) {
@@ -373,7 +376,9 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                                   .update({'phone': newPhone});
                               if (!mounted) return;
                               setState(() => userData!['phone'] = newPhone);
-                              messenger.showSnackBar(const SnackBar(
+                              if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
                                   content: Text('تم تحديث رقم الجوال')));
                             }
                           },
@@ -419,7 +424,7 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                       ),
                       onPressed: () async {
                         await FirebaseAuth.instance.signOut();
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         Navigator.of(context)
                             .pushNamedAndRemoveUntil('/login', (_) => false);
                       },

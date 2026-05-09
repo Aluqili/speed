@@ -19,10 +19,10 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
   final String driverId;
 
   const CourierGoToRestaurantScreen({
-    Key? key,
+    super.key,
     required this.orderId,
     required this.driverId,
-  }) : super(key: key);
+  });
 
   Future<void> _openGoogleMaps(BuildContext context, LatLng location) async {
     final Uri url = Uri.parse(

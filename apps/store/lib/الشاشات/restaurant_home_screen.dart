@@ -62,8 +62,7 @@ const Set<String> _dashboardNewStatuses = {
 
 class StoreDashboardScreen extends StatefulWidget {
   final String restaurantId;
-  const StoreDashboardScreen({Key? key, required this.restaurantId})
-      : super(key: key);
+  const StoreDashboardScreen({super.key, required this.restaurantId});
 
   @override
   State<StoreDashboardScreen> createState() => _StoreDashboardScreenState();

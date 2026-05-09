@@ -1,7 +1,9 @@
+﻿import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../الثيم/client_theme.dart';
+import '../مكونات/gradient_background.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import 'client_wallet_history_screen.dart';
 import 'client_wallet_recharge_screen.dart';
@@ -9,15 +11,14 @@ import 'client_wallet_withdrawal_screen.dart';
 
 class ClientWalletScreen extends StatefulWidget {
   final String clientId;
-  const ClientWalletScreen({Key? key, required this.clientId})
-      : super(key: key);
+  const ClientWalletScreen({super.key, required this.clientId});
 
   @override
   State<ClientWalletScreen> createState() => _ClientWalletScreenState();
 }
 
 class _ClientWalletScreenState extends State<ClientWalletScreen> {
-  static const _primary = AppThemeArabic.clientPrimary;
+  static const _primary = ClientColors.primary;
 
   double _resolveWalletBalance(Map<String, dynamic>? data) {
     if (data == null) return 0.0;
@@ -64,14 +65,23 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF5F5F5),
+        backgroundColor: ClientColors.background,
         appBar: AppBar(
           title: const Text('محفظتي',
-              style: TextStyle(color: _primary, fontWeight: FontWeight.bold)),
-          backgroundColor: Colors.white,
+              style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Tajawal')),
+          backgroundColor: const Color(0xCC0F0F0F),
           centerTitle: true,
-          iconTheme: const IconThemeData(color: _primary),
-          elevation: 0.5,
+          iconTheme: const IconThemeData(color: Colors.white),
+          elevation: 0,
+          flexibleSpace: ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+              child: Container(color: Colors.transparent),
+            ),
+          ),
         ),
         body: StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance
@@ -116,7 +126,8 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                     final withdrawalDocs =
                         withdrawalSnapshot.data?.docs ?? const [];
 
-                    return ListView(
+                    return GradientBackground(
+                      child: ListView(
                       padding: const EdgeInsets.all(16),
                       children: [
                     // ─── بطاقة الرصيد ──────────────────────────────
@@ -124,28 +135,38 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 24, vertical: 28),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
+                        gradient: const LinearGradient(
                           colors: [
-                            _primary,
-                            _primary.withValues(alpha: 0.75)
+                            ClientColors.primary,
+                            ClientColors.primaryLight,
                           ],
                           begin: Alignment.topRight,
                           end: Alignment.bottomLeft,
                         ),
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
-                            color: _primary.withValues(alpha: 0.3),
-                            blurRadius: 16,
-                            offset: const Offset(0, 6),
+                            color: ClientColors.primary.withValues(alpha: 0.45),
+                            blurRadius: 28,
+                            offset: const Offset(0, 8),
+                            spreadRadius: -4,
                           ),
                         ],
                       ),
                       child: Column(
                         children: [
-                          const Icon(Icons.account_balance_wallet_rounded,
-                              size: 48, color: Colors.white),
-                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                                Icons.account_balance_wallet_rounded,
+                                size: 36,
+                                color: Colors.white),
+                          ),
+                          const SizedBox(height: 14),
                           const Text('رصيدك الحالي',
                               style: TextStyle(
                                   color: Colors.white70, fontSize: 14)),
@@ -153,9 +174,10 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                           Text(
                             '${balance.toStringAsFixed(2)} ج.س',
                             style: const TextStyle(
-                              fontSize: 28,
+                              fontSize: 32,
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
+                              letterSpacing: 1,
                             ),
                           ),
                           if (pendingCount > 0) ...[
@@ -238,10 +260,10 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
 
                     // ─── آخر طلبات الشحن ───────────────────────────
                     if (rechargeDocs.isNotEmpty) ...[
-                      _SectionLabel(
+                      const _SectionLabel(
                         title: 'آخر طلبات الشحن',
                         icon: Icons.add_circle_rounded,
-                        color: const Color(0xFF10B981),
+                        color: Color(0xFF10B981),
                       ),
                       const SizedBox(height: 10),
                       ...rechargeDocs.map((doc) {
@@ -254,83 +276,26 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                         final status =
                             _resolveStatus((data['status'] ?? '').toString());
 
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            boxShadow: const [
-                              BoxShadow(
-                                  color: Color(0x0A000000),
-                                  blurRadius: 6,
-                                  offset: Offset(0, 2))
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: status.color
-                                      .withValues(alpha: 0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(status.icon,
-                                    color: status.color, size: 20),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '${amount.toStringAsFixed(2)} ج.س',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 15),
-                                    ),
-                                    if (dateStr.isNotEmpty)
-                                      Text(dateStr,
-                                          style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.grey[500])),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: status.color
-                                      .withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  status.label,
-                                  style: TextStyle(
-                                      color: status.color,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ],
-                          ),
+                        return _GlassTxCard(
+                          icon: status.icon,
+                          iconColor: status.color,
+                          amount: amount,
+                          dateStr: dateStr,
+                          statusLabel: status.label,
+                          statusColor: status.color,
                         );
                       }),
                     ] else ...[
-                      Center(
+                      const Center(
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          padding: EdgeInsets.symmetric(vertical: 24),
                           child: Column(
                             children: [
                               Icon(Icons.inbox_rounded,
-                                  size: 48, color: Colors.grey[300]),
-                              const SizedBox(height: 8),
+                                  size: 48, color: Colors.white24),
+                              SizedBox(height: 8),
                               Text('لا يوجد سجل شحن حتى الآن',
-                                  style: TextStyle(color: Colors.grey[500])),
+                                  style: TextStyle(color: Colors.white38)),
                             ],
                           ),
                         ),
@@ -340,7 +305,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                     // ─── طلبات السحب ───────────────────────────────
                     if (withdrawalDocs.isNotEmpty) ...[
                       const SizedBox(height: 16),
-                      _SectionLabel(
+                      const _SectionLabel(
                         title: 'طلبات السحب',
                         icon: Icons.arrow_upward_rounded,
                         color: Colors.orange,
@@ -360,94 +325,115 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                         final account =
                             (data['accountNumber'] ?? '').toString();
 
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            boxShadow: const [
-                              BoxShadow(
-                                  color: Color(0x0A000000),
-                                  blurRadius: 6,
-                                  offset: Offset(0, 2))
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: status.color
-                                      .withValues(alpha: 0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                    Icons.arrow_circle_up_rounded,
-                                    color: status.color,
-                                    size: 20),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '${amount.toStringAsFixed(2)} ج.س',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 15),
-                                    ),
-                                    if (method.isNotEmpty)
-                                      Text(method,
-                                          style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[600])),
-                                    if (account.isNotEmpty)
-                                      Text(account,
-                                          style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.grey[500])),
-                                    if (dateStr.isNotEmpty)
-                                      Text(dateStr,
-                                          style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.grey[400])),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: status.color
-                                      .withValues(alpha: 0.1),
-                                  borderRadius:
-                                      BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  status.label,
-                                  style: TextStyle(
-                                      color: status.color,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ],
-                          ),
+                        return _GlassTxCard(
+                          icon: Icons.arrow_circle_up_rounded,
+                          iconColor: status.color,
+                          amount: amount,
+                          dateStr: dateStr,
+                          statusLabel: status.label,
+                          statusColor: status.color,
+                          subtitle: [method, account]
+                              .where((s) => s.isNotEmpty)
+                              .join('  •  '),
                         );
                       }),
                     ],
                   ],
-                );
+                ),
+                  );
                   },
                 );
               },
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+// ─── Glass transaction card ────────────────────────────────────────────────
+
+class _GlassTxCard extends StatelessWidget {
+  const _GlassTxCard({
+    required this.icon,
+    required this.iconColor,
+    required this.amount,
+    required this.dateStr,
+    required this.statusLabel,
+    required this.statusColor,
+    this.subtitle,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final double amount;
+  final String dateStr;
+  final String statusLabel;
+  final Color statusColor;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0x1AFFFFFF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x1AFF6B00)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${amount.toStringAsFixed(2)} ج.س',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15),
+                ),
+                if (subtitle != null && subtitle!.isNotEmpty)
+                  Text(subtitle!,
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.white54)),
+                if (dateStr.isNotEmpty)
+                  Text(dateStr,
+                      style: const TextStyle(
+                          fontSize: 10, color: Colors.white38)),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                  color: statusColor.withValues(alpha: 0.3), width: 0.5),
+            ),
+            child: Text(
+              statusLabel,
+              style: TextStyle(
+                  color: statusColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -478,23 +464,23 @@ class _WalletActionTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: effectiveColor.withValues(alpha: 0.08),
+          color: const Color(0x1AFFFFFF),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-              color: effectiveColor.withValues(alpha: 0.25), width: 1),
+              color: effectiveColor.withValues(alpha: 0.35), width: 1),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(9),
               decoration: BoxDecoration(
-                color: effectiveColor.withValues(alpha: 0.15),
+                color: effectiveColor.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: effectiveColor, size: 20),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 7),
             Text(
               label,
               textAlign: TextAlign.center,
@@ -531,7 +517,8 @@ class _SectionLabel extends StatelessWidget {
         const Spacer(),
         Text(
           title,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          style: const TextStyle(
+              fontWeight: FontWeight.w700, fontSize: 15, color: Colors.white),
         ),
         const SizedBox(width: 6),
         Container(

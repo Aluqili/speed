@@ -32,7 +32,7 @@
     },
     "client_min_build_android": {
       "defaultValue": {
-        "value": "11"
+        "value": "16"
       },
       "valueType": "NUMBER"
     },
@@ -44,7 +44,7 @@
     },
     "client_update_url_android": {
       "defaultValue": {
-        "value": "https://speedstarapp.web.app/downloads/client-android.apk"
+        "value": "https://play.google.com/store/apps/details?id=com.aluqili.speedstar.client"
       },
       "valueType": "STRING"
     },
@@ -131,6 +131,12 @@
         "value": "khartoum"
       },
       "valueType": "STRING"
+    },
+    "client_home_show_offers_section": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
     },
     "client_state_rollout_block_message": {
       "defaultValue": {

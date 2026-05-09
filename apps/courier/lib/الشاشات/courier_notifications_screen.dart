@@ -6,8 +6,7 @@ import 'courier_order_details_screen.dart';
 class CourierNotificationsScreen extends StatefulWidget {
   final String driverId;
 
-  const CourierNotificationsScreen({Key? key, required this.driverId})
-      : super(key: key);
+  const CourierNotificationsScreen({super.key, required this.driverId});
 
   @override
   State<CourierNotificationsScreen> createState() =>

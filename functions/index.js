@@ -594,7 +594,9 @@ function notificationPayloadToData(payload, role, userId) {
     || notificationType.includes('courier'));
   const normalizedRole = String(role || '').trim().toLowerCase();
   const isStore = normalizedRole === 'store';
-  const androidChannelId = isOrderUrgent && isStore
+  const androidChannelId = normalizedRole === 'client'
+    ? 'speedstar_client_alerts_v3'
+    : isOrderUrgent && isStore
     ? 'speedstar_store_orders_incoming_v6'
     : 'speedstar_alerts';
 
@@ -604,6 +606,10 @@ function notificationPayloadToData(payload, role, userId) {
     type: String(payload.type || ''),
     source: String(payload.source || ''),
     orderId: payload.orderId ? String(payload.orderId) : '',
+    conversationId: payload.conversationId ? String(payload.conversationId) : '',
+    chatId: payload.chatId ? String(payload.chatId) : '',
+    senderId: payload.senderId ? String(payload.senderId) : '',
+    senderType: payload.senderType ? String(payload.senderType) : '',
     audience: String(role || ''),
     userId: String(userId || ''),
     channelId: androidChannelId,
@@ -633,7 +639,7 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
   const storeOrdersChannelId = 'speedstar_store_orders_incoming_v6';
   const sharedOrdersChannelId = 'speedstar_orders_incoming_v1';
   const androidChannelId = normalizedRole === 'client'
-    ? 'speedstar_alerts'
+    ? 'speedstar_client_alerts_v3'
     : isOrderUrgent
       ? (normalizedRole === 'store' ? storeOrdersChannelId : sharedOrdersChannelId)
       : 'speedstar_alerts';
@@ -644,6 +650,12 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
     android: {
       priority: 'high',
       ttl: 30000,
+      notification: {
+        channelId: androidChannelId,
+        icon: 'ic_notification',
+        color: '#FF6B00',
+        clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+      },
     },
     apns: {
       headers: {
@@ -665,6 +677,9 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
   message.android.notification = {
     channelId: androidChannelId,
     visibility: 'public',
+    icon: 'ic_stat_speedstar',
+    color: '#FF6B00',
+    defaultSound: true,
   };
 
   if (normalizedRole === 'client') {
@@ -718,6 +733,90 @@ async function sendNotificationToSingleUser(role, userId, payload) {
   const userDoc = await roleRef.doc(uid).get();
   await writePayload.ref.set(writePayload.data);
   return await sendPushToUser(normalizedRole, uid, userDoc.data() || {}, payload);
+}
+
+function messageNotificationPreview(data) {
+  const text = String(data?.message || data?.text || '').trim();
+  const preview = text || (data?.imageUrl ? 'صورة مرفقة' : 'رسالة جديدة');
+  return preview.length > 90 ? `${preview.slice(0, 87)}...` : preview;
+}
+
+async function clientDocExists(clientId) {
+  const uid = String(clientId || '').trim();
+  if (!uid || uid === 'support') return false;
+  const snap = await db.collection('clients').doc(uid).get();
+  return snap.exists;
+}
+
+function supportClientIdFromConversation(conversationId) {
+  const raw = String(conversationId || '').trim();
+  const marker = raw.indexOf('-support');
+  if (marker <= 0) return '';
+  return raw.slice(0, marker).trim();
+}
+
+async function resolveClientRecipientForSupportMessage(data) {
+  const senderId = String(data?.senderId || data?.actorUid || '').trim();
+  const senderType = String(data?.senderType || '').trim().toLowerCase();
+  if (senderType === 'client') return '';
+
+  const candidates = [
+    data?.clientId,
+    data?.receiverId,
+    supportClientIdFromConversation(data?.conversationId),
+    ...(Array.isArray(data?.participants) ? data.participants : []),
+  ];
+
+  for (const candidate of candidates) {
+    const uid = String(candidate || '').trim();
+    if (!uid || uid === 'support' || uid === senderId) continue;
+    if (await clientDocExists(uid)) return uid;
+  }
+  return '';
+}
+
+async function resolveClientRecipientForDirectMessage(data) {
+  const senderId = String(data?.senderId || '').trim();
+  const receiverId = String(data?.receiverId || '').trim();
+  if (receiverId && receiverId !== senderId && await clientDocExists(receiverId)) {
+    return receiverId;
+  }
+
+  const participants = Array.isArray(data?.participants) ? data.participants : [];
+  for (const participant of participants) {
+    const uid = String(participant || '').trim();
+    if (!uid || uid === senderId) continue;
+    if (await clientDocExists(uid)) return uid;
+  }
+  return '';
+}
+
+async function notifyClientAboutMessage(clientId, data, options = {}) {
+  const uid = String(clientId || '').trim();
+  if (!uid) return 0;
+
+  const senderId = String(data?.senderId || data?.actorUid || '').trim();
+  if (senderId && senderId === uid) return 0;
+
+  const senderName = String(data?.senderName || options.senderFallback || '').trim();
+  const preview = messageNotificationPreview(data);
+  const body = senderName ? `${senderName}: ${preview}` : preview;
+  const conversationId = String(data?.conversationId || '').trim();
+
+  return await sendNotificationToSingleUser('client', uid, buildNotificationPayload({
+    title: options.title || 'رسالة جديدة',
+    body,
+    type: options.type || 'chat_message',
+    source: options.source || 'chat',
+    extra: {
+      conversationId,
+      chatId: conversationId,
+      senderId,
+      senderType: String(data?.senderType || '').trim(),
+      receiverId: String(data?.receiverId || '').trim(),
+      messageId: String(options.messageId || '').trim(),
+    },
+  }));
 }
 
 async function sendNotificationToRole(role, payload, maxRecipients = 500) {
@@ -1292,6 +1391,104 @@ exports.reviewStoreOfferRequest = onCall({ region: REGION }, async (request) => 
     offerId,
     restaurantId,
     action,
+  };
+});
+
+exports.adminCreateStoreOffer = onCall({ region: REGION }, async (request) => {
+  await ensureAdminCallable(request, 'Only admins can create store offers', 'finance');
+
+  const restaurantId = String(request.data?.restaurantId || '').trim();
+  if (!restaurantId) {
+    throw new HttpsError('invalid-argument', 'restaurantId is required');
+  }
+
+  const offer = request.data?.offer || {};
+  const title = String(offer.title || '').trim();
+  const description = String(offer.description || '').trim();
+  const imageUrl = String(offer.imageUrl || '').trim();
+  const badgeText = String(offer.badgeText || '').trim();
+  const discountScope = String(offer.discountScope || '').trim();
+  const discountType = String(offer.discountType || '').trim();
+  const discountValue = Math.max(0, toSafeNumber(offer.discountValue));
+  const maxDiscount = Math.max(0, toSafeNumber(offer.maxDiscount));
+  const minOrder = Math.max(0, toSafeNumber(offer.minOrder));
+  const targetItems = normalizeStoreOfferTargetItems(offer.targetItems || []);
+  const reviewNote = String(offer.reviewNote || '').trim();
+  const startsAt = parseOptionalTimestampInput(offer.startsAt, 'offer.startsAt', { required: true });
+  const endsAt = parseOptionalTimestampInput(offer.endsAt, 'offer.endsAt', { required: true });
+  const isActive = offer.isActive !== false;
+
+  if (!title) {
+    throw new HttpsError('invalid-argument', 'offer.title is required');
+  }
+  if (!description) {
+    throw new HttpsError('invalid-argument', 'offer.description is required');
+  }
+  if (!STORE_OFFER_SCOPE_VALUES.has(discountScope)) {
+    throw new HttpsError('invalid-argument', 'offer.discountScope is invalid');
+  }
+  if (!STORE_OFFER_TYPE_VALUES.has(discountType)) {
+    throw new HttpsError('invalid-argument', 'offer.discountType is invalid');
+  }
+  if (discountValue <= 0) {
+    throw new HttpsError('invalid-argument', 'offer.discountValue must be greater than zero');
+  }
+  if (endsAt.toMillis() <= startsAt.toMillis()) {
+    throw new HttpsError('invalid-argument', 'offer.endsAt must be after offer.startsAt');
+  }
+  if (discountScope === 'specific_items' && targetItems.length === 0) {
+    throw new HttpsError('invalid-argument', 'offer.targetItems is required for specific_items offers');
+  }
+
+  const restaurantSnap = await db.collection('restaurants').doc(restaurantId).get();
+  if (!restaurantSnap.exists) {
+    throw new HttpsError('not-found', 'Restaurant not found');
+  }
+
+  const restaurantData = restaurantSnap.data() || {};
+  const summaryText = buildStoreOfferSummaryText({
+    discountScope,
+    discountType,
+    discountValue,
+    maxDiscount,
+    minOrder,
+    targetItems,
+  });
+
+  const offerRef = await db.collection('storeOffers').add({
+    restaurantId,
+    restaurantName: String(restaurantData.name || '').trim(),
+    title,
+    description,
+    imageUrl,
+    badgeText,
+    discountScope,
+    discountType,
+    discountValue,
+    maxDiscount: maxDiscount || null,
+    minOrder: minOrder || null,
+    targetItems,
+    summaryText,
+    status: 'approved',
+    isActive,
+    reviewNote,
+    startsAt,
+    endsAt,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdByUid: request.auth.uid,
+    createdByRole: 'admin',
+    reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+    reviewedByUid: request.auth.uid,
+    reviewDecision: isActive ? 'admin_created_active' : 'admin_created_inactive',
+  });
+
+  await syncRestaurantOfferSummary(restaurantId);
+
+  return {
+    ok: true,
+    offerId: offerRef.id,
+    restaurantId,
   };
 });
 
@@ -2438,6 +2635,49 @@ exports.notifyTelegramOnSupportMessageCreated = onDocumentCreated(
   }
 );
 
+exports.notifyClientOnSupportMessageCreated = onDocumentCreated(
+  {
+    region: REGION,
+    document: 'supportMessages/{messageId}',
+  },
+  async (event) => {
+    const data = event.data?.data() || {};
+    const clientId = await resolveClientRecipientForSupportMessage(data);
+    if (!clientId) return;
+
+    await notifyClientAboutMessage(clientId, data, {
+      title: 'رسالة من الدعم الفني',
+      type: 'support_message',
+      source: 'support',
+      senderFallback: 'الدعم الفني',
+      messageId: event.params?.messageId,
+    });
+  }
+);
+
+exports.notifyClientOnDirectChatMessageCreated = onDocumentCreated(
+  {
+    region: REGION,
+    document: 'chats/{messageId}',
+  },
+  async (event) => {
+    const data = event.data?.data() || {};
+    const chatKind = String(data.chatKind || '').trim().toLowerCase();
+    if (chatKind === 'support') return;
+
+    const clientId = await resolveClientRecipientForDirectMessage(data);
+    if (!clientId) return;
+
+    await notifyClientAboutMessage(clientId, data, {
+      title: 'رسالة من المندوب',
+      type: 'courier_chat_message',
+      source: 'direct-chat',
+      senderFallback: 'المندوب',
+      messageId: event.params?.messageId,
+    });
+  }
+);
+
 exports.notifyTelegramOnWalletRechargeCreated = onDocumentCreated(
   {
     region: REGION,
@@ -2842,6 +3082,11 @@ function resolveDriverFeeForPricing(order, pricingConfig) {
     return Math.round(existingDriverFee);
   }
 
+  const routeDistanceKm = toNumberOrNull(order.routeDistanceKm ?? order.distanceKm);
+  if (routeDistanceKm != null && routeDistanceKm > 0) {
+    return Math.round(calculateDistanceBasedDriverFee(routeDistanceKm, pricingConfig));
+  }
+
   const restaurantCoords = getOrderRestaurantCoords(order);
   const clientCoords = getOrderClientCoords(order);
 
@@ -2862,6 +3107,11 @@ function calculateClientDeliveryFeeFromOrder(order, pricingConfig) {
   const config = pricingConfig || DEFAULT_PRICING_CONFIG;
   const driverFee = resolveDriverFeeForPricing(order, config);
   const storedDeliveryFee = Math.round(toNumberOrNull(order.deliveryFee) || 0);
+
+  const routeDistanceKm = toNumberOrNull(order.routeDistanceKm ?? order.distanceKm);
+  if (routeDistanceKm != null && routeDistanceKm > 0) {
+    return Math.round(calculateDistanceBasedClientDeliveryFee(routeDistanceKm, config));
+  }
 
   const restaurantCoords = getOrderRestaurantCoords(order);
   const clientCoords = getOrderClientCoords(order);
@@ -3386,6 +3636,135 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return earthRadiusKm * c;
 }
+
+function parseRoutePoint(raw, name) {
+  const lat = Number(raw?.lat ?? raw?.latitude);
+  const lng = Number(raw?.lng ?? raw?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new HttpsError('invalid-argument', `${name} coordinates are required`);
+  }
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    throw new HttpsError('invalid-argument', `${name} coordinates are invalid`);
+  }
+  return { lat, lng };
+}
+
+function routeCacheKey(origin, destination) {
+  const round = (n) => Number(n).toFixed(4);
+  return crypto
+    .createHash('sha1')
+    .update(`${round(origin.lat)},${round(origin.lng)}:${round(destination.lat)},${round(destination.lng)}:driving`)
+    .digest('hex');
+}
+
+function fallbackRoute(origin, destination, reason = 'fallback') {
+  const distanceKm = haversineKm(origin.lat, origin.lng, destination.lat, destination.lng);
+  return {
+    ok: true,
+    source: reason,
+    isRoadRoute: false,
+    distanceKm,
+    distanceMeters: Math.round(distanceKm * 1000),
+    durationSeconds: Math.max(60, Math.round((distanceKm / 25) * 3600)),
+    durationMinutes: Math.max(1, Math.ceil((distanceKm / 25) * 60)),
+    encodedPolyline: '',
+  };
+}
+
+async function fetchGoogleDirectionsRoute(origin, destination) {
+  const apiKey = String(
+    process.env.GOOGLE_DIRECTIONS_API_KEY ||
+      process.env.GOOGLE_MAPS_API_KEY ||
+      process.env.MAPS_API_KEY ||
+      ''
+  ).trim();
+
+  if (!apiKey) {
+    return fallbackRoute(origin, destination, 'missing-api-key');
+  }
+
+  const cacheKey = routeCacheKey(origin, destination);
+  const cacheRef = db.collection('route_cache').doc(cacheKey);
+  const now = Date.now();
+  const cacheSnap = await cacheRef.get();
+  if (cacheSnap.exists) {
+    const cached = cacheSnap.data() || {};
+    const expiresAt = Number(cached.expiresAtMillis || 0);
+    if (expiresAt > now && Number.isFinite(Number(cached.distanceMeters))) {
+      const durationSeconds = Number(cached.durationSeconds || 0);
+      return {
+        ok: true,
+        source: 'cache',
+        isRoadRoute: cached.isRoadRoute === true,
+        distanceKm: Number(cached.distanceMeters) / 1000,
+        distanceMeters: Number(cached.distanceMeters),
+        durationSeconds,
+        durationMinutes: Math.max(1, Math.ceil(durationSeconds / 60)),
+        encodedPolyline: String(cached.encodedPolyline || ''),
+      };
+    }
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4500);
+  try {
+    const url = new URL('https://maps.googleapis.com/maps/api/directions/json');
+    url.searchParams.set('origin', `${origin.lat},${origin.lng}`);
+    url.searchParams.set('destination', `${destination.lat},${destination.lng}`);
+    url.searchParams.set('mode', 'driving');
+    url.searchParams.set('language', 'ar');
+    url.searchParams.set('key', apiKey);
+
+    const response = await fetch(url, { signal: controller.signal });
+    const body = await response.json().catch(() => ({}));
+    const route = Array.isArray(body.routes) ? body.routes[0] : null;
+    const leg = Array.isArray(route?.legs) ? route.legs[0] : null;
+    const distanceMeters = Number(leg?.distance?.value);
+    const durationSeconds = Number(leg?.duration?.value);
+    const encodedPolyline = String(route?.overview_polyline?.points || '');
+
+    if (!response.ok || body.status !== 'OK' || !Number.isFinite(distanceMeters)) {
+      logger.warn('Directions route fallback', {
+        status: body.status,
+        httpStatus: response.status,
+        errorMessage: body.error_message,
+      });
+      return fallbackRoute(origin, destination, `directions-${body.status || response.status}`);
+    }
+
+    const result = {
+      ok: true,
+      source: 'google-directions',
+      isRoadRoute: true,
+      distanceKm: distanceMeters / 1000,
+      distanceMeters,
+      durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : 0,
+      durationMinutes: Math.max(1, Math.ceil((Number.isFinite(durationSeconds) ? durationSeconds : 60) / 60)),
+      encodedPolyline,
+    };
+
+    await cacheRef.set({
+      ...result,
+      origin,
+      destination,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAtMillis: now + 7 * 24 * 60 * 60 * 1000,
+    }, { merge: true });
+
+    return result;
+  } catch (error) {
+    logger.warn('Directions fetch failed', { message: error?.message || String(error) });
+    return fallbackRoute(origin, destination, 'directions-error');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+exports.estimateRoute = onCall({ region: REGION, timeoutSeconds: 12, memory: '256MiB' }, async (request) => {
+  const origin = parseRoutePoint(request.data?.origin, 'origin');
+  const destination = parseRoutePoint(request.data?.destination, 'destination');
+  return fetchGoogleDirectionsRoute(origin, destination);
+});
 
 async function setStatus(ref, status, extra = {}) {
   await ref.update({

@@ -3,14 +3,15 @@ import 'package:flutter/material.dart';
 /// ثيم التطبيق: ألوان وخطوط وإعدادات عامة.
 class AppThemeArabic {
   // ─── ألوان تطبيق العميل ─────────────────────────────────────────────────
-  static const Color clientPrimary       = Color(0xFFFF5722); // برتقالي ناري محسّن
-  static const Color clientAccent        = Color(0xFFFFC107); // عنبري ذهبي
-  static const Color clientBackground    = Color(0xFFF2F2F7); // رمادي iOS ناصع
+  static const Color clientPrimary       = Color(0xFFD92B1A); // أحمر جريء
+  static const Color clientPrimaryLight  = Color(0xFFF04020); // أحمر فاتح
+  static const Color clientAccent        = Color(0xFFF5A623); // عنبري ذهبي
+  static const Color clientBackground    = Color(0xFFF8F4EE); // كريمي دافئ
   static const Color clientSurface       = Color(0xFFFFFFFF);
-  static const Color clientTextPrimary   = Color(0xFF1C1C1E); // أسود iOS
-  static const Color clientTextSecondary = Color(0xFF8E8E93); // رمادي iOS
-  static const Color clientSuccess       = Color(0xFF34C759); // أخضر iOS
-  static const Color clientError         = Color(0xFFFF3B30); // أحمر iOS
+  static const Color clientTextPrimary   = Color(0xFF1C110A); // حبر دافئ
+  static const Color clientTextSecondary = Color(0xFFA0907E); // رملي
+  static const Color clientSuccess       = Color(0xFF1A9644); // أخضر
+  static const Color clientError         = Color(0xFFEF4444);
   static const Color _clientSeed         = clientPrimary;
 
   // ─── ألوان تطبيق المندوب ────────────────────────────────────────────────
@@ -45,33 +46,33 @@ class AppThemeArabic {
 
     final scheme = ColorScheme(
       brightness: dark ? Brightness.dark : Brightness.light,
-      primary:              dark ? const Color(0xFFFF8A65) : primary,
+      primary:              dark ? const Color(0xFFFF6B5E) : primary,
       onPrimary:            Colors.white,
-      primaryContainer:     dark ? const Color(0xFFBF360C) : const Color(0xFFFFCCBC),
-      onPrimaryContainer:   dark ? const Color(0xFFFFCCBC) : const Color(0xFF3E0D00),
-      secondary:            dark ? const Color(0xFFFFE082) : clientAccent,
-      onSecondary:          dark ? const Color(0xFF3E2B00) : Colors.white,
-      secondaryContainer:   dark ? const Color(0xFF5C3D00) : const Color(0xFFFFECB3),
-      onSecondaryContainer: dark ? const Color(0xFFFFE082) : const Color(0xFF3E2B00),
-      tertiary:             dark ? const Color(0xFF80CBC4) : const Color(0xFF00897B),
+      primaryContainer:     dark ? const Color(0xFF7A1000) : const Color(0xFFFFE0DC),
+      onPrimaryContainer:   dark ? const Color(0xFFFFE0DC) : const Color(0xFF5A0A00),
+      secondary:            dark ? const Color(0xFFFFCA7A) : clientAccent,
+      onSecondary:          dark ? const Color(0xFF5A3000) : Colors.white,
+      secondaryContainer:   dark ? const Color(0xFF5A3000) : const Color(0xFFFFF0D0),
+      onSecondaryContainer: dark ? const Color(0xFFFFF0D0) : const Color(0xFF5A3000),
+      tertiary:             dark ? const Color(0xFF80CBC4) : const Color(0xFF1A9644),
       onTertiary:           Colors.white,
-      tertiaryContainer:    dark ? const Color(0xFF00453E) : const Color(0xFFB2DFDB),
-      onTertiaryContainer:  dark ? const Color(0xFFB2DFDB) : const Color(0xFF00251F),
+      tertiaryContainer:    dark ? const Color(0xFF003D36) : const Color(0xFFD4F0DC),
+      onTertiaryContainer:  dark ? const Color(0xFFB2DFDB) : const Color(0xFF0A4020),
       error:                dark ? const Color(0xFFFF6E6E) : clientError,
       onError:              Colors.white,
       errorContainer:       dark ? const Color(0xFF8B0000) : const Color(0xFFFFEBEB),
       onErrorContainer:     dark ? const Color(0xFFFFCDD2) : const Color(0xFF7F0000),
-      surface:              dark ? const Color(0xFF1C1C1E) : clientSurface,
-      onSurface:            dark ? const Color(0xFFEAEAEB) : clientTextPrimary,
-      surfaceContainerHighest: dark ? const Color(0xFF2C2C2E) : const Color(0xFFE5E5EA),
-      onSurfaceVariant:     dark ? const Color(0xFFAEAEB2) : clientTextSecondary,
-      outline:              dark ? const Color(0xFF48484A) : const Color(0xFFD1D1D6),
-      outlineVariant:       dark ? const Color(0xFF3A3A3C) : const Color(0xFFE5E5EA),
+      surface:              dark ? const Color(0xFF1C1209) : clientSurface,
+      onSurface:            dark ? const Color(0xFFF5EDE8) : clientTextPrimary,
+      surfaceContainerHighest: dark ? const Color(0xFF2E1005) : const Color(0xFFF0EBE1),
+      onSurfaceVariant:     dark ? const Color(0xFFBBA89E) : clientTextSecondary,
+      outline:              dark ? const Color(0xFF5A2A1A) : const Color(0xFFE8E1D4),
+      outlineVariant:       dark ? const Color(0xFF3D1500) : const Color(0xFFF0EBE1),
       shadow:               Colors.black,
       scrim:                Colors.black,
-      inverseSurface:       dark ? const Color(0xFFEAEAEB) : const Color(0xFF1C1C1E),
-      onInverseSurface:     dark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),
-      inversePrimary:       dark ? primary : const Color(0xFFFF8A65),
+      inverseSurface:       dark ? const Color(0xFFF5EDE8) : const Color(0xFF1C110A),
+      onInverseSurface:     dark ? const Color(0xFF1C110A) : const Color(0xFFF8F4EE),
+      inversePrimary:       dark ? primary : const Color(0xFFFF6B5E),
     );
 
     const fontFamily = 'Cairo';
@@ -148,8 +149,8 @@ class AppThemeArabic {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: BorderSide(
-            color: dark ? const Color(0xFF3A3A3C) : const Color(0xFFE5E5EA),
-            width: 0.5,
+            color: dark ? const Color(0xFF3A3A3C) : const Color(0xFFE8E1D4),
+            width: 1,
           ),
         ),
       ),
@@ -274,15 +275,15 @@ class AppThemeArabic {
       // ─── Chip ───────────────────────────────────────────────────────────
       chipTheme: ChipThemeData(
         backgroundColor: dark
-            ? const Color(0xFF2C2C2E)
-            : const Color(0xFFEEEEF0),
+            ? const Color(0xFF2E1005)
+            : const Color(0xFFF0EBE1),
         selectedColor: dark
             ? scheme.primary.withValues(alpha: 0.3)
-            : const Color(0xFFFFCCBC),
+            : const Color(0xFFFFDDD9),
         secondarySelectedColor: scheme.primaryContainer,
         disabledColor: dark
-            ? const Color(0xFF3A3A3C)
-            : const Color(0xFFF2F2F7),
+            ? const Color(0xFF2E1005)
+            : const Color(0xFFF8F4EE),
         labelStyle: TextStyle(
           fontFamily: fontFamily,
           fontWeight: FontWeight.w600,
@@ -298,8 +299,8 @@ class AppThemeArabic {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         shape: StadiumBorder(
           side: BorderSide(
-            color: dark ? const Color(0xFF3A3A3C) : const Color(0xFFD1D1D6),
-            width: 0.5,
+            color: dark ? const Color(0xFF3A3A3C) : const Color(0xFFE8E1D4),
+            width: 1,
           ),
         ),
         showCheckmark: false,
@@ -398,10 +399,10 @@ class AppThemeArabic {
 
       // ─── NavigationBar ─────────────────────────────────────────────────
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: dark ? const Color(0xFF1C1C1E) : clientSurface,
+        backgroundColor: dark ? const Color(0xFF1C1209) : clientSurface,
         indicatorColor: dark
             ? scheme.primary.withValues(alpha: 0.2)
-            : const Color(0xFFFFCCBC),
+            : const Color(0xFFFFDDD9),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return IconThemeData(color: scheme.primary, size: 24);

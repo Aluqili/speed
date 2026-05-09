@@ -11,12 +11,12 @@ class CourierMapToRestaurantScreen extends StatelessWidget {
   final VoidCallback onNext;
 
   const CourierMapToRestaurantScreen({
-    Key? key,
+    super.key,
     required this.restaurantLat,
     required this.restaurantLng,
     required this.nextStepButtonText,
     required this.onNext,
-  }) : super(key: key);
+  });
 
   void _openGoogleMaps() async {
     final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$restaurantLat,$restaurantLng');

@@ -348,8 +348,9 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                   decoration:
                       const InputDecoration(labelText: 'البريد الإلكتروني'),
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty)
+                    if (v == null || v.trim().isEmpty) {
                       return 'الرجاء إدخال البريد الإلكتروني';
+                    }
                     if (!v.contains('@')) return 'البريد الإلكتروني غير صالح';
                     return null;
                   },

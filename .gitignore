@@ -6,6 +6,7 @@ firebase-debug.log
 .DS_Store
 Thumbs.db
 .idea/
+**/.claude/
 
 # Dart/Flutter root tools
 .dart_tool/

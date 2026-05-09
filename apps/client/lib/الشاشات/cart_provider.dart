@@ -54,9 +54,11 @@ class CartItem {
       );
 
   @override
-  bool operator ==(Object o) =>
-      identical(this, o) ||
-      o is CartItem && runtimeType == o.runtimeType && id == o.id;
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CartItem &&
+          runtimeType == other.runtimeType &&
+          id == other.id;
 
   @override
   int get hashCode => id.hashCode;
@@ -80,11 +82,16 @@ class CartProvider extends ChangeNotifier {
   }
 
   Future<bool> addToCart(CartItem item) async {
-    if (_cartItems.isEmpty) _currentRestaurantId = item.restaurantId;
+    if (_cartItems.isEmpty) {
+      _currentRestaurantId = item.restaurantId;
+    }
     if (item.restaurantId != _currentRestaurantId) return false;
     final idx = _cartItems.indexWhere((i) => i.id == item.id);
-    if (idx >= 0) _cartItems[idx].quantity++;
-    else _cartItems.add(item);
+    if (idx >= 0) {
+      _cartItems[idx].quantity++;
+    } else {
+      _cartItems.add(item);
+    }
     await _saveCart();
     notifyListeners();
     return true;
@@ -93,10 +100,13 @@ class CartProvider extends ChangeNotifier {
   Future<void> removeFromCart(CartItem item) async {
     final idx = _cartItems.indexWhere((i) => i.id == item.id);
     if (idx < 0) return;
-    if (_cartItems[idx].quantity > 1) _cartItems[idx].quantity--;
-    else {
+    if (_cartItems[idx].quantity > 1) {
+      _cartItems[idx].quantity--;
+    } else {
       _cartItems.removeAt(idx);
-      if (_cartItems.isEmpty) _currentRestaurantId = null;
+      if (_cartItems.isEmpty) {
+        _currentRestaurantId = null;
+      }
     }
     await _saveCart();
     notifyListeners();
@@ -105,10 +115,13 @@ class CartProvider extends ChangeNotifier {
   Future<void> updateQuantity(String id, int qty) async {
     final idx = _cartItems.indexWhere((i) => i.id == id);
     if (idx < 0) return;
-    if (qty > 0) _cartItems[idx].quantity = qty;
-    else {
+    if (qty > 0) {
+      _cartItems[idx].quantity = qty;
+    } else {
       _cartItems.removeAt(idx);
-      if (_cartItems.isEmpty) _currentRestaurantId = null;
+      if (_cartItems.isEmpty) {
+        _currentRestaurantId = null;
+      }
     }
     await _saveCart();
     notifyListeners();
@@ -149,10 +162,13 @@ class CartProvider extends ChangeNotifier {
   Future<void> removeOneItem(String itemId) async {
     final idx = _cartItems.indexWhere((i) => i.id == itemId);
     if (idx < 0) return;
-    if (_cartItems[idx].quantity > 1) _cartItems[idx].quantity--;
-    else {
+    if (_cartItems[idx].quantity > 1) {
+      _cartItems[idx].quantity--;
+    } else {
       _cartItems.removeAt(idx);
-      if (_cartItems.isEmpty) _currentRestaurantId = null;
+      if (_cartItems.isEmpty) {
+        _currentRestaurantId = null;
+      }
     }
     await _saveCart();
     notifyListeners();

@@ -9,7 +9,7 @@ import 'courier_edit_profile_screen.dart'; // ✅ استدعاء شاشة تعد
 class CourierProfileScreen extends StatelessWidget {
   final String driverId;
 
-  const CourierProfileScreen({Key? key, required this.driverId}) : super(key: key);
+  const CourierProfileScreen({super.key, required this.driverId});
 
   @override
   Widget build(BuildContext context) {

@@ -16,13 +16,13 @@ class ChatScreen extends StatefulWidget {
   final String currentUserName;
 
   const ChatScreen({
-    Key? key,
+    super.key,
     required this.currentUserId,
     required this.otherUserId,
     required this.currentUserRole,
     required this.chatId,
     required this.currentUserName,
-  }) : super(key: key);
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -147,12 +147,15 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<String> _detectUserType(String userId) async {
     final firestore = FirebaseFirestore.instance;
-    if ((await firestore.collection('clients').doc(userId).get()).exists)
+    if ((await firestore.collection('clients').doc(userId).get()).exists) {
       return 'عميل';
-    if ((await firestore.collection('drivers').doc(userId).get()).exists)
+    }
+    if ((await firestore.collection('drivers').doc(userId).get()).exists) {
       return 'مندوب';
-    if ((await firestore.collection('restaurants').doc(userId).get()).exists)
+    }
+    if ((await firestore.collection('restaurants').doc(userId).get()).exists) {
       return 'مطعم';
+    }
     return 'غير معروف';
   }
 

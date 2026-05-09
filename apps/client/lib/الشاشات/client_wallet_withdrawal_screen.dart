@@ -1,17 +1,17 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../الثيم/client_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class ClientWalletWithdrawalScreen extends StatefulWidget {
   final String clientId;
   final double walletBalance;
 
   const ClientWalletWithdrawalScreen({
-    Key? key,
+    super.key,
     required this.clientId,
     required this.walletBalance,
-  }) : super(key: key);
+  });
 
   @override
   State<ClientWalletWithdrawalScreen> createState() =>
@@ -21,7 +21,7 @@ class ClientWalletWithdrawalScreen extends StatefulWidget {
 class _ClientWalletWithdrawalScreenState
     extends State<ClientWalletWithdrawalScreen>
     with SingleTickerProviderStateMixin {
-  static const _primary = AppThemeArabic.clientPrimary;
+  static const _primary = ClientColors.primary;
   static const _bg = Color(0xFFF5F6FA);
 
   final _formKey = GlobalKey<FormState>();
@@ -287,7 +287,7 @@ class _ClientWalletWithdrawalScreenState
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // ─── المبلغ ─────────────────────────────────────
-                      _SectionHeader(
+                      const _SectionHeader(
                           icon: Icons.payments_rounded,
                           label: 'المبلغ المراد سحبه'),
                       const SizedBox(height: 10),
@@ -338,7 +338,7 @@ class _ClientWalletWithdrawalScreenState
                       const SizedBox(height: 24),
 
                       // ─── طريقة الاستلام ─────────────────────────────
-                      _SectionHeader(
+                      const _SectionHeader(
                           icon: Icons.account_balance_wallet_rounded,
                           label: 'طريقة الاستلام'),
                       const SizedBox(height: 12),
@@ -756,7 +756,7 @@ class _SectionHeader extends StatelessWidget {
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
             color: color == const Color(0xFF1A1D26)
-                ? AppThemeArabic.clientPrimary.withValues(alpha: 0.1)
+                ? ClientColors.primary.withValues(alpha: 0.1)
                 : color.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
@@ -764,7 +764,7 @@ class _SectionHeader extends StatelessWidget {
             icon,
             size: 14,
             color: color == const Color(0xFF1A1D26)
-                ? AppThemeArabic.clientPrimary
+                ? ClientColors.primary
                 : color,
           ),
         ),

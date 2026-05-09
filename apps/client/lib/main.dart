@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:speedstar_core/speedstar_core.dart';
-import 'package:speedstar_core/src/config/remote_helpers.dart'
-    as remote_helpers;
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -14,43 +12,50 @@ import 'firebase_options_prod.dart' as prod_firebase;
 import 'الشاشات/client_home_screen.dart';
 import 'الشاشات/cart_provider.dart' as client_cart;
 import 'الخدمات/push_notification_service.dart';
+import 'الثيم/client_theme.dart';
+import 'الخدمات/theme_provider.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
+  final binding = WidgetsFlutterBinding.ensureInitialized();
+  binding.deferFirstFrame();
   runApp(const ClientApp());
 }
 
-class ClientApp extends StatelessWidget {
+class ClientApp extends StatefulWidget {
   const ClientApp({super.key});
+  @override
+  State<ClientApp> createState() => _ClientAppState();
+}
+
+class _ClientAppState extends State<ClientApp> {
+  final _themeProvider = ThemeProvider();
+
+  @override
+  void initState() {
+    super.initState();
+    _themeProvider.load();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final themeController = ThemeController.instance;
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: themeController.themeMode,
-      builder: (context, mode, _) {
-        return ValueListenableBuilder<Color?>(
-          valueListenable: themeController.accentSeed,
-          builder: (context, seed, __) {
-            final theme = seed != null
-                ? AppThemeArabic.fromSeed(seed)
-                : AppThemeArabic.clientTheme;
-            final darkTheme = seed != null
-                ? AppThemeArabic.fromSeed(seed, dark: true)
-                : AppThemeArabic.clientDarkTheme;
-            return ChangeNotifierProvider<client_cart.CartProvider>(
-              child: MaterialApp(
-                title: 'SpeedStar Client',
-                theme: theme,
-                darkTheme: darkTheme,
-                themeMode: mode,
-                home: const _InitGateClient(),
-              ),
-              create: (_) => client_cart.CartProvider()..initialize(),
-            );
-          },
-        );
-      },
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<client_cart.CartProvider>(
+          create: (_) => client_cart.CartProvider()..initialize(),
+        ),
+        ChangeNotifierProvider<ThemeProvider>.value(value: _themeProvider),
+      ],
+      child: Consumer<ThemeProvider>(
+        builder: (context, theme, _) => MaterialApp(
+          navigatorKey: PushNotificationService.navigatorKey,
+          title: 'SpeedStar Client',
+          theme: ClientAppTheme.light,
+          darkTheme: ClientAppTheme.dark,
+          themeMode: theme.mode,
+          home: const _InitGateClient(),
+          debugShowCheckedModeBanner: false,
+        ),
+      ),
     );
   }
 }
@@ -76,6 +81,7 @@ class _InitGateClientState extends State<_InitGateClient> {
   String _updateUrl = '';
   int _currentBuildNumber = 0;
   int _minBuildNumber = 0;
+  bool _firstFrameAllowed = false;
 
   @override
   void initState() {
@@ -84,18 +90,20 @@ class _InitGateClientState extends State<_InitGateClient> {
   }
 
   Future<void> _safeInit() async {
+    final startedAt = DateTime.now();
     try {
       final firebaseOptions = _firebaseEnv == 'prod'
           ? prod_firebase.DefaultFirebaseOptions.currentPlatform
           : dev_firebase.DefaultFirebaseOptions.currentPlatform;
-      await Firebase.initializeApp(
-        options: firebaseOptions,
-      );
-      await PushNotificationService.instance.initialize();
+      await Firebase.initializeApp(options: firebaseOptions);
+
+      // تهيئة الإشعارات في الخلفية — لا تعيق التحميل
+      unawaited(PushNotificationService.instance.initialize().catchError((_) {}));
+
       final rc = FirebaseRemoteConfig.instance;
       await rc.setConfigSettings(
         RemoteConfigSettings(
-          fetchTimeout: const Duration(seconds: 10),
+          fetchTimeout: const Duration(seconds: 4),
           minimumFetchInterval: Duration.zero,
         ),
       );
@@ -128,7 +136,9 @@ class _InitGateClientState extends State<_InitGateClient> {
         'pricing_delivery_platform_min_margin': 300.0,
       };
       await rc.setDefaults(defaults);
-      await rc.fetchAndActivate();
+      // استخدام القيم المخزنة فوراً ثم جلب الجديدة في الخلفية
+      await rc.activate();
+        unawaited(rc.fetchAndActivate().catchError((_) => false));
       final accent = rc.getString('accent_seed');
       _maintenanceMode = rc.getBool('client_maintenance_mode');
       _clientPhoneSignInEnabled =
@@ -147,11 +157,21 @@ class _InitGateClientState extends State<_InitGateClient> {
         _maintenanceMessage = maintenanceText;
       }
       if (accent.isNotEmpty) {
-        final seed = remote_helpers.parseColorHex(accent);
+        final seed = parseColorHex(accent);
         ThemeController.instance.setAccentSeed(seed);
       }
     } catch (e) {
       debugPrint('Firebase init failed: $e');
+    } finally {
+      if (!_firstFrameAllowed) {
+        final elapsed = DateTime.now().difference(startedAt);
+        const minimumSplashTime = Duration(milliseconds: 900);
+        if (elapsed < minimumSplashTime) {
+          await Future.delayed(minimumSplashTime - elapsed);
+        }
+        _firstFrameAllowed = true;
+        WidgetsBinding.instance.allowFirstFrame();
+      }
     }
   }
 
@@ -163,12 +183,7 @@ class _InitGateClientState extends State<_InitGateClient> {
       future: _initFuture,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const _InitSplash(
-            title: 'SpeedStar',
-            subtitle: 'جاهزين نوصلك أسرع 🚀',
-            imageAsset: 'assets/branding/app_icon_client.png.jpeg',
-            accent: AppThemeArabic.clientPrimary,
-          );
+          return const SizedBox.shrink();
         }
         if (_maintenanceMode) {
           return _MaintenanceScreen(message: _maintenanceMessage);
@@ -188,92 +203,6 @@ class _InitGateClientState extends State<_InitGateClient> {
         }
         return const _ClientHomeEntryPoint();
       },
-    );
-  }
-}
-
-class _InitSplash extends StatelessWidget {
-  const _InitSplash({
-    required this.title,
-    required this.subtitle,
-    required this.imageAsset,
-    required this.accent,
-  });
-
-  final String title;
-  final String subtitle;
-  final String imageAsset;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFFFFF4EE), Colors.white],
-          ),
-        ),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 180,
-                  height: 180,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(36),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: 0.18),
-                        blurRadius: 30,
-                        offset: const Offset(0, 14),
-                      ),
-                    ],
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Image.asset(imageAsset, fit: BoxFit.contain),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 34,
-                    fontWeight: FontWeight.w800,
-                    color: accent,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 26),
-                SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3.2,
-                    color: accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -436,8 +365,8 @@ class _ClientHomeEntryPoint extends StatelessWidget {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+          return ClientHomeScreen(
+            clientId: FirebaseAuth.instance.currentUser?.uid ?? '',
           );
         }
 

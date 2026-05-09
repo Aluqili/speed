@@ -55,6 +55,7 @@ const reviewClientWalletWithdrawal = httpsCallable(fns, 'reviewClientWalletWithd
 const getAdminRemoteConfigSettings = httpsCallable(fns, 'getAdminRemoteConfigSettings');
 const updateAdminRemoteConfigSettings = httpsCallable(fns, 'updateAdminRemoteConfigSettings');
 const reviewStoreOfferRequest = httpsCallable(fns, 'reviewStoreOfferRequest');
+const adminCreateStoreOffer = httpsCallable(fns, 'adminCreateStoreOffer');
 const adminManageOrder = httpsCallable(fns, 'adminManageOrder');
 const deleteManagedUserAccount = httpsCallable(fns, 'deleteManagedUserAccount');
 const updateManagedUserProfile = httpsCallable(fns, 'updateManagedUserProfile');
@@ -256,6 +257,27 @@ const discountOnlyNewOrders = document.getElementById('discountOnlyNewOrders');
 const discountSaveBtn = document.getElementById('discountSaveBtn');
 const discountResult = document.getElementById('discountResult');
 const discountsTable = document.getElementById('discountsTable');
+const adminCreateOfferForm = document.getElementById('adminCreateOfferForm');
+const adminOfferRestaurantId = document.getElementById('adminOfferRestaurantId');
+const adminOfferTitle = document.getElementById('adminOfferTitle');
+const adminOfferDescription = document.getElementById('adminOfferDescription');
+const adminOfferBadgeText = document.getElementById('adminOfferBadgeText');
+const adminOfferImageUrl = document.getElementById('adminOfferImageUrl');
+const adminOfferImageFile = document.getElementById('adminOfferImageFile');
+const adminOfferImageStatus = document.getElementById('adminOfferImageStatus');
+const adminOfferImagePreview = document.getElementById('adminOfferImagePreview');
+const adminOfferDiscountScope = document.getElementById('adminOfferDiscountScope');
+const adminOfferDiscountType = document.getElementById('adminOfferDiscountType');
+const adminOfferDiscountValue = document.getElementById('adminOfferDiscountValue');
+const adminOfferMaxDiscount = document.getElementById('adminOfferMaxDiscount');
+const adminOfferMinOrder = document.getElementById('adminOfferMinOrder');
+const adminOfferStartsAt = document.getElementById('adminOfferStartsAt');
+const adminOfferEndsAt = document.getElementById('adminOfferEndsAt');
+const adminOfferTargetItems = document.getElementById('adminOfferTargetItems');
+const adminOfferReviewNote = document.getElementById('adminOfferReviewNote');
+const adminOfferIsActive = document.getElementById('adminOfferIsActive');
+const adminCreateOfferBtn = document.getElementById('adminCreateOfferBtn');
+const adminCreateOfferResult = document.getElementById('adminCreateOfferResult');
 const storeOffersSummary = document.getElementById('storeOffersSummary');
 const storeOffersPendingTable = document.getElementById('storeOffersPendingTable');
 const storeOffersApprovedTable = document.getElementById('storeOffersApprovedTable');
@@ -1369,8 +1391,10 @@ function getOrderLifecycleStatus(order) {
 function isActiveOrderStatus(status) {
   return [
     'pending',
+    'payment_review',
     'store_pending',
     'courier_searching',
+    'courier_offer_pending',
     'courier_assigned',
     'accepted',
     'pickup_ready',
@@ -4054,8 +4078,157 @@ function mountFinance() {
   );
 }
 
+function offerDateTimeLocalValue(date) {
+  const pad = (value) => String(value).padStart(2, '0');
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+  ].join('-') + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function parseAdminOfferTargetItems(raw) {
+  return String(raw || '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .slice(0, 25)
+    .map((name) => ({ name }));
+}
+
+function setAdminOfferDefaults() {
+  if (!adminOfferStartsAt || !adminOfferEndsAt) return;
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - (now.getMinutes() % 5), 0, 0);
+  const end = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  if (!adminOfferStartsAt.value) adminOfferStartsAt.value = offerDateTimeLocalValue(now);
+  if (!adminOfferEndsAt.value) adminOfferEndsAt.value = offerDateTimeLocalValue(end);
+}
+
+function resetAdminOfferForm() {
+  adminCreateOfferForm?.reset();
+  setAdminOfferDefaults();
+  if (adminOfferIsActive) adminOfferIsActive.checked = true;
+  if (adminOfferImageUrl) adminOfferImageUrl.value = '';
+  if (adminOfferImageStatus) adminOfferImageStatus.textContent = 'اختر صورة من الجهاز.';
+  if (adminOfferImagePreview) {
+    adminOfferImagePreview.hidden = true;
+    adminOfferImagePreview.removeAttribute('src');
+  }
+}
+
+function bindAdminCreateOfferForm() {
+  if (!adminCreateOfferForm || adminCreateOfferForm.dataset.bound === '1') return;
+  adminCreateOfferForm.dataset.bound = '1';
+  setAdminOfferDefaults();
+
+  adminOfferImageFile?.addEventListener('change', () => {
+    const file = adminOfferImageFile.files && adminOfferImageFile.files.length
+      ? adminOfferImageFile.files[0]
+      : null;
+    if (adminOfferImageUrl) adminOfferImageUrl.value = '';
+    if (!file) {
+      if (adminOfferImageStatus) adminOfferImageStatus.textContent = 'اختر صورة من الجهاز.';
+      if (adminOfferImagePreview) {
+        adminOfferImagePreview.hidden = true;
+        adminOfferImagePreview.removeAttribute('src');
+      }
+      return;
+    }
+    if (adminOfferImageStatus) adminOfferImageStatus.textContent = file.name;
+    if (adminOfferImagePreview) {
+      adminOfferImagePreview.src = URL.createObjectURL(file);
+      adminOfferImagePreview.hidden = false;
+    }
+  });
+
+  adminCreateOfferForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!adminOfferRestaurantId?.value) {
+      if (adminCreateOfferResult) adminCreateOfferResult.textContent = 'اختر المطعم أولاً.';
+      return;
+    }
+
+    const targetItems = parseAdminOfferTargetItems(adminOfferTargetItems?.value);
+    if (adminOfferDiscountScope?.value === 'specific_items' && targetItems.length === 0) {
+      if (adminCreateOfferResult) adminCreateOfferResult.textContent = 'اكتب أسماء الأصناف المشمولة بالعرض.';
+      return;
+    }
+
+    if (adminCreateOfferBtn) adminCreateOfferBtn.disabled = true;
+    if (adminCreateOfferResult) adminCreateOfferResult.textContent = 'جاري إنشاء العرض...';
+    try {
+      let uploadedImageUrl = adminOfferImageUrl?.value || '';
+      const imageFile = adminOfferImageFile?.files && adminOfferImageFile.files.length
+        ? adminOfferImageFile.files[0]
+        : null;
+      if (imageFile) {
+        if (adminCreateOfferResult) adminCreateOfferResult.textContent = 'جاري رفع صورة العرض...';
+        uploadedImageUrl = await uploadImageToCloudinary(imageFile);
+        if (!uploadedImageUrl) {
+          throw new Error('تعذر رفع صورة العرض. حاول بصورة أخرى.');
+        }
+        if (adminOfferImageUrl) adminOfferImageUrl.value = uploadedImageUrl;
+      }
+      if (adminCreateOfferResult) adminCreateOfferResult.textContent = 'جاري إنشاء العرض...';
+      await adminCreateStoreOffer({
+        restaurantId: adminOfferRestaurantId.value,
+        offer: {
+          title: adminOfferTitle?.value || '',
+          description: adminOfferDescription?.value || '',
+          badgeText: adminOfferBadgeText?.value || '',
+          imageUrl: uploadedImageUrl,
+          discountScope: adminOfferDiscountScope?.value || 'order_total',
+          discountType: adminOfferDiscountType?.value || 'percent',
+          discountValue: Number(adminOfferDiscountValue?.value || 0),
+          maxDiscount: Number(adminOfferMaxDiscount?.value || 0),
+          minOrder: Number(adminOfferMinOrder?.value || 0),
+          startsAt: adminOfferStartsAt?.value ? new Date(adminOfferStartsAt.value).toISOString() : '',
+          endsAt: adminOfferEndsAt?.value ? new Date(adminOfferEndsAt.value).toISOString() : '',
+          targetItems,
+          reviewNote: adminOfferReviewNote?.value || '',
+          isActive: adminOfferIsActive?.checked !== false,
+        },
+      });
+      if (adminCreateOfferResult) adminCreateOfferResult.textContent = 'تم إنشاء العرض وتحديث ظهوره للعميل.';
+      resetAdminOfferForm();
+    } catch (err) {
+      if (adminCreateOfferResult) adminCreateOfferResult.textContent = `تعذر إنشاء العرض: ${err.message || err}`;
+    } finally {
+      if (adminCreateOfferBtn) adminCreateOfferBtn.disabled = false;
+    }
+  });
+}
+
+function mountAdminOfferRestaurantSelect() {
+  if (!adminOfferRestaurantId) return;
+  unsubscribers.push(
+    onSnapshot(query(collection(db, 'restaurants'), limit(500)), (snap) => {
+      const selected = adminOfferRestaurantId.value;
+      const rows = snap.docs
+        .map((docSnap) => ({ id: docSnap.id, data: docSnap.data() || {} }))
+        .filter((item) => {
+          const status = String(item.data.approvalStatus || '').trim().toLowerCase();
+          return !status || status === 'approved' || item.data.active === true;
+        })
+        .sort((a, b) => String(a.data.name || a.id).localeCompare(String(b.data.name || b.id), 'ar'));
+
+      adminOfferRestaurantId.innerHTML = [
+        '<option value="">اختر المطعم</option>',
+        ...rows.map((item) => {
+          const name = String(item.data.name || item.data.restaurantName || item.id).trim();
+          return `<option value="${escapeHtml(item.id)}">${escapeHtml(name)} - ${escapeHtml(item.id)}</option>`;
+        }),
+      ].join('');
+      if (selected) adminOfferRestaurantId.value = selected;
+    })
+  );
+}
+
 function mountStoreOffersReview() {
   if (!storeOffersSummary || !storeOffersPendingTable || !storeOffersApprovedTable) return;
+  bindAdminCreateOfferForm();
+  mountAdminOfferRestaurantSelect();
 
   const formatDateTimeLocal = (value) => {
     if (!value || typeof value.toDate !== 'function') return '-';
@@ -4906,7 +5079,7 @@ async function loadCourierDetails(driverId) {
     const driver = driverSnap.data() || {};
     const ordersSnap = await safeGetDocs(query(collection(db, 'orders'), where('assignedDriverId', '==', driverId)));
     const orders = ordersSnap.docs.map((d) => d.data() || {});
-    const activeOrderStatuses = new Set(['courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client']);
+    const activeOrderStatuses = new Set(['courier_offer_pending', 'courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client']);
     const activeOrdersCount = orders.filter((o) => activeOrderStatuses.has(String(o.orderStatus || o.status || ''))).length;
     const todayAvailabilityMs = getCourierAvailableTodayMs(driver);
 
@@ -5077,7 +5250,7 @@ async function loadStoreDetails(storeId) {
     ]);
 
     const orders = ordersSnap.docs.map((d) => d.data() || {});
-    const activeOrderStatuses = new Set(['store_pending', 'courier_searching', 'courier_assigned', 'pickup_ready', 'picked_up']);
+    const activeOrderStatuses = new Set(['store_pending', 'courier_searching', 'courier_offer_pending', 'courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client']);
     const activeOrdersCount = orders.filter((o) => activeOrderStatuses.has(String(o.orderStatus || o.status || ''))).length;
 
     const image = store.commercialRecordImageUrl
@@ -5130,6 +5303,7 @@ async function loadStoreDetails(storeId) {
             <label>نسبة الخصم<input id="storeDiscountPct-${storeId}" type="number" step="0.01" value="${escapeHtml(String(store.deliveryDiscountPercentage ?? ''))}" /></label>
             <label>رابط صورة الغلاف<input id="storeCoverImageUrl-${storeId}" type="text" value="${escapeHtml(store.coverImageUrl || '')}" /></label>
             <label>رابط الشعار<input id="storeLogoImageUrl-${storeId}" type="text" value="${escapeHtml(store.logoImageUrl || '')}" /></label>
+            <label>وقت التوصيل التقديري<input id="storeDeliveryTime-${storeId}" type="text" placeholder="مثال: 20-30 دقيقة" value="${escapeHtml(store.deliveryTime || '')}" /></label>
           </div>
           <div class="entity-actions">
             <button class="btn ghost" id="storeUploadCover-${storeId}">رفع صورة غلاف</button>
@@ -5194,6 +5368,11 @@ async function loadStoreDetails(storeId) {
             coverImageUrl: (document.getElementById(`storeCoverImageUrl-${storeId}`)?.value || '').trim(),
             logoImageUrl: (document.getElementById(`storeLogoImageUrl-${storeId}`)?.value || '').trim(),
           },
+        });
+        const deliveryTimeVal = (document.getElementById(`storeDeliveryTime-${storeId}`)?.value || '').trim();
+        await updateDoc(doc(db, 'restaurants', storeId), {
+          deliveryTime: deliveryTimeVal,
+          updatedAt: serverTimestamp(),
         });
         alert('تم حفظ بيانات المتجر بنجاح');
         await loadStoreDetails(storeId);

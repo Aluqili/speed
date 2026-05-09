@@ -1085,6 +1085,20 @@ textarea { resize: vertical; min-height: 88px; }
   padding: 6px;
 }
 
+.admin-offer-image-field {
+  grid-column: 1 / -1;
+}
+
+.admin-offer-image-preview {
+  width: 100%;
+  max-width: 260px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
 /* ─── Management Details ─────────────────────────── */
 
 .management-details, .normalize-result {

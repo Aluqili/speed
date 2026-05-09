@@ -149,11 +149,23 @@ class StoreOrderDetailsScreen extends StatelessWidget {
         await OrderService.approveByRestaurant(orderDocId);
         if (!context.mounted) return;
 
-        Navigator.of(context).pop();
+        final updatedSnapshot = await FirebaseFirestore.instance
+            .collection('orders')
+            .doc(orderDocId)
+            .get();
+        final updatedOrderData =
+            Map<String, dynamic>.from(updatedSnapshot.data() ?? orderData);
+        updatedOrderData['docId'] = updatedSnapshot.id;
         GFToast.showToast(
           '✅ تم قبول الطلب وبدء البحث عن مندوب',
           context,
           toastPosition: GFToastPosition.BOTTOM,
+        );
+        if (!context.mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => StoreOrderDetailsScreen(orderData: updatedOrderData),
+          ),
         );
       } else {
         GFToast.showToast(
@@ -640,13 +652,29 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                                 'updatedAt': FieldValue.serverTimestamp(),
                               });
                               if (!context.mounted) return;
+                              final updatedSnapshot = await FirebaseFirestore
+                                  .instance
+                                  .collection('orders')
+                                  .doc(docId)
+                                  .get();
+                              final updatedOrderData =
+                                  Map<String, dynamic>.from(
+                                      updatedSnapshot.data() ?? orderData);
+                              updatedOrderData['docId'] = updatedSnapshot.id;
                               GFToast.showToast(
                                 hasAssignedDriver
                                     ? 'تم تجهيز الطلب وإرسال إشعار للمندوب'
                                     : 'تم تجهيز الطلب وسيتم البحث عن مندوب تلقائيًا',
                                 context,
                               );
-                              Navigator.of(context).pop();
+                              if (!context.mounted) return;
+                              Navigator.of(context).pushReplacement(
+                                MaterialPageRoute(
+                                  builder: (_) => StoreOrderDetailsScreen(
+                                    orderData: updatedOrderData,
+                                  ),
+                                ),
+                              );
                             },
                             style: FilledButton.styleFrom(
                               backgroundColor: AppThemeArabic.storePrimary,

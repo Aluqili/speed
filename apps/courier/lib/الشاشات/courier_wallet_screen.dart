@@ -6,7 +6,7 @@ import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class CourierWalletScreen extends StatefulWidget {
   final String driverId;
-  const CourierWalletScreen({Key? key, required this.driverId}) : super(key: key);
+  const CourierWalletScreen({super.key, required this.driverId});
 
   @override
   State<CourierWalletScreen> createState() => _CourierWalletScreenState();

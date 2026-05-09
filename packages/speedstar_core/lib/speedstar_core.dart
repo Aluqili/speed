@@ -29,3 +29,4 @@ export 'src/orders/order_code_formatter.dart';
 export 'src/orders/order_status_palette.dart';
 export 'src/repositories/orders_repository.dart';
 export 'src/auth/login_gate.dart';
+export 'src/auth/login_screen_ar.dart';

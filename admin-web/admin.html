@@ -510,6 +510,48 @@
                     <div class="card finance-subcard">
                       <h3>مراجعة عروض المطاعم</h3>
                       <p class="muted">العروض لا تظهر للعميل إلا بعد اعتماد الأدمن.</p>
+                      <div class="card finance-subcard">
+                        <h3>إنشاء عرض من الأدمن</h3>
+                        <form id="adminCreateOfferForm" class="grid">
+                          <label>المطعم
+                            <select id="adminOfferRestaurantId" required>
+                              <option value="">اختر المطعم</option>
+                            </select>
+                          </label>
+                          <label>عنوان العرض<input id="adminOfferTitle" type="text" required placeholder="خصم نهاية الأسبوع" /></label>
+                          <label>وصف العرض<input id="adminOfferDescription" type="text" required placeholder="عرض خاص لفترة محدودة" /></label>
+                          <label>شارة العرض <small class="muted">(اختياري — تظهر فقط إذا كُتبت)</small><input id="adminOfferBadgeText" type="text" placeholder="مثال: جديد، نهائي، لفترة محدودة" /></label>
+                          <label class="admin-offer-image-field">صورة العرض
+                            <input id="adminOfferImageFile" type="file" accept="image/*" />
+                            <input id="adminOfferImageUrl" type="hidden" />
+                            <span id="adminOfferImageStatus" class="muted">اختر صورة من الجهاز.</span>
+                            <img id="adminOfferImagePreview" class="admin-offer-image-preview" alt="معاينة صورة العرض" hidden />
+                          </label>
+                          <label>نطاق الخصم
+                            <select id="adminOfferDiscountScope" required>
+                              <option value="order_total">إجمالي الطلب</option>
+                              <option value="delivery_fee">رسوم التوصيل</option>
+                              <option value="specific_items">وجبات محددة</option>
+                            </select>
+                          </label>
+                          <label>نوع الخصم
+                            <select id="adminOfferDiscountType" required>
+                              <option value="percent">نسبة مئوية</option>
+                              <option value="fixed">مبلغ ثابت</option>
+                            </select>
+                          </label>
+                          <label>قيمة الخصم<input id="adminOfferDiscountValue" type="number" min="0" step="0.01" required placeholder="20" /></label>
+                          <label>سقف الخصم<input id="adminOfferMaxDiscount" type="number" min="0" step="0.01" placeholder="اختياري" /></label>
+                          <label>الحد الأدنى للطلب<input id="adminOfferMinOrder" type="number" min="0" step="0.01" placeholder="اختياري" /></label>
+                          <label>يبدأ في<input id="adminOfferStartsAt" type="datetime-local" required /></label>
+                          <label>ينتهي في<input id="adminOfferEndsAt" type="datetime-local" required /></label>
+                          <label>أصناف محددة<input id="adminOfferTargetItems" type="text" placeholder="برجر لحم, بيتزا" /></label>
+                          <label>ملاحظة داخلية<input id="adminOfferReviewNote" type="text" placeholder="اختياري" /></label>
+                          <label><input id="adminOfferIsActive" type="checkbox" checked /> تفعيل العرض مباشرة</label>
+                          <button id="adminCreateOfferBtn" type="submit" class="btn primary">إنشاء العرض</button>
+                        </form>
+                        <div id="adminCreateOfferResult" class="muted normalize-result"></div>
+                      </div>
                       <div id="storeOffersSummary" class="management-details muted">جاري تحميل العروض...</div>
                       <div class="card finance-subcard">
                         <h3>طلبات بانتظار المراجعة</h3>
@@ -915,7 +957,7 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script type="module" src="./js/app.js?v=20260505-v7-kpi"></script>
+    <script type="module" src="./js/app.js?v=20260508-offer-upload"></script>
     <script>
       // Sidebar toggle (mobile)
       const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');

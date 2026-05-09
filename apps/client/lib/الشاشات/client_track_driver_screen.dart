@@ -1,22 +1,19 @@
-import 'dart:async';
-import 'dart:convert';
+﻿import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../الثيم/client_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import 'chat_screen.dart';
 import '../الخدمات/unread_messages_service.dart';
+import '../الخدمات/route_estimate_service.dart';
 
 class ClientTrackDriverScreen extends StatefulWidget {
   final String orderId;
-  const ClientTrackDriverScreen({Key? key, required this.orderId})
-      : super(key: key);
+  const ClientTrackDriverScreen({super.key, required this.orderId});
 
   @override
   State<ClientTrackDriverScreen> createState() =>
@@ -24,22 +21,23 @@ class ClientTrackDriverScreen extends StatefulWidget {
 }
 
 class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
-  static const Color _primary = AppThemeArabic.clientPrimary;
+  static const Color _primary = ClientColors.primary;
 
   GoogleMapController? _mapController;
   bool _notifiedClient = false;
-  bool _closedAfterFinish = false;
 
   // Route caching — refetch only when driver moves significantly
   List<LatLng> _routePoints = [];
+  double? _routeDistanceM;
+  int? _routeDurationMinutes;
   LatLng? _lastRouteFetchOrigin;
   bool _fetchingRoute = false;
 
   // ─── helpers ──────────────────────────────────────────────────────────────
 
-  String _generateChatId(String u1, String u2) {
-    final s = [u1, u2]..sort();
-    return '${s[0]}_${s[1]}';
+  String _generateChatId(String user1, String user2) {
+    final sorted = [user1, user2]..sort();
+    return '${sorted[0]}_${sorted[1]}';
   }
 
   String _resolveDriverPhone(
@@ -109,92 +107,38 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
   Future<void> _fetchRoute(LatLng origin, LatLng dest) async {
     if (_fetchingRoute) return;
 
-    // Don't refetch if driver hasn't moved more than 80 m
+    // Don't refetch if driver hasn't moved more than 25 m
     if (_lastRouteFetchOrigin != null &&
-        _distanceM(_lastRouteFetchOrigin!, origin) < 80 &&
+        _distanceM(_lastRouteFetchOrigin!, origin) < 25 &&
         _routePoints.isNotEmpty) { return; }
 
     _fetchingRoute = true;
     try {
-      String apiKey = '';
-      try {
-        apiKey = FirebaseRemoteConfig.instance
-            .getString('google_directions_api_key')
-            .trim();
-      } catch (_) {}
-
-      if (apiKey.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _routePoints = [origin, dest];
-            _lastRouteFetchOrigin = origin;
-          });
-        }
-        return;
-      }
-
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/directions/json'
-        '?origin=${origin.latitude},${origin.longitude}'
-        '&destination=${dest.latitude},${dest.longitude}'
-        '&mode=driving'
-        '&key=$apiKey',
+      final estimate = await RouteEstimateService.estimate(
+        origin: origin,
+        destination: dest,
+        timeout: const Duration(seconds: 5),
       );
-
-      final response =
-          await http.get(url).timeout(const Duration(seconds: 8));
-
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
-        final routes = json['routes'] as List?;
-        if (routes != null && routes.isNotEmpty) {
-          final encoded =
-              routes[0]['overview_polyline']['points'] as String;
-          final points = _decodePolyline(encoded);
-          if (mounted) {
-            setState(() {
-              _routePoints = points;
-              _lastRouteFetchOrigin = origin;
-            });
-          }
-          return;
-        }
+      final points = estimate.polylinePoints;
+      if (mounted) {
+        setState(() {
+          _routePoints = points.length >= 2 ? points : [origin, dest];
+          _routeDistanceM = estimate.distanceKm * 1000;
+          _routeDurationMinutes = estimate.durationMinutes;
+          _lastRouteFetchOrigin = origin;
+        });
       }
     } catch (_) {}
-
-    // fallback: straight line
-    if (mounted) {
+    if (mounted && _routePoints.isEmpty) {
+      final fallbackDistance = _distanceM(origin, dest);
       setState(() {
         _routePoints = [origin, dest];
+        _routeDistanceM = fallbackDistance;
+        _routeDurationMinutes = (fallbackDistance / 1000 / 25 * 60).ceil();
         _lastRouteFetchOrigin = origin;
       });
     }
     _fetchingRoute = false;
-  }
-
-  List<LatLng> _decodePolyline(String encoded) {
-    final points = <LatLng>[];
-    int index = 0;
-    int lat = 0, lng = 0;
-    while (index < encoded.length) {
-      int b, shift = 0, result = 0;
-      do {
-        b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      lat += (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
-      shift = 0;
-      result = 0;
-      do {
-        b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      lng += (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
-      points.add(LatLng(lat / 1e5, lng / 1e5));
-    }
-    return points;
   }
 
   // ─── Map helpers ──────────────────────────────────────────────────────────
@@ -265,16 +209,11 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
               'delivered', 'cancelled', 'store_rejected', 'rejected_by_store'
             };
             if (finished.contains(status)) {
-              if (!_closedAfterFinish) {
-                _closedAfterFinish = true;
-                Future.microtask(() {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('انتهى الطلب، تم إيقاف التتبع.')));
-                  Navigator.of(context).maybePop();
-                });
-              }
-              return _buildError('انتهى الطلب.');
+              return _buildError(
+                status == 'delivered'
+                    ? 'تم تسليم الطلب بنجاح. انتهى التتبع.'
+                    : 'انتهى الطلب، تم إيقاف التتبع.',
+              );
             }
 
             final clientLoc = _locationFromFields(order,
@@ -314,7 +253,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
                 if (dist <= 200 && !_notifiedClient) {
                   _notifiedClient = true;
                   Future.microtask(() {
-                    if (!mounted) return;
+                    if (!mounted || !context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                       content: Text('المندوب قريب منك! استعد لاستلام طلبك'),
                       backgroundColor: Colors.green,
@@ -341,6 +280,12 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
                         '')
                     .toString()
                     .trim();
+                final clientName = (order['clientName'] ??
+                        order['clientFullName'] ??
+                        order['clientDisplayName'] ??
+                        '')
+                    .toString()
+                    .trim();
                 final restaurantLoc = _locationFromFields(order,
                     rawKey: 'restaurantLocation',
                     latKey: 'restaurantLat',
@@ -354,6 +299,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
                   driverName: driverName,
                   driverPhone: driverPhone,
                   clientId: clientId,
+                  clientName: clientName,
                   driverId: driverId,
                   distanceM: dist,
                 );
@@ -373,6 +319,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
     required String driverName,
     required String driverPhone,
     required String clientId,
+    required String clientName,
     required String driverId,
     required double distanceM,
   }) {
@@ -413,8 +360,9 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
         ),
     };
 
-    // ETA estimate: assume ~25 km/h average speed in city
-    final etaMins = (distanceM / 1000 / 25 * 60).ceil();
+    final displayDistanceM = _routeDistanceM ?? distanceM;
+    final etaMins =
+        _routeDurationMinutes ?? (displayDistanceM / 1000 / 25 * 60).ceil();
 
     return Stack(
       children: [
@@ -470,7 +418,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
                 ],
               ),
               child: Text(
-                '${_formatDistance(distanceM)} متبقي  •  ~$etaMins د',
+                '${_formatDistance(displayDistanceM)} متبقي  •  ~$etaMins د',
                 style: const TextStyle(
                     fontSize: 13, fontWeight: FontWeight.w600),
               ),
@@ -488,7 +436,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
             driverPhone: driverPhone,
             canCall: driverPhone.isNotEmpty,
             canChat: clientId.isNotEmpty,
-            chatId: _generateChatId(clientId, driverId),
+            conversationId: _generateChatId(clientId, driverId),
             clientId: clientId,
             onCall: () => _callDriver(driverPhone),
             onChat: () => Navigator.push(
@@ -499,7 +447,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
                   otherUserId: driverId,
                   currentUserRole: 'client',
                   chatId: _generateChatId(clientId, driverId),
-                  currentUserName: 'العميل',
+                  currentUserName: clientName.isNotEmpty ? clientName : 'العميل',
                 ),
               ),
             ),
@@ -518,10 +466,10 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
       child: Container(
         width: 40,
         height: 40,
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: Colors.white,
           shape: BoxShape.circle,
-          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6)],
+          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6)],
         ),
         child: Icon(icon, size: 18, color: Colors.black87),
       ),
@@ -572,7 +520,7 @@ class _DriverBottomPanel extends StatelessWidget {
     required this.driverPhone,
     required this.canCall,
     required this.canChat,
-    required this.chatId,
+    required this.conversationId,
     required this.clientId,
     required this.onCall,
     required this.onChat,
@@ -582,12 +530,12 @@ class _DriverBottomPanel extends StatelessWidget {
   final String driverPhone;
   final bool canCall;
   final bool canChat;
-  final String chatId;
+  final String conversationId;
   final String clientId;
   final VoidCallback onCall;
   final VoidCallback onChat;
 
-  static const Color _primary = AppThemeArabic.clientPrimary;
+  static const Color _primary = ClientColors.primary;
 
   @override
   Widget build(BuildContext context) {
@@ -661,9 +609,11 @@ class _DriverBottomPanel extends StatelessWidget {
             children: [
               Expanded(
                 child: StreamBuilder<int>(
-                  stream: canChat && chatId.isNotEmpty && clientId.isNotEmpty
+                  stream: canChat &&
+                          conversationId.isNotEmpty &&
+                          clientId.isNotEmpty
                       ? UnreadMessagesService.unreadDirectChatStream(
-                          clientId, chatId)
+                          clientId, conversationId)
                       : Stream.value(0),
                   builder: (context, snap) {
                     final unread = snap.data ?? 0;
@@ -714,7 +664,7 @@ class _ActionButton extends StatelessWidget {
   final VoidCallback onTap;
   final int badge;
 
-  static const Color _primary = AppThemeArabic.clientPrimary;
+  static const Color _primary = ClientColors.primary;
 
   @override
   Widget build(BuildContext context) {

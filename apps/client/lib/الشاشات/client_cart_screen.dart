@@ -1,4 +1,4 @@
-// lib/screens/client_cart_screen.dart
+﻿// lib/screens/client_cart_screen.dart
 
 import 'dart:async';
 import 'dart:math';
@@ -7,16 +7,18 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
-import 'package:speedstar_core/src/auth/login_screen_ar.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../الثيم/client_theme.dart';
+import 'package:speedstar_core/speedstar_core.dart' show LoginScreenArabic;
 
 import '../الخدمات/guest_location_service.dart';
+import '../الخدمات/route_estimate_service.dart';
 import 'address_selection_screen.dart';
 import 'cart_provider.dart';
 import 'payment_screen.dart';
 
 class ClientCartScreen extends StatefulWidget {
-  const ClientCartScreen({Key? key}) : super(key: key);
+  const ClientCartScreen({super.key});
 
   @override
   State<ClientCartScreen> createState() => _ClientCartScreenState();
@@ -418,12 +420,15 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         throw Exception('موقع المطعم غير مكتمل، يرجى تحديث عنوان المتجر');
       }
 
-      double toRad(double deg) => deg * pi / 180;
-      final dLat = toRad(restLat - clientLat);
-      final dLng = toRad(restLng - clientLng);
-      final a = pow(sin(dLat / 2), 2) +
-          cos(toRad(clientLat)) * cos(toRad(restLat)) * pow(sin(dLng / 2), 2);
-      final distance = 2 * asin(sqrt(a)) * 6371;
+      final route = await RouteEstimateService.estimate(
+        origin: LatLng(restLat, restLng),
+        destination: LatLng(clientLat, clientLng),
+        timeout: const Duration(seconds: 5),
+      );
+      if (!mounted || generation != _deliveryFeeGeneration) {
+        return;
+      }
+      final distance = route.distanceKm;
 
       final hasNewPricingKeys =
           _clientDeliveryBaseFee > 0 && _clientDeliveryBaseDistanceKm >= 0;
@@ -711,17 +716,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
           restData['city'],
     );
 
-    if (clientStateId.isNotEmpty &&
-        restaurantStateId.isNotEmpty &&
-        clientStateId != restaurantStateId) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'لا يمكن الطلب من مطعم خارج ولايتك الحالية. يرجى اختيار مطعم داخل نفس الولاية.'),
-        ),
-      );
-      return;
-    }
+    // الولاية تُتحقق منها لاحقاً عبر المسافة الجغرافية الفعلية
 
     if (restLat == null || restLng == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -731,7 +726,15 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       return;
     }
 
-    final distanceKm = _haversineKm(clientLat, clientLng, restLat, restLng);
+    final route = await RouteEstimateService.estimate(
+      origin: LatLng(restLat, restLng),
+      destination: LatLng(clientLat, clientLng),
+      timeout: const Duration(seconds: 5),
+    );
+    if (!mounted) {
+      return;
+    }
+    final distanceKm = route.distanceKm;
 
     if (clientStateId.isNotEmpty &&
         restaurantStateId.isEmpty &&
@@ -792,6 +795,10 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       'restaurantLat': restLat,
       'restaurantLng': restLng,
       'distanceKm': distanceKm,
+      'routeDistanceKm': distanceKm,
+      'routeDurationMinutes': route.durationMinutes,
+      'routeIsRoadRoute': route.isRoadRoute,
+      'routePolyline': route.encodedPolyline,
       'clientLocation': GeoPoint(clientLat, clientLng),
       'restaurantLocation': GeoPoint(restLat, restLng),
       'items': items,
@@ -813,20 +820,6 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         ),
       ),
     );
-  }
-
-  double _haversineKm(
-    double lat1,
-    double lng1,
-    double lat2,
-    double lng2,
-  ) {
-    double toRad(double deg) => deg * pi / 180;
-    final dLat = toRad(lat2 - lat1);
-    final dLng = toRad(lng2 - lng1);
-    final a = pow(sin(dLat / 2), 2) +
-        cos(toRad(lat1)) * cos(toRad(lat2)) * pow(sin(dLng / 2), 2);
-    return 2 * asin(sqrt(a)) * 6371;
   }
 
   String _normalizeStateId(dynamic raw) {
@@ -965,8 +958,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     return normalized;
   }
 
-  static const Color primaryColor = AppThemeArabic.clientPrimary;
-  static const Color backgroundColor = AppThemeArabic.clientBackground;
+  static const Color primaryColor = ClientColors.primary;
   static const Color cardColor = Colors.white;
 
   @override
@@ -989,9 +981,9 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: backgroundColor,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: Theme.of(context).colorScheme.surface,
           elevation: 1,
           centerTitle: true,
           title: const Text('سلة المشتريات',
@@ -1012,16 +1004,16 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.shopping_basket_outlined,
-                        size: 72, color: Colors.grey[300]),
+                        size: 72, color: ClientColors.textSecondary.withValues(alpha: 0.3)),
                     const SizedBox(height: 16),
-                    const Text('سلتك فارغة',
+                    Text('سلتك فارغة',
                         style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF1A1D26))),
+                            color: Theme.of(context).colorScheme.onSurface)),
                     const SizedBox(height: 8),
-                    Text('أضف وجبات من المطاعم لتبدأ طلبك',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 14)),
+                    const Text('أضف وجبات من المطاعم لتبدأ طلبك',
+                        style: TextStyle(color: ClientColors.textSecondary, fontSize: 14)),
                     const SizedBox(height: 24),
                     OutlinedButton.icon(
                       onPressed: () => Navigator.pop(context),
@@ -1047,7 +1039,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         bottomNavigationBar: Container(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius:
                 const BorderRadius.vertical(top: Radius.circular(24)),
             boxShadow: [
@@ -1066,7 +1058,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: 14),
                 decoration: BoxDecoration(
-                  color: Colors.grey[300],
+                  color: ClientColors.textSecondary.withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(99),
                 ),
               ),
@@ -1080,7 +1072,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
             ),
             if (displayLargeOrderFee > 0) ...[
               const SizedBox(height: 6),
-              _buildRow('رسوم الطلبات الكبيرة',
+              _buildRow('رسوم الخدمة',
                   '${displayLargeOrderFee.toStringAsFixed(2)} ج.س'),
             ],
             const Padding(
@@ -1103,7 +1095,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.grey[300],
+                  disabledBackgroundColor: ClientColors.textSecondary.withValues(alpha: 0.25),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)),
                   elevation: 0,
@@ -1176,7 +1168,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
                 child: const Text('حذف الملاحظة',
-                    style: TextStyle(color: Colors.red)),
+                    style: TextStyle(color: ClientColors.error)),
               ),
             ElevatedButton(
               onPressed: () async {
@@ -1224,11 +1216,11 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: Colors.red.shade50,
+                      color: ClientColors.error.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(Icons.delete_outline_rounded,
-                        size: 18, color: Colors.red.shade400),
+                    child: const Icon(Icons.delete_outline_rounded,
+                        size: 18, color: ClientColors.error),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1240,10 +1232,10 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                       Text(
                         item.name,
                         textAlign: TextAlign.right,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 15,
-                          color: Color(0xFF1A1D26),
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       if ((item.sizeLabel ?? '').isNotEmpty) ...[
@@ -1251,7 +1243,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                         Text(
                           'الحجم: ${item.sizeLabel}',
                           style: const TextStyle(
-                              color: Color(0xFF6B7280), fontSize: 12),
+                              color: ClientColors.textSecondary, fontSize: 12),
                         ),
                       ],
                       const SizedBox(height: 6),
@@ -1281,13 +1273,13 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                           horizontal: 10, vertical: 7),
                       decoration: BoxDecoration(
                         color: hasNotes
-                            ? const Color(0xFFFFF3EE)
-                            : const Color(0xFFF5F5F5),
+                            ? const Color(0xFFFFF0EE)
+                            : Theme.of(context).cardColor,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
                           color: hasNotes
                               ? primaryColor.withValues(alpha: 0.25)
-                              : Colors.grey.withValues(alpha: 0.15),
+                              : ClientColors.textSecondary.withValues(alpha: 0.15),
                         ),
                       ),
                       child: Row(
@@ -1295,7 +1287,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                           Icon(
                             Icons.sticky_note_2_outlined,
                             size: 13,
-                            color: hasNotes ? primaryColor : Colors.grey,
+                            color: hasNotes ? primaryColor : ClientColors.textSecondary,
                           ),
                           const SizedBox(width: 6),
                           Expanded(
@@ -1306,15 +1298,15 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                               style: TextStyle(
                                 fontSize: 12,
                                 color: hasNotes
-                                    ? const Color(0xFF1A1D26)
-                                    : Colors.grey,
+                                    ? Theme.of(context).colorScheme.onSurface
+                                    : ClientColors.textSecondary,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          Icon(Icons.edit_outlined,
-                              size: 12, color: Colors.grey[400]),
+                          const Icon(Icons.edit_outlined,
+                              size: 12, color: ClientColors.textSecondary),
                         ],
                       ),
                     ),
@@ -1341,10 +1333,10 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
                           '${item.quantity}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 15,
-                            color: Color(0xFF1A1D26),
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                       ),
@@ -1377,7 +1369,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         child: Icon(
           icon,
           size: 16,
-          color: onTap == null ? Colors.grey[300] : primaryColor,
+          color: onTap == null ? ClientColors.textSecondary.withValues(alpha: 0.35) : primaryColor,
         ),
       ),
     );
@@ -1396,7 +1388,9 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                 style: TextStyle(
                   fontWeight: bold ? FontWeight.w800 : FontWeight.normal,
                   fontSize: largeValue ? 17 : 14,
-                  color: bold ? const Color(0xFF1A1D26) : const Color(0xFF6B7280),
+                  color: bold
+                      ? Theme.of(context).colorScheme.onSurface
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
         Text(
@@ -1404,7 +1398,9 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
           style: TextStyle(
             fontWeight: bold ? FontWeight.w700 : FontWeight.normal,
             fontSize: largeValue ? 15 : 14,
-            color: bold ? const Color(0xFF1A1D26) : const Color(0xFF6B7280),
+            color: bold
+                ? Theme.of(context).colorScheme.onSurface
+                : Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
       ]);

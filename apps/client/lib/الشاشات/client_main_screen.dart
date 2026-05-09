@@ -7,7 +7,7 @@ import 'client_cart_screen.dart';
 class ClientMainScreen extends StatefulWidget {
   final String clientId;
 
-  const ClientMainScreen({Key? key, required this.clientId}) : super(key: key);
+  const ClientMainScreen({super.key, required this.clientId});
 
   @override
   State<ClientMainScreen> createState() => _ClientMainScreenState();
@@ -18,14 +18,14 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> _tabs = [
+    final List<Widget> tabs = [
       ClientHomeTab(clientId: widget.clientId),
       ClientOrdersTab(clientId: widget.clientId),
       ClientAccountTab(clientId: widget.clientId),
     ];
 
     return Scaffold(
-      body: SafeArea(child: _tabs[_currentIndex]),
+      body: SafeArea(child: tabs[_currentIndex]),
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFFFFC107),
         onPressed: () {

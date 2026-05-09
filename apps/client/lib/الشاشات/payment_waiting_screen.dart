@@ -8,7 +8,7 @@ import 'client_order_details_screen.dart';
 
 class PaymentWaitingScreen extends StatelessWidget {
   final String orderId;
-  const PaymentWaitingScreen({Key? key, required this.orderId}) : super(key: key);
+  const PaymentWaitingScreen({super.key, required this.orderId});
 
   @override
   Widget build(BuildContext context) {
@@ -42,10 +42,10 @@ class PaymentWaitingScreen extends StatelessWidget {
           }
 
           // غير ذلك، نبقى في وضع الانتظار
-          return Center(
+          return const Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: const [
+              children: [
                 GFLoader(type: GFLoaderType.circle),
                 SizedBox(height: 16),
                 Text(

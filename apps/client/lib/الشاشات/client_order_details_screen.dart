@@ -1,9 +1,9 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../الثيم/client_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart'
     show formatUnifiedOrderCode, OrderStatusPalette;
 
@@ -13,8 +13,8 @@ import 'payment_screen.dart';
 import 'order_rating_sheet.dart';
 
 class AppColors {
-  static const Color primaryColor = AppThemeArabic.clientPrimary;
-  static const Color backgroundColor = AppThemeArabic.clientBackground;
+  static const Color primaryColor = ClientColors.primary;
+  static const Color backgroundColor = ClientColors.lightBackground;
 }
 
 const List<String> _allSteps = [
@@ -41,8 +41,7 @@ class ClientOrderDetailsScreen extends StatelessWidget {
   }
 
   final String orderId;
-  const ClientOrderDetailsScreen({Key? key, required this.orderId})
-      : super(key: key);
+  const ClientOrderDetailsScreen({super.key, required this.orderId});
 
   String _normalizeOrderStep(String status) {
     switch (status.trim()) {
@@ -167,13 +166,24 @@ class ClientOrderDetailsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final orderRef =
         FirebaseFirestore.instance.collection('orders').doc(orderId);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? ClientColors.surface : Colors.white;
+    final cardBorder = isDark ? const Color(0x22FF6B00) : const Color(0x14000000);
+    final cardShadow = ClientColors.softCardShadow(
+      dark: isDark,
+      opacity: 0.06,
+      blur: 16,
+      offset: const Offset(0, 6),
+    );
+    final textPrimary = Theme.of(context).colorScheme.onSurface;
+    final textSecondary = Theme.of(context).colorScheme.onSurfaceVariant;
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: AppColors.backgroundColor,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 1,
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          elevation: 0,
           centerTitle: true,
           title: const Text('تفاصيل الطلب',
               style: TextStyle(
@@ -182,9 +192,6 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                   fontSize: 20,
                   fontFamily: 'Tajawal')),
           iconTheme: const IconThemeData(color: AppColors.primaryColor),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-          ),
         ),
         body: StreamBuilder<DocumentSnapshot>(
           stream: orderRef.snapshots(),
@@ -251,8 +258,10 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFF3E0),
-                        borderRadius: BorderRadius.circular(12),
+                        color: cardBg,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: cardBorder),
+                        boxShadow: cardShadow,
                       ),
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -260,7 +269,9 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                             Text(
                               _getPaymentStatusText(paymentStatus),
                               style: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold),
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primaryColor),
                             ),
                             const SizedBox(height: 12),
                             ClipRRect(
@@ -315,18 +326,19 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 10),
                             decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.black12),
+                              color: cardBg,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: cardBorder),
+                              boxShadow: cardShadow,
                             ),
                             child: Row(
                               children: [
                                 Expanded(
                                   child: Text(
                                     'تواصل مع $driverName',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontWeight: FontWeight.w700,
-                                      color: Colors.black87,
+                                      color: textPrimary,
                                     ),
                                   ),
                                 ),
@@ -375,9 +387,11 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                     const SizedBox(height: 24),
 
                     // معلومات الطلب والفاتورة
-                    Text('🧾 معلومات الطلب',
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text('معلومات الطلب',
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: textPrimary)),
                     const SizedBox(height: 8),
                     // عرض رقم الطلب الموحّد إذا وجد، وإلا جزء من doc.id
                     // عرض رقم الطلب مع آخر 4 أرقام بشكل بارز
@@ -392,10 +406,11 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                           children: [
                             Row(
                               children: [
-                                const Text('رقم الطلب:',
+                                Text('رقم الطلب:',
                                     style: TextStyle(
                                         fontWeight: FontWeight.bold,
-                                        fontSize: 16)),
+                                        fontSize: 16,
+                                        color: textPrimary)),
                                 const SizedBox(width: 8),
                                 Text(
                                   orderNumber,
@@ -411,19 +426,20 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                             const SizedBox(height: 8),
                             Row(
                               children: [
-                                const Text('المطعم:',
+                                Text('المطعم:',
                                     style: TextStyle(
                                         fontWeight: FontWeight.bold,
-                                        fontSize: 16)),
+                                        fontSize: 16,
+                                        color: textPrimary)),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     restaurantName.isEmpty
                                         ? 'غير معروف'
                                         : restaurantName,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontWeight: FontWeight.w700,
-                                      color: Colors.black87,
+                                      color: textPrimary,
                                       fontSize: 16,
                                     ),
                                   ),
@@ -440,16 +456,16 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                                   const SizedBox(width: 6),
                                   Text(
                                     'آخر 4 أرقام: ',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontSize: 15,
-                                        color: Colors.grey,
+                                        color: textSecondary,
                                         fontWeight: FontWeight.bold),
                                   ),
                                   Text(
                                     last4,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 20,
-                                      color: Colors.black,
+                                      color: textPrimary,
                                       fontWeight: FontWeight.bold,
                                       letterSpacing: 2,
                                     ),
@@ -461,35 +477,42 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                         );
                       },
                     ),
-                    _buildRow('تاريخ الطلب',
+                    _buildRow(context, 'تاريخ الطلب',
                         _formatDate(data['createdAt']) ?? 'غير متاح'),
                     const Divider(height: 32),
-                    Text('💰 تفاصيل الفاتورة',
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text('تفاصيل الفاتورة',
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: textPrimary)),
                     const SizedBox(height: 8),
-                    _buildRow(
+                    _buildRow(context,
                         'قيمة الأصناف', '${total.toStringAsFixed(2)} ج.س'),
-                    _buildRow(
+                    _buildRow(context,
                         'رسوم التوصيل',
                         delivery == 0
                             ? 'مجانًا'
                             : '${delivery.toStringAsFixed(2)} ج.س'),
                     if (largeOrderFee > 0)
-                      _buildRow('رسوم الطلبات الكبيرة',
-                          '${largeOrderFee.toStringAsFixed(2)} ج.س'),
+                      _buildRow(
+                        context,
+                        'رسوم الخدمة',
+                        '${largeOrderFee.toStringAsFixed(2)} ج.س',
+                        subtle: true,
+                      ),
                     if (discountAmount > 0)
-                      _buildRow('خصم الرمز الترويجي',
+                      _buildRow(context, 'خصم الرمز الترويجي',
                           '-${discountAmount.toStringAsFixed(2)} ج.س',
                           valueColor: Colors.green),
-                    _buildRow('الإجمالي',
+                    _buildRow(context, 'الإجمالي',
                         '${totalWithDelivery.toStringAsFixed(2)} ج.س',
                         bold: walletUsedAmount <= 0),
                     if (walletUsedAmount > 0) ...[
-                      _buildRow('خصم المحفظة',
+                      _buildRow(context, 'خصم المحفظة',
                           '-${walletUsedAmount.toStringAsFixed(2)} ج.س',
                           valueColor: Colors.green),
                       _buildRow(
+                          context,
                           'المبلغ المدفوع فعلياً',
                           amountPaidExternal <= 0
                               ? 'مدفوع بالكامل من المحفظة'
@@ -504,9 +527,11 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                     // رقم الطلب بشكل بارز أسفل معلومات الطلب
                     Row(
                       children: [
-                        const Text('رقم الطلب: ',
+                        Text('رقم الطلب: ',
                             style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 16)),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: textPrimary)),
                         Text(
                           formatUnifiedOrderCode(
                             orderNumber: data['orderNumber'],
@@ -523,9 +548,11 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                     const SizedBox(height: 8),
 
                     // الأصناف
-                    Text('🍽️ الأصناف المطلوبة',
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text('الأصناف المطلوبة',
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: textPrimary)),
                     const SizedBox(height: 8),
                     ...items.map((item) => Card(
                           shape: RoundedRectangleBorder(
@@ -544,9 +571,11 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                     const SizedBox(height: 24),
 
                     // شريط تقدم الطلب الكامل
-                    Text('🔁 تقدم الطلب',
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text('تقدم الطلب',
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: textPrimary)),
                     const SizedBox(height: 12),
                     Column(
                       children: List.generate(_allSteps.length, (i) {
@@ -568,7 +597,7 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: color.withOpacity(0.1),
+                            color: color.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
@@ -609,18 +638,20 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                             width: double.infinity,
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.black12),
+                              color: cardBg,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: cardBorder),
+                              boxShadow: cardShadow,
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   '🛵 خيارات المندوب: $driverName',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
+                                    color: textPrimary,
                                   ),
                                 ),
                                 if (driverPhone.isNotEmpty) ...[
@@ -628,7 +659,7 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                                   Text(
                                     'رقم المندوب: $driverPhone',
                                     style:
-                                        const TextStyle(color: Colors.black54),
+                                        TextStyle(color: textSecondary),
                                   ),
                                 ],
                                 const SizedBox(height: 12),
@@ -670,6 +701,7 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                       )
                     else if (restaurantRating > 0)
                       _buildSubmittedRatingCard(
+                        context: context,
                         restaurantName: restaurantName,
                         restaurantRating: restaurantRating,
                         restaurantComment: restaurantComment,
@@ -686,20 +718,30 @@ class ClientOrderDetailsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildRow(String label, String value,
-          {bool bold = false, Color? valueColor}) =>
+  Widget _buildRow(BuildContext context, String label, String value,
+          {bool bold = false, bool subtle = false, Color? valueColor}) =>
       Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: EdgeInsets.symmetric(vertical: subtle ? 2 : 4),
         child:
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text(label, style: const TextStyle(fontSize: 16)),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: subtle ? 13 : 16,
+              color: subtle
+                  ? Theme.of(context).colorScheme.onSurfaceVariant
+                  : Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
           Text(
             value,
             style: TextStyle(
-              fontSize: 16,
+              fontSize: subtle ? 13 : 16,
               fontWeight: bold ? FontWeight.bold : FontWeight.normal,
               color: valueColor ??
-                  (bold ? AppColors.primaryColor : Colors.black87),
+                  (bold
+                      ? AppColors.primaryColor
+                      : Theme.of(context).colorScheme.onSurface),
             ),
           ),
         ]),
@@ -714,9 +756,14 @@ class ClientOrderDetailsScreen extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.primaryColor.withOpacity(0.12)),
+        border: Border.all(color: AppColors.primaryColor.withValues(alpha: 0.12)),
+        boxShadow: ClientColors.softCardShadow(
+          opacity: 0.06,
+          blur: 16,
+          offset: const Offset(0, 6),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -726,9 +773,12 @@ class ClientOrderDetailsScreen extends StatelessWidget {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'يمكنك الآن تقييم المطعم والمندوب، وسيظهر تقييم المطعم لبقية العملاء.',
-            style: TextStyle(color: Colors.black54, height: 1.4),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 14),
           SizedBox(
@@ -759,6 +809,7 @@ class ClientOrderDetailsScreen extends StatelessWidget {
   }
 
   Widget _buildSubmittedRatingCard({
+    required BuildContext context,
     required String restaurantName,
     required int restaurantRating,
     required String restaurantComment,
@@ -773,8 +824,10 @@ class ClientOrderDetailsScreen extends StatelessWidget {
           Row(
             children: [
               Text(title,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700, color: Colors.black87)),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  )),
               const Spacer(),
               ...List.generate(
                 5,
@@ -790,7 +843,12 @@ class ClientOrderDetailsScreen extends StatelessWidget {
           ),
           if (comment.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(comment, style: const TextStyle(color: Colors.black54)),
+            Text(
+              comment,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
           ],
         ],
       );
@@ -800,9 +858,14 @@ class ClientOrderDetailsScreen extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.amber.withOpacity(0.28)),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.28)),
+        boxShadow: ClientColors.softCardShadow(
+          opacity: 0.06,
+          blur: 16,
+          offset: const Offset(0, 6),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

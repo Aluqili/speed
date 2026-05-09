@@ -9,8 +9,7 @@ import 'package:speedstar_core/speedstar_core.dart'
 class CourierActiveOrdersScreen extends StatelessWidget {
   final String driverId;
 
-  const CourierActiveOrdersScreen({Key? key, required this.driverId})
-      : super(key: key);
+  const CourierActiveOrdersScreen({super.key, required this.driverId});
 
   // الحالات المطلوبة للعرض
   static const List<String> validStatuses = [

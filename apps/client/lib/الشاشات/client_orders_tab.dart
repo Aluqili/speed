@@ -1,10 +1,11 @@
-// lib/screens/client_orders_tab.dart
+﻿// lib/screens/client_orders_tab.dart
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:speedstar_core/speedstar_core.dart' show OrderStatusPalette;
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import '../الثيم/client_theme.dart';
 import 'cart_provider.dart';
 import 'client_cart_screen.dart';
 import 'client_order_details_screen.dart';
@@ -13,7 +14,7 @@ import 'order_rating_sheet.dart';
 
 class ClientOrdersTab extends StatefulWidget {
   final String clientId;
-  const ClientOrdersTab({Key? key, required this.clientId}) : super(key: key);
+  const ClientOrdersTab({super.key, required this.clientId});
 
   @override
   State<ClientOrdersTab> createState() => _ClientOrdersTabState();
@@ -22,14 +23,14 @@ class ClientOrdersTab extends StatefulWidget {
 class _ClientOrdersTabState extends State<ClientOrdersTab>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  static const Color primaryColor = AppThemeArabic.clientPrimary;
-  static const Color backgroundColor = AppThemeArabic.clientBackground;
+  static const Color primaryColor = ClientColors.primary;
 
   static const _activeOrderStatuses = [
     'انتظار الدفع',
     'payment_review',
     'store_pending',
     'courier_searching',
+    'courier_offer_pending',
     'courier_assigned',
     'pickup_ready',
     'picked_up',
@@ -45,6 +46,32 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
     'تم التوصيل',
     'ملغي',
   ];
+
+  // مراحل تقدم الطلب النشط بالترتيب
+  static const _progressSteps = [
+    ('payment_review', 'الدفع', Icons.payments_rounded),
+    ('store_pending', 'التجهيز', Icons.restaurant_rounded),
+    ('courier_searching', 'المندوب', Icons.delivery_dining_rounded),
+    ('picked_up', 'في الطريق', Icons.directions_bike_rounded),
+    ('arrived_to_client', 'وصل', Icons.check_circle_rounded),
+  ];
+
+  int _stepIndex(String status) {
+    if (status == 'payment_review' || status == 'انتظار الدفع') return 0;
+    if (status == 'store_pending' || status == 'قيد المراجعة' ||
+        status == 'قيد التجهيز') {
+      return 1;
+    }
+    if (status == 'courier_searching' || status == 'courier_offer_pending') {
+      return 2;
+    }
+    if (status == 'courier_assigned' || status == 'pickup_ready' ||
+        status == 'picked_up' || status == 'قيد التوصيل') {
+      return 3;
+    }
+    if (status == 'arrived_to_client') return 4;
+    return -1;
+  }
 
   @override
   void initState() {
@@ -63,28 +90,25 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: _ClientOrdersTabState.backgroundColor,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 1,
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          foregroundColor: Theme.of(context).colorScheme.onSurface,
           centerTitle: true,
-          title: const Text('طلباتي',
-              style: TextStyle(
-                  color: _ClientOrdersTabState.primaryColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                  fontFamily: 'Tajawal')),
-          iconTheme:
-              const IconThemeData(color: _ClientOrdersTabState.primaryColor),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+          title: const Text(
+            'طلباتي',
+            style: TextStyle(
+              color: ClientColors.primary,
+              fontWeight: FontWeight.w800,
+            ),
           ),
-          automaticallyImplyLeading: false, // إخفاء سهم الرجوع
+          automaticallyImplyLeading: false,
+          elevation: 0,
           bottom: TabBar(
             controller: _tabController,
-            indicatorColor: _ClientOrdersTabState.primaryColor,
-            labelColor: _ClientOrdersTabState.primaryColor,
-            unselectedLabelColor: Colors.grey,
+            indicatorColor: primaryColor,
+            labelColor: primaryColor,
+            unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
             tabs: const [
               Tab(text: 'نشطة'),
               Tab(text: 'السابقة'),
@@ -110,7 +134,9 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+            child: CircularProgressIndicator(color: primaryColor),
+          );
         }
         final docs = [...(snapshot.data?.docs ?? [])];
         docs.sort((a, b) {
@@ -122,13 +148,11 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
           final bMs = bTs?.millisecondsSinceEpoch ?? 0;
           return bMs.compareTo(aMs);
         });
-        // فلترة محلية حسب الحقلين paymentStatus و orderStatus
         final filtered = docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
           final paymentStatus = (data['paymentStatus'] as String?) ?? '';
-          final orderStatus = (data['orderStatus'] as String? ??
-              data['status'] as String? ??
-              '');
+          final orderStatus =
+              (data['orderStatus'] as String? ?? data['status'] as String? ?? '');
           final combined =
               paymentStatus == 'انتظار الدفع' ? 'انتظار الدفع' : orderStatus;
           return active
@@ -145,21 +169,25 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
                   active
                       ? Icons.hourglass_empty_rounded
                       : Icons.receipt_long_outlined,
-                  size: 72,
-                  color: Colors.grey[300],
+                  size: 64,
+                  color: ClientColors.textSecondary.withValues(alpha: 0.25),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   active ? 'لا توجد طلبات نشطة حالياً' : 'لا توجد طلبات سابقة',
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onSurface),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   active
                       ? 'ستظهر طلباتك الجارية هنا'
                       : 'طلباتك المكتملة والملغاة ستظهر هنا',
-                  style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 13),
                 ),
               ],
             ),
@@ -167,20 +195,25 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 104),
           separatorBuilder: (_, __) => const SizedBox(height: 16),
           itemCount: filtered.length,
           itemBuilder: (context, index) {
             final doc = filtered[index];
             final data = doc.data() as Map<String, dynamic>;
-            return _buildOrderCard(doc.id, data);
+            return _buildOrderCard(doc.id, data, active: active);
           },
         );
       },
     );
   }
 
-  Widget _buildOrderCard(String orderId, Map<String, dynamic> data) {
+  Widget _buildOrderCard(String orderId, Map<String, dynamic> data,
+      {required bool active}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? ClientColors.surface : Colors.white;
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1A1A1A);
+    final textSec = isDark ? ClientColors.textSecondary : const Color(0xFF6B6B6B);
     final paymentStatus = (data['paymentStatus'] as String?) ?? '';
     final orderStatus =
         (data['orderStatus'] as String? ?? data['status'] as String? ?? '');
@@ -188,11 +221,16 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
         ? 'بانتظار رفع إيصال الدفع'
         : _statusText(orderStatus);
     final statusColor = _statusColor(orderStatus, paymentStatus);
-    final total = (data['totalWithDelivery'] as num? ?? 0).toStringAsFixed(2);
+    final total =
+        (data['totalWithDelivery'] as num? ?? 0).toStringAsFixed(2);
     final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
-    final restaurantName = (data['restaurantName'] ?? 'غير معروف').toString();
+    final restaurantName =
+        (data['restaurantName'] ?? 'غير معروف').toString();
+    final restaurantImage =
+        (data['restaurantImage'] ?? '').toString().trim();
     final displayOrderNumber =
-        ((data['orderNumber'] ?? data['orderId'] ?? orderId).toString()).trim();
+        ((data['orderNumber'] ?? data['orderId'] ?? orderId).toString())
+            .trim();
     final canRateOrder = canSubmitOrderRating(data);
     final isDelivered =
         orderStatus == 'delivered' || orderStatus == 'تم التوصيل';
@@ -201,30 +239,34 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
         orderStatus == 'قيد التوصيل' ||
         orderStatus == 'picked_up' ||
         orderStatus == 'arrived_to_client';
+    final currentStep = _stepIndex(
+        paymentStatus == 'انتظار الدفع' ? 'payment_review' : orderStatus);
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
+        color: cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x171C110A), width: 1.5),
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.055),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
+            color: Color(0x0A1C110A),
+            blurRadius: 10,
+            offset: Offset(0, 2),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ─── رأس البطاقة: الحالة والتاريخ ─────────────────────
+          // ─── رأس البطاقة ───────────────────────────────────────
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.06),
+              color: isDark
+                  ? ClientColors.primary.withValues(alpha: 0.10)
+                  : ClientColors.primary.withValues(alpha: 0.06),
               borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(20)),
+                  const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: Row(
               children: [
@@ -232,23 +274,34 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
                   createdAt != null
                       ? '${createdAt.day}/${createdAt.month}/${createdAt.year}'
                       : '',
-                  style:
-                      const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+                  style: TextStyle(color: textSec, fontSize: 12),
                 ),
                 const Spacer(),
                 Container(
-                  width: 7,
-                  height: 7,
-                  margin: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                   decoration: BoxDecoration(
-                      color: statusColor, shape: BoxShape.circle),
-                ),
-                Text(
-                  displayStatus,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
+                    color: statusColor.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                            color: statusColor, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        displayStatus,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -256,7 +309,7 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
           ),
           const Divider(height: 1, thickness: 0.5),
 
-          // ─── جسم البطاقة: المطعم والمبلغ ──────────────────────
+          // ─── جسم البطاقة ────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.all(14),
             child: Row(
@@ -265,10 +318,11 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'الإجمالي',
                       style: TextStyle(
-                          color: Color(0xFF9CA3AF), fontSize: 11),
+                          color: textSec,
+                          fontSize: 11),
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -292,42 +346,56 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
                         textAlign: TextAlign.right,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 15,
-                          color: Color(0xFF1A1D26),
+                          color: textPrimary,
                         ),
                       ),
                       const SizedBox(height: 3),
                       Text(
                         displayOrderNumber.isEmpty ? orderId : displayOrderNumber,
                         textAlign: TextAlign.right,
-                        style: const TextStyle(
-                            color: Color(0xFF9CA3AF), fontSize: 12),
+                        style: TextStyle(color: textSec, fontSize: 12),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 10),
-                // أيقونة المطعم
-                Container(
-                  padding: const EdgeInsets.all(9),
-                  decoration: BoxDecoration(
-                    color: primaryColor.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.storefront_rounded,
-                      color: primaryColor, size: 20),
+                // صورة المطعم أو أيقونة بديلة
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: restaurantImage.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: restaurantImage,
+                          width: 38,
+                          height: 38,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => _RestaurantIconBox(),
+                        )
+                      : _RestaurantIconBox(),
                 ),
               ],
             ),
           ),
 
-          // ─── أزرار الإجراء ─────────────────────────────────────
-          Container(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          // ─── شريط تقدم الطلب (للطلبات النشطة فقط) ─────────────
+          if (active && currentStep >= 0) ...[
+            const Divider(height: 1, thickness: 0.5),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+              child: _OrderProgressBar(
+                steps: _progressSteps,
+                currentStep: currentStep,
+                statusColor: statusColor,
+              ),
+            ),
+          ],
+
+          // ─── أزرار الإجراء ──────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
             child: Row(children: [
-              // زر إعادة الطلب أو التتبع أو التقييم
               if (canRateOrder) ...[
                 Expanded(
                   child: _actionButton(
@@ -399,45 +467,38 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: outline ? Colors.transparent : primaryColor,
-          borderRadius: BorderRadius.circular(12),
+          color: outline
+              ? ClientColors.primary.withValues(alpha: 0.10)
+              : ClientColors.primary,
+          borderRadius: BorderRadius.circular(9),
           border: outline
-              ? Border.all(color: primaryColor.withValues(alpha: 0.5))
+              ? Border.all(color: const Color(0x171C110A))
               : null,
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon,
-                size: 15,
-                color: outline ? primaryColor : Colors.white),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: outline ? primaryColor : Colors.white,
-              ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: outline ? ClientColors.primary : Colors.white,
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  String _statusText(String status) {
-    return OrderStatusPalette.displayText(status);
-  }
+  String _statusText(String status) =>
+      OrderStatusPalette.displayText(status);
 
-  Color _statusColor(String orderStatus, String paymentStatus) {
-    return OrderStatusPalette.colorForStatus(
-      orderStatus,
-      paymentStatus: paymentStatus,
-    );
-  }
+  Color _statusColor(String orderStatus, String paymentStatus) =>
+      OrderStatusPalette.colorForStatus(
+        orderStatus,
+        paymentStatus: paymentStatus,
+      );
 
   Future<void> _reorder(
       BuildContext context, Map<String, dynamic> orderData) async {
@@ -458,7 +519,6 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
       return;
     }
 
-    // إذا كانت السلة تحتوي على مطعم مختلف، اسأل المستخدم
     if (cart.cartItems.isNotEmpty &&
         cart.cartItems.first.restaurantId != restaurantId) {
       final confirm = await showDialog<bool>(
@@ -493,9 +553,8 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
       final name = (item['name'] ?? '').toString().trim();
       final price = (item['price'] as num?)?.toDouble() ?? 0.0;
       final qty = (item['quantity'] as num?)?.toInt() ?? 1;
-      final itemId = (item['id'] ?? item['menuItemId'] ?? name)
-          .toString()
-          .trim();
+      final itemId =
+          (item['id'] ?? item['menuItemId'] ?? name).toString().trim();
       if (itemId.isEmpty || name.isEmpty) continue;
 
       final cartItem = CartItem(
@@ -529,6 +588,96 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
               MaterialPageRoute(builder: (_) => const ClientCartScreen())),
         ),
       ),
+    );
+  }
+}
+
+// ─── أيقونة بديلة للمطعم ──────────────────────────────────────────────────
+
+class _RestaurantIconBox extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(
+        color: ClientColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Icon(Icons.storefront_rounded,
+          color: ClientColors.primary, size: 20),
+    );
+  }
+}
+
+// ─── شريط تقدم الطلب ──────────────────────────────────────────────────────
+
+class _OrderProgressBar extends StatelessWidget {
+  final List<(String, String, IconData)> steps;
+  final int currentStep;
+  final Color statusColor;
+
+  const _OrderProgressBar({
+    required this.steps,
+    required this.currentStep,
+    required this.statusColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: List.generate(steps.length * 2 - 1, (i) {
+        if (i.isOdd) {
+          // خط الفاصل
+          final stepIdx = i ~/ 2;
+          final done = stepIdx < currentStep;
+          return Expanded(
+            child: Container(
+              height: 2,
+              color: done
+                  ? statusColor
+                  : ClientColors.textSecondary.withValues(alpha: 0.2),
+            ),
+          );
+        }
+        final stepIdx = i ~/ 2;
+        final (_, label, icon) = steps[stepIdx];
+        final done = stepIdx <= currentStep;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: done
+                    ? statusColor
+                    : ClientColors.textSecondary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                size: 15,
+                color: done
+                    ? Colors.white
+                    : ClientColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: done ? FontWeight.w700 : FontWeight.w400,
+                color: done
+                    ? statusColor
+                    : ClientColors.textSecondary,
+              ),
+            ),
+          ],
+        );
+      }),
     );
   }
 }

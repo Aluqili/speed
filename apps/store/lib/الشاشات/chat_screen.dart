@@ -34,10 +34,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String get _actorUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  String _buildDefaultConversationId() => '${_actorUid}-support';
+  String _buildDefaultConversationId() => '$_actorUid-support';
 
   String _buildNewSupportChatId() {
-    return '${_actorUid}-support-${DateTime.now().millisecondsSinceEpoch}';
+    return '$_actorUid-support-${DateTime.now().millisecondsSinceEpoch}';
   }
 
   @override

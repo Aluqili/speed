@@ -1,13 +1,13 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../الثيم/client_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:get/get.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import '../الخدمات/payment_app_launcher.dart';
 import '../الخدمات/cloudinary_service.dart';
@@ -15,8 +15,7 @@ import '../الخدمات/cloudinary_service.dart';
 class ClientWalletRechargeScreen extends StatefulWidget {
   final String clientId;
 
-  const ClientWalletRechargeScreen({Key? key, required this.clientId})
-      : super(key: key);
+  const ClientWalletRechargeScreen({super.key, required this.clientId});
 
   @override
   State<ClientWalletRechargeScreen> createState() =>
@@ -43,8 +42,8 @@ class _ClientWalletRechargeScreenState
   bool _accountsLoading = true;
   final picker = ImagePicker();
   final _cloudinary = CloudinaryService.build();
-  final Color primaryColor = AppThemeArabic.clientPrimary;
-  final Color backgroundColor = AppThemeArabic.clientBackground;
+  final Color primaryColor = ClientColors.primary;
+  final Color backgroundColor = ClientColors.background;
 
   @override
   void initState() {
@@ -171,6 +170,7 @@ class _ClientWalletRechargeScreenState
           backgroundColor: Colors.green,
           colorText: Colors.white);
 
+      if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
       Get.snackbar('خطأ', 'حدث خطأ أثناء رفع الطلب: $e',
@@ -281,17 +281,17 @@ class _ClientWalletRechargeScreenState
     return Directionality(
       textDirection: ui.TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: backgroundColor,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
           title: const Text('شحن المحفظة',
               style: TextStyle(
-                  color: AppThemeArabic.clientPrimary,
+                  color: ClientColors.primary,
                   fontWeight: FontWeight.bold,
                   fontSize: 20,
                   fontFamily: 'Tajawal')),
-          backgroundColor: Colors.white,
+          backgroundColor: Theme.of(context).colorScheme.surface,
           centerTitle: true,
-          iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+          iconTheme: const IconThemeData(color: ClientColors.primary),
           elevation: 1,
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
@@ -301,7 +301,7 @@ class _ClientWalletRechargeScreenState
           padding: const EdgeInsets.all(20),
           child: SingleChildScrollView(
             child: Card(
-              color: Colors.white,
+              color: Theme.of(context).cardColor,
               elevation: 3,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16)),
@@ -475,7 +475,7 @@ class _ClientWalletRechargeScreenState
                                     style: TextStyle(
                                       fontFamily: 'Tajawal',
                                       fontWeight: FontWeight.bold,
-                                      color: AppThemeArabic.clientPrimary,
+                                      color: ClientColors.primary,
                                     ),
                                   ),
                                   const SizedBox(height: 10),
@@ -598,7 +598,7 @@ class _ClientWalletRechargeScreenState
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12)),
                         filled: true,
-                        fillColor: AppThemeArabic.clientBackground,
+                        fillColor: Theme.of(context).cardColor,
                       ),
                     ),
                     const SizedBox(height: 18),
@@ -612,7 +612,7 @@ class _ClientWalletRechargeScreenState
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12)),
                         filled: true,
-                        fillColor: AppThemeArabic.clientBackground,
+                        fillColor: Theme.of(context).cardColor,
                         prefixIcon:
                             const Icon(Icons.confirmation_number_outlined),
                       ),
@@ -671,7 +671,6 @@ class _ClientWalletRechargeScreenState
                             width: double.infinity,
                             child: ElevatedButton(
                               onPressed: _submitRechargeRequest,
-                              child: const Text('إرسال طلب الشحن'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 shape: RoundedRectangleBorder(
@@ -681,6 +680,7 @@ class _ClientWalletRechargeScreenState
                                 textStyle: const TextStyle(
                                     fontWeight: FontWeight.bold),
                               ),
+                              child: const Text('إرسال طلب الشحن'),
                             ),
                           ),
                   ],

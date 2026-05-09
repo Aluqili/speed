@@ -28,12 +28,9 @@ class StoreDetailScreen extends StatefulWidget {
 }
 
 class _StoreDetailScreenState extends State<StoreDetailScreen> {
-  static const Color primaryColor = AppThemeArabic.clientPrimary;
-  static const Color accentColor = AppThemeArabic.clientAccent;
-  static const Color backgroundColor = AppThemeArabic.clientBackground;
-  static const Color cardColor = Colors.white;
-  static const Color textColorPrimary = AppThemeArabic.clientTextPrimary;
-  static const Color textColorSecondary = AppThemeArabic.clientTextSecondary;
+  static const Color primaryColor = AppThemeArabic.storePrimary;
+  static const Color accentColor = AppThemeArabic.storeAccent;
+  static const Color cardColor = AppThemeArabic.storeSurface;
   static const Color closedColor = AppThemeArabic.clientError;
 
   String? _selectedCategory;
@@ -144,10 +141,14 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final cartProvider = Provider.of<CartProvider>(context);
+    final theme = Theme.of(context);
+    final cardBg = theme.cardTheme.color ?? cardColor;
+    final textPrimary = theme.colorScheme.onSurface;
+    final textSecondary = theme.colorScheme.onSurfaceVariant;
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: backgroundColor,
+        backgroundColor: theme.scaffoldBackgroundColor,
         body: CustomScrollView(
           slivers: [
             SliverAppBar(
@@ -215,7 +216,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 20,
-                        color: textColorPrimary,
+                        color: textPrimary,
                       ),
                       textAlign: TextAlign.right,
                     ),
@@ -263,7 +264,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                                 selectedColor: primaryColor,
                                 backgroundColor: Colors.grey[200],
                                 labelStyle: TextStyle(
-                                  color: selected ? Colors.white : textColorPrimary,
+                                  color: selected ? Colors.white : textPrimary,
                                 ),
                               );
                             },
@@ -312,7 +313,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                         child: Container(
                           width: double.infinity,
                           decoration: BoxDecoration(
-                            color: cardColor,
+                            color: cardBg,
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
@@ -353,7 +354,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                                             padding: const EdgeInsets.only(right: 12),
                                             child: Text(
                                               itemName,
-                                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textColorPrimary, letterSpacing: 0.5, height: 1.2),
+                                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textPrimary, letterSpacing: 0.5, height: 1.2),
                                               textAlign: TextAlign.right,
                                               overflow: TextOverflow.ellipsis,
                                               maxLines: 1,
@@ -363,7 +364,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                                       ),
                                       const SizedBox(height: 4),
                                       Text('${NumberFormat.decimalPattern().format(itemPrice)} ج.س',
-                                          style: TextStyle(color: textColorSecondary, fontSize: 14, fontWeight: FontWeight.w500, letterSpacing: 0.2)),
+                                          style: TextStyle(color: textSecondary, fontSize: 14, fontWeight: FontWeight.w500, letterSpacing: 0.2)),
                                       const SizedBox(height: 8),
                                       // الأزرار تحت الاسم والسعر مباشرة
                                       Row(
@@ -382,7 +383,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                                           ),
                                           Padding(
                                             padding: const EdgeInsets.symmetric(horizontal: 8),
-                                            child: Text(quantity.toString(), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black)),
+                                            child: Text(quantity.toString(), style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textPrimary)),
                                           ),
                                           GFIconButton(
                                             icon: const Icon(Icons.remove, size: 18),

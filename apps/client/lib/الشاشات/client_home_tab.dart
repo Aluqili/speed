@@ -6,39 +6,56 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
-import 'package:speedstar_core/src/auth/login_screen_ar.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shimmer/shimmer.dart';
+import '../الثيم/client_theme.dart';
+import 'package:speedstar_core/speedstar_core.dart' show LoginScreenArabic;
 
 import '../الخدمات/guest_location_service.dart';
+import '../الخدمات/route_estimate_service.dart';
 import 'restaurant_detail_screen.dart';
 import 'client_notifications_screen.dart';
+import 'client_support_screen.dart';
 import 'address_selection_screen.dart';
 import 'add_new_address_screen.dart';
-import 'client_support_screen.dart';
 
 class ClientHomeTab extends StatefulWidget {
   final String clientId;
   final String? initialLocation;
 
   const ClientHomeTab({
-    Key? key,
+    super.key,
     required this.clientId,
     this.initialLocation,
-  }) : super(key: key);
+  });
 
   @override
-  _ClientHomeTabState createState() => _ClientHomeTabState();
+  State<ClientHomeTab> createState() => _ClientHomeTabState();
 }
 
 class _ClientHomeTabState extends State<ClientHomeTab> {
-  static const Color primaryColor = AppThemeArabic.clientPrimary;
-  static const Color accentColor = AppThemeArabic.clientAccent;
-  static const Color backgroundColor = AppThemeArabic.clientBackground;
-  static const Color cardColor = Colors.white;
-  static const Color textColorPrimary = AppThemeArabic.clientTextPrimary;
-  static const Color textColorSecondary = AppThemeArabic.clientTextSecondary;
-  static const Color openColor = AppThemeArabic.clientSuccess;
-  static const Color closedColor = AppThemeArabic.clientError;
+  static const Color primaryColor = ClientColors.primary;
+  static const Color accentColor = ClientColors.accent;
+  static const Color openColor = ClientColors.success;
+  static const Color closedColor = ClientColors.error;
+  // ثوابت مُستخدَمة في const TextStyle — تبقى كما هي للتوافقية
+  static const Color textColorPrimary = Colors.white;
+
+  // ألوان تتكيف مع الثيم — تُستخدم في الأقسام المحدَّثة
+  Color get _textColorPrimary =>
+      _isDark ? Colors.white : ClientColors.lightTextPrimary;
+  Color get _textColorSecondary =>
+      _isDark ? ClientColors.textSecondary : ClientColors.lightTextSecondary;
+  Color get _cardBg => _isDark ? const Color(0x1AFFFFFF) : Colors.white;
+  // ignore: unused_element
+  Color get _cardBorder =>
+      _isDark ? const Color(0x33FF6B00) : const Color(0x1AFF6B00);
+  Color get _scaffoldBg =>
+      _isDark ? ClientColors.background : ClientColors.lightBackground;
+
+  bool _isDark = false;
+  String? _clientName;
 
   String _currentDisplayedLocation = "الخرطوم، السودان";
   double? _clientLatitude;
@@ -71,7 +88,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     'الحلويات',
     'المشروبات',
   ];
-
   bool get _isGuest => widget.clientId.trim().isEmpty;
 
   double get _fallbackVisibleDistanceKm {
@@ -84,6 +100,15 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     }
   }
 
+  bool get _showHomeOffersSection {
+    try {
+      return FirebaseRemoteConfig.instance
+          .getBool('client_home_show_offers_section');
+    } catch (_) {
+      return true;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -91,6 +116,29 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       _currentDisplayedLocation = widget.initialLocation!;
     }
     _refreshDefaultAddress();
+    _loadClientName();
+    // Failsafe: unblock spinner if address resolution hangs
+    Future.delayed(const Duration(seconds: 6), () {
+      if (mounted && !_addressStateResolved) {
+        setState(() => _addressStateResolved = true);
+      }
+    });
+  }
+
+  Future<void> _loadClientName() async {
+    if (_isGuest || widget.clientId.isEmpty) return;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('clients')
+          .doc(widget.clientId)
+          .get();
+      final name = (doc.data()?['name'] ?? doc.data()?['displayName'] ?? '')
+          .toString()
+          .trim();
+      if (mounted && name.isNotEmpty) {
+        setState(() => _clientName = name.split(' ').first);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -100,6 +148,10 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     _featuredMealsPageNotifier.dispose();
     super.dispose();
   }
+
+  String _categoryKey(String input) => _sanitizeCategoryToken(
+        _canonicalMealCategory(input),
+      );
 
   String _sanitizeCategoryToken(String input) {
     return input
@@ -113,6 +165,10 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         .replaceAll('ى', 'ي')
         .replaceAll(RegExp(r'[^\p{L}\p{N}\s]+', unicode: true), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAllMapped(
+          RegExp(r'(^|\s)ال(?=\p{L})', unicode: true),
+          (match) => match.group(1) ?? '',
+        )
         .trim();
   }
 
@@ -404,8 +460,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
   // دالة لجلب جميع الوجبات من subcollection full_menu لكل مطعم
   Future<List<Map<String, dynamic>>> fetchAllMeals(
       List<Map<String, dynamic>> restaurants) async {
-    List<Map<String, dynamic>> allMeals = [];
-    for (final r in restaurants) {
+    final perRestaurant = await Future.wait(restaurants.map((r) async {
+      final allMeals = <Map<String, dynamic>>[];
       final restaurantId = r['id'];
       if (restaurantId != null) {
         try {
@@ -429,11 +485,12 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
             }
           }
         } on FirebaseException {
-          continue;
+          return allMeals;
         }
       }
-    }
-    return allMeals;
+      return allMeals;
+    }));
+    return perRestaurant.expand((items) => items).toList();
   }
 
   Future<List<Map<String, dynamic>>> _resolveMealsFuture(
@@ -450,6 +507,54 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       _cachedMealsFuture = fetchAllMeals(restaurants);
     }
     return _cachedMealsFuture!;
+  }
+
+  bool _categoryMatches(String source, String selected) {
+    final selectedKey = _categoryKey(selected);
+    if (selectedKey.isEmpty || selectedKey == _categoryKey('الكل')) {
+      return true;
+    }
+    final sourceKey = _categoryKey(source);
+    return sourceKey == selectedKey ||
+        sourceKey.contains(selectedKey) ||
+        selectedKey.contains(sourceKey);
+  }
+
+  void _openCategoryResults({
+    required String category,
+    required List<Map<String, dynamic>> restaurants,
+    required List<Map<String, dynamic>> allMeals,
+    required Map<String, Set<String>> mealCategoriesByRestaurant,
+  }) {
+    final showAll = _categoryKey(category) == _categoryKey('الكل');
+    final meals = allMeals.where((entry) {
+      if (showAll) return true;
+      final meal = (entry['meal'] as Map<String, dynamic>?) ?? const {};
+      final mealCategory =
+          (meal['category'] ?? entry['category'] ?? '').toString().trim();
+      return _categoryMatches(mealCategory, category);
+    }).toList();
+
+    final matchedRestaurants = restaurants.where((restaurant) {
+      if (showAll) return true;
+      return _restaurantMatchesFilter(
+        restaurant,
+        category,
+        mealCategoriesByRestaurant: mealCategoriesByRestaurant,
+      );
+    }).toList();
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _CategoryResultsScreen(
+          title: showAll ? 'كل الأصناف' : category,
+          clientId: widget.clientId,
+          meals: meals,
+          restaurants: matchedRestaurants,
+        ),
+      ),
+    );
   }
 
   // مراقبة حذف جميع العناوين أثناء الاستخدام
@@ -535,7 +640,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       }
 
       final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        locationSettings:
+            const LocationSettings(accuracy: LocationAccuracy.high),
       );
 
       var addressName = 'موقعي الحالي';
@@ -579,6 +685,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         city: rawState,
         administrativeArea: rawState,
       );
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم تحديث موقع التصفح بنجاح')),
       );
@@ -684,6 +791,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           (selectedLocation['administrativeArea'] ?? '').toString(),
     );
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('تم تحديث موقع التصفح من الخريطة')),
     );
@@ -745,25 +853,25 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                       width: 56,
                       height: 5,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFE2E8F0),
+                        color: const Color(0x33FFFFFF),
                         borderRadius: BorderRadius.circular(99),
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'اختيار موقع التصفح',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w900,
-                      color: textColorPrimary,
+                      color: _textColorPrimary,
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     'اختر أسرع طريقة لتحديد موقع التوصيل الذي ستظهر على أساسه المطاعم.',
                     style: TextStyle(
-                      color: textColorSecondary,
+                      color: _textColorSecondary,
                       height: 1.5,
                     ),
                   ),
@@ -803,7 +911,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: backgroundColor,
+        backgroundColor: _scaffoldBg,
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -812,11 +920,12 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
               child: Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: const Color(0x1AFFFFFF),
                   borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: const Color(0x4DFF6B00)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
+                      color: primaryColor.withValues(alpha: 0.15),
                       blurRadius: 24,
                       offset: const Offset(0, 12),
                     ),
@@ -827,7 +936,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   children: [
                     const CircleAvatar(
                       radius: 30,
-                      backgroundColor: Color(0xFFFFF0E8),
+                      backgroundColor: Color(0x33FF6B00),
                       child: Icon(
                         Icons.map_rounded,
                         color: primaryColor,
@@ -840,10 +949,10 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                           ? 'حدد موقعك من الخريطة'
                           : 'جاري فتح الخريطة لتحديد موقعك',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
-                        color: textColorPrimary,
+                        color: _textColorPrimary,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -852,8 +961,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                           ? 'اختر نقطة التوصيل واضغط حفظ، ثم ستظهر لك المطاعم مباشرة.'
                           : 'بعد حفظ الموقع سنعرض المطاعم المناسبة مباشرة.',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: textColorSecondary,
+                      style: TextStyle(
+                        color: _textColorSecondary,
                         height: 1.6,
                       ),
                     ),
@@ -940,14 +1049,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     }
   }
 
-  String? _restaurantFavoriteDocId(Map<String, dynamic> restaurant) {
-    final restaurantId = (restaurant['id'] ?? '').toString().trim();
-    if (_isGuest || restaurantId.isEmpty) {
-      return null;
-    }
-    return 'restaurant_${widget.clientId}_$restaurantId';
-  }
-
   String? _mealFavoriteDocId(Map<String, dynamic> entry) {
     final restaurant =
         (entry['restaurant'] as Map<String, dynamic>?) ?? const {};
@@ -1021,45 +1122,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     );
   }
 
-  Widget _buildRestaurantFavoriteButton(Map<String, dynamic> restaurant) {
-    final docId = _restaurantFavoriteDocId(restaurant);
-    final restaurantId = (restaurant['id'] ?? '').toString().trim();
-
-    if (docId == null || restaurantId.isEmpty) {
-      return _buildFavoriteIconButton(
-        isFavorite: false,
-        onTap: _openLoginScreen,
-      );
-    }
-
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('favorites')
-          .doc(docId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        final isFavorite = snapshot.data?.exists == true;
-        return _buildFavoriteIconButton(
-          isFavorite: isFavorite,
-          onTap: () {
-            _toggleFavorite(
-              docId: docId,
-              addMessage: 'تمت إضافة المطعم إلى المفضلة',
-              removeMessage: 'تمت إزالة المطعم من المفضلة',
-              payload: {
-                'type': 'restaurant',
-                'restaurantId': restaurantId,
-                'restaurantName': (restaurant['name'] ?? '').toString(),
-                'restaurantImage': (restaurant['image'] ?? '').toString(),
-                'offers': (restaurant['offers'] ?? '').toString(),
-              },
-            );
-          },
-        );
-      },
-    );
-  }
-
   Widget _buildMealFavoriteButton(Map<String, dynamic> entry) {
     final docId = _mealFavoriteDocId(entry);
     final restaurant =
@@ -1072,7 +1134,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       return _buildFavoriteIconButton(
         isFavorite: false,
         onTap: _openLoginScreen,
-        backgroundColor: Colors.white.withOpacity(0.92),
+        backgroundColor: Colors.white.withValues(alpha: 0.92),
       );
     }
 
@@ -1085,7 +1147,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         final isFavorite = snapshot.data?.exists == true;
         return _buildFavoriteIconButton(
           isFavorite: isFavorite,
-          backgroundColor: Colors.white.withOpacity(0.92),
+          backgroundColor: Colors.white.withValues(alpha: 0.92),
           onTap: () {
             _toggleFavorite(
               docId: docId,
@@ -1115,16 +1177,17 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
 
   @override
   Widget build(BuildContext context) {
-    final double topPadding = MediaQuery.of(context).padding.top;
+    _isDark = Theme.of(context).brightness == Brightness.dark;
 
     return StreamBuilder<bool>(
       stream: _hasNoAddressesStream,
       builder: (context, snapshot) {
         if (_isStateRolloutEnabled && !_addressStateResolved) {
-          return const Directionality(
+          return Directionality(
             textDirection: TextDirection.rtl,
             child: Scaffold(
-              body: Center(child: CircularProgressIndicator()),
+              backgroundColor: _scaffoldBg,
+              body: _buildShimmerSkeleton(),
             ),
           );
         }
@@ -1138,7 +1201,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           return Directionality(
             textDirection: TextDirection.rtl,
             child: Scaffold(
-              backgroundColor: backgroundColor,
+              backgroundColor: _scaffoldBg,
               body: Center(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -1154,11 +1217,11 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                       Text(
                         _stateRolloutBlockMessage,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 20,
                           height: 1.7,
                           fontWeight: FontWeight.w700,
-                          color: textColorPrimary,
+                          color: _textColorPrimary,
                         ),
                       ),
                     ],
@@ -1172,7 +1235,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         return Directionality(
           textDirection: TextDirection.rtl,
           child: Scaffold(
-            backgroundColor: backgroundColor,
+            backgroundColor: _scaffoldBg,
             body: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('restaurants')
@@ -1181,9 +1244,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   .snapshots(),
               builder: (ctx, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(
-                    child: CircularProgressIndicator(color: primaryColor),
-                  );
+                  return _buildShimmerSkeleton();
                 }
 
                 if (snapshot.hasError) {
@@ -1195,7 +1256,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 16,
-                          color: textColorSecondary,
+                          color: _textColorSecondary,
                         ),
                       ),
                     ),
@@ -1208,27 +1269,28 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                       'لا توجد مطاعم متاحة حالياً',
                       style: TextStyle(
                         fontSize: 16,
-                        color: textColorSecondary,
+                        color: _textColorSecondary,
                       ),
                     ),
                   );
                 }
 
-                final restaurants = snapshot.data!.docs.map((doc) {
+                final allApprovedRestaurants = snapshot.data!.docs.map((doc) {
                   final data = doc.data() as Map<String, dynamic>;
                   final distanceKm = _distanceKmToRestaurant(data);
                   final restaurantStateId = _restaurantStateId(data);
                   return {
-                    'id': doc.id,
                     ...data,
+                    'id': doc.id, // يجب أن يأتي بعد data لضمان أولوية doc.id
                     'distanceKm': distanceKm,
                     'stateId': restaurantStateId,
-                    'image': data['logoImageUrl'] ??
-                        '', // تمرير شعار المطعم للحقل image
+                    'image': data['logoImageUrl'] ?? '',
                   };
                 }).where((restaurant) {
                   return restaurant['menuApproved'] != false;
-                }).where((restaurant) {
+                }).toList();
+
+                final restaurants = allApprovedRestaurants.where((restaurant) {
                   return _shouldShowRestaurantForClient(restaurant);
                 }).toList();
 
@@ -1241,172 +1303,148 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   return da.compareTo(db);
                 });
 
-                final featuredRestaurants = restaurants.where((restaurant) {
-                  final offerText =
-                      (restaurant['offers'] ?? '').toString().trim();
-                  final hasOfferText =
-                      offerText.isNotEmpty && offerText != 'null';
-                  return restaurant['hasOffers'] == true || hasOfferText;
-                }).toList();
-
                 final mealsFuture = _resolveMealsFuture(restaurants);
 
-                return SafeArea(
-                  child: CustomScrollView(
-                    physics: BouncingScrollPhysics(),
-                    slivers: [
-                      SliverAppBar(
-                        expandedHeight: 180,
-                        floating: true,
-                        pinned: false,
-                        backgroundColor: backgroundColor,
-                        elevation: 0,
-                        flexibleSpace: LayoutBuilder(
-                          builder: (BuildContext context,
-                              BoxConstraints constraints) {
-                            return SingleChildScrollView(
-                              physics: NeverScrollableScrollPhysics(),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox(height: topPadding),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16.0),
-                                    child: _buildTopBar(context),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16.0),
-                                    child: FutureBuilder<
-                                        List<Map<String, dynamic>>>(
-                                      future: mealsFuture,
-                                      builder: (context, mealSnapshot) {
-                                        if (mealSnapshot.connectionState ==
-                                            ConnectionState.waiting) {
-                                          return Center(
-                                              child: CircularProgressIndicator(
-                                                  color: primaryColor));
-                                        }
-                                        final allMeals =
-                                            mealSnapshot.data ?? [];
-                                        // دمج المطاعم والوجبات في قائمة البحث
-                                        final List<Map<String, dynamic>>
-                                            searchItems = [
-                                          ...restaurants.map((r) => {
-                                                'type': 'restaurant',
-                                                'name': r['name'].toString(),
-                                                'restaurant': r,
-                                              }),
-                                          ...allMeals
-                                        ];
-                                        return _buildSearchBar(
-                                            context, searchItems);
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 12, bottom: 4),
-                          child: FutureBuilder<List<Map<String, dynamic>>>(
-                            future: mealsFuture,
-                            builder: (context, snap) =>
-                                _buildQuickCategoryBar(snap.data ?? const []),
-                          ),
-                        ),
-                      ),
-                      if (featuredRestaurants.isNotEmpty)
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16.0, vertical: 12),
-                            child: _buildOfferSectionHeader(),
-                          ),
-                        ),
-                      if (featuredRestaurants.isNotEmpty)
-                        SliverPadding(
-                          padding: const EdgeInsets.only(
-                              left: 16, right: 16, bottom: 20),
-                          sliver: SliverToBoxAdapter(
-                            child: SizedBox(
-                              height: 236,
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: featuredRestaurants.length,
-                                reverse: true,
-                                physics: BouncingScrollPhysics(),
-                                itemBuilder: (ctx, idx) {
-                                  final r = featuredRestaurants[idx];
-                                  final imageProvider =
-                                      (r['image']?.toString().isNotEmpty ??
-                                              false)
-                                          ? NetworkImage(r['image'].toString())
-                                          : null;
-                                  return _buildRestaurantCard(
-                                      context, r, imageProvider);
-                                },
+                return FutureBuilder<List<Map<String, dynamic>>>(
+                  future: mealsFuture,
+                  builder: (context, mealSnapshot) {
+                    final allMeals = mealSnapshot.data ?? [];
+                    final mealCategoriesByRestaurant =
+                        _buildMealCategoriesByRestaurant(allMeals);
+                    final categoryItems = _extractCategoriesFromRestaurants(
+                      restaurants,
+                      mealCategoriesByRestaurant: mealCategoriesByRestaurant,
+                    );
+
+                    final featuredRestaurants =
+                        allApprovedRestaurants.where((restaurant) {
+                      // أعلام تحكم خاصة بقسم العروض لها الأولوية
+                      final offerControl = _readBoolField(
+                        restaurant,
+                        const [
+                          'showInOffersCarousel',
+                          'showInHomeOffers',
+                          'showInClientOffers',
+                        ],
+                      );
+                      if (offerControl != null) return offerControl;
+
+                      // hasOffers يُعيّن من Cloud Function عند وجود عروض نشطة
+                      if (_restaurantHasOffer(restaurant)) return true;
+
+                      // أعلام "مميز" العامة كاحتياطي فقط
+                      return _readBoolField(
+                            restaurant,
+                            const ['featuredOnHome', 'featured'],
+                          ) ??
+                          false;
+                    }).toList();
+
+                    final List<Map<String, dynamic>> searchItems = [
+                      ...restaurants.map((r) => {
+                            'type': 'restaurant',
+                            'name': r['name'].toString(),
+                            'restaurant': r,
+                          }),
+                      ...allMeals,
+                    ];
+
+                    return SafeArea(
+                      bottom: false,
+                      child: CustomScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        slivers: [
+                          SliverAppBar(
+                            floating: true,
+                            snap: true,
+                            pinned: false,
+                            backgroundColor: _scaffoldBg,
+                            elevation: 0,
+                            automaticallyImplyLeading: false,
+                            expandedHeight: 112,
+                            toolbarHeight: 0,
+                            flexibleSpace: FlexibleSpaceBar(
+                              collapseMode: CollapseMode.none,
+                              background: Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                                child: _buildTopBar(context),
                               ),
                             ),
                           ),
-                        ),
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16.0, vertical: 4),
-                          child: FutureBuilder<List<Map<String, dynamic>>>(
-                            future: mealsFuture,
-                            builder: (context, mealsSnapshot) {
-                              if (mealsSnapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const SizedBox.shrink();
-                              }
-                              final allMeals = mealsSnapshot.data ?? const [];
-                              return _buildCategoriesSection(context, allMeals);
-                            },
+                          SliverPersistentHeader(
+                            pinned: true,
+                            delegate: _SimplePinnedDelegate(
+                              height: 76,
+                              child: Container(
+                                color: _scaffoldBg,
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                                child: _buildSearchBar(context, searchItems),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      SliverPadding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        sliver: SliverToBoxAdapter(
-                          child: _buildRestaurantSectionHeader(),
-                        ),
-                      ),
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, idx) {
-                              final r = restaurants[idx];
-                              final imageProvider =
-                                  (r['image']?.toString().isNotEmpty ?? false)
-                                      ? NetworkImage(r['image'].toString())
-                                      : null;
-
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 15),
-                                child: _buildRestaurantListTile(
-                                  context,
-                                  r,
-                                  imageProvider,
+                          _buildCategoryIconsCarousel(
+                            categoryItems,
+                            restaurants: restaurants,
+                            allMeals: allMeals,
+                            mealCategoriesByRestaurant:
+                                mealCategoriesByRestaurant,
+                            isLoading: !mealSnapshot.hasData,
+                          ),
+                          if (_showHomeOffersSection ||
+                              featuredRestaurants.isNotEmpty)
+                            _buildOffersCarouselSection(featuredRestaurants),
+                          SliverPadding(
+                            padding: EdgeInsets.zero,
+                            sliver: SliverMainAxisGroup(
+                              slivers: [
+                                SliverToBoxAdapter(
+                                  child: Padding(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                                    child: _buildRestaurantSectionHeader(),
+                                  ),
                                 ),
-                              );
-                            },
-                            childCount: restaurants.length,
+                                SliverPadding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                                  sliver: SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (ctx, idx) {
+                                        final r = restaurants[idx];
+                                        final imageProvider = (r['image']
+                                                    ?.toString()
+                                                    .isNotEmpty ??
+                                                false)
+                                            ? CachedNetworkImageProvider(
+                                                r['image'].toString())
+                                            : null;
+                                        return Padding(
+                                          padding:
+                                              const EdgeInsets.only(bottom: 12),
+                                          child: _buildRestaurantListTile(
+                                            context,
+                                            r,
+                                            imageProvider,
+                                          ),
+                                        );
+                                      },
+                                      childCount: restaurants.length,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: 120),
+                          ),
+                        ],
                       ),
-                    ], // تأكد من إغلاق قائمة slivers هنا
-                  ), // إغلاق CustomScrollView
-                ); // إغلاق SafeArea
+                    );
+                  },
+                );
               }, // إغلاق builder الخاص بـ StreamBuilder<QuerySnapshot>
             ), // إغلاق body: StreamBuilder
           ), // إغلاق Scaffold
@@ -1415,166 +1453,548 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     ); // إغلاق StreamBuilder<bool>
   }
 
-  Widget _buildTopBar(BuildContext context) {
-    return Row(
-      children: [
-        // يسار: الإشعارات + الدعم
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_isGuest)
-              IconButton(
-                icon: const Icon(Icons.notifications_none_rounded,
-                    size: 26, color: textColorPrimary),
-                onPressed: _openLoginScreen,
-              )
-            else
-              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: FirebaseFirestore.instance
-                    .collection('clients')
-                    .doc(widget.clientId)
-                    .collection('notifications')
-                    .orderBy('timestamp', descending: true)
-                    .limit(50)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  final hasUnread = (snapshot.data?.docs ?? const [])
-                      .any((doc) => doc.data()['isRead'] != true);
-                  return IconButton(
-                    icon: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        const Icon(Icons.notifications_none_rounded,
-                            size: 26, color: textColorPrimary),
-                        if (hasUnread)
-                          Positioned(
-                            top: 1,
-                            left: 0,
-                            child: Container(
-                              width: 9,
-                              height: 9,
-                              decoration: const BoxDecoration(
-                                color: primaryColor,
-                                shape: BoxShape.circle,
+  Widget _buildShimmerSkeleton() {
+    final base = _isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFE4D6);
+    final highlight =
+        _isDark ? const Color(0xFF3A3A3A) : const Color(0xFFFFF8F3);
+    Widget box({double w = double.infinity, double h = 16, double r = 12}) =>
+        Container(
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+              color: base, borderRadius: BorderRadius.circular(r)),
+        );
+
+    return SafeArea(
+      bottom: false,
+      child: Shimmer.fromColors(
+        baseColor: base,
+        highlightColor: highlight,
+        child: SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // top bar
+              Container(
+                height: 100,
+                decoration: BoxDecoration(
+                    color: base, borderRadius: BorderRadius.circular(20)),
+              ),
+              const SizedBox(height: 12),
+              // search bar
+              box(h: 54, r: 18),
+              const SizedBox(height: 16),
+              // categories title
+              Align(
+                  alignment: Alignment.centerRight, child: box(w: 120, h: 18)),
+              const SizedBox(height: 12),
+              // categories row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: List.generate(
+                    5,
+                    (i) => Padding(
+                          padding: const EdgeInsets.only(left: 10),
+                          child: Column(children: [
+                            box(w: 56, h: 56, r: 16),
+                            const SizedBox(height: 4),
+                            box(w: 40, h: 10),
+                          ]),
+                        )),
+              ),
+              const SizedBox(height: 20),
+              // offers title
+              Align(
+                  alignment: Alignment.centerRight, child: box(w: 100, h: 18)),
+              const SizedBox(height: 12),
+              // offers row
+              Row(
+                children: [
+                  box(w: 220, h: 168, r: 16),
+                  const SizedBox(width: 12),
+                  box(w: 220, h: 168, r: 16),
+                ],
+              ),
+              const SizedBox(height: 20),
+              // filter bar
+              box(h: 44, r: 22),
+              const SizedBox(height: 16),
+              // restaurant title
+              Align(
+                  alignment: Alignment.centerRight, child: box(w: 140, h: 18)),
+              const SizedBox(height: 12),
+              // restaurant cards
+              ...List.generate(
+                  3,
+                  (_) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Container(
+                          height: 92 + 32,
+                          decoration: BoxDecoration(
+                              color: base,
+                              borderRadius: BorderRadius.circular(20)),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(14),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      box(w: 140, h: 16),
+                                      const SizedBox(height: 8),
+                                      box(w: 90, h: 12),
+                                      const SizedBox(height: 10),
+                                      box(w: 180, h: 12),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.end,
+                                          children: [
+                                            box(w: 64, h: 22, r: 11),
+                                            const SizedBox(width: 6),
+                                            box(w: 48, h: 22, r: 11),
+                                          ]),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            ),
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                    left: 14, top: 14, bottom: 14),
+                                child: box(w: 92, h: 92, r: 16),
+                              ),
+                            ],
                           ),
-                      ],
+                        ),
+                      )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar(BuildContext context) {
+    final hour = DateTime.now().hour;
+    final timeGreeting = hour < 12
+        ? 'صباح الخير'
+        : hour < 17
+            ? 'مساء الخير'
+            : 'مساء النور';
+    final welcomeTitle =
+        _isGuest ? timeGreeting : 'أهلاً، ${_clientName ?? ''}';
+    final welcomeSubtitle =
+        _isGuest ? 'اطلب بسرعة وسهولة' : 'جاهز لطلبك القادم؟';
+
+    final btnBg = _isDark ? const Color(0x1AFFFFFF) : Colors.white;
+    final btnBorder =
+        _isDark ? const Color(0x33FF6B00) : const Color(0x1AFF6B00);
+    final btnShadow = _isDark ? Colors.transparent : const Color(0x0A000000);
+
+    Future<void> handleLocationTap() async {
+      if (_isGuest) {
+        await _showGuestLocationOptions();
+        return;
+      }
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AddressSelectionScreen(
+            userId: widget.clientId,
+            userType: 'client',
+            isSelecting: true,
+          ),
+        ),
+      );
+      await _refreshDefaultAddress();
+    }
+
+    Widget iconBtn({
+      required IconData icon,
+      required VoidCallback? onTap,
+      Widget? badge,
+    }) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: btnBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: btnBorder),
+            boxShadow: [BoxShadow(color: btnShadow, blurRadius: 6)],
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Center(child: Icon(icon, size: 20, color: primaryColor)),
+              if (badge != null) badge,
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: BoxDecoration(
+        color: _isDark ? const Color(0x14FFFFFF) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: _isDark ? const Color(0x1AFF6B00) : const Color(0x14FF6B00),
+        ),
+        boxShadow: _isDark
+            ? const []
+            : [
+                const BoxShadow(
+                    color: Color(0x0A000000),
+                    blurRadius: 12,
+                    offset: Offset(0, 4))
+              ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Row(
+            children: [
+              // التحية (يمين الشاشة في RTL)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    welcomeTitle,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: _textColorPrimary,
                     ),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ClientNotificationsScreen(
-                            clientId: widget.clientId),
+                  ),
+                  Text(
+                    welcomeSubtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _textColorSecondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              // زر الإشعارات
+              if (_isGuest)
+                iconBtn(
+                  icon: Icons.notifications_none_rounded,
+                  onTap: _openLoginScreen,
+                )
+              else
+                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseFirestore.instance
+                      .collection('notifications')
+                      .where('userId', isEqualTo: widget.clientId)
+                      .limit(50)
+                      .snapshots(),
+                  builder: (context, publicSnapshot) {
+                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: FirebaseFirestore.instance
+                          .collection('notifications')
+                          .where('clientId', isEqualTo: widget.clientId)
+                          .limit(50)
+                          .snapshots(),
+                      builder: (context, clientIdSnapshot) {
+                        return StreamBuilder<
+                            QuerySnapshot<Map<String, dynamic>>>(
+                          stream: FirebaseFirestore.instance
+                              .collection('clients')
+                              .doc(widget.clientId)
+                              .collection('notifications')
+                              .limit(50)
+                              .snapshots(),
+                          builder: (context, privateSnapshot) {
+                            final publicDocs = publicSnapshot.data?.docs ??
+                                const <QueryDocumentSnapshot<
+                                    Map<String, dynamic>>>[];
+                            final clientIdDocs = clientIdSnapshot.data?.docs ??
+                                const <QueryDocumentSnapshot<
+                                    Map<String, dynamic>>>[];
+                            final privateDocs = privateSnapshot.data?.docs ??
+                                const <QueryDocumentSnapshot<
+                                    Map<String, dynamic>>>[];
+                            final docsByPath = <String,
+                                QueryDocumentSnapshot<Map<String, dynamic>>>{};
+                            for (final doc in [
+                              ...publicDocs,
+                              ...clientIdDocs,
+                              ...privateDocs,
+                            ]) {
+                              docsByPath[doc.reference.path] = doc;
+                            }
+                            final hasUnread = docsByPath.values
+                                .any((doc) => doc.data()['isRead'] != true);
+                            return iconBtn(
+                              icon: Icons.notifications_none_rounded,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ClientNotificationsScreen(
+                                      clientId: widget.clientId),
+                                ),
+                              ),
+                              badge: hasUnread
+                                  ? Positioned(
+                                      top: 8,
+                                      left: 8,
+                                      child: Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          color: primaryColor,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                    )
+                                  : null,
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              const SizedBox(width: 8),
+              // زر الدعم الفني
+              iconBtn(
+                icon: Icons.headset_mic_rounded,
+                onTap: () {
+                  if (_isGuest) {
+                    _openLoginScreen();
+                    return;
+                  }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ClientSupportScreen(
+                        userId: widget.clientId,
                       ),
                     ),
                   );
                 },
               ),
-            IconButton(
-              icon: const Icon(Icons.headset_mic_outlined,
-                  size: 24, color: textColorSecondary),
-              tooltip: 'تواصل مع الدعم',
-              onPressed: () async {
-                if (_isGuest) {
-                  await _openLoginScreen();
-                  return;
-                }
-                if (!context.mounted) return;
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        ClientSupportScreen(userId: widget.clientId),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-        const Spacer(),
-        // يمين: حبة الموقع
-        GestureDetector(
-          onTap: () async {
-            if (_isGuest) {
-              await _showGuestLocationOptions();
-              return;
-            }
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => AddressSelectionScreen(
-                  userId: widget.clientId,
-                  userType: 'client',
-                  isSelecting: true,
-                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // اختيار الموقع
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: handleLocationTap,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color:
+                    _isDark ? const Color(0x1AFFFFFF) : const Color(0xFFFFF8F3),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0x33FF6B00)),
               ),
-            );
-            await _refreshDefaultAddress();
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.07),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: primaryColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _currentDisplayedLocation,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                        color: _textColorPrimary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: ClientColors.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.location_on_outlined,
+                      size: 16,
+                      color: primaryColor,
+                    ),
+                  ),
+                ],
+              ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Widget _buildHeroBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      height: 168,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1A0800), Color(0xFF3D1A00), Color(0xFFFF6B00)],
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0x4DFF6B00)),
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x40FF6B00), blurRadius: 28, offset: Offset(0, 14))
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: -35,
+            left: -30,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -20,
+            right: -20,
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.keyboard_arrow_down_rounded,
-                    size: 18, color: primaryColor),
-                const SizedBox(width: 4),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 150),
+                const Text('🍕', style: TextStyle(fontSize: 56)),
+                const SizedBox(width: 10),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(
-                        'التوصيل إلى',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: textColorSecondary,
-                          fontWeight: FontWeight.w500,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          'عرض الأسبوع',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
-                      Text(
-                        _currentDisplayedLocation,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                          color: textColorPrimary,
+                      const Spacer(),
+                      const Text(
+                        'خصومات قوية اليوم\nمن مطاعم قريبة منك',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          height: 1.18,
+                          fontWeight: FontWeight.w900,
                         ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () {
+                              // التمرير لأسفل نحو قائمة المطاعم
+                              Scrollable.ensureVisible(context,
+                                  duration: const Duration(milliseconds: 400),
+                                  curve: Curves.easeOut);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.white.withValues(alpha: 0.3),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'ابدأ الطلب',
+                                    style: TextStyle(
+                                      color: primaryColor,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  SizedBox(width: 4),
+                                  Icon(Icons.arrow_forward_ios_rounded,
+                                      size: 10, color: primaryColor),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          const Row(
+                            children: [
+                              Icon(Icons.bolt_rounded,
+                                  size: 14, color: Color(0xFFFFD4A8)),
+                              SizedBox(width: 2),
+                              Text(
+                                'توصيل سريع',
+                                style: TextStyle(
+                                  color: Color(0xFFFFD4A8),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: primaryColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.location_on_rounded,
-                      size: 15, color: primaryColor),
-                ),
               ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
+  // ignore: unused_element
   Widget _buildQuickCategoryBar(List<Map<String, dynamic>> allMeals) {
     final rawCats = _extractMealCategories(allMeals);
     if (rawCats.isEmpty) return const SizedBox.shrink();
@@ -1582,10 +2002,9 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     final categories = [allLabel, ...rawCats];
 
     return SizedBox(
-      height: 38,
+      height: 44,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        reverse: true,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: categories.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
@@ -1602,15 +2021,33 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
               duration: const Duration(milliseconds: 180),
               padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
-                color: isSelected ? primaryColor : Colors.white,
-                borderRadius: BorderRadius.circular(19),
+                gradient: isSelected
+                    ? const LinearGradient(
+                        colors: [Color(0xFFFF6B00), Color(0xFFFF9500)],
+                        begin: Alignment.topRight,
+                        end: Alignment.bottomLeft,
+                      )
+                    : null,
+                color: isSelected
+                    ? null
+                    : (_isDark
+                        ? const Color(0x1AFFFFFF)
+                        : const Color(0xFFFFF8F3)),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: isSelected
+                      ? Colors.transparent
+                      : (_isDark
+                          ? const Color(0x33FF6B00)
+                          : const Color(0x33FF6B00)),
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: isSelected
-                        ? primaryColor.withValues(alpha: 0.28)
-                        : Colors.black.withValues(alpha: 0.06),
-                    blurRadius: isSelected ? 10 : 6,
-                    offset: const Offset(0, 3),
+                        ? const Color(0x40FF6B00)
+                        : Colors.black.withValues(alpha: 0.04),
+                    blurRadius: isSelected ? 10 : 4,
+                    offset: const Offset(0, 2),
                   ),
                 ],
               ),
@@ -1618,9 +2055,11 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                 child: Text(
                   cat,
                   style: TextStyle(
-                    color: isSelected ? Colors.white : textColorPrimary,
+                    color: isSelected
+                        ? Colors.white
+                        : (_isDark ? Colors.white70 : const Color(0xFF444444)),
                     fontWeight: FontWeight.w700,
-                    fontSize: 13,
+                    fontSize: 12,
                   ),
                 ),
               ),
@@ -1639,39 +2078,39 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     final entries = _buildSearchEntries(searchItems);
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
+      margin: const EdgeInsets.symmetric(vertical: 2),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Colors.white, Color(0xFFF8FAFC)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+        color: _cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: _isDark ? const Color(0x33FF6B00) : const Color(0xFFE8E8E8),
         ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: primaryColor.withOpacity(0.08)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0x140F172A),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            color: _isDark ? const Color(0x26FF6B00) : const Color(0x0A000000),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(18),
         onTap: () => _openSearchSheet(context, entries),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
-                  color: primaryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(14),
+                  color: _isDark
+                      ? const Color(0x1AFF6B00)
+                      : const Color(0xFFFFF0E6),
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: const Icon(
-                  Icons.tune_rounded,
+                  Icons.search_rounded,
                   color: primaryColor,
                 ),
               ),
@@ -1679,29 +2118,50 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
               Expanded(
                 child: Text(
                   _recentSearches.isEmpty
-                      ? 'ابحث عن مطعم أو صنف'
+                      ? 'ابحث عن مطعم أو صنف أو عرض'
                       : _recentSearches.first,
                   textAlign: TextAlign.right,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: textColorPrimary.withOpacity(0.95),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15,
+                    color: _textColorPrimary.withValues(alpha: 0.72),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
                   ),
                 ),
               ),
               const SizedBox(width: 12),
               Container(
-                width: 42,
-                height: 42,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(14),
+                  gradient: ClientColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(13),
+                  boxShadow: [
+                    BoxShadow(
+                      color: ClientColors.primary.withValues(alpha: 0.32),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                child: const Icon(
-                  Icons.search_rounded,
-                  color: primaryColor,
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      color: Colors.white,
+                      size: 14,
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      'بحث',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1765,10 +2225,10 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         const SizedBox(width: 8),
         Text(
           title,
-          style: const TextStyle(
-            fontSize: 19,
-            fontWeight: FontWeight.w900,
-            color: textColorPrimary,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: color,
           ),
           textAlign: TextAlign.right,
         ),
@@ -1776,18 +2236,43 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildOfferSectionHeader() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.start,
         children: [
-          const Text(
-            'عروض مميزة 🔥',
+          Text(
+            'عروض اليوم',
             style: TextStyle(
-              fontSize: 19,
-              fontWeight: FontWeight.w900,
-              color: textColorPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: _textColorPrimary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.local_fire_department_rounded,
+                    color: primaryColor, size: 14),
+                SizedBox(width: 4),
+                Text(
+                  'أفضل الأسعار',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: primaryColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1797,20 +2282,21 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
 
   Widget _buildRestaurantSectionHeader() {
     return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 12),
+      padding: const EdgeInsets.only(top: 2, bottom: 8),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.start,
         children: [
-          const Text(
-            'المطاعم القريبة',
+          Text(
+            'المطاعم القريبة منك',
             style: TextStyle(
-              fontSize: 19,
+              fontSize: 17,
               fontWeight: FontWeight.w900,
-              color: textColorPrimary,
+              color: _textColorPrimary,
+              letterSpacing: -0.3,
             ),
           ),
-          const SizedBox(width: 8),
-          const Icon(Icons.storefront_rounded, color: primaryColor, size: 22),
+          const SizedBox(width: 6),
+          const Icon(Icons.storefront_rounded, color: primaryColor, size: 19),
         ],
       ),
     );
@@ -1822,8 +2308,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     Color? backgroundColor,
     Color? foregroundColor,
   }) {
-    final resolvedBackground = backgroundColor ?? const Color(0xFFF8FAFC);
-    final resolvedForeground = foregroundColor ?? textColorSecondary;
+    final resolvedBackground = backgroundColor ?? const Color(0x33FFFFFF);
+    final resolvedForeground = foregroundColor ?? Colors.white70;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -1850,6 +2336,9 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
   }
 
   Widget _buildRestaurantHeroImage(ImageProvider? imageProvider) {
+    final placeholderBg =
+        _isDark ? const Color(0x1AFFFFFF) : const Color(0xFFFFF8F3);
+    final placeholderIcon = ClientColors.primary.withValues(alpha: 0.45);
     return imageProvider != null
         ? Image(
             image: imageProvider,
@@ -1857,14 +2346,14 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
             height: double.infinity,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) => Container(
-              color: Colors.grey[200],
-              child: Icon(Icons.broken_image, color: Colors.grey[400]),
+              color: placeholderBg,
+              child: Icon(Icons.broken_image, color: placeholderIcon),
             ),
           )
         : Container(
-            color: const Color(0xFFE2E8F0),
+            color: placeholderBg,
             child: Icon(Icons.storefront_rounded,
-                color: Colors.grey[500], size: 36),
+                color: placeholderIcon, size: 36),
           );
   }
 
@@ -1928,6 +2417,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     return meals;
   }
 
+  // ignore: unused_element
   Widget _buildCategoriesSection(
     BuildContext context,
     List<Map<String, dynamic>> allMeals,
@@ -1954,12 +2444,12 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: primaryColor.withOpacity(0.08)),
-            boxShadow: [
+            border: Border.all(color: primaryColor.withValues(alpha: 0.08)),
+            boxShadow: const [
               BoxShadow(
-                color: const Color(0x120F172A),
+                color: Color(0x120F172A),
                 blurRadius: 22,
-                offset: const Offset(0, 10),
+                offset: Offset(0, 10),
               ),
             ],
           ),
@@ -1975,7 +2465,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           _buildSectionHeader(Icons.grid_view_rounded,
-                              'تصفح الأصناف', textColorPrimary),
+                              'تصفح الأصناف', _textColorPrimary),
                         ],
                       ),
                     ),
@@ -2004,15 +2494,16 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: primaryColor.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: primaryColor.withOpacity(0.08)),
+                    border:
+                        Border.all(color: primaryColor.withValues(alpha: 0.3)),
                   ),
                   child: Text(
                     'الصنف الحالي: $selected',
                     textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      color: textColorPrimary,
+                    style: TextStyle(
+                      color: _isDark ? Colors.white : primaryColor,
                       fontWeight: FontWeight.w800,
                       fontSize: 12,
                     ),
@@ -2052,7 +2543,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                           decoration: BoxDecoration(
                             color: isActive
                                 ? primaryColor
-                                : primaryColor.withOpacity(0.18),
+                                : primaryColor.withValues(alpha: 0.18),
                             borderRadius: BorderRadius.circular(20),
                           ),
                         );
@@ -2106,7 +2597,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                       width: 56,
                       height: 5,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFE2E8F0),
+                        color: const Color(0xFFDDDDDD),
                         borderRadius: BorderRadius.circular(20),
                       ),
                     ),
@@ -2123,7 +2614,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                                   _buildSectionHeader(
                                     Icons.grid_view_rounded,
                                     'تصفح الأصناف',
-                                    textColorPrimary,
+                                    _textColorPrimary,
                                   ),
                                 ],
                               ),
@@ -2135,7 +2626,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                     SizedBox(
                       height: 54,
                       child: ListView.separated(
-                        reverse: true,
                         scrollDirection: Axis.horizontal,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         itemCount: categories.length,
@@ -2165,12 +2655,12 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                               decoration: BoxDecoration(
                                 color: isSelected
                                     ? primaryColor
-                                    : const Color(0xFFF8FAFC),
+                                    : const Color(0xFFFFF8F3),
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
                                   color: isSelected
                                       ? primaryColor
-                                      : Colors.grey.withOpacity(0.18),
+                                      : const Color(0x33FF6B00),
                                 ),
                               ),
                               child: Text(
@@ -2178,7 +2668,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                                 style: TextStyle(
                                   color: isSelected
                                       ? Colors.white
-                                      : textColorPrimary,
+                                      : const Color(0xFF555555),
                                   fontWeight: FontWeight.w800,
                                   fontSize: 13,
                                 ),
@@ -2194,7 +2684,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                           ? Center(
                               child: Text(
                                 'لا توجد عناصر ضمن هذا الصنف حالياً',
-                                style: TextStyle(color: textColorSecondary),
+                                style: TextStyle(color: _textColorSecondary),
                               ),
                             )
                           : GridView.builder(
@@ -2240,7 +2730,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     final imageUrl =
         (meal['imageUrl'] ?? meal['image'] ?? meal['photoUrl'] ?? '')
             .toString();
-    final imageProvider = imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null;
+    final imageProvider =
+        imageUrl.isNotEmpty ? CachedNetworkImageProvider(imageUrl) : null;
 
     return Padding(
       padding: const EdgeInsets.only(left: 8),
@@ -2255,15 +2746,16 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
             gradient: const LinearGradient(
-              colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+              colors: [Color(0xFF1A0800), Color(0xFF2D1400)],
               begin: Alignment.topRight,
               end: Alignment.bottomLeft,
             ),
-            boxShadow: [
+            border: Border.all(color: const Color(0x33FF6B00)),
+            boxShadow: const [
               BoxShadow(
-                color: const Color(0x220F172A),
+                color: Color(0x33FF6B00),
                 blurRadius: 26,
-                offset: const Offset(0, 14),
+                offset: Offset(0, 14),
               ),
             ],
           ),
@@ -2282,10 +2774,10 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                           image: imageProvider,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => Container(
-                            color: Colors.white.withOpacity(0.06),
+                            color: Colors.white.withValues(alpha: 0.06),
                           ),
                         )
-                      : Container(color: Colors.white.withOpacity(0.04)),
+                      : Container(color: Colors.white.withValues(alpha: 0.04)),
                 ),
               ),
               Positioned.fill(
@@ -2294,8 +2786,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                     borderRadius: BorderRadius.circular(24),
                     gradient: LinearGradient(
                       colors: [
-                        Colors.black.withOpacity(0.12),
-                        Colors.black.withOpacity(0.58),
+                        Colors.black.withValues(alpha: 0.12),
+                        Colors.black.withValues(alpha: 0.58),
                       ],
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
@@ -2316,7 +2808,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                           vertical: 7,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.16),
+                          color: Colors.white.withValues(alpha: 0.16),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
@@ -2346,7 +2838,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                       restaurantName,
                       textAlign: TextAlign.right,
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.88),
+                        color: Colors.white.withValues(alpha: 0.88),
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
@@ -2360,19 +2852,24 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                             vertical: 9,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: primaryColor,
                             borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                  color: primaryColor.withValues(alpha: 0.4),
+                                  blurRadius: 8),
+                            ],
                           ),
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.arrow_back_ios_new_rounded,
-                                  size: 14, color: primaryColor),
+                                  size: 14, color: Colors.white),
                               SizedBox(width: 6),
                               Text(
                                 'الدخول إلى المطعم',
                                 style: TextStyle(
-                                  color: primaryColor,
+                                  color: Colors.white,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
@@ -2414,7 +2911,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     final imageUrl =
         (meal['imageUrl'] ?? meal['image'] ?? meal['photoUrl'] ?? '')
             .toString();
-    final imageProvider = imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null;
+    final imageProvider =
+        imageUrl.isNotEmpty ? CachedNetworkImageProvider(imageUrl) : null;
 
     return InkWell(
       borderRadius: BorderRadius.circular(18),
@@ -2425,9 +2923,19 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: _cardBg,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: primaryColor.withOpacity(0.08)),
+          border: Border.all(
+            color: _isDark ? const Color(0x33FF6B00) : const Color(0x0F000000),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color:
+                  _isDark ? const Color(0x1AFF6B00) : const Color(0x0A000000),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -2445,18 +2953,20 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                               width: double.infinity,
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) => Container(
-                                color: Colors.grey.shade200,
-                                child: Icon(
+                                color: _isDark
+                                    ? const Color(0x33FF6B00)
+                                    : const Color(0xFFFFF0E6),
+                                child: const Icon(
                                   Icons.fastfood_rounded,
-                                  color: Colors.grey.shade500,
+                                  color: primaryColor,
                                 ),
                               ),
                             )
                           : Container(
-                              color: Colors.grey.shade200,
-                              child: Icon(
+                              color: const Color(0x33FF6B00),
+                              child: const Icon(
                                 Icons.fastfood_rounded,
-                                color: Colors.grey.shade500,
+                                color: primaryColor,
                               ),
                             ),
                     ),
@@ -2479,10 +2989,11 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.right,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 14,
                       height: 1.25,
+                      color: _textColorPrimary,
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -2492,7 +3003,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.right,
                     style: TextStyle(
-                      color: textColorSecondary,
+                      color: _textColorSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -2506,7 +3017,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: primaryColor.withOpacity(0.1),
+                          color: primaryColor.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: const Text(
@@ -2538,6 +3049,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildRestaurantCard(
     BuildContext context,
     Map<String, dynamic> r,
@@ -2552,16 +3064,20 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     return GestureDetector(
       onTap: () => _openRestaurantDetail(context, r),
       child: Container(
-        width: 272,
-        margin: const EdgeInsets.only(left: 15),
+        width: 256,
+        margin: const EdgeInsetsDirectional.only(start: 15),
         decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(26),
+          color: _cardBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: _isDark ? const Color(0x33FF6B00) : const Color(0x0F000000),
+          ),
           boxShadow: [
             BoxShadow(
-              color: const Color(0x180F172A),
-              blurRadius: 22,
-              offset: const Offset(0, 10),
+              color:
+                  _isDark ? const Color(0x26FF6B00) : const Color(0x0E000000),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
@@ -2571,7 +3087,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
             Expanded(
               child: ClipRRect(
                 borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(26)),
+                    const BorderRadius.vertical(top: Radius.circular(20)),
                 child: Stack(
                   children: [
                     Positioned.fill(
@@ -2582,8 +3098,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              Colors.black.withOpacity(0.08),
-                              Colors.black.withOpacity(0.58),
+                              Colors.black.withValues(alpha: 0.08),
+                              Colors.black.withValues(alpha: 0.58),
                             ],
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
@@ -2600,8 +3116,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                             : Icons.pause_circle_rounded,
                         text: isOpen ? 'مفتوح الآن' : 'مغلق الآن',
                         backgroundColor: isOpen
-                            ? openColor.withOpacity(0.18)
-                            : closedColor.withOpacity(0.18),
+                            ? openColor.withValues(alpha: 0.18)
+                            : closedColor.withValues(alpha: 0.18),
                         foregroundColor: isOpen ? openColor : closedColor,
                       ),
                     ),
@@ -2612,15 +3128,10 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                         child: _buildInfoPill(
                           icon: Icons.local_offer_rounded,
                           text: 'عرض مميز',
-                          backgroundColor: accentColor.withOpacity(0.92),
+                          backgroundColor: accentColor.withValues(alpha: 0.92),
                           foregroundColor: textColorPrimary,
                         ),
                       ),
-                    Positioned(
-                      top: hasOfferText || r['hasOffers'] == true ? 58 : 14,
-                      left: 14,
-                      child: _buildRestaurantFavoriteButton(r),
-                    ),
                     Positioned(
                       right: 16,
                       left: 16,
@@ -2648,7 +3159,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.right,
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.9),
+                                color: Colors.white.withValues(alpha: 0.9),
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -2662,7 +3173,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                             textAlign: TextAlign.right,
                             style: TextStyle(
                               color: isOpen
-                                  ? Colors.white.withOpacity(0.94)
+                                  ? Colors.white.withValues(alpha: 0.94)
                                   : const Color(0xFFFFE2E2),
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -2676,7 +3187,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.right,
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.84),
+                                color: Colors.white.withValues(alpha: 0.84),
                                 fontSize: 11,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -2703,8 +3214,8 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                         icon: Icons.access_time_rounded,
                         text: status,
                         backgroundColor: isOpen
-                            ? openColor.withOpacity(0.12)
-                            : closedColor.withOpacity(0.12),
+                            ? openColor.withValues(alpha: 0.12)
+                            : closedColor.withValues(alpha: 0.12),
                         foregroundColor: isOpen ? openColor : closedColor,
                       ),
                       _buildInfoPill(
@@ -2714,7 +3225,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                       _buildInfoPill(
                         icon: Icons.star_rounded,
                         text: _restaurantRatingLabel(r),
-                        backgroundColor: accentColor.withOpacity(0.18),
+                        backgroundColor: accentColor.withValues(alpha: 0.18),
                         foregroundColor: textColorPrimary,
                       ),
                     ],
@@ -2727,22 +3238,32 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
                       vertical: 12,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFF6B00), Color(0xFFFF9500)],
+                        begin: Alignment.centerRight,
+                        end: Alignment.centerLeft,
+                      ),
                       borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                            color: primaryColor.withValues(alpha: 0.4),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4)),
+                      ],
                     ),
-                    child: Row(
+                    child: const Row(
                       children: [
-                        const Icon(Icons.arrow_back_ios_new_rounded,
-                            size: 16, color: primaryColor),
-                        const SizedBox(width: 8),
-                        const Text(
+                        Icon(Icons.arrow_back_ios_new_rounded,
+                            size: 16, color: Colors.white),
+                        SizedBox(width: 8),
+                        Text(
                           'الدخول إلى المطعم',
                           style: TextStyle(
-                            color: primaryColor,
+                            color: Colors.white,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        const Spacer(),
+                        Spacer(),
                       ],
                     ),
                   ),
@@ -2761,197 +3282,241 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     ImageProvider? imageProvider,
   ) {
     final status = getRestaurantStatus(r);
+    final hoursSummary = getRestaurantHoursSummary(r);
     final isOpen = status.contains('مفتوح');
-    final offerText = (r['offers'] ?? '').toString().trim();
-    final hasOffer = (r['hasOffers'] == true) ||
-        (offerText.isNotEmpty && offerText != 'null');
+    final hasOffer = _restaurantHasOffer(r);
     final ratingLabel = _restaurantRatingLabel(r);
     final distanceText = _distanceText(r['distanceKm'] as double?);
+    final deliveryTime = _deliveryTimeText(r);
+    final isFreeDelivery =
+        r['deliveryFee'] != null && (r['deliveryFee'] as num) == 0;
+    final categories = _categoriesFromRestaurantData(r);
+    final category = categories.isNotEmpty ? categories.first : '';
+    final dividerColor = _isDark ? Colors.white12 : Colors.black12;
+    const deliveryAvailableColor = Color(0xFF66BB6A);
 
     return GestureDetector(
       onTap: () => _openRestaurantDetail(context, r),
       child: Container(
         decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.055),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
         ),
-        child: Row(
-          children: [
-            // المحتوى - يمين
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // المحتوى — يمين في RTL
+              Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // اسم المطعم
                     Text(
                       r['name']?.toString() ?? '',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: 17,
-                        color: textColorPrimary,
+                        fontSize: 16,
+                        color: _textColorPrimary,
                         height: 1.2,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
                     ),
-                    const SizedBox(height: 6),
-                    // وصف / عرض
-                    if (hasOffer && offerText.isNotEmpty && offerText != 'null')
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text(
-                          offerText,
-                          style: TextStyle(
-                            color: accentColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                    if (category.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        category,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _textColorSecondary,
+                          fontWeight: FontWeight.w500,
                         ),
+                        maxLines: 1,
+                        textAlign: TextAlign.right,
                       ),
-                    // تقييم + مسافة
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        // المسافة
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.near_me_rounded,
-                                size: 13, color: textColorSecondary),
-                            const SizedBox(width: 3),
-                            Text(
-                              distanceText,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: textColorSecondary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+                    ],
+                    if (hoursSummary.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        hoursSummary,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _textColorSecondary,
+                          fontWeight: FontWeight.w500,
                         ),
-                        const SizedBox(width: 12),
-                        // التقييم
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    FutureBuilder<RouteEstimate?>(
+                      future: _roadRouteToRestaurant(r),
+                      builder: (context, routeSnapshot) {
+                        final route = routeSnapshot.data;
+                        final displayDistance = route == null
+                            ? distanceText
+                            : _distanceText(route.distanceKm);
+                        final displayTime = route == null
+                            ? deliveryTime
+                            : '${route.durationMinutes} دقيقة';
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             const Icon(Icons.star_rounded,
                                 size: 14, color: Color(0xFFFFC107)),
                             const SizedBox(width: 3),
                             Text(
                               ratingLabel,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: textColorPrimary,
+                                color: _textColorPrimary,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
+                            Container(
+                              width: 1,
+                              height: 10,
+                              margin: const EdgeInsets.symmetric(horizontal: 8),
+                              color: dividerColor,
+                            ),
+                            const Icon(Icons.schedule_rounded,
+                                size: 13, color: ClientColors.primary),
+                            const SizedBox(width: 3),
+                            Text(
+                              displayTime,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: ClientColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (displayDistance.isNotEmpty) ...[
+                              Container(
+                                width: 1,
+                                height: 10,
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                color: dividerColor,
+                              ),
+                              Icon(Icons.near_me_rounded,
+                                  size: 12, color: _textColorSecondary),
+                              const SizedBox(width: 3),
+                              Text(
+                                displayDistance,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: _textColorSecondary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                           ],
-                        ),
-                      ],
+                        );
+                      },
                     ),
-                    const SizedBox(height: 10),
-                    // الشارات السفلية: حالة + عرض
+                    const SizedBox(height: 8),
+                    // الشارات: توصيل + عرض + حالة
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        if (hasOffer)
+                        if (isOpen)
                           Container(
-                            margin: const EdgeInsets.only(right: 6),
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
+                                horizontal: 9, vertical: 4),
                             decoration: BoxDecoration(
-                              color: accentColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(8),
+                              color: isFreeDelivery
+                                  ? openColor.withValues(alpha: 0.12)
+                                  : deliveryAvailableColor.withValues(
+                                      alpha: 0.16),
+                              borderRadius: BorderRadius.circular(20),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                Icon(Icons.directions_bike_rounded,
+                                    size: 12,
+                                    color: isFreeDelivery
+                                        ? openColor
+                                        : deliveryAvailableColor),
+                                const SizedBox(width: 4),
+                                Text(
+                                  isFreeDelivery ? 'توصيل مجاني' : 'توصيل متاح',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isFreeDelivery
+                                        ? openColor
+                                        : deliveryAvailableColor,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 9, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: closedColor.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Text(
+                              'مغلق حالياً',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: closedColor,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        if (hasOffer) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 9, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: accentColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
                                 Icon(Icons.local_offer_rounded,
                                     size: 11, color: accentColor),
-                                const SizedBox(width: 4),
+                                SizedBox(width: 4),
                                 Text(
                                   'عرض',
                                   style: TextStyle(
                                     fontSize: 11,
-                                    fontWeight: FontWeight.w700,
                                     color: accentColor,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isOpen
-                                ? openColor.withValues(alpha: 0.1)
-                                : closedColor.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: isOpen ? openColor : closedColor,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 5),
-                              Text(
-                                isOpen ? 'مفتوح' : 'مغلق',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: isOpen ? openColor : closedColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        ],
                       ],
                     ),
                   ],
                 ),
               ),
-            ),
-            // الصورة - يسار في RTL
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(20),
-                bottomLeft: Radius.circular(20),
+              const SizedBox(width: 14),
+              // الصورة — يسار في RTL
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: SizedBox(
+                  width: 92,
+                  height: 92,
+                  child: _buildRestaurantHeroImage(imageProvider),
+                ),
               ),
-              child: Stack(
-                children: [
-                  SizedBox(
-                    width: 110,
-                    height: 130,
-                    child: _buildRestaurantHeroImage(imageProvider),
-                  ),
-                  // زر المفضلة
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: _buildRestaurantFavoriteButton(r),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -2989,12 +3554,64 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     return meters / 1000;
   }
 
+  LatLng? _restaurantLatLng(Map<String, dynamic> restaurantData) {
+    double? restLat;
+    double? restLng;
+
+    final geo = restaurantData['location'];
+    if (geo is GeoPoint) {
+      restLat = geo.latitude;
+      restLng = geo.longitude;
+    }
+
+    restLat ??= (restaurantData['restaurantLat'] as num?)?.toDouble();
+    restLng ??= (restaurantData['restaurantLng'] as num?)?.toDouble();
+    restLat ??= (restaurantData['latitude'] as num?)?.toDouble();
+    restLng ??= (restaurantData['longitude'] as num?)?.toDouble();
+    restLat ??= (restaurantData['lat'] as num?)?.toDouble();
+    restLng ??= (restaurantData['lng'] as num?)?.toDouble();
+
+    if (restLat == null || restLng == null) return null;
+    return LatLng(restLat, restLng);
+  }
+
+  Future<RouteEstimate?> _roadRouteToRestaurant(
+    Map<String, dynamic> restaurantData,
+  ) async {
+    final clientLat = _clientLatitude;
+    final clientLng = _clientLongitude;
+    final restaurant = _restaurantLatLng(restaurantData);
+    if (clientLat == null || clientLng == null || restaurant == null) {
+      return null;
+    }
+    return RouteEstimateService.estimate(
+      origin: restaurant,
+      destination: LatLng(clientLat, clientLng),
+      timeout: const Duration(seconds: 4),
+    );
+  }
+
   String _distanceText(double? distanceKm) {
     if (distanceKm == null) return 'المسافة غير متاحة';
     if (distanceKm < 1) {
       return '${(distanceKm * 1000).round()} م';
     }
     return '${distanceKm.toStringAsFixed(1)} كم';
+  }
+
+  String _deliveryTimeText(Map<String, dynamic> restaurant) {
+    final custom = (restaurant['deliveryTime'] ??
+            restaurant['estimatedDeliveryTime'] ??
+            '')
+        .toString()
+        .trim();
+    if (custom.isNotEmpty) return custom;
+    final distanceKm = (restaurant['distanceKm'] as num?)?.toDouble();
+    if (distanceKm == null) return '—';
+    if (distanceKm < 2) return '15-20 دقيقة';
+    if (distanceKm < 5) return '20-30 دقيقة';
+    if (distanceKm < 10) return '30-45 دقيقة';
+    return '45+ دقيقة';
   }
 
   bool _shouldShowRestaurantForClient(Map<String, dynamic> restaurant) {
@@ -3027,12 +3644,6 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
     return value;
   }
 
-  int _restaurantRatingCount(Map<String, dynamic> restaurantData) {
-    final rawCount = (restaurantData['ratingCount'] ??
-        restaurantData['reviewCount']) as num?;
-    return rawCount?.toInt() ?? 0;
-  }
-
   String _formatRatingValue(double value) {
     final normalized = value.toStringAsFixed(1);
     return normalized.endsWith('.0')
@@ -3042,13 +3653,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
 
   String _restaurantRatingLabel(Map<String, dynamic> restaurantData) {
     final ratingValue = _restaurantRatingValue(restaurantData);
-    if (ratingValue == null) {
-      return 'جديد';
-    }
-    final ratingCount = _restaurantRatingCount(restaurantData);
-    if (ratingCount > 0) {
-      return '${_formatRatingValue(ratingValue)} · $ratingCount';
-    }
+    if (ratingValue == null) return 'جديد';
     return _formatRatingValue(ratingValue);
   }
 
@@ -3196,13 +3801,20 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
   }
 
   void _openRestaurantDetail(BuildContext context, Map<String, dynamic> r) {
-    Navigator.push(
-      context,
+    final restaurantId =
+        (r['id'] ?? r['restaurantId'] ?? r['storeId'] ?? '').toString().trim();
+    if (restaurantId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر فتح تفاصيل المطعم حالياً')),
+      );
+      return;
+    }
+    Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => RestaurantDetailScreen(
-          restaurantId: r['id'],
+          restaurantId: restaurantId,
           name: r['name']?.toString() ?? '',
-          image: r['image']?.toString() ?? '',
+          image: _restaurantDisplayImage(r),
           offers: r['offers']?.toString() ?? '',
           clientId: widget.clientId,
         ),
@@ -3393,6 +4005,1080 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         return '';
     }
   }
+
+  // ── كاروسيل الفئات ──────────────────────────────────────────────────────
+
+  static const Map<String, String> _categoryEmojiMap = {
+    'بيتزا': '🍕',
+    'برغر': '🍔',
+    'مشويات': '🥩',
+    'سوشي': '🍣',
+    'صحي': '🥗',
+    'مشروبات': '☕',
+    'حلويات': '🍰',
+    'شرقي': '🍜',
+    'دجاج': '🍗',
+    'فراخ': '🍗',
+    'سندويتشات': '🥪',
+    'مأكولات بحرية': '🦐',
+    'وجبات رئيسية': '🍽️',
+    'فطور': '🥞',
+    'مقبلات': '🥙',
+    'سلطات': '🥗',
+    'عصائر': '🥤',
+    'قهوة': '☕',
+    'آيس كريم': '🍦',
+    'كيك': '🎂',
+    'مكرونة': '🍝',
+    'نودلز': '🍜',
+    'رايس': '🍚',
+    'أرز': '🍚',
+    'وجبات سريعة': '🌮',
+    'شاورما': '🌯',
+    'كباب': '🍢',
+  };
+
+  String _emojiForCategory(String cat) =>
+      _categoryEmojiMap[cat] ??
+      _categoryEmojiMap.entries
+          .firstWhere(
+            (e) => cat.contains(e.key) || e.key.contains(cat),
+            orElse: () => const MapEntry('', '🍽️'),
+          )
+          .value;
+
+  bool? _parseBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1' || normalized == 'yes') {
+        return true;
+      }
+      if (normalized == 'false' || normalized == '0' || normalized == 'no') {
+        return false;
+      }
+    }
+    return null;
+  }
+
+  bool? _readBoolField(Map<String, dynamic> source, List<String> keys) {
+    for (final key in keys) {
+      if (!source.containsKey(key)) continue;
+      final parsed = _parseBool(source[key]);
+      if (parsed != null) return parsed;
+    }
+    return null;
+  }
+
+  String _restaurantOfferText(Map<String, dynamic> restaurant) {
+    final candidates = [
+      restaurant['offers'],
+      restaurant['offerText'],
+      restaurant['activeOfferText'],
+      restaurant['discountLabel'],
+      restaurant['promoText'],
+    ];
+
+    for (final value in candidates) {
+      final text = (value ?? '').toString().trim();
+      if (text.isNotEmpty && text.toLowerCase() != 'null') {
+        return text;
+      }
+    }
+    return '';
+  }
+
+  List<Map<String, dynamic>> _restaurantOfferHighlights(
+      Map<String, dynamic> restaurant) {
+    final raw = restaurant['offerHighlights'];
+    final list = raw is Iterable ? raw : const [];
+    return list
+        .whereType<Map>()
+        .map((entry) => Map<String, dynamic>.from(entry))
+        .toList();
+  }
+
+  Map<String, dynamic>? _firstRestaurantOffer(Map<String, dynamic> restaurant) {
+    final highlights = _restaurantOfferHighlights(restaurant);
+    return highlights.isEmpty ? null : highlights.first;
+  }
+
+  List<_OfferCarouselEntry> _offerCarouselEntries(
+    List<Map<String, dynamic>> restaurants,
+  ) {
+    final entries = <_OfferCarouselEntry>[];
+
+    for (final restaurant in restaurants) {
+      final offers = _restaurantOfferHighlights(restaurant);
+      if (offers.isEmpty) {
+        if (_restaurantHasOffer(restaurant)) {
+          entries.add(
+            _OfferCarouselEntry(restaurant: restaurant, offer: null),
+          );
+        }
+        continue;
+      }
+
+      for (final offer in offers) {
+        entries.add(
+          _OfferCarouselEntry(restaurant: restaurant, offer: offer),
+        );
+      }
+    }
+
+    return entries;
+  }
+
+  String _restaurantOfferImage(Map<String, dynamic> restaurant) {
+    final offer = _firstRestaurantOffer(restaurant);
+    return (offer?['imageUrl'] ?? '').toString().trim();
+  }
+
+  String _restaurantDisplayImage(Map<String, dynamic> restaurant) {
+    final offerImage = _restaurantOfferImage(restaurant);
+    if (offerImage.isNotEmpty) return offerImage;
+    return (restaurant['coverImage'] ??
+            restaurant['imageUrl'] ??
+            restaurant['image'] ??
+            '')
+        .toString()
+        .trim();
+  }
+
+  bool _restaurantHasOffer(Map<String, dynamic> restaurant) {
+    final hasOfferFlag = _readBoolField(
+      restaurant,
+      const ['hasOffers', 'hasOffer', 'offerEnabled', 'hasActiveOffer'],
+    );
+    final activeOfferCount =
+        (restaurant['activeOfferCount'] as num?)?.toInt() ?? 0;
+    return (hasOfferFlag ?? false) ||
+        activeOfferCount > 0 ||
+        _restaurantOfferHighlights(restaurant).isNotEmpty ||
+        _restaurantOfferText(restaurant).isNotEmpty;
+  }
+
+  List<String> _categoriesFromRestaurantData(Map<String, dynamic> restaurant) {
+    final seen = <String>{};
+    final categories = <String>[];
+
+    void addCategory(dynamic raw) {
+      final text = (raw ?? '').toString().trim();
+      if (text.isEmpty) return;
+      final normalized = _canonicalMealCategory(text);
+      final key = _sanitizeCategoryToken(normalized);
+      if (key.isEmpty) return;
+      if (seen.add(key)) {
+        categories.add(normalized);
+      }
+    }
+
+    final rawCats = restaurant['categories'];
+    if (rawCats is List) {
+      for (final c in rawCats) {
+        addCategory(c);
+      }
+    } else if (rawCats is String) {
+      final parts = rawCats.split(RegExp(r'[,،/|]'));
+      for (final p in parts) {
+        addCategory(p);
+      }
+    }
+
+    addCategory(restaurant['category']);
+    addCategory(restaurant['mainCategory']);
+    addCategory(restaurant['type']);
+
+    final tags = restaurant['tags'];
+    if (tags is List) {
+      for (final tag in tags) {
+        addCategory(tag);
+      }
+    }
+
+    return categories;
+  }
+
+  Map<String, Set<String>> _buildMealCategoriesByRestaurant(
+    List<Map<String, dynamic>> allMeals,
+  ) {
+    final map = <String, Set<String>>{};
+    for (final mealEntry in allMeals) {
+      final restaurant = mealEntry['restaurant'] as Map<String, dynamic>?;
+      final restaurantId = (restaurant?['id'] ?? '').toString().trim();
+      if (restaurantId.isEmpty) continue;
+
+      final category = _canonicalMealCategory(
+        (mealEntry['meal']?['category'] ?? mealEntry['category'] ?? '')
+            .toString()
+            .trim(),
+      );
+      if (category.isEmpty) continue;
+
+      map.putIfAbsent(restaurantId, () => <String>{}).add(category);
+    }
+    return map;
+  }
+
+  List<String> _restaurantCategories(
+    Map<String, dynamic> restaurant, {
+    Map<String, Set<String>>? mealCategoriesByRestaurant,
+  }) {
+    final merged = <String>[];
+    final seen = <String>{};
+
+    void addMany(Iterable<String> items) {
+      for (final item in items) {
+        final key = _sanitizeCategoryToken(item);
+        if (key.isEmpty) continue;
+        if (seen.add(key)) {
+          merged.add(item);
+        }
+      }
+    }
+
+    addMany(_categoriesFromRestaurantData(restaurant));
+    final restaurantId = (restaurant['id'] ?? '').toString().trim();
+    if (restaurantId.isNotEmpty) {
+      addMany(mealCategoriesByRestaurant?[restaurantId] ?? const <String>{});
+    }
+
+    return merged;
+  }
+
+  bool _restaurantMatchesFilter(
+    Map<String, dynamic> restaurant,
+    String selectedFilter, {
+    Map<String, Set<String>>? mealCategoriesByRestaurant,
+  }) {
+    final filterKey = _categoryKey(selectedFilter);
+    if (filterKey.isEmpty || filterKey == _categoryKey('الكل')) {
+      return true;
+    }
+
+    final categories = _restaurantCategories(
+      restaurant,
+      mealCategoriesByRestaurant: mealCategoriesByRestaurant,
+    );
+
+    for (final category in categories) {
+      if (_categoryMatches(category, selectedFilter)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  List<String> _extractCategoriesFromRestaurants(
+      List<Map<String, dynamic>> restaurants,
+      {Map<String, Set<String>>? mealCategoriesByRestaurant}) {
+    final seen = <String>{};
+    final result = <String>[];
+
+    for (final r in restaurants) {
+      final categories = _restaurantCategories(
+        r,
+        mealCategoriesByRestaurant: mealCategoriesByRestaurant,
+      );
+      for (final c in categories) {
+        final key = _sanitizeCategoryToken(c);
+        if (key.isNotEmpty && seen.add(key)) {
+          result.add(c);
+        }
+      }
+    }
+
+    result.sort((a, b) {
+      final rankCompare = _categoryRank(a).compareTo(_categoryRank(b));
+      if (rankCompare != 0) return rankCompare;
+      return a.compareTo(b);
+    });
+
+    return result;
+  }
+
+  Widget _buildCategoryIconsCarousel(
+    List<String> categories, {
+    required List<Map<String, dynamic>> restaurants,
+    required List<Map<String, dynamic>> allMeals,
+    required Map<String, Set<String>> mealCategoriesByRestaurant,
+    bool isLoading = false,
+  }) {
+    if (isLoading) {
+      final base = _isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFE4D6);
+      final highlight =
+          _isDark ? const Color(0xFF3A3A3A) : const Color(0xFFFFF8F3);
+      return SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+              child: Container(
+                width: 90,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: base,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 82,
+              child: Shimmer.fromColors(
+                baseColor: base,
+                highlightColor: highlight,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: 6,
+                  itemBuilder: (_, __) => Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 10),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: base,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          width: 36,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: base,
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // دائماً أضف "الكل" في البداية (يمين)
+    final items = <(String, String)>[
+      ('🏠', 'الكل'),
+      ...categories.map((c) => (_emojiForCategory(c), c)),
+    ];
+
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                Text(
+                  'نفسك في شنو؟',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 82,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              itemCount: items.length,
+              itemBuilder: (ctx, i) {
+                final (emoji, label) = items[i];
+                return Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 10),
+                  child: GestureDetector(
+                    onTap: () => _openCategoryResults(
+                      category: label,
+                      restaurants: restaurants,
+                      allMeals: allMeals,
+                      mealCategoriesByRestaurant: mealCategoriesByRestaurant,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 160),
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color:
+                                  ClientColors.primary.withValues(alpha: 0.12),
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(emoji,
+                                style: const TextStyle(fontSize: 24)),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── كاروسيل العروض ──────────────────────────────────────────────────────
+
+  Widget _buildOffersCarouselSection(
+      List<Map<String, dynamic>> featuredRestaurants) {
+    final withOffers = featuredRestaurants
+        .where((r) => getRestaurantStatus(r).contains('مفتوح'))
+        .toList();
+
+    final sourceRestaurants =
+        withOffers.isNotEmpty ? withOffers : featuredRestaurants;
+    final displayItems = _offerCarouselEntries(sourceRestaurants);
+
+    return SliverToBoxAdapter(
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  Text(
+                    'عروض اليوم',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: ClientColors.primary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'أفضل الأسعار',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: ClientColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 210.0,
+              child: displayItems.isEmpty
+                  ? Padding(
+                      padding:
+                          const EdgeInsetsDirectional.only(start: 16, end: 16),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: _isDark
+                              ? ClientColors.surface
+                              : const Color(0xFFFFF8F3),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: const Color(0x33FF6B00),
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            'لا توجد عروض متاحة الآن',
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding:
+                          const EdgeInsetsDirectional.only(start: 16, end: 8),
+                      itemCount: displayItems.length,
+                      itemBuilder: (ctx, i) {
+                        final screenWidth = MediaQuery.of(ctx).size.width;
+                        final cardWidth = (screenWidth * 0.42)
+                            .clamp(150.0, 170.0)
+                            .toDouble();
+                        final item = displayItems[i];
+                        final r = item.restaurant;
+                        final offer = item.offer;
+                        final offerImage =
+                            (offer?['imageUrl'] ?? '').toString().trim();
+                        final imgUrl = offerImage.isNotEmpty
+                            ? offerImage
+                            : _restaurantDisplayImage(r);
+                        final restaurantName =
+                            (r['name'] ?? '').toString().trim();
+                        final offerTitle =
+                            (offer?['title'] ?? '').toString().trim();
+                        final offerDescription = (offer?['description'] ??
+                                offer?['summaryText'] ??
+                                _restaurantOfferText(r))
+                            .toString()
+                            .trim();
+                        final badgeText =
+                            (offer?['badgeText'] ?? '').toString().trim();
+                        final discountType =
+                            (offer?['discountType'] ?? '').toString().trim();
+                        final rawValue = offer?['discountValue'];
+                        final discountNum = rawValue != null
+                            ? (double.tryParse(rawValue.toString()) ?? 0.0)
+                            : 0.0;
+                        final discountPercent =
+                            (discountType == 'percent' && discountNum > 0)
+                                ? '${discountNum % 1 == 0 ? discountNum.toInt() : discountNum}%'
+                                : '';
+                        final cardBg =
+                            _isDark ? ClientColors.surface : Colors.white;
+                        final mutedColor = _isDark
+                            ? const Color(0xFF9E9E9E)
+                            : const Color(0xFF757575);
+                        return Padding(
+                          padding:
+                              const EdgeInsetsDirectional.only(end: 12),
+                          child: GestureDetector(
+                            onTap: () => _openRestaurantDetail(context, {
+                              ...r,
+                              if (offer != null) ...{
+                                'restaurantId': offer['restaurantId'] ??
+                                    r['restaurantId'],
+                                'offers': offerTitle.isNotEmpty
+                                    ? offerTitle
+                                    : r['offers'],
+                              },
+                            }),
+                            child: SizedBox(
+                              width: cardWidth,
+                              child: Material(
+                                color: cardBg,
+                                elevation: 3,
+                                shadowColor:
+                                    Colors.black.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(18),
+                                clipBehavior: Clip.hardEdge,
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    SizedBox(
+                                      height: 118,
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          imgUrl.isNotEmpty
+                                              ? CachedNetworkImage(
+                                                  imageUrl: imgUrl,
+                                                  fit: BoxFit.cover,
+                                                  errorWidget:
+                                                      (_, __, ___) =>
+                                                          Container(
+                                                    color: _isDark
+                                                        ? const Color(
+                                                            0xFF24140A)
+                                                        : const Color(
+                                                            0xFFFFF0E6),
+                                                    child: const Icon(
+                                                      Icons
+                                                          .local_offer_rounded,
+                                                      size: 42,
+                                                      color:
+                                                          ClientColors.primary,
+                                                    ),
+                                                  ),
+                                                )
+                                              : Container(
+                                                  color: _isDark
+                                                      ? const Color(0xFF24140A)
+                                                      : const Color(0xFFFFF0E6),
+                                                  child: const Icon(
+                                                    Icons.local_offer_rounded,
+                                                    size: 44,
+                                                    color: ClientColors.primary,
+                                                  ),
+                                                ),
+                                          if (discountPercent.isNotEmpty)
+                                            Positioned(
+                                              bottom: 8,
+                                              right: 8,
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: ClientColors.primary,
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          999),
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: Colors.black
+                                                          .withValues(
+                                                              alpha: 0.30),
+                                                      blurRadius: 6,
+                                                      offset:
+                                                          const Offset(0, 2),
+                                                    ),
+                                                  ],
+                                                ),
+                                                child: Text(
+                                                  'خصم $discountPercent',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w800,
+                                                    height: 1.1,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                            10, 8, 10, 8),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            if (restaurantName.isNotEmpty)
+                                              Text(
+                                                restaurantName,
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                textAlign: TextAlign.right,
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Theme.of(ctx)
+                                                      .colorScheme
+                                                      .onSurface,
+                                                  height: 1.2,
+                                                ),
+                                              ),
+                                            if (offerTitle.isNotEmpty) ...[
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                offerTitle,
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                textAlign: TextAlign.right,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color: ClientColors.primary,
+                                                  fontWeight: FontWeight.w700,
+                                                  height: 1.2,
+                                                ),
+                                              ),
+                                            ],
+                                            if (offerDescription.isNotEmpty &&
+                                                offerDescription !=
+                                                    offerTitle) ...[
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                offerDescription,
+                                                maxLines: 2,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                textAlign: TextAlign.right,
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: mutedColor,
+                                                  fontWeight: FontWeight.w500,
+                                                  height: 1.3,
+                                                ),
+                                              ),
+                                            ],
+                                            if (badgeText.isNotEmpty) ...[
+                                              const SizedBox(height: 5),
+                                              Align(
+                                                alignment:
+                                                    AlignmentDirectional
+                                                        .centerEnd,
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 3),
+                                                  decoration: BoxDecoration(
+                                                    color: ClientColors.primary
+                                                        .withValues(alpha: 0.10),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            999),
+                                                  ),
+                                                  child: Text(
+                                                    badgeText,
+                                                    style: const TextStyle(
+                                                      fontSize: 9,
+                                                      color: ClientColors.primary,
+                                                      fontWeight: FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            const SizedBox(height: 4),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OfferCarouselEntry {
+  const _OfferCarouselEntry({
+    required this.restaurant,
+    required this.offer,
+  });
+
+  final Map<String, dynamic> restaurant;
+  final Map<String, dynamic>? offer;
+}
+
+class _CategoryResultsScreen extends StatelessWidget {
+  const _CategoryResultsScreen({
+    required this.title,
+    required this.clientId,
+    required this.meals,
+    required this.restaurants,
+  });
+
+  final String title;
+  final String clientId;
+  final List<Map<String, dynamic>> meals;
+  final List<Map<String, dynamic>> restaurants;
+
+  @override
+  Widget build(BuildContext context) {
+    final textSecondary = Theme.of(context).colorScheme.onSurfaceVariant;
+    final totalCount = meals.length + restaurants.length;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        appBar: AppBar(
+          title: Text(title),
+          centerTitle: true,
+          foregroundColor: ClientColors.primary,
+        ),
+        body: totalCount == 0
+            ? Center(
+                child: Text(
+                  'لا توجد نتائج في هذه الفئة حالياً',
+                  style: TextStyle(color: textSecondary),
+                ),
+              )
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  if (meals.isNotEmpty) ...[
+                    _CategorySectionTitle(
+                      title: 'الأصناف',
+                      count: meals.length,
+                    ),
+                    const SizedBox(height: 8),
+                    ...meals.map((entry) => _CategoryMealTile(
+                          entry: entry,
+                          clientId: clientId,
+                        )),
+                    const SizedBox(height: 18),
+                  ],
+                  if (restaurants.isNotEmpty) ...[
+                    _CategorySectionTitle(
+                      title: 'مطاعم تقدم هذه الفئة',
+                      count: restaurants.length,
+                    ),
+                    const SizedBox(height: 8),
+                    ...restaurants.map((restaurant) => _CategoryRestaurantTile(
+                          restaurant: restaurant,
+                          clientId: clientId,
+                        )),
+                  ],
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class _CategorySectionTitle extends StatelessWidget {
+  const _CategorySectionTitle({required this.title, required this.count});
+
+  final String title;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '$count',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CategoryMealTile extends StatelessWidget {
+  const _CategoryMealTile({required this.entry, required this.clientId});
+
+  final Map<String, dynamic> entry;
+  final String clientId;
+
+  @override
+  Widget build(BuildContext context) {
+    final meal = (entry['meal'] as Map<String, dynamic>?) ?? const {};
+    final restaurant =
+        (entry['restaurant'] as Map<String, dynamic>?) ?? const {};
+    final image = (meal['imageUrl'] ?? meal['image'] ?? meal['photoUrl'] ?? '')
+        .toString()
+        .trim();
+    final name = (meal['name'] ?? entry['name'] ?? 'صنف').toString();
+    final restaurantName = (restaurant['name'] ?? '').toString();
+    final price = (meal['price'] as num?)?.toStringAsFixed(0);
+
+    return _CategoryResultShell(
+      onTap: () => _openRestaurant(context, restaurant, clientId),
+      imageUrl: image,
+      icon: Icons.fastfood_rounded,
+      title: name,
+      subtitle: restaurantName,
+      trailing: price == null ? null : '$price ج.س',
+    );
+  }
+}
+
+class _CategoryRestaurantTile extends StatelessWidget {
+  const _CategoryRestaurantTile({
+    required this.restaurant,
+    required this.clientId,
+  });
+
+  final Map<String, dynamic> restaurant;
+  final String clientId;
+
+  @override
+  Widget build(BuildContext context) {
+    return _CategoryResultShell(
+      onTap: () => _openRestaurant(context, restaurant, clientId),
+      imageUrl: (restaurant['image'] ?? '').toString(),
+      icon: Icons.storefront_rounded,
+      title: (restaurant['name'] ?? 'مطعم').toString(),
+      subtitle: (restaurant['offers'] ?? '').toString().trim().isEmpty
+          ? 'اضغط لعرض المنيو'
+          : (restaurant['offers'] ?? '').toString(),
+    );
+  }
+}
+
+class _CategoryResultShell extends StatelessWidget {
+  const _CategoryResultShell({
+    required this.onTap,
+    required this.imageUrl,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+  });
+
+  final VoidCallback onTap;
+  final String imageUrl;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0x1AFFFFFF) : Colors.white;
+    final border = isDark ? const Color(0x22FF6B00) : const Color(0x12000000);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: border),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: imageUrl.isEmpty
+                    ? Container(
+                        width: 54,
+                        height: 54,
+                        color: ClientColors.primary.withValues(alpha: 0.10),
+                        child: Icon(icon, color: ClientColors.primary),
+                      )
+                    : CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        width: 54,
+                        height: 54,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => Container(
+                          width: 54,
+                          height: 54,
+                          color: ClientColors.primary.withValues(alpha: 0.10),
+                          child: Icon(icon, color: ClientColors.primary),
+                        ),
+                      ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                Text(
+                  trailing!,
+                  style: const TextStyle(
+                    color: ClientColors.primary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+void _openRestaurant(
+  BuildContext context,
+  Map<String, dynamic> restaurant,
+  String clientId,
+) {
+  final restaurantId = (restaurant['id'] ?? '').toString().trim();
+  if (restaurantId.isEmpty) return;
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => RestaurantDetailScreen(
+        restaurantId: restaurantId,
+        name: (restaurant['name'] ?? '').toString(),
+        image: (restaurant['image'] ?? '').toString(),
+        offers: (restaurant['offers'] ?? '').toString(),
+        clientId: clientId,
+      ),
+    ),
+  );
 }
 
 class _ClientHomeSearchSheet extends StatefulWidget {
@@ -3477,6 +5163,11 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final results = _filteredEntries();
     final hasQuery = _controller.text.trim().isNotEmpty;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final sheetBg = isDark ? const Color(0xFF1A1A1A) : Colors.white;
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1A1A1A);
+    final textSecondary =
+        isDark ? ClientColors.textSecondary : const Color(0xFF6B6B6B);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -3485,9 +5176,9 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
         padding: EdgeInsets.only(bottom: bottomInset),
         child: Container(
           height: MediaQuery.of(context).size.height * 0.88,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          decoration: BoxDecoration(
+            color: sheetBg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: Column(
             children: [
@@ -3496,7 +5187,7 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                 width: 56,
                 height: 5,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
+                  color: textSecondary.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(20),
                 ),
               ),
@@ -3509,15 +5200,15 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                       children: [
                         IconButton(
                           onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close_rounded),
+                          icon: Icon(Icons.close_rounded, color: textSecondary),
                         ),
                         const Spacer(),
-                        const Text(
+                        Text(
                           'البحث',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w900,
-                            color: ClientHomeTabStateConstants.textColorPrimary,
+                            color: textPrimary,
                           ),
                         ),
                       ],
@@ -3525,11 +5216,12 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                     const SizedBox(height: 12),
                     Container(
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: isDark
+                            ? const Color(0x1AFFFFFF)
+                            : const Color(0xFFFFF8F3),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: ClientHomeTabStateConstants.primaryColor
-                              .withOpacity(0.12),
+                          color: const Color(0x4DFF6B00),
                         ),
                       ),
                       child: TextField(
@@ -3539,7 +5231,7 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                         decoration: InputDecoration(
                           hintText: 'ابحث عن مطعم أو صنف أو عرض',
                           hintStyle: TextStyle(
-                            color: Colors.grey.shade500,
+                            color: textSecondary,
                             fontSize: 14,
                           ),
                           border: InputBorder.none,
@@ -3567,10 +5259,10 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                           : (widget.recentSearches.isEmpty
                               ? 'اقتراحات سريعة'
                               : 'آخر ما بحثت عنه'),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: ClientHomeTabStateConstants.textColorSecondary,
+                        color: textSecondary,
                       ),
                     ),
                   ],
@@ -3583,20 +5275,18 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                           padding: const EdgeInsets.symmetric(horizontal: 28),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
-                            children: const [
+                            children: [
                               Icon(
                                 Icons.search_off_rounded,
                                 size: 42,
-                                color: ClientHomeTabStateConstants
-                                    .textColorSecondary,
+                                color: textSecondary,
                               ),
-                              SizedBox(height: 10),
+                              const SizedBox(height: 10),
                               Text(
                                 'لم نجد نتيجة مطابقة. جرب اسم المطعم أو اسم الصنف مباشرة.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color: ClientHomeTabStateConstants
-                                      .textColorSecondary,
+                                  color: textSecondary,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -3622,12 +5312,10 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                               child: Container(
                                 padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFF8FAFC),
+                                  color: const Color(0x1AFFFFFF),
                                   borderRadius: BorderRadius.circular(18),
                                   border: Border.all(
-                                    color: ClientHomeTabStateConstants
-                                        .primaryColor
-                                        .withOpacity(0.08),
+                                    color: const Color(0x33FF6B00),
                                   ),
                                 ),
                                 child: Row(
@@ -3639,18 +5327,17 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                                         color: isMeal
                                             ? ClientHomeTabStateConstants
                                                 .primaryColor
-                                                .withOpacity(0.12)
+                                                .withValues(alpha: 0.12)
                                             : ClientHomeTabStateConstants
                                                 .accentColor
-                                                .withOpacity(0.22),
+                                                .withValues(alpha: 0.22),
                                         borderRadius: BorderRadius.circular(15),
                                       ),
                                       child: Icon(
                                         isMeal
                                             ? Icons.fastfood_rounded
                                             : Icons.storefront_rounded,
-                                        color: ClientHomeTabStateConstants
-                                            .textColorPrimary,
+                                        color: textPrimary,
                                       ),
                                     ),
                                     const SizedBox(width: 12),
@@ -3671,7 +5358,8 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                                                   color:
                                                       ClientHomeTabStateConstants
                                                           .primaryColor
-                                                          .withOpacity(0.08),
+                                                          .withValues(
+                                                              alpha: 0.08),
                                                   borderRadius:
                                                       BorderRadius.circular(
                                                           999),
@@ -3695,12 +5383,10 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                                                   maxLines: 2,
                                                   overflow:
                                                       TextOverflow.ellipsis,
-                                                  style: const TextStyle(
+                                                  style: TextStyle(
                                                     fontSize: 15,
                                                     fontWeight: FontWeight.w800,
-                                                    color:
-                                                        ClientHomeTabStateConstants
-                                                            .textColorPrimary,
+                                                    color: textPrimary,
                                                     height: 1.25,
                                                   ),
                                                 ),
@@ -3714,10 +5400,8 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                                               textAlign: TextAlign.right,
                                               maxLines: 2,
                                               overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                color:
-                                                    ClientHomeTabStateConstants
-                                                        .textColorSecondary,
+                                              style: TextStyle(
+                                                color: textSecondary,
                                                 fontWeight: FontWeight.w600,
                                                 fontSize: 12,
                                                 height: 1.35,
@@ -3744,8 +5428,28 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
 }
 
 abstract final class ClientHomeTabStateConstants {
-  static const Color primaryColor = AppThemeArabic.clientPrimary;
-  static const Color accentColor = AppThemeArabic.clientAccent;
-  static const Color textColorPrimary = AppThemeArabic.clientTextPrimary;
-  static const Color textColorSecondary = AppThemeArabic.clientTextSecondary;
+  static const Color primaryColor = ClientColors.primary;
+  static const Color accentColor = ClientColors.accent;
+  static const Color textColorPrimary = Colors.white;
+  static const Color textColorSecondary = ClientColors.textSecondary;
+}
+
+// ── Pinned header delegate (for search bar) ──────────────────────────────────
+class _SimplePinnedDelegate extends SliverPersistentHeaderDelegate {
+  const _SimplePinnedDelegate({required this.child, required this.height});
+  final Widget child;
+  final double height;
+
+  @override
+  double get minExtent => height;
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(BuildContext ctx, double shrinkOffset, bool overlapsContent) =>
+      child;
+
+  @override
+  bool shouldRebuild(_SimplePinnedDelegate old) =>
+      old.height != height || old.child != child;
 }

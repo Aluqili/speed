@@ -32,7 +32,7 @@
     },
     "client_min_build_android": {
       "defaultValue": {
-        "value": "14"
+        "value": "16"
       },
       "valueType": "NUMBER"
     },
@@ -131,6 +131,12 @@
         "value": "khartoum"
       },
       "valueType": "STRING"
+    },
+    "client_home_show_offers_section": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
     },
     "client_state_rollout_block_message": {
       "defaultValue": {

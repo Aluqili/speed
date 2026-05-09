@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../الثيم/client_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'add_new_address_screen.dart';
 import 'address_details_screen.dart';
 
@@ -12,16 +12,16 @@ class AddressSelectionScreen extends StatelessWidget {
   final Function(Map<String, dynamic>)? onAddressSelected;
 
   const AddressSelectionScreen({
-    Key? key,
+    super.key,
     required this.userId,
     required this.userType,
     this.isSelecting = false,
     this.onAddressSelected, // تم إضافة المعامل الجديد
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
-    const primaryColor = AppThemeArabic.clientPrimary;
+    const primaryColor = ClientColors.primary;
     final collectionPath = '${userType}s';
 
     return Directionality(
@@ -112,7 +112,7 @@ class AddressSelectionScreen extends StatelessWidget {
                         ),
                         child: ListTile(
                               leading: const Icon(Icons.location_on,
-                                color: AppThemeArabic.clientPrimary),
+                                color: ClientColors.primary),
                           title: Row(
                             children: [
                               Expanded(
@@ -160,10 +160,10 @@ class AddressSelectionScreen extends StatelessWidget {
   }
 
   Widget _buildEmptyState(BuildContext context) {
-    return Center(
+    return const Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: const [
+        children: [
           Icon(Icons.location_off, size: 80, color: Colors.grey),
           SizedBox(height: 16),
           Text('لا توجد عناوين محفوظة.',

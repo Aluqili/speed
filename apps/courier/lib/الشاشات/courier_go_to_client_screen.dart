@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -21,11 +22,11 @@ class CourierGoToClientScreen extends StatefulWidget {
   final String driverId;
 
   const CourierGoToClientScreen({
-    Key? key,
+    super.key,
     required this.orderId,
     this.clientLocation,
     required this.driverId,
-  }) : super(key: key);
+  });
 
   @override
   State<CourierGoToClientScreen> createState() =>
@@ -36,6 +37,9 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
   SmartLocationTracker? tracker;
   GoogleMapController? _mapController;
   CourierMarkerIcons? _markerIcons;
+  List<LatLng> _routePoints = const [];
+  String _routeKey = '';
+  bool _fetchingRoute = false;
 
   @override
   void initState() {
@@ -143,6 +147,79 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
         80,
       ),
     );
+  }
+
+  String _routeCacheKey(LatLng origin, LatLng destination) {
+    String r(double value) => value.toStringAsFixed(4);
+    return '${r(origin.latitude)},${r(origin.longitude)}:${r(destination.latitude)},${r(destination.longitude)}';
+  }
+
+  Future<void> _ensureRoute(LatLng origin, LatLng destination) async {
+    final key = _routeCacheKey(origin, destination);
+    if (_fetchingRoute || (_routeKey == key && _routePoints.length >= 2)) {
+      return;
+    }
+
+    _fetchingRoute = true;
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('estimateRoute');
+      final result = await callable.call({
+        'origin': {'lat': origin.latitude, 'lng': origin.longitude},
+        'destination': {
+          'lat': destination.latitude,
+          'lng': destination.longitude,
+        },
+      }).timeout(const Duration(seconds: 5));
+      final data = Map<String, dynamic>.from(result.data as Map);
+      final points =
+          _decodePolyline((data['encodedPolyline'] ?? '').toString());
+      if (!mounted) return;
+      setState(() {
+        _routeKey = key;
+        _routePoints = points.length >= 2 ? points : [origin, destination];
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _routeKey = key;
+        _routePoints = [origin, destination];
+      });
+    } finally {
+      _fetchingRoute = false;
+    }
+  }
+
+  List<LatLng> _decodePolyline(String encoded) {
+    if (encoded.isEmpty) return const [];
+    final points = <LatLng>[];
+    var index = 0;
+    var lat = 0;
+    var lng = 0;
+
+    while (index < encoded.length) {
+      var shift = 0;
+      var result = 0;
+      int b;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20 && index < encoded.length);
+      lat += (result & 1) != 0 ? ~(result >> 1) : result >> 1;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20 && index < encoded.length);
+      lng += (result & 1) != 0 ? ~(result >> 1) : result >> 1;
+
+      points.add(LatLng(lat / 1e5, lng / 1e5));
+    }
+    return points;
   }
 
   Future<Map<String, dynamic>?> _fetchOrderData() async {
@@ -483,6 +560,16 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
           final driverFee = courierToDouble(
             orderData['deliveryFeeForDriver'] ?? orderData['deliveryFee'],
           );
+          if (restaurantLocation != null && clientLocation != null) {
+            Future.microtask(
+                () => _ensureRoute(restaurantLocation, clientLocation));
+          }
+          final routePoints = _routePoints.length >= 2
+              ? _routePoints
+              : [
+                  if (restaurantLocation != null) restaurantLocation,
+                  if (clientLocation != null) clientLocation,
+                ];
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -583,9 +670,12 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                               Polyline(
                                 polylineId:
                                     const PolylineId('restaurant_client'),
-                                points: [restaurantLocation, clientLocation],
+                                points: routePoints,
                                 color: AppThemeArabic.courierPrimary,
                                 width: 6,
+                                jointType: JointType.round,
+                                startCap: Cap.roundCap,
+                                endCap: Cap.roundCap,
                               ),
                             },
                       onMapCreated: (controller) {

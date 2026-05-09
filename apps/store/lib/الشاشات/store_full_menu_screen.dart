@@ -114,9 +114,12 @@ class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
                 const SnackBar(content: Text('تم إرسال القائمة للاعتماد')),
               );
             },
-            icon: const Icon(Icons.send, color: Colors.white),
+            icon: const Icon(Icons.send, color: AppThemeArabic.storePrimary),
             label: const Text('أرسل للاعتماد',
-                style: TextStyle(color: Colors.white)),
+                style: TextStyle(
+                  color: AppThemeArabic.storePrimary,
+                  fontWeight: FontWeight.w800,
+                )),
           ),
         ],
       ),

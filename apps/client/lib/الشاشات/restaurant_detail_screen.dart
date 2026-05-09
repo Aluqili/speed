@@ -1,11 +1,12 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import '../الثيم/client_theme.dart';
 import 'cart_provider.dart';
-import 'package:intl/intl.dart' show DateFormat, NumberFormat;
+import 'package:intl/intl.dart' show NumberFormat;
 import 'client_cart_screen.dart';
 
 class RestaurantDetailScreen extends StatefulWidget {
@@ -16,26 +17,34 @@ class RestaurantDetailScreen extends StatefulWidget {
   final String clientId;
 
   const RestaurantDetailScreen({
-    Key? key,
+    super.key,
     required this.restaurantId,
     required this.name,
     required this.image,
     required this.offers,
     required this.clientId,
-  }) : super(key: key);
+  });
 
   @override
   State<RestaurantDetailScreen> createState() => _RestaurantDetailScreenState();
 }
 
 class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
-  static const Color primaryColor = AppThemeArabic.clientPrimary;
-  static const Color accentColor = AppThemeArabic.clientAccent;
-  static const Color backgroundColor = AppThemeArabic.clientBackground;
-  static const Color cardColor = Colors.white;
-  static const Color textColorPrimary = Color(0xFF1A1D26);
-  static const Color textColorSecondary = Color(0xFF6B7280);
-  static const Color closedColor = Color(0xFFFF3B30);
+  static const Color primaryColor = ClientColors.primary;
+  static const Color accentColor = ClientColors.accent;
+  static const Color closedColor = ClientColors.error;
+  static const Color openColor = ClientColors.success;
+
+  bool _isDark = false;
+  Color get _bg => _isDark ? ClientColors.background : ClientColors.lightBackground;
+  Color get _cardBg => _isDark ? ClientColors.surface : Colors.white;
+  Color get _softSurface =>
+      _isDark ? const Color(0xFF24140A) : const Color(0xFFFFF8F3);
+  Color get _textPrimary => _isDark ? Colors.white : ClientColors.lightTextPrimary;
+  Color get _textSecondary => _isDark ? ClientColors.textSecondary : ClientColors.lightTextSecondary;
+  Color get _chipBg => _isDark ? const Color(0x1AFFFFFF) : const Color(0xFFFFF8F3);
+  Color get _chipBorder => _isDark ? const Color(0x33FF6B00) : const Color(0x33FF6B00);
+
   static const List<String> _globalCategoryOrder = [
     'كل الأصناف',
     'الوجبات الرئيسية',
@@ -58,12 +67,39 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   final _searchController = TextEditingController();
   bool isClosed = false;
   String statusText = '';
-  Color statusColor = Colors.green;
+  Color statusColor = ClientColors.success;
   double? _ratingAverage;
   int _ratingCount = 0;
   List<Map<String, dynamic>> _offerHighlights = [];
+  String _restaurantImage = '';
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _restaurantSubscription;
+
+  Map<String, dynamic>? _asStringMap(dynamic value) {
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
+  }
+
+  double? _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value.trim());
+    return null;
+  }
+
+  int? _asInt(dynamic value) {
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value.trim());
+    return null;
+  }
+
+  String _cleanImageUrl(dynamic value) {
+    final text = (value ?? '').toString().trim();
+    if (text.isEmpty || text.toLowerCase() == 'null') return '';
+    final uri = Uri.tryParse(text);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) return '';
+    if (uri.scheme != 'http' && uri.scheme != 'https') return '';
+    return text;
+  }
 
   @override
   void initState() {
@@ -86,41 +122,92 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         .listen((doc) {
       final resolved = _resolveRestaurantStatus(doc.data());
       if (!mounted) return;
+      final data = doc.data() ?? const <String, dynamic>{};
+      final rawHighlights = data['offerHighlights'];
+      final highlightsSource =
+          rawHighlights is Iterable ? rawHighlights : const [];
+      final highlights = highlightsSource
+          .whereType<Map>()
+          .map((entry) => Map<String, dynamic>.from(entry))
+          .toList();
+      final firstOfferImage =
+          highlights.isEmpty ? '' : _cleanImageUrl(highlights.first['imageUrl']);
+      final resolvedImage = [
+        data['coverImage'],
+        data['logoImageUrl'],
+        data['imageUrl'],
+        data['image'],
+        firstOfferImage,
+      ].map(_cleanImageUrl).firstWhere((url) => url.isNotEmpty, orElse: () => '');
+
       setState(() {
         isClosed = resolved['isClosed'] as bool;
         statusText = resolved['text'] as String;
         statusColor = resolved['color'] as Color;
-        _ratingAverage = ((doc.data()?['ratingAverage'] ??
-                doc.data()?['averageRating']) as num?)
-            ?.toDouble();
+        _ratingAverage = _asDouble(data['ratingAverage']) ??
+            _asDouble(data['averageRating']);
         _ratingCount =
-            ((doc.data()?['ratingCount'] ?? doc.data()?['reviewCount']) as num?)
-                    ?.toInt() ??
-                0;
-        _offerHighlights =
-            ((doc.data()?['offerHighlights'] as List?) ?? const [])
-                .whereType<Map>()
-                .map((entry) => Map<String, dynamic>.from(entry))
-                .toList();
+            _asInt(data['ratingCount']) ?? _asInt(data['reviewCount']) ?? 0;
+        _offerHighlights = highlights;
+        _restaurantImage = resolvedImage;
       });
     });
   }
 
-  String _formatOfferWindow(dynamic startsAt, dynamic endsAt) {
-    String format(dynamic value) {
-      if (value is Timestamp) {
-        final date = value.toDate();
-        return DateFormat('d/M h:mm a', 'ar').format(date);
-      }
-      return '';
+  String get _heroImage {
+    if (_restaurantImage.trim().isNotEmpty) return _restaurantImage.trim();
+    final widgetImage = _cleanImageUrl(widget.image);
+    if (widgetImage.isNotEmpty) return widgetImage;
+    if (_offerHighlights.isNotEmpty) {
+      final offerImage = _cleanImageUrl(_offerHighlights.first['imageUrl']);
+      if (offerImage.isNotEmpty) return offerImage;
+    }
+    return '';
+  }
+
+  String _formatOfferDiscountLabel(Map<String, dynamic> offer) {
+    final discountType =
+        (offer['discountType'] ?? '').toString().trim().toLowerCase();
+    final discountValue = _asDouble(offer['discountValue']) ?? 0;
+    if (discountType == 'percent' && discountValue > 0) {
+      return 'خصم ${_formatPercentValue(discountValue)}%';
     }
 
-    final start = format(startsAt);
-    final end = format(endsAt);
-    if (start.isEmpty && end.isEmpty) return '';
-    if (start.isEmpty) return 'ينتهي $end';
-    if (end.isEmpty) return 'يبدأ $start';
-    return '$start - $end';
+    final badgeText = (offer['badgeText'] ?? '').toString().trim();
+    final percentMatch =
+        RegExp(r'([0-9]+(?:[.,][0-9]+)?)\s*[%٪]').firstMatch(badgeText);
+    if (percentMatch == null) {
+      return '';
+    }
+    final rawValue = percentMatch.group(1)!.replaceAll(',', '.');
+    final parsedValue = double.tryParse(rawValue);
+    final valueText = parsedValue == null
+        ? percentMatch.group(1)!
+        : _formatPercentValue(parsedValue);
+    return 'خصم $valueText%';
+  }
+
+  String _formatPercentValue(double value) {
+    return value % 1 == 0 ? value.toInt().toString() : value.toStringAsFixed(1);
+  }
+
+  String _offerDisplayText(
+    Map<String, dynamic> offer, {
+    required String title,
+    required String discountLabel,
+  }) {
+    final candidates = [
+      offer['description'],
+      offer['offerText'],
+      offer['text'],
+      offer['body'],
+    ];
+    for (final value in candidates) {
+      final text = (value ?? '').toString().trim();
+      if (text.isEmpty || text == title || text == discountLabel) continue;
+      return text;
+    }
+    return '';
   }
 
   Widget _buildOfferHighlightsSection() {
@@ -134,24 +221,25 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         margin: const EdgeInsets.only(top: 14),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFF7ED),
+          color: _softSurface,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: accentColor.withOpacity(0.2)),
+          border: Border.all(color: accentColor.withValues(alpha: 0.2)),
         ),
         child: Row(
+          textDirection: TextDirection.rtl,
           children: [
+            const Icon(Icons.local_offer_rounded, color: accentColor),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 fallbackOffersText,
                 textAlign: TextAlign.right,
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w700,
-                  color: textColorPrimary,
+                  color: _textPrimary,
                 ),
               ),
             ),
-            const SizedBox(width: 10),
-            const Icon(Icons.local_offer_rounded, color: accentColor),
           ],
         ),
       );
@@ -162,56 +250,61 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       children: [
         const SizedBox(height: 14),
         Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          textDirection: TextDirection.rtl,
           children: [
-            const Spacer(),
-            const Text(
+            const Icon(Icons.local_offer_rounded, color: accentColor),
+            const SizedBox(width: 8),
+            Text(
               'العروض الحالية',
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w800,
-                color: textColorPrimary,
+                color: _textPrimary,
               ),
             ),
-            const SizedBox(width: 8),
-            const Icon(Icons.local_offer_rounded, color: accentColor),
           ],
         ),
         const SizedBox(height: 12),
         ..._offerHighlights.map((offer) {
-          final imageUrl = (offer['imageUrl'] ?? '').toString().trim();
-          final badgeText = (offer['badgeText'] ?? '').toString().trim();
-          final summaryText = (offer['summaryText'] ?? '').toString().trim();
-          final description = (offer['description'] ?? '').toString().trim();
-          final title = (offer['title'] ?? '').toString().trim();
-          final windowText =
-              _formatOfferWindow(offer['startsAt'], offer['endsAt']);
+          final imageUrl = _cleanImageUrl(offer['imageUrl']);
+          final rawTitle = (offer['title'] ?? '').toString().trim();
+          final discountLabel = _formatOfferDiscountLabel(offer);
+          final title = rawTitle.isNotEmpty ? rawTitle : 'عرض متاح';
+          final bodyText = _offerDisplayText(
+            offer,
+            title: title,
+            discountLabel: discountLabel,
+          );
 
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _softSurface,
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: accentColor.withOpacity(0.22)),
+              border: Border.all(color: accentColor.withValues(alpha: 0.22)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withValues(alpha: 0.04),
                   blurRadius: 14,
                   offset: const Offset(0, 6),
                 ),
               ],
             ),
             child: Row(
+              textDirection: TextDirection.rtl,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (imageUrl.isNotEmpty)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: Image.network(
-                      imageUrl,
+                    child: CachedNetworkImage(
+                      imageUrl: imageUrl,
                       width: 88,
                       height: 88,
                       fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => const Icon(Icons.fastfood_rounded, size: 40),
                     ),
                   ),
                 if (imageUrl.isNotEmpty) const SizedBox(width: 12),
@@ -220,56 +313,50 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Row(
+                        textDirection: TextDirection.rtl,
                         children: [
-                          if (badgeText.isNotEmpty)
+                          Expanded(
+                            child: Text(
+                              title.isEmpty ? 'عرض متاح' : title,
+                              textAlign: TextAlign.right,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: _textPrimary,
+                              ),
+                            ),
+                          ),
+                          if (discountLabel.isNotEmpty)
+                            const SizedBox(width: 8),
+                          if (discountLabel.isNotEmpty)
                             Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 6),
                               decoration: BoxDecoration(
-                                color: accentColor.withOpacity(0.18),
+                                color: accentColor.withValues(alpha: 0.18),
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
-                                badgeText,
-                                style: const TextStyle(
-                                  color: textColorPrimary,
+                                discountLabel,
+                                style: TextStyle(
+                                  color: _textPrimary,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
                             ),
-                          const Spacer(),
-                          Flexible(
-                            child: Text(
-                              title,
-                              textAlign: TextAlign.right,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: textColorPrimary,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        summaryText.isNotEmpty ? summaryText : description,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          color: textColorSecondary,
-                          height: 1.4,
-                        ),
-                      ),
-                      if (windowText.isNotEmpty) ...[
+                      if (bodyText.isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Text(
-                          windowText,
+                          bodyText,
                           textAlign: TextAlign.right,
-                          style: const TextStyle(
-                            color: primaryColor,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
+                          style: TextStyle(
+                            color: _textSecondary,
+                            height: 1.4,
                           ),
                         ),
                       ],
@@ -306,7 +393,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       return {
         'isClosed': true,
         'text': 'تعذر تحميل حالة المطعم',
-        'color': Colors.red,
+        'color': closedColor,
       };
     }
 
@@ -314,18 +401,18 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       return {
         'isClosed': true,
         'text': 'المطعم مغلق مؤقتًا',
-        'color': Colors.orange,
+        'color': const Color(0xFFF59E0B),
       };
     }
 
-    final hours = data['workingHours'] as Map<String, dynamic>?;
+    final hours = _asStringMap(data['workingHours']);
     final todayKey = _getDayKey(DateTime.now().weekday);
-    final today = hours?[todayKey] as Map<String, dynamic>?;
+    final today = _asStringMap(hours?[todayKey]);
     if (today == null) {
       return {
         'isClosed': true,
         'text': 'المطعم مغلق اليوم',
-        'color': Colors.red,
+        'color': closedColor,
       };
     }
 
@@ -334,7 +421,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       return {
         'isClosed': true,
         'text': 'المطعم مغلق اليوم',
-        'color': Colors.red,
+        'color': closedColor,
       };
     }
 
@@ -343,7 +430,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       return {
         'isClosed': true,
         'text': 'المطعم مغلق - وقت غير معروف',
-        'color': Colors.red,
+        'color': closedColor,
       };
     }
 
@@ -356,7 +443,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         return {
           'isClosed': false,
           'text': 'المطعم مفتوح الآن',
-          'color': Colors.green,
+          'color': openColor,
         };
       }
     }
@@ -366,14 +453,14 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       return {
         'isClosed': true,
         'text': 'المطعم مغلق الآن - يفتح الساعة ${nextOpening['label']}',
-        'color': Colors.red,
+        'color': closedColor,
       };
     }
 
     return {
       'isClosed': true,
       'text': 'المطعم أغلق لهذا اليوم',
-      'color': Colors.red,
+      'color': closedColor,
     };
   }
 
@@ -398,8 +485,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
 
     if (status == 'صباحي ومسائي' ||
         (dayData['morning'] is Map && dayData['evening'] is Map)) {
-      final morning = dayData['morning'] as Map<String, dynamic>?;
-      final evening = dayData['evening'] as Map<String, dynamic>?;
+      final morning = _asStringMap(dayData['morning']);
+      final evening = _asStringMap(dayData['evening']);
       addRange(morning?['open'], morning?['close']);
       addRange(evening?['open'], evening?['close']);
       return ranges;
@@ -707,7 +794,6 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
 
   Widget _buildCategoryChip({
     required String label,
-    required int count,
     required bool selected,
     required VoidCallback onTap,
   }) {
@@ -718,15 +804,15 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? primaryColor : Colors.white,
+          color: selected ? primaryColor : _chipBg,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: selected ? primaryColor : const Color(0xFFE5E7EB),
+            color: selected ? primaryColor : _chipBorder,
           ),
           boxShadow: selected
               ? [
                   BoxShadow(
-                    color: primaryColor.withOpacity(0.18),
+                    color: primaryColor.withValues(alpha: 0.25),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -735,29 +821,12 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          textDirection: TextDirection.rtl,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: selected
-                    ? Colors.white.withOpacity(0.2)
-                    : const Color(0xFFF3F4F6),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                count.toString(),
-                style: TextStyle(
-                  color: selected ? Colors.white : textColorSecondary,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
             Text(
               label,
               style: TextStyle(
-                color: selected ? Colors.white : textColorPrimary,
+                color: selected ? Colors.white : _textPrimary,
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
               ),
@@ -772,29 +841,14 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: primaryColor.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              '${section.items.length} صنف',
-              style: const TextStyle(
-                color: primaryColor,
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
-            ),
-          ),
-          const Spacer(),
           Text(
             section.title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w800,
-              color: textColorPrimary,
+              color: _textPrimary,
             ),
             textAlign: TextAlign.right,
           ),
@@ -814,20 +868,18 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         width: 34,
         height: 34,
         decoration: BoxDecoration(
-          color: enabled
-              ? primaryColor.withOpacity(0.08)
-              : const Color(0xFFF3F4F6),
+          color: enabled ? primaryColor.withValues(alpha: 0.08) : _chipBg,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: enabled
-                ? primaryColor.withOpacity(0.3)
-                : const Color(0xFFE5E7EB),
+                ? primaryColor.withValues(alpha: 0.3)
+                : _chipBorder,
           ),
         ),
         child: Icon(
           icon,
           size: 18,
-          color: enabled ? primaryColor : Colors.grey[400],
+          color: enabled ? primaryColor : _textSecondary.withValues(alpha: 0.55),
         ),
       ),
     );
@@ -851,17 +903,22 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     final quantity = hasSizes
         ? cartProvider.getQuantityByMenuItem(widget.restaurantId, doc.id)
         : cartProvider.getQuantity(itemId);
-    final imageProvider = itemImage.isNotEmpty ? NetworkImage(itemImage) : null;
+    final imageProvider = itemImage.isNotEmpty ? CachedNetworkImageProvider(itemImage) : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Container(
         decoration: BoxDecoration(
-          color: cardColor,
+          color: _cardBg,
           borderRadius: BorderRadius.circular(22),
+          border: _isDark
+              ? Border.all(color: const Color(0x1AFF6B00))
+              : Border.all(color: const Color(0x0F000000)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: _isDark
+                  ? Colors.black.withValues(alpha: 0.15)
+                  : Colors.black.withValues(alpha: 0.05),
               blurRadius: 18,
               offset: const Offset(0, 8),
             ),
@@ -884,17 +941,17 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                         errorBuilder: (_, __, ___) => Container(
                           width: 104,
                           height: 104,
-                          color: const Color(0xFFF3F4F6),
+                          color: _softSurface,
                           child:
-                              Icon(Icons.fastfood, color: Colors.grey[500], size: 34),
+                              Icon(Icons.fastfood, color: primaryColor, size: 34),
                         ),
                       )
                     : Container(
                         width: 104,
                         height: 104,
-                        color: const Color(0xFFF3F4F6),
-                        child: Icon(Icons.fastfood,
-                            color: Colors.grey[500], size: 34),
+                        color: _softSurface,
+                        child: const Icon(Icons.fastfood,
+                            color: primaryColor, size: 34),
                       ),
               ),
               const SizedBox(width: 12),
@@ -903,13 +960,29 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Row(
+                      textDirection: TextDirection.rtl,
                       children: [
+                        Flexible(
+                          child: Text(
+                            itemName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              color: _textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              height: 1.25,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
                         if (data['available'] == false)
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: closedColor.withOpacity(0.12),
+                              color: closedColor.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: const Text(
@@ -921,21 +994,6 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                               ),
                             ),
                           ),
-                        const Spacer(),
-                        Flexible(
-                          child: Text(
-                            itemName,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(
-                              color: textColorPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              height: 1.25,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -948,7 +1006,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: accentColor.withOpacity(0.12),
+                            color: accentColor.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
@@ -964,15 +1022,16 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
+                            color: _chipBg,
                             borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: _chipBorder),
                           ),
                           child: Text(
                             hasSizes
                                 ? _sizesSummary(sizes)
                                 : '${NumberFormat.decimalPattern().format(itemPrice)} ج.س',
-                            style: const TextStyle(
-                              color: textColorSecondary,
+                            style: TextStyle(
+                              color: _textSecondary,
                               fontWeight: FontWeight.w700,
                               fontSize: 12,
                             ),
@@ -987,8 +1046,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          color: textColorSecondary,
+                        style: TextStyle(
+                          color: _textSecondary,
                           fontSize: 13,
                           height: 1.45,
                         ),
@@ -1005,10 +1064,9 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 8),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
+                              color: _chipBg,
                               borderRadius: BorderRadius.circular(14),
-                              border:
-                                  Border.all(color: const Color(0xFFE5E7EB)),
+                              border: Border.all(color: _chipBorder),
                             ),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -1016,8 +1074,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                               children: [
                                 Text(
                                   _sizeLabel(entry.key),
-                                  style: const TextStyle(
-                                    color: textColorPrimary,
+                                  style: TextStyle(
+                                    color: _textPrimary,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 12,
                                   ),
@@ -1039,7 +1097,30 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                     ],
                     const SizedBox(height: 12),
                     Row(
+                      textDirection: TextDirection.rtl,
                       children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: quantity > 0
+                                ? primaryColor.withValues(alpha: 0.1)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            quantity > 0 ? 'في السلة: $quantity' : 'أضف للسلة',
+                            style: TextStyle(
+                              color: quantity > 0
+                                  ? primaryColor
+                                  : _textSecondary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
                         _qtyButton(
                           icon: Icons.add_rounded,
                           enabled: !isClosed && data['available'] != false,
@@ -1076,8 +1157,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: Text(
                             quantity.toString(),
-                            style: const TextStyle(
-                              color: textColorPrimary,
+                            style: TextStyle(
+                              color: _textPrimary,
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
                             ),
@@ -1100,28 +1181,6 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                             }
                             await cartProvider.removeOneItem(itemId);
                           },
-                        ),
-                        const Spacer(),
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: quantity > 0
-                                ? primaryColor.withOpacity(0.1)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            quantity > 0 ? 'في السلة: $quantity' : 'أضف للسلة',
-                            style: TextStyle(
-                              color: quantity > 0
-                                  ? primaryColor
-                                  : textColorSecondary,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
-                          ),
                         ),
                       ],
                     ),
@@ -1373,11 +1432,12 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    _isDark = Theme.of(context).brightness == Brightness.dark;
     final cartProvider = Provider.of<CartProvider>(context);
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: backgroundColor,
+        backgroundColor: _bg,
         body: CustomScrollView(
           slivers: [
             SliverAppBar(
@@ -1388,15 +1448,23 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                 background: Stack(
                   fit: StackFit.expand,
                   children: [
-                    widget.image.isNotEmpty
-                        ? Image.network(widget.image, fit: BoxFit.cover)
+                    _heroImage.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: _heroImage,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => Container(
+                              color: primaryColor.withValues(alpha: 0.10),
+                              child: const Icon(Icons.storefront,
+                                  size: 56, color: primaryColor),
+                            ),
+                          )
                         : Container(
-                            color: Colors.grey[200],
-                            child: Icon(Icons.storefront,
-                                size: 56, color: Colors.grey[500]),
+                            color: primaryColor.withValues(alpha: 0.10),
+                            child: const Icon(Icons.storefront,
+                                size: 56, color: primaryColor),
                           ),
                     Container(
-                      color: Colors.black.withOpacity(0.3),
+                      color: Colors.black.withValues(alpha: 0.3),
                     ),
                     Align(
                       alignment: Alignment.bottomRight,
@@ -1414,7 +1482,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 10, vertical: 6),
                                   decoration: BoxDecoration(
-                                    color: statusColor.withOpacity(0.85),
+                                    color: statusColor.withValues(alpha: 0.85),
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                   child: Row(
@@ -1423,7 +1491,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                       Container(
                                         width: 6,
                                         height: 6,
-                                        decoration: BoxDecoration(
+                                        decoration: const BoxDecoration(
                                           color: Colors.white,
                                           shape: BoxShape.circle,
                                         ),
@@ -1448,7 +1516,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                     vertical: 6,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.16),
+                                    color: Colors.white.withValues(alpha: 0.16),
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                   child: Row(
@@ -1503,20 +1571,20 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    const Text(
+                    Text(
                       'استكشف الأصناف',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 17,
-                        color: textColorPrimary,
+                        color: _textPrimary,
                       ),
                       textAlign: TextAlign.right,
                     ),
                     const SizedBox(height: 4),
-                    const Text(
+                    Text(
                       'القائمة مرتبة تلقائياً حسب التصنيف لسهولة التصفح.',
                       style: TextStyle(
-                        color: textColorSecondary,
+                        color: _textSecondary,
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
                       ),
@@ -1531,21 +1599,21 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                       onChanged: (v) => setState(() => _searchQuery = v),
                       decoration: InputDecoration(
                         hintText: 'ابحث في القائمة...',
-                        hintStyle: const TextStyle(
-                            color: Colors.grey, fontSize: 14),
+                        hintStyle:
+                            TextStyle(color: _textSecondary, fontSize: 14),
                         prefixIcon: _searchQuery.isNotEmpty
                             ? IconButton(
-                                icon: const Icon(Icons.close,
-                                    color: Colors.grey, size: 20),
+                                icon: Icon(Icons.close,
+                                    color: _textSecondary, size: 20),
                                 onPressed: () {
                                   _searchController.clear();
                                   setState(() => _searchQuery = '');
                                 },
                               )
-                            : const Icon(Icons.search,
-                                color: Colors.grey, size: 20),
+                            : Icon(Icons.search,
+                                color: _textSecondary, size: 20),
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: _softSurface,
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 12),
                         border: OutlineInputBorder(
@@ -1571,18 +1639,10 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                           return const SizedBox.shrink();
                         }
                         final categories = _sortedCategoriesFromDocs(items);
-                        final counts = <String, int>{};
-                        for (var doc in items) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          final category = _canonicalCategoryLabel(
-                              (data['category'] ?? '').toString());
-                          counts[category] = (counts[category] ?? 0) + 1;
-                        }
                         return SizedBox(
                           height: 52,
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
-                            reverse: true,
                             itemCount: categories.length + 1,
                             separatorBuilder: (_, __) =>
                                 const SizedBox(width: 8),
@@ -1590,7 +1650,6 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                               if (index == 0) {
                                 return _buildCategoryChip(
                                   label: 'كل الأصناف',
-                                  count: items.length,
                                   selected: _selectedCategory == null,
                                   onTap: () {
                                     setState(() {
@@ -1603,7 +1662,6 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                               final cat = categories[index - 1];
                               return _buildCategoryChip(
                                 label: cat,
-                                count: counts[cat] ?? 0,
                                 selected: _selectedCategory == cat,
                                 onTap: () {
                                   setState(() {
@@ -1683,7 +1741,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                     borderRadius: BorderRadius.circular(18),
                     boxShadow: [
                       BoxShadow(
-                        color: primaryColor.withOpacity(0.35),
+                        color: primaryColor.withValues(alpha: 0.35),
                         blurRadius: 16,
                         offset: const Offset(0, 6),
                       ),
@@ -1705,7 +1763,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(

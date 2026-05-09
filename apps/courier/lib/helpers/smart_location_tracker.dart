@@ -47,7 +47,11 @@ class SmartLocationTracker {
 
       final data = snapshot.data();
       final status = (data?['orderStatus'] ?? data?['status'] ?? '').toString();
-      if (status == 'picked_up' || status == 'arrived_to_client' || status == 'قيد التوصيل') {
+      if (status == 'courier_assigned' ||
+          status == 'pickup_ready' ||
+          status == 'picked_up' ||
+          status == 'arrived_to_client' ||
+          status == 'قيد التوصيل') {
         _startLocationStream(); // يبدأ التتبع
       } else if (status == 'delivered' || status == 'تم التوصيل') {
         stopTracking(); // يوقف التتبع تلقائيًا
@@ -61,7 +65,7 @@ class SmartLocationTracker {
     _positionStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
+        distanceFilter: 5,
       ),
     ).listen((Position position) {
       _maybeUpdateLocation(position);
@@ -75,7 +79,7 @@ class SmartLocationTracker {
 
     if (_lastLat != null && _lastLng != null) {
       final distance = Geolocator.distanceBetween(_lastLat!, _lastLng!, lat, lng);
-      if (distance < 50) return; // لا تحدّث إلا إذا تحرك أكثر من 50 متر
+      if (distance < 20) return; // لا تحدّث إلا إذا تحرك أكثر من 20 متر
     }
 
     // تحديث Firestore بموقع المندوب

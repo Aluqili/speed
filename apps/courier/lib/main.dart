@@ -38,6 +38,7 @@ class CourierApp extends StatelessWidget {
                 ? AppThemeArabic.courierFromSeed(seed, dark: true)
                 : AppThemeArabic.courierDarkTheme;
             return MaterialApp(
+              navigatorKey: PushNotificationService.navigatorKey,
               title: 'SpeedStar Courier',
               theme: theme,
               darkTheme: darkTheme,

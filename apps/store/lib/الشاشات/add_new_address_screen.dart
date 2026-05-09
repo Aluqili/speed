@@ -16,14 +16,14 @@ class AddNewAddressScreen extends StatefulWidget {
   final double? existingLongitude;
 
   const AddNewAddressScreen({
-    Key? key,
+    super.key,
     required this.userId,
     required this.userType,
     this.editAddressId,
     this.existingName,
     this.existingLatitude,
     this.existingLongitude,
-  }) : super(key: key);
+  });
 
   @override
   State<AddNewAddressScreen> createState() => _AddNewAddressScreenState();

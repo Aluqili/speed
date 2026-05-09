@@ -1334,8 +1334,10 @@ function getOrderLifecycleStatus(order) {
 function isActiveOrderStatus(status) {
   return [
     'pending',
+    'payment_review',
     'store_pending',
     'courier_searching',
+    'courier_offer_pending',
     'courier_assigned',
     'accepted',
     'pickup_ready',
@@ -4415,7 +4417,7 @@ async function loadCourierDetails(driverId) {
     const driver = driverSnap.data() || {};
     const ordersSnap = await safeGetDocs(query(collection(db, 'orders'), where('assignedDriverId', '==', driverId)));
     const orders = ordersSnap.docs.map((d) => d.data() || {});
-    const activeOrderStatuses = new Set(['courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client']);
+    const activeOrderStatuses = new Set(['courier_offer_pending', 'courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client']);
     const activeOrdersCount = orders.filter((o) => activeOrderStatuses.has(String(o.orderStatus || o.status || ''))).length;
     const todayAvailabilityMs = getCourierAvailableTodayMs(driver);
 
@@ -4586,7 +4588,7 @@ async function loadStoreDetails(storeId) {
     ]);
 
     const orders = ordersSnap.docs.map((d) => d.data() || {});
-    const activeOrderStatuses = new Set(['store_pending', 'courier_searching', 'courier_assigned', 'pickup_ready', 'picked_up']);
+    const activeOrderStatuses = new Set(['store_pending', 'courier_searching', 'courier_offer_pending', 'courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client']);
     const activeOrdersCount = orders.filter((o) => activeOrderStatuses.has(String(o.orderStatus || o.status || ''))).length;
 
     const image = store.commercialRecordImageUrl

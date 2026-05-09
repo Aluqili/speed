@@ -11,12 +11,12 @@ class CourierOrderMapScreen extends StatefulWidget {
   final double clientLng;
 
   const CourierOrderMapScreen({
-    Key? key,
+    super.key,
     required this.restaurantLat,
     required this.restaurantLng,
     required this.clientLat,
     required this.clientLng,
-  }) : super(key: key);
+  });
 
   @override
   State<CourierOrderMapScreen> createState() => _CourierOrderMapScreenState();

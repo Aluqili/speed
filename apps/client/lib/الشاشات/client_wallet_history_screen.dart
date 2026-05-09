@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../الثيم/client_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 String _walletStatusText(String status) {
   switch (status.trim().toLowerCase()) {
@@ -20,7 +20,7 @@ String _walletStatusText(String status) {
 
 class ClientWalletHistoryScreen extends StatefulWidget {
   final String clientId;
-  const ClientWalletHistoryScreen({Key? key, required this.clientId}) : super(key: key);
+  const ClientWalletHistoryScreen({super.key, required this.clientId});
 
   @override
   State<ClientWalletHistoryScreen> createState() => _ClientWalletHistoryScreenState();
@@ -39,10 +39,17 @@ class _ClientWalletHistoryScreenState extends State<ClientWalletHistoryScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('سجل المحفظة'),
-          backgroundColor: Colors.white,
+          title: const Text(
+            'سجل المحفظة',
+            style: TextStyle(
+              color: ClientColors.primary,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'Tajawal',
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.surface,
           centerTitle: true,
-          iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
+          iconTheme: const IconThemeData(color: ClientColors.primary),
           elevation: 1,
         ),
         body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -61,7 +68,7 @@ class _ClientWalletHistoryScreenState extends State<ClientWalletHistoryScreen> {
                       const Icon(
                         Icons.history_toggle_off,
                         size: 44,
-                        color: AppThemeArabic.clientPrimary,
+                        color: ClientColors.primary,
                       ),
                       const SizedBox(height: 12),
                       const Text(
@@ -99,7 +106,7 @@ class _ClientWalletHistoryScreenState extends State<ClientWalletHistoryScreen> {
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
-                    leading: Icon(Icons.account_balance_wallet, color: AppThemeArabic.clientPrimary),
+                    leading: const Icon(Icons.account_balance_wallet, color: ClientColors.primary),
                     title: Text('المبلغ: ${data['amount']} ج.س', style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(
                       'الحالة: ${_walletStatusText((data['status'] ?? '').toString())}\n'

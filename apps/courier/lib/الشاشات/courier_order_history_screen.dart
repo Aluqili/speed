@@ -8,8 +8,7 @@ import 'package:speedstar_core/speedstar_core.dart'
 class CourierOrderHistoryScreen extends StatelessWidget {
   final String driverId;
 
-  const CourierOrderHistoryScreen({Key? key, required this.driverId})
-      : super(key: key);
+  const CourierOrderHistoryScreen({super.key, required this.driverId});
 
   @override
   Widget build(BuildContext context) {

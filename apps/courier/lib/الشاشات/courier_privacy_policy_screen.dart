@@ -67,10 +67,10 @@ class CourierPrivacyPolicyScreen extends StatelessWidget {
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 8),
-                    SelectableText(
+                    const SelectableText(
                       _policyUrl,
                       style:
-                          const TextStyle(color: AppThemeArabic.clientPrimary),
+                          TextStyle(color: AppThemeArabic.clientPrimary),
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(
@@ -101,10 +101,10 @@ class CourierPrivacyPolicyScreen extends StatelessWidget {
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 8),
-                    SelectableText(
+                    const SelectableText(
                       _deletionUrl,
                       style:
-                          const TextStyle(color: AppThemeArabic.clientPrimary),
+                          TextStyle(color: AppThemeArabic.clientPrimary),
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(

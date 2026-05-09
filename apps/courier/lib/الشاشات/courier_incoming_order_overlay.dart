@@ -1,15 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:http/http.dart' as http;
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart'; // ✅ أُضيفت
 import 'package:audioplayers/audioplayers.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart'
@@ -26,7 +24,7 @@ class CourierIncomingOrderOverlay extends StatefulWidget {
   final String? currentStage;
 
   const CourierIncomingOrderOverlay({
-    Key? key,
+    super.key,
     required this.driverId,
     required this.orderId,
     required this.orderData,
@@ -34,7 +32,7 @@ class CourierIncomingOrderOverlay extends StatefulWidget {
     required this.restaurantLocation,
     required this.clientLocation,
     this.currentStage,
-  }) : super(key: key);
+  });
 
   @override
   State<CourierIncomingOrderOverlay> createState() =>
@@ -54,6 +52,14 @@ class _CourierIncomingOrderOverlayState
   GoogleMapController? _mapController;
   bool _isMapExpanded = false;
 
+  int _calculateDriverFee(double routeKm) {
+    if (routeKm < 2) return 2000;
+    if (routeKm < 5) return 2500;
+    if (routeKm < 10) return 3000;
+    if (routeKm < 14) return 3500;
+    return routeKm.ceil() * 250;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -70,23 +76,35 @@ class _CourierIncomingOrderOverlayState
 
   Future<void> _moveCameraToBounds() async {
     if (_mapController == null) return;
+    final points = [
+      widget.driverLocation,
+      widget.restaurantLocation,
+      widget.clientLocation,
+    ];
+    var minLat = points.first.latitude;
+    var maxLat = points.first.latitude;
+    var minLng = points.first.longitude;
+    var maxLng = points.first.longitude;
+
+    for (final point in points.skip(1)) {
+      if (point.latitude < minLat) minLat = point.latitude;
+      if (point.latitude > maxLat) maxLat = point.latitude;
+      if (point.longitude < minLng) minLng = point.longitude;
+      if (point.longitude > maxLng) maxLng = point.longitude;
+    }
+
+    if (minLat == maxLat) {
+      minLat -= 0.002;
+      maxLat += 0.002;
+    }
+    if (minLng == maxLng) {
+      minLng -= 0.002;
+      maxLng += 0.002;
+    }
+
     final bounds = LatLngBounds(
-      southwest: LatLng(
-        (widget.restaurantLocation.latitude < widget.clientLocation.latitude)
-            ? widget.restaurantLocation.latitude
-            : widget.clientLocation.latitude,
-        (widget.restaurantLocation.longitude < widget.clientLocation.longitude)
-            ? widget.restaurantLocation.longitude
-            : widget.clientLocation.longitude,
-      ),
-      northeast: LatLng(
-        (widget.restaurantLocation.latitude > widget.clientLocation.latitude)
-            ? widget.restaurantLocation.latitude
-            : widget.clientLocation.latitude,
-        (widget.restaurantLocation.longitude > widget.clientLocation.longitude)
-            ? widget.restaurantLocation.longitude
-            : widget.clientLocation.longitude,
-      ),
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
     );
     await _mapController!
         .animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
@@ -184,32 +202,88 @@ class _CourierIncomingOrderOverlayState
     if (mounted) Navigator.of(context).pop();
   }
 
-  Future<void> _drawRoute() async {
-    final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
-    final url = Uri.parse(
-      'https://maps.googleapis.com/maps/api/directions/json'
-      '?origin=${widget.restaurantLocation.latitude},${widget.restaurantLocation.longitude}'
-      '&destination=${widget.clientLocation.latitude},${widget.clientLocation.longitude}'
-      '&mode=driving&key=$apiKey',
-    );
-    final response = await http.get(url);
-    final data = json.decode(response.body);
-    if (data['routes'] != null && data['routes'].isNotEmpty) {
-      final points = data['routes'][0]['overview_polyline']['points'];
-      if (!mounted) return;
-      setState(() {
-        _polylines = {
-          Polyline(
-            polylineId: const PolylineId('route'),
-            points: _decodePolyline(points),
-            width: 8,
-            color: Colors.blueAccent,
-            startCap: Cap.roundCap,
-            endCap: Cap.roundCap,
-          ),
-        };
-      });
+  Future<Map<String, dynamic>?> _estimateRoute(
+    LatLng origin,
+    LatLng destination,
+  ) async {
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('estimateRoute');
+      final result = await callable.call({
+        'origin': {'lat': origin.latitude, 'lng': origin.longitude},
+        'destination': {
+          'lat': destination.latitude,
+          'lng': destination.longitude,
+        },
+      }).timeout(const Duration(seconds: 5));
+      return Map<String, dynamic>.from(result.data as Map);
+    } catch (_) {
+      return null;
     }
+  }
+
+  Future<void> _drawRoute() async {
+    final driverToRestaurant = await _estimateRoute(
+      widget.driverLocation,
+      widget.restaurantLocation,
+    );
+    final restaurantToClient = await _estimateRoute(
+      widget.restaurantLocation,
+      widget.clientLocation,
+    );
+
+    List<LatLng> routePoints(
+      Map<String, dynamic>? route,
+      LatLng fallbackStart,
+      LatLng fallbackEnd,
+    ) {
+      final encoded = (route?['encodedPolyline'] ?? '').toString();
+      final decoded = _decodePolyline(encoded);
+      return decoded.length >= 2 ? decoded : [fallbackStart, fallbackEnd];
+    }
+
+    final toRestaurantKm = ((driverToRestaurant?['distanceKm'] ?? 0) as num?)
+            ?.toDouble() ??
+        0;
+    final toClientKm =
+        ((restaurantToClient?['distanceKm'] ?? 0) as num?)?.toDouble() ?? 0;
+
+    if (!mounted) return;
+    setState(() {
+      if (toRestaurantKm > 0) _distanceToRestaurant = toRestaurantKm;
+      if (toClientKm > 0) {
+        _distanceToClient = toClientKm;
+        _driverFee = _calculateDriverFee(toClientKm);
+      }
+      _polylines = {
+        Polyline(
+          polylineId: const PolylineId('driver_restaurant'),
+          points: routePoints(
+            driverToRestaurant,
+            widget.driverLocation,
+            widget.restaurantLocation,
+          ),
+          width: 7,
+          color: Colors.green,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+          jointType: JointType.round,
+        ),
+        Polyline(
+          polylineId: const PolylineId('restaurant_client'),
+          points: routePoints(
+            restaurantToClient,
+            widget.restaurantLocation,
+            widget.clientLocation,
+          ),
+          width: 7,
+          color: Colors.blueAccent,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+          jointType: JointType.round,
+        ),
+      };
+    });
   }
 
   List<LatLng> _decodePolyline(String encoded) {
@@ -257,17 +331,7 @@ class _CourierIncomingOrderOverlayState
         ) /
         1000;
 
-    if (_distanceToClient < 2) {
-      _driverFee = 2000;
-    } else if (_distanceToClient < 5) {
-      _driverFee = 2500;
-    } else if (_distanceToClient < 10) {
-      _driverFee = 3000;
-    } else if (_distanceToClient < 14) {
-      _driverFee = 3500;
-    } else {
-      _driverFee = (_distanceToClient.ceil() * 250);
-    }
+    _driverFee = _calculateDriverFee(_distanceToClient);
 
     setState(() {});
   }
@@ -386,14 +450,14 @@ class _CourierIncomingOrderOverlayState
                               backgroundColor: Colors.white,
                               onPressed: () => setState(
                                   () => _isMapExpanded = !_isMapExpanded),
+                              tooltip: _isMapExpanded
+                                  ? 'تصغير الخريطة'
+                                  : 'توسيع الخريطة',
                               child: Icon(
                                   _isMapExpanded
                                       ? Icons.fullscreen_exit
                                       : Icons.fullscreen,
                                   color: Colors.blue),
-                              tooltip: _isMapExpanded
-                                  ? 'تصغير الخريطة'
-                                  : 'توسيع الخريطة',
                             ),
                           ),
                         ],

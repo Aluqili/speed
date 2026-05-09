@@ -1,12 +1,11 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
+﻿import 'package:flutter/material.dart';
+import '../الثيم/client_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:provider/provider.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 
 import '../الخدمات/payment_app_launcher.dart';
@@ -21,20 +20,19 @@ class PaymentScreen extends StatefulWidget {
   final bool clearCartOnSubmit;
 
   const PaymentScreen({
-    Key? key,
+    super.key,
     this.orderId,
     this.draftOrderData,
     this.clearCartOnSubmit = false,
-  })  : assert(orderId != null || draftOrderData != null),
-        super(key: key);
+  })  : assert(orderId != null || draftOrderData != null);
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
 
 class _PaymentScreenState extends State<PaymentScreen> {
-  static const Color primaryColor = AppThemeArabic.clientPrimary;
-  static const Color backgroundColor = AppThemeArabic.clientBackground;
+  static const Color primaryColor = ClientColors.primary;
+  static const Color backgroundColor = ClientColors.lightBackground;
   static const Color cardColor = Colors.white;
   static const String _paymentReviewStatus = 'قيد المراجعة';
   final _cloudinary = CloudinaryService.build();
@@ -997,7 +995,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           _summaryRow(
               'رسوم التوصيل', '${deliveryFee.toStringAsFixed(2)} ج.س'),
           if (largeOrderFee > 0)
-            _summaryRow('رسوم الطلبات الكبيرة',
+            _summaryRow('رسوم الخدمة',
                 '${largeOrderFee.toStringAsFixed(2)} ج.س'),
           if (discount > 0)
             _summaryRow('خصم الرمز الترويجي',
@@ -1088,7 +1086,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
               child: Scaffold(
                 backgroundColor: backgroundColor,
                 appBar: AppBar(
-                  backgroundColor: Colors.white,
+                  backgroundColor: Theme.of(context).colorScheme.surface,
                   elevation: 1,
                   centerTitle: true,
                   title: const Text('طريقة الدفع',
