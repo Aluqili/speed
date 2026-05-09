@@ -18,17 +18,18 @@ class AddressSelectionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const primaryColor = AppThemeArabic.clientPrimary;
+    const primaryColor = AppThemeArabic.storePrimary;
 
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: AppThemeArabic.clientBackground,
+        backgroundColor: AppThemeArabic.storeBackground,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
           centerTitle: true,
-          title: const Text('العناوين', style: TextStyle(color: Colors.black87)),
+          title:
+              const Text('العناوين', style: TextStyle(color: Colors.black87)),
           iconTheme: const IconThemeData(color: Colors.black87),
         ),
         body: StreamBuilder<DocumentSnapshot>(
@@ -52,7 +53,8 @@ class AddressSelectionScreen extends StatelessWidget {
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, addressSnapshot) {
-                if (!addressSnapshot.hasData || addressSnapshot.data!.docs.isEmpty) {
+                if (!addressSnapshot.hasData ||
+                    addressSnapshot.data!.docs.isEmpty) {
                   return _buildEmptyState(context);
                 }
 
@@ -80,7 +82,8 @@ class AddressSelectionScreen extends StatelessWidget {
                           await FirebaseFirestore.instance
                               .collection('restaurants')
                               .doc(restaurantId)
-                              .set({'defaultAddressId': addressId}, SetOptions(merge: true));
+                              .set({'defaultAddressId': addressId},
+                                  SetOptions(merge: true));
 
                           if (!context.mounted) return;
                           if (onAddressSelected != null) {
@@ -88,7 +91,8 @@ class AddressSelectionScreen extends StatelessWidget {
                           }
                           Navigator.pop(context, selectedAddressData);
                         } else {
-                          _showAddressOptions(context, addressId, address, isDefault);
+                          _showAddressOptions(
+                              context, addressId, address, isDefault);
                         }
                       },
                       child: Container(
@@ -104,7 +108,8 @@ class AddressSelectionScreen extends StatelessWidget {
                           ],
                         ),
                         child: ListTile(
-                          leading: const Icon(Icons.location_on, color: primaryColor),
+                          leading: const Icon(Icons.location_on,
+                              color: primaryColor),
                           title: Row(
                             children: [
                               Expanded(
@@ -114,7 +119,8 @@ class AddressSelectionScreen extends StatelessWidget {
                                 ),
                               ),
                               if (isDefault)
-                                const Icon(Icons.star, color: Colors.amber, size: 20),
+                                const Icon(Icons.star,
+                                    color: Colors.amber, size: 20),
                             ],
                           ),
                           subtitle: Text(
@@ -185,8 +191,10 @@ class AddressSelectionScreen extends StatelessWidget {
                     MaterialPageRoute(
                       builder: (_) => AddressDetailsScreen(
                         addressName: (address['addressName'] ?? '').toString(),
-                        latitude: (address['latitude'] as num?)?.toDouble() ?? 0,
-                        longitude: (address['longitude'] as num?)?.toDouble() ?? 0,
+                        latitude:
+                            (address['latitude'] as num?)?.toDouble() ?? 0,
+                        longitude:
+                            (address['longitude'] as num?)?.toDouble() ?? 0,
                       ),
                     ),
                   );
@@ -215,7 +223,8 @@ class AddressSelectionScreen extends StatelessWidget {
                     await FirebaseFirestore.instance
                         .collection('restaurants')
                         .doc(restaurantId)
-                        .set({'defaultAddressId': addressId}, SetOptions(merge: true));
+                        .set({'defaultAddressId': addressId},
+                            SetOptions(merge: true));
                   },
                 ),
             ],

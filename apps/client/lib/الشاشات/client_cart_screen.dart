@@ -1,4 +1,4 @@
-﻿// lib/screens/client_cart_screen.dart
+// lib/screens/client_cart_screen.dart
 
 import 'dart:async';
 import 'dart:math';
@@ -671,6 +671,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
               if ((i.sizeKey ?? '').isNotEmpty) 'sizeKey': i.sizeKey,
               if ((i.sizeLabel ?? '').isNotEmpty) 'sizeLabel': i.sizeLabel,
               'description': i.description,
+              if ((i.notes ?? '').trim().isNotEmpty) 'notes': i.notes!.trim(),
               'price': i.price,
               'quantity': i.quantity,
             })
@@ -1004,7 +1005,9 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.shopping_basket_outlined,
-                        size: 72, color: ClientColors.textSecondary.withValues(alpha: 0.3)),
+                        size: 72,
+                        color:
+                            ClientColors.textSecondary.withValues(alpha: 0.3)),
                     const SizedBox(height: 16),
                     Text('سلتك فارغة',
                         style: TextStyle(
@@ -1013,7 +1016,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                             color: Theme.of(context).colorScheme.onSurface)),
                     const SizedBox(height: 8),
                     const Text('أضف وجبات من المطاعم لتبدأ طلبك',
-                        style: TextStyle(color: ClientColors.textSecondary, fontSize: 14)),
+                        style: TextStyle(
+                            color: ClientColors.textSecondary, fontSize: 14)),
                     const SizedBox(height: 24),
                     OutlinedButton.icon(
                       onPressed: () => Navigator.pop(context),
@@ -1040,8 +1044,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
           decoration: BoxDecoration(
             color: Theme.of(context).cardColor,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.08),
@@ -1067,7 +1070,9 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
             const SizedBox(height: 6),
             _buildRow(
               'رسوم التوصيل',
-              _loadingDelivery ? null : '${_deliveryFee.toStringAsFixed(2)} ج.س',
+              _loadingDelivery
+                  ? null
+                  : '${_deliveryFee.toStringAsFixed(2)} ج.س',
               loading: _loadingDelivery,
             ),
             if (displayLargeOrderFee > 0) ...[
@@ -1095,13 +1100,13 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: ClientColors.textSecondary.withValues(alpha: 0.25),
+                  disabledBackgroundColor:
+                      ClientColors.textSecondary.withValues(alpha: 0.25),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)),
                   elevation: 0,
                   textStyle: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700),
+                      fontSize: 17, fontWeight: FontWeight.w700),
                 ),
                 child: _loadingDelivery
                     ? const SizedBox(
@@ -1118,8 +1123,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                           Text(
                             '${withDel.toStringAsFixed(2)} ج.س',
                             style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                                fontSize: 14),
+                                fontWeight: FontWeight.w500, fontSize: 14),
                           ),
                         ],
                       ),
@@ -1146,10 +1150,10 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
             autofocus: true,
             decoration: InputDecoration(
               hintText: 'مثال: بدون بصل، حار جداً...',
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 8),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
           ),
           actions: [
@@ -1279,7 +1283,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                         border: Border.all(
                           color: hasNotes
                               ? primaryColor.withValues(alpha: 0.25)
-                              : ClientColors.textSecondary.withValues(alpha: 0.15),
+                              : ClientColors.textSecondary
+                                  .withValues(alpha: 0.15),
                         ),
                       ),
                       child: Row(
@@ -1287,14 +1292,14 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
                           Icon(
                             Icons.sticky_note_2_outlined,
                             size: 13,
-                            color: hasNotes ? primaryColor : ClientColors.textSecondary,
+                            color: hasNotes
+                                ? primaryColor
+                                : ClientColors.textSecondary,
                           ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              hasNotes
-                                  ? item.notes!
-                                  : 'ملاحظة خاصة...',
+                              hasNotes ? item.notes! : 'ملاحظة خاصة...',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: hasNotes
@@ -1369,7 +1374,9 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         child: Icon(
           icon,
           size: 16,
-          color: onTap == null ? ClientColors.textSecondary.withValues(alpha: 0.35) : primaryColor,
+          color: onTap == null
+              ? ClientColors.textSecondary.withValues(alpha: 0.35)
+              : primaryColor,
         ),
       ),
     );

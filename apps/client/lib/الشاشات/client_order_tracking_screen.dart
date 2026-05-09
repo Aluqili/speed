@@ -9,9 +9,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:speedstar_core/speedstar_core.dart'
-    show formatUnifiedOrderCode;
+import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import '../الخدمات/route_estimate_service.dart';
+import '../الخدمات/map_marker_icon_factory.dart';
 import 'order_rating_sheet.dart';
 import 'chat_screen.dart';
 
@@ -42,8 +42,7 @@ BoxDecoration _trackingCardDecoration({
   );
 }
 
-class _ClientOrderTrackingScreenState
-    extends State<ClientOrderTrackingScreen> {
+class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
   StreamSubscription<DocumentSnapshot>? _orderSub;
   StreamSubscription<DocumentSnapshot>? _driverSub;
   LatLng? _clientLocation;
@@ -57,6 +56,8 @@ class _ClientOrderTrackingScreenState
   List<LatLng> _routePoints = const [];
   int? _routeDurationMinutes;
   int _routeGeneration = 0;
+  BitmapDescriptor? _driverMarkerIcon;
+  BitmapDescriptor? _clientMarkerIcon;
 
   String get _clientId => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -74,8 +75,27 @@ class _ClientOrderTrackingScreenState
   @override
   void initState() {
     super.initState();
+    _loadMarkerIcons();
     _initNotifications();
     _listenToOrder();
+  }
+
+  Future<void> _loadMarkerIcons() async {
+    final icons = await Future.wait([
+      MapMarkerIconFactory.create(
+        icon: Icons.delivery_dining_rounded,
+        color: ClientColors.primary,
+      ),
+      MapMarkerIconFactory.create(
+        icon: Icons.person_pin_circle_rounded,
+        color: const Color(0xFF12A150),
+      ),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _driverMarkerIcon = icons[0];
+      _clientMarkerIcon = icons[1];
+    });
   }
 
   Future<void> _initNotifications() async {
@@ -140,8 +160,7 @@ class _ClientOrderTrackingScreenState
             final cur = d['currentLocation'];
             final loc = d['location'];
             if (cur is Map && cur['lat'] != null && cur['lng'] != null) {
-              _driverLocation = LatLng(
-                  (cur['lat'] as num).toDouble(),
+              _driverLocation = LatLng((cur['lat'] as num).toDouble(),
                   (cur['lng'] as num).toDouble());
             } else if (loc is GeoPoint) {
               _driverLocation = LatLng(loc.latitude, loc.longitude);
@@ -162,7 +181,8 @@ class _ClientOrderTrackingScreenState
 
   Future<void> _showArrivalNotification() async {
     const androidDetails = AndroidNotificationDetails(
-      'arrival_channel', 'إشعارات الوصول',
+      'arrival_channel',
+      'إشعارات الوصول',
       channelDescription: 'تنبيهات وصول الطلبات',
       importance: Importance.high,
       priority: Priority.high,
@@ -268,8 +288,7 @@ class _ClientOrderTrackingScreenState
             final orderStatus = _normalizeStatus(rawStatus);
             final total =
                 (data['totalWithDelivery'] as num?)?.toDouble() ?? 0.0;
-            final items =
-                List<Map<String, dynamic>>.from(data['items'] ?? []);
+            final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
             final canRateOrder = canSubmitOrderRating(data);
             final orderCode = formatUnifiedOrderCode(
                 orderNumber: data['orderNumber'],
@@ -277,8 +296,7 @@ class _ClientOrderTrackingScreenState
                 docId: widget.orderId);
             final restaurantName =
                 (data['restaurantName'] ?? 'المطعم').toString();
-            final showMap =
-                _driverLocation != null || _clientLocation != null;
+            final showMap = _driverLocation != null || _clientLocation != null;
             final eta = _calculateETA();
 
             return Stack(
@@ -306,8 +324,8 @@ class _ClientOrderTrackingScreenState
                   maxChildSize: 0.92,
                   builder: (ctx, scrollController) {
                     return ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(28)),
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(28)),
                       child: BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                         child: Container(
@@ -336,8 +354,8 @@ class _ClientOrderTrackingScreenState
                               // Drag handle
                               Center(
                                 child: Container(
-                                  margin: const EdgeInsets.only(
-                                      top: 12, bottom: 8),
+                                  margin:
+                                      const EdgeInsets.only(top: 12, bottom: 8),
                                   width: 40,
                                   height: 4,
                                   decoration: BoxDecoration(
@@ -374,10 +392,10 @@ class _ClientOrderTrackingScreenState
                                 Padding(
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 16),
-                                  child: Text(
-                                      'الأصناف (${items.length})',
+                                  child: Text('الأصناف (${items.length})',
                                       style: const TextStyle(
-                                          color: ClientColors.lightTextSecondary,
+                                          color:
+                                              ClientColors.lightTextSecondary,
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600)),
                                 ),
@@ -429,16 +447,16 @@ class _ClientOrderTrackingScreenState
           markerId: const MarkerId('driver'),
           position: _driverLocation!,
           infoWindow: InfoWindow(title: _driverName ?? 'المندوب'),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueOrange),
+          icon: _driverMarkerIcon ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
         ),
       if (_clientLocation != null)
         Marker(
           markerId: const MarkerId('client'),
           position: _clientLocation!,
           infoWindow: const InfoWindow(title: 'موقعك'),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueGreen),
+          icon: _clientMarkerIcon ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
         ),
     };
 
@@ -458,8 +476,7 @@ class _ClientOrderTrackingScreenState
     final initialTarget = _driverLocation ?? _clientLocation!;
 
     return GoogleMap(
-      initialCameraPosition:
-          CameraPosition(target: initialTarget, zoom: 14),
+      initialCameraPosition: CameraPosition(target: initialTarget, zoom: 14),
       markers: markers,
       polylines: polylines,
       onMapCreated: (c) {
@@ -472,8 +489,7 @@ class _ClientOrderTrackingScreenState
       zoomControlsEnabled: false,
       mapToolbarEnabled: false,
       gestureRecognizers: {
-        Factory<OneSequenceGestureRecognizer>(
-            () => EagerGestureRecognizer()),
+        Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
       },
     );
   }
@@ -726,9 +742,8 @@ class _GlassStatusBar extends StatelessWidget {
                                 ? ClientColors.primary
                                 : ClientColors.lightTextSecondary,
                             fontSize: 9,
-                            fontWeight: active
-                                ? FontWeight.bold
-                                : FontWeight.normal)),
+                            fontWeight:
+                                active ? FontWeight.bold : FontWeight.normal)),
                   ],
                 ),
               );
@@ -738,9 +753,7 @@ class _GlassStatusBar extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
-              value: _steps.isEmpty
-                  ? 0
-                  : (progressIndex + 1) / _steps.length,
+              value: _steps.isEmpty ? 0 : (progressIndex + 1) / _steps.length,
               backgroundColor: const Color(0xFFEDEDED),
               valueColor:
                   const AlwaysStoppedAnimation<Color>(ClientColors.primary),
@@ -856,16 +869,13 @@ class _GlassItemsList extends StatelessWidget {
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: ClientColors.lightTextPrimary)),
-                subtitle: Text(
-                    'x${item['quantity']}  •  ${item['price']} ج.س',
+                subtitle: Text('x${item['quantity']}  •  ${item['price']} ج.س',
                     style: const TextStyle(
-                        fontSize: 11,
-                        color: ClientColors.lightTextSecondary)),
+                        fontSize: 11, color: ClientColors.lightTextSecondary)),
                 dense: true,
               ),
               if (!isLast)
-                const Divider(
-                    height: 1, color: Color(0xFFEDEDED), indent: 56),
+                const Divider(height: 1, color: Color(0xFFEDEDED), indent: 56),
             ],
           );
         }),
@@ -905,8 +915,7 @@ class _GlassRatingCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          const Text(
-              'شاركنا رأيك في المطعم والمندوب لمساعدة بقية العملاء.',
+          const Text('شاركنا رأيك في المطعم والمندوب لمساعدة بقية العملاء.',
               textAlign: TextAlign.right,
               style: TextStyle(
                   color: ClientColors.lightTextSecondary,

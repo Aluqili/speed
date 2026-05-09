@@ -7,6 +7,7 @@ import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import '../services/order_service.dart';
 
 const Set<String> _storeNewStatuses = {
+  'payment_review',
   'store_pending',
   'قيد المراجعة',
   'بانتظار المطعم',
@@ -24,6 +25,8 @@ String _storeStatusLabel(String status) {
     case 'قيد المراجعة':
     case 'بانتظار المطعم':
       return 'قيد المراجعة';
+    case 'payment_review':
+      return 'بانتظار مراجعة الدفع';
     case 'courier_searching':
     case 'courier_offer_pending':
     case 'قيد التجهيز':
@@ -96,6 +99,33 @@ num _storeReceivable(Map<String, dynamic> orderData) {
   return receivable < 0 ? 0 : receivable;
 }
 
+String _itemSpecialNotes(dynamic rawItem) {
+  if (rawItem is! Map) return '';
+  const keys = [
+    'notes',
+    'note',
+    'itemNotes',
+    'itemNote',
+    'specialInstructions',
+    'instructions',
+    'customization',
+    'customizations',
+  ];
+  for (final key in keys) {
+    final value = rawItem[key];
+    if (value is Iterable) {
+      final joined = value
+          .map((entry) => entry.toString().trim())
+          .where((entry) => entry.isNotEmpty)
+          .join('، ');
+      if (joined.isNotEmpty) return joined;
+    }
+    final text = value?.toString().trim() ?? '';
+    if (text.isNotEmpty) return text;
+  }
+  return '';
+}
+
 class StoreOrderDetailsScreen extends StatelessWidget {
   final Map<String, dynamic> orderData;
 
@@ -164,7 +194,8 @@ class StoreOrderDetailsScreen extends StatelessWidget {
         if (!context.mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (_) => StoreOrderDetailsScreen(orderData: updatedOrderData),
+            builder: (_) =>
+                StoreOrderDetailsScreen(orderData: updatedOrderData),
           ),
         );
       } else {
@@ -445,6 +476,7 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                     final qty = item['quantity'] ?? 0;
                     final price = item['price'] ?? 0;
                     final totalItemPrice = qty * price;
+                    final itemNotes = _itemSpecialNotes(item);
                     return Container(
                       margin: const EdgeInsets.only(bottom: 10),
                       padding: const EdgeInsets.all(12),
@@ -459,8 +491,8 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                             width: 46,
                             height: 46,
                             decoration: BoxDecoration(
-                              color:
-                                  AppThemeArabic.storePrimary.withValues(alpha: 0.10),
+                              color: AppThemeArabic.storePrimary
+                                  .withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(14),
                             ),
                             child: const Icon(
@@ -488,6 +520,40 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                                     fontFamily: 'Tajawal',
                                   ),
                                 ),
+                                if (itemNotes.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppThemeArabic.storeAccent
+                                          .withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.sticky_note_2_outlined,
+                                          size: 16,
+                                          color: AppThemeArabic.storeAccent,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            itemNotes,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              color: AppThemeArabic
+                                                  .storeTextPrimary,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),

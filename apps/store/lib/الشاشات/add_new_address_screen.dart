@@ -41,7 +41,7 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
   bool _firstSaveAttempt = true;
   bool _locationSelected = false;
   String? _saveWarning;
-  final Color primaryColor = AppThemeArabic.clientPrimary;
+  final Color primaryColor = AppThemeArabic.storePrimary;
 
   @override
   void initState() {
@@ -305,7 +305,7 @@ class _AddNewAddressScreenState extends State<AddNewAddressScreen> {
                       backgroundColor: Colors.white,
                       onPressed: _goToCurrentLocation,
                       child: const Icon(Icons.my_location,
-                          color: AppThemeArabic.clientPrimary),
+                          color: AppThemeArabic.storePrimary),
                     ),
                   ),
                 ],

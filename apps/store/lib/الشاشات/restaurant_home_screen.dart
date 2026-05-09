@@ -25,10 +25,11 @@ import 'store_promocode_screen.dart';
 import 'chat_screen.dart';
 import '../الخدمات/push_notification_service.dart';
 
-const Color primaryColor = AppThemeArabic.clientPrimary;
-const Color backgroundColor = AppThemeArabic.clientBackground;
+const Color primaryColor = AppThemeArabic.storePrimary;
+const Color backgroundColor = AppThemeArabic.storeBackground;
 const _statusPriority = [
   'store_pending',
+  'payment_review',
   'courier_searching',
   'courier_offer_pending',
   'courier_assigned',
@@ -58,6 +59,7 @@ const Set<String> _dashboardNewStatuses = {
   'بانتظار المطعم',
   'جاهز للتوصيل',
   'انتظار الدفع',
+  'payment_review',
 };
 
 class StoreDashboardScreen extends StatefulWidget {
@@ -126,6 +128,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     switch (status) {
       case 'store_pending':
         return 'قيد المراجعة';
+      case 'payment_review':
+        return 'بانتظار مراجعة الدفع';
       case 'courier_searching':
         return 'جاري البحث عن مندوب';
       case 'courier_offer_pending':
@@ -153,6 +157,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
   Color _orderStatusColor(String status) {
     switch (status) {
       case 'انتظار الدفع':
+      case 'payment_review':
       case 'store_pending':
       case 'قيد المراجعة':
       case 'بانتظار المطعم':
@@ -177,7 +182,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
       case 'ملغي':
         return AppThemeArabic.clientError;
       default:
-        return AppThemeArabic.clientTextSecondary;
+        return AppThemeArabic.storeTextSecondary;
     }
   }
 
@@ -1339,7 +1344,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                               ? 'صافي المتجر بعد خصم ممول من المتجر'
                               : 'مستحق المتجر من الطلب',
                           style: const TextStyle(
-                              color: AppThemeArabic.clientTextSecondary),
+                              color: AppThemeArabic.storeTextSecondary),
                         ),
                       ],
                     ),

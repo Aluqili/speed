@@ -43,7 +43,8 @@ class StoreMenuScreen extends StatelessWidget {
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('حذف الصنف'),
-            content: Text('هل تريد حذف الصنف ${(data['name'] ?? '').toString()}؟'),
+            content:
+                Text('هل تريد حذف الصنف ${(data['name'] ?? '').toString()}؟'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
@@ -60,9 +61,8 @@ class StoreMenuScreen extends StatelessWidget {
 
     if (!confirmed) return;
 
-    final restaurantRef = FirebaseFirestore.instance
-        .collection('restaurants')
-        .doc(restaurantId);
+    final restaurantRef =
+        FirebaseFirestore.instance.collection('restaurants').doc(restaurantId);
     await restaurantRef.collection('full_menu').doc(itemDoc.id).delete();
     await restaurantRef
         .collection('menu')
@@ -91,7 +91,8 @@ class StoreMenuScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => StoreAddMenuItemScreen(restaurantId: restaurantId),
+                  builder: (_) =>
+                      StoreAddMenuItemScreen(restaurantId: restaurantId),
                 ),
               );
             },
@@ -140,11 +141,13 @@ class StoreMenuScreen extends StatelessWidget {
                   return GFCard(
                     boxFit: BoxFit.cover,
                     image: imageUrl != null
-                        ? Image.network(imageUrl, height: 200, fit: BoxFit.cover)
-                        : Image.asset('assets/images/placeholder_food.png', height: 200, fit: BoxFit.cover),
+                        ? Image.network(imageUrl,
+                            height: 200, fit: BoxFit.cover)
+                        : Image.asset('assets/images/placeholder_food.png',
+                            height: 200, fit: BoxFit.cover),
                     title: GFListTile(
                       titleText: itemName,
-                      subTitleText: '$price جنيه',
+                      subTitleText: '$price ج.س',
                       icon: const Icon(Icons.fastfood, color: GFColors.PRIMARY),
                     ),
                     content: description.isNotEmpty
@@ -161,12 +164,12 @@ class StoreMenuScreen extends StatelessWidget {
                                   restaurantId: restaurantId,
                                   itemId: items[index].id,
                                   initialName: itemName.toString(),
-                                  initialPrice: (data['price'] as num?)?.toDouble(),
+                                  initialPrice:
+                                      (data['price'] as num?)?.toDouble(),
                                   initialSizes: _extractSizes(data),
                                   initialCategory:
                                       (data['category'] ?? '').toString(),
-                                  initialImageUrl:
-                                      (imageUrl ?? '').toString(),
+                                  initialImageUrl: (imageUrl ?? '').toString(),
                                   initialAvailable: data['available'] != false,
                                 ),
                               ),
@@ -186,7 +189,9 @@ class StoreMenuScreen extends StatelessWidget {
                         ),
                         GFButton(
                           onPressed: () {
-                            final cartProvider = Provider.of<CartProvider>(context, listen: false);
+                            final cartProvider = Provider.of<CartProvider>(
+                                context,
+                                listen: false);
                             final itemId = items[index].id;
                             cartProvider.addToCartSimple(
                               itemId,
@@ -194,7 +199,8 @@ class StoreMenuScreen extends StatelessWidget {
                               double.tryParse(price) ?? 0,
                             );
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('تم إضافة الصنف إلى السلة')),
+                              const SnackBar(
+                                  content: Text('تم إضافة الصنف إلى السلة')),
                             );
                           },
                           text: 'إضافة إلى السلة',
@@ -213,7 +219,8 @@ class StoreMenuScreen extends StatelessWidget {
     );
   }
 
-  Future<List<QueryDocumentSnapshot>> _fetchAllMenuItems(List<QueryDocumentSnapshot> categories) async {
+  Future<List<QueryDocumentSnapshot>> _fetchAllMenuItems(
+      List<QueryDocumentSnapshot> categories) async {
     List<QueryDocumentSnapshot> allItems = [];
     for (final cat in categories) {
       final itemsSnap = await cat.reference.collection('items').get();

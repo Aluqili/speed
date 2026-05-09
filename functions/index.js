@@ -755,16 +755,37 @@ function supportClientIdFromConversation(conversationId) {
   return raw.slice(0, marker).trim();
 }
 
-async function resolveClientRecipientForSupportMessage(data) {
-  const senderId = String(data?.senderId || data?.actorUid || '').trim();
-  const senderType = String(data?.senderType || '').trim().toLowerCase();
+function readFirstString(data, keys) {
+  for (const key of keys) {
+    const value = String(data?.[key] || '').trim();
+    if (value && value.toLowerCase() !== 'null') return value;
+  }
+  return '';
+}
+
+function readArrayValues(data, keys) {
+  return keys.flatMap((key) => Array.isArray(data?.[key]) ? data[key] : []);
+}
+
+async function resolveClientRecipientForSupportMessage(data, params = {}) {
+  const senderId = readFirstString(data, ['senderId', 'actorUid', 'fromId', 'fromUid', 'authorId']);
+  const senderType = readFirstString(data, ['senderType', 'actorRole', 'senderRole', 'fromRole', 'role']).toLowerCase();
   if (senderType === 'client') return '';
 
   const candidates = [
     data?.clientId,
+    data?.clientUid,
+    data?.customerId,
+    data?.customerUid,
     data?.receiverId,
+    data?.recipientId,
+    data?.targetUserId,
+    params?.clientId,
+    params?.supportChatId,
     supportClientIdFromConversation(data?.conversationId),
-    ...(Array.isArray(data?.participants) ? data.participants : []),
+    supportClientIdFromConversation(data?.chatId),
+    supportClientIdFromConversation(params?.conversationId),
+    ...readArrayValues(data, ['participants', 'participantIds', 'members', 'memberIds']),
   ];
 
   for (const candidate of candidates) {
@@ -776,13 +797,27 @@ async function resolveClientRecipientForSupportMessage(data) {
 }
 
 async function resolveClientRecipientForDirectMessage(data) {
-  const senderId = String(data?.senderId || '').trim();
-  const receiverId = String(data?.receiverId || '').trim();
-  if (receiverId && receiverId !== senderId && await clientDocExists(receiverId)) {
-    return receiverId;
+  const senderId = readFirstString(data, ['senderId', 'actorUid', 'fromId', 'fromUid', 'authorId']);
+  const senderType = readFirstString(data, ['senderType', 'actorRole', 'senderRole', 'fromRole', 'role']).toLowerCase();
+  if (senderType === 'client') return '';
+
+  const directCandidates = [
+    data?.receiverId,
+    data?.recipientId,
+    data?.targetUserId,
+    data?.clientId,
+    data?.clientUid,
+    data?.customerId,
+    data?.customerUid,
+  ];
+  for (const candidate of directCandidates) {
+    const uid = String(candidate || '').trim();
+    if (uid && uid !== senderId && await clientDocExists(uid)) {
+      return uid;
+    }
   }
 
-  const participants = Array.isArray(data?.participants) ? data.participants : [];
+  const participants = readArrayValues(data, ['participants', 'participantIds', 'members', 'memberIds']);
   for (const participant of participants) {
     const uid = String(participant || '').trim();
     if (!uid || uid === senderId) continue;
@@ -2642,14 +2677,52 @@ exports.notifyClientOnSupportMessageCreated = onDocumentCreated(
   },
   async (event) => {
     const data = event.data?.data() || {};
-    const clientId = await resolveClientRecipientForSupportMessage(data);
-    if (!clientId) return;
+    const clientId = await resolveClientRecipientForSupportMessage(data, event.params || {});
+    if (!clientId) {
+      logger.warn('support message push skipped: client not resolved', {
+        path: event.data?.ref?.path || '',
+        params: event.params || {},
+        conversationId: data?.conversationId || data?.chatId || '',
+        senderId: data?.senderId || data?.actorUid || '',
+        receiverId: data?.receiverId || data?.recipientId || '',
+      });
+      return;
+    }
 
     await notifyClientAboutMessage(clientId, data, {
       title: 'رسالة من الدعم الفني',
       type: 'support_message',
       source: 'support',
       senderFallback: 'الدعم الفني',
+      messageId: event.params?.messageId,
+    });
+  }
+);
+
+exports.notifyClientOnNestedSupportMessageCreated = onDocumentCreated(
+  {
+    region: REGION,
+    document: 'supportChats/{supportChatId}/messages/{messageId}',
+  },
+  async (event) => {
+    const data = event.data?.data() || {};
+    const clientId = await resolveClientRecipientForSupportMessage(data, event.params || {});
+    if (!clientId) {
+      logger.warn('nested support message push skipped: client not resolved', {
+        path: event.data?.ref?.path || '',
+        params: event.params || {},
+        conversationId: data?.conversationId || data?.chatId || '',
+        senderId: data?.senderId || data?.actorUid || '',
+        receiverId: data?.receiverId || data?.recipientId || '',
+      });
+      return;
+    }
+
+    await notifyClientAboutMessage(clientId, data, {
+      title: '\u0631\u0633\u0627\u0644\u0629 \u0645\u0646 \u0627\u0644\u062f\u0639\u0645 \u0627\u0644\u0641\u0646\u064a',
+      type: 'support_message',
+      source: 'support',
+      senderFallback: '\u0627\u0644\u062f\u0639\u0645 \u0627\u0644\u0641\u0646\u064a',
       messageId: event.params?.messageId,
     });
   }
@@ -2666,13 +2739,78 @@ exports.notifyClientOnDirectChatMessageCreated = onDocumentCreated(
     if (chatKind === 'support') return;
 
     const clientId = await resolveClientRecipientForDirectMessage(data);
-    if (!clientId) return;
+    if (!clientId) {
+      logger.warn('direct chat push skipped: client not resolved', {
+        path: event.data?.ref?.path || '',
+        params: event.params || {},
+        conversationId: data?.conversationId || data?.chatId || '',
+        senderId: data?.senderId || data?.actorUid || '',
+        receiverId: data?.receiverId || data?.recipientId || '',
+      });
+      return;
+    }
 
     await notifyClientAboutMessage(clientId, data, {
       title: 'رسالة من المندوب',
       type: 'courier_chat_message',
       source: 'direct-chat',
       senderFallback: 'المندوب',
+      messageId: event.params?.messageId,
+    });
+  }
+);
+
+exports.notifyClientOnNestedDirectChatMessageCreated = onDocumentCreated(
+  {
+    region: REGION,
+    document: 'chats/{chatId}/messages/{messageId}',
+  },
+  async (event) => {
+    const data = event.data?.data() || {};
+    const chatKind = String(data.chatKind || '').trim().toLowerCase();
+    const conversationId = String(data.conversationId || event.params?.chatId || '').trim();
+    if (chatKind === 'support' || conversationId.includes('-support')) {
+      const clientId = await resolveClientRecipientForSupportMessage(data, {
+        ...(event.params || {}),
+        conversationId,
+      });
+      if (!clientId) {
+        logger.warn('nested chat support push skipped: client not resolved', {
+          path: event.data?.ref?.path || '',
+          params: event.params || {},
+          conversationId,
+          senderId: data?.senderId || data?.actorUid || '',
+          receiverId: data?.receiverId || data?.recipientId || '',
+        });
+        return;
+      }
+      await notifyClientAboutMessage(clientId, data, {
+        title: '\u0631\u0633\u0627\u0644\u0629 \u0645\u0646 \u0627\u0644\u062f\u0639\u0645 \u0627\u0644\u0641\u0646\u064a',
+        type: 'support_message',
+        source: 'support',
+        senderFallback: '\u0627\u0644\u062f\u0639\u0645 \u0627\u0644\u0641\u0646\u064a',
+        messageId: event.params?.messageId,
+      });
+      return;
+    }
+
+    const clientId = await resolveClientRecipientForDirectMessage(data);
+    if (!clientId) {
+      logger.warn('nested direct chat push skipped: client not resolved', {
+        path: event.data?.ref?.path || '',
+        params: event.params || {},
+        conversationId,
+        senderId: data?.senderId || data?.actorUid || '',
+        receiverId: data?.receiverId || data?.recipientId || '',
+      });
+      return;
+    }
+
+    await notifyClientAboutMessage(clientId, data, {
+      title: '\u0631\u0633\u0627\u0644\u0629 \u0645\u0646 \u0627\u0644\u0645\u0646\u062f\u0648\u0628',
+      type: 'courier_chat_message',
+      source: 'direct-chat',
+      senderFallback: '\u0627\u0644\u0645\u0646\u062f\u0648\u0628',
       messageId: event.params?.messageId,
     });
   }

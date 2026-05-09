@@ -5,6 +5,7 @@ import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import 'store_order_details_screen.dart';
 
 const Set<String> _newStoreStatuses = {
+  'payment_review',
   'store_pending',
   'courier_searching',
   'courier_offer_pending',
@@ -36,6 +37,8 @@ String _displayOrderStatus(String status) {
   switch (status) {
     case 'store_pending':
       return 'قيد المراجعة';
+    case 'payment_review':
+      return 'بانتظار مراجعة الدفع';
     case 'courier_searching':
       return 'جاري البحث عن مندوب';
     case 'courier_offer_pending':
@@ -75,7 +78,10 @@ Color _statusColor(String status) {
   if (status == 'pickup_ready' || status == 'جاهز للتوصيل') {
     return Colors.blueGrey;
   }
-  return AppThemeArabic.clientPrimary;
+  if (status == 'payment_review' || status == 'انتظار الدفع') {
+    return Colors.orange;
+  }
+  return AppThemeArabic.storePrimary;
 }
 
 num _safeNum(dynamic value) {
@@ -246,7 +252,7 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
                               ? 'صافي المتجر بعد الخصم'
                               : 'مستحق المتجر من هذا الطلب',
                           style: const TextStyle(
-                              color: AppThemeArabic.clientTextSecondary),
+                              color: AppThemeArabic.storeTextSecondary),
                         ),
                       ],
                     ),
@@ -315,7 +321,7 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: AppThemeArabic.clientBackground,
+        backgroundColor: AppThemeArabic.storeBackground,
         appBar: AppBar(
           title: const Text('الطلبات الحالية'),
           centerTitle: true,

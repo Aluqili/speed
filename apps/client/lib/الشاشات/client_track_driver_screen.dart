@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../الثيم/client_theme.dart';
@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'chat_screen.dart';
 import '../الخدمات/unread_messages_service.dart';
 import '../الخدمات/route_estimate_service.dart';
+import '../الخدمات/map_marker_icon_factory.dart';
 
 class ClientTrackDriverScreen extends StatefulWidget {
   final String orderId;
@@ -32,8 +33,40 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
   int? _routeDurationMinutes;
   LatLng? _lastRouteFetchOrigin;
   bool _fetchingRoute = false;
+  BitmapDescriptor? _driverMarkerIcon;
+  BitmapDescriptor? _clientMarkerIcon;
+  BitmapDescriptor? _restaurantMarkerIcon;
 
   // ─── helpers ──────────────────────────────────────────────────────────────
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMarkerIcons();
+  }
+
+  Future<void> _loadMarkerIcons() async {
+    final icons = await Future.wait([
+      MapMarkerIconFactory.create(
+        icon: Icons.delivery_dining_rounded,
+        color: ClientColors.primary,
+      ),
+      MapMarkerIconFactory.create(
+        icon: Icons.person_pin_circle_rounded,
+        color: const Color(0xFF12A150),
+      ),
+      MapMarkerIconFactory.create(
+        icon: Icons.storefront_rounded,
+        color: const Color(0xFFE53935),
+      ),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _driverMarkerIcon = icons[0];
+      _clientMarkerIcon = icons[1];
+      _restaurantMarkerIcon = icons[2];
+    });
+  }
 
   String _generateChatId(String user1, String user2) {
     final sorted = [user1, user2]..sort();
@@ -65,7 +98,9 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
   }
 
   LatLng? _locationFromFields(Map<String, dynamic> d,
-      {required String rawKey, required String latKey, required String lngKey}) {
+      {required String rawKey,
+      required String latKey,
+      required String lngKey}) {
     final direct = _geoFromRaw(d[rawKey]);
     if (direct != null) return direct;
     final lat = (d[latKey] as num?)?.toDouble();
@@ -110,7 +145,9 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
     // Don't refetch if driver hasn't moved more than 25 m
     if (_lastRouteFetchOrigin != null &&
         _distanceM(_lastRouteFetchOrigin!, origin) < 25 &&
-        _routePoints.isNotEmpty) { return; }
+        _routePoints.isNotEmpty) {
+      return;
+    }
 
     _fetchingRoute = true;
     try {
@@ -146,9 +183,8 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
   void _fitBounds(List<LatLng> points) {
     if (_mapController == null || points.isEmpty) return;
     if (points.length == 1) {
-      _mapController!.animateCamera(
-          CameraUpdate.newCameraPosition(
-              CameraPosition(target: points.first, zoom: 15)));
+      _mapController!.animateCamera(CameraUpdate.newCameraPosition(
+          CameraPosition(target: points.first, zoom: 15)));
       return;
     }
     double minLat = points.first.latitude, maxLat = minLat;
@@ -161,8 +197,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
     }
     _mapController!.animateCamera(CameraUpdate.newLatLngBounds(
       LatLngBounds(
-          southwest: LatLng(minLat, minLng),
-          northeast: LatLng(maxLat, maxLng)),
+          southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng)),
       100,
     ));
   }
@@ -206,7 +241,10 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
                 (order['orderStatus'] ?? order['status'] ?? '').toString();
 
             const finished = {
-              'delivered', 'cancelled', 'store_rejected', 'rejected_by_store'
+              'delivered',
+              'cancelled',
+              'store_rejected',
+              'rejected_by_store'
             };
             if (finished.contains(status)) {
               return _buildError(
@@ -236,14 +274,12 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
                   .doc(driverId)
                   .snapshots(),
               builder: (context, dSnap) {
-                final driverData =
-                    dSnap.data?.data() as Map<String, dynamic>?;
+                final driverData = dSnap.data?.data() as Map<String, dynamic>?;
                 final driverLoc = _driverLoc(order, driverData);
 
                 if (driverLoc == null) {
                   return _buildWaiting(
-                      status == 'courier_assigned' ||
-                              status == 'pickup_ready'
+                      status == 'courier_assigned' || status == 'pickup_ready'
                           ? 'تم تعيين المندوب، بانتظار تحديث موقعه...'
                           : 'موقع المندوب غير متاح بعد.');
                 }
@@ -328,13 +364,15 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
         markerId: const MarkerId('driver'),
         position: driverLoc,
         infoWindow: InfoWindow(title: driverName),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        icon: _driverMarkerIcon ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       ),
       Marker(
         markerId: const MarkerId('client'),
         position: clientLoc,
         infoWindow: const InfoWindow(title: 'موقعك'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        icon: _clientMarkerIcon ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
       ),
       if (restaurantLoc != null)
         Marker(
@@ -342,7 +380,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
           position: restaurantLoc,
           infoWindow: InfoWindow(
               title: (order['restaurantName'] ?? 'المطعم').toString()),
-          icon:
+          icon: _restaurantMarkerIcon ??
               BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
         ),
     };
@@ -368,8 +406,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
       children: [
         // ── Full-screen map ───────────────────────────────────────────
         GoogleMap(
-          initialCameraPosition:
-              CameraPosition(target: driverLoc, zoom: 14),
+          initialCameraPosition: CameraPosition(target: driverLoc, zoom: 14),
           markers: markers,
           polylines: polylines,
           onMapCreated: (c) {
@@ -408,8 +445,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
           right: 0,
           child: Center(
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
@@ -419,8 +455,8 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
               ),
               child: Text(
                 '${_formatDistance(displayDistanceM)} متبقي  •  ~$etaMins د',
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600),
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -447,7 +483,8 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
                   otherUserId: driverId,
                   currentUserRole: 'client',
                   chatId: _generateChatId(clientId, driverId),
-                  currentUserName: clientName.isNotEmpty ? clientName : 'العميل',
+                  currentUserName:
+                      clientName.isNotEmpty ? clientName : 'العميل',
                 ),
               ),
             ),
@@ -483,8 +520,8 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
   Widget _buildError(String msg) => Scaffold(
         appBar: AppBar(
           backgroundColor: _primary,
-          title: const Text('تتبع المندوب',
-              style: TextStyle(color: Colors.white)),
+          title:
+              const Text('تتبع المندوب', style: TextStyle(color: Colors.white)),
           iconTheme: const IconThemeData(color: Colors.white),
         ),
         body: Center(child: Text(msg, textAlign: TextAlign.center)),
@@ -493,8 +530,8 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
   Widget _buildWaiting(String msg) => Scaffold(
         appBar: AppBar(
           backgroundColor: _primary,
-          title: const Text('تتبع المندوب',
-              style: TextStyle(color: Colors.white)),
+          title:
+              const Text('تتبع المندوب', style: TextStyle(color: Colors.white)),
           iconTheme: const IconThemeData(color: Colors.white),
         ),
         body: Center(
@@ -570,8 +607,8 @@ class _DriverBottomPanel extends StatelessWidget {
               CircleAvatar(
                 radius: 26,
                 backgroundColor: _primary.withValues(alpha: 0.12),
-                child:
-                    const Icon(Icons.delivery_dining_rounded, color: _primary, size: 28),
+                child: const Icon(Icons.delivery_dining_rounded,
+                    color: _primary, size: 28),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -586,8 +623,7 @@ class _DriverBottomPanel extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       driverPhone.isNotEmpty ? driverPhone : 'مندوب التوصيل',
-                      style: TextStyle(
-                          fontSize: 13, color: Colors.grey[600]),
+                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                     ),
                   ],
                 ),
@@ -717,8 +753,8 @@ class _ActionButton extends StatelessWidget {
                 top: -8,
                 right: 12,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.red,
                     borderRadius: BorderRadius.circular(10),

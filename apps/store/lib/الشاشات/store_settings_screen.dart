@@ -12,8 +12,8 @@ import 'address_selection_screen.dart';
 import 'store_privacy_policy_screen.dart';
 
 // ألوان وخطوط متوافقة مع بقية الشاشات
-const Color primaryColor = AppThemeArabic.clientPrimary;
-const Color backgroundColor = AppThemeArabic.clientBackground;
+const Color primaryColor = AppThemeArabic.storePrimary;
+const Color backgroundColor = AppThemeArabic.storeBackground;
 
 class StoreSettingsScreen extends StatefulWidget {
   final String restaurantId;
@@ -302,7 +302,8 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                           ? NetworkImage(_logoImageUrl!)
                           : null,
                       child: (_logoImageUrl ?? '').isEmpty
-                          ? const Icon(Icons.storefront_rounded, color: Colors.white, size: 28)
+                          ? const Icon(Icons.storefront_rounded,
+                              color: Colors.white, size: 28)
                           : null,
                     ),
                     const SizedBox(width: 14),
@@ -311,7 +312,9 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _nameController.text.trim().isEmpty ? 'بيانات المتجر' : _nameController.text.trim(),
+                            _nameController.text.trim().isEmpty
+                                ? 'بيانات المتجر'
+                                : _nameController.text.trim(),
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w800,
@@ -320,7 +323,8 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            _address ?? 'حدّث العنوان وبيانات الهوية البصرية من هنا',
+                            _address ??
+                                'حدّث العنوان وبيانات الهوية البصرية من هنا',
                             style: const TextStyle(color: Colors.white70),
                           ),
                         ],
@@ -448,7 +452,7 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                           .collection('restaurants')
                           .doc(widget.restaurantId)
                           .update({'autoAcceptOrders': v});
-                        if (!context.mounted) return;
+                      if (!context.mounted) return;
                       GFToast.showToast(
                         v
                             ? 'تم تفعيل القبول التلقائي'
@@ -578,7 +582,8 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                 const SizedBox(width: 10),
                 Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 16),
                 ),
               ],
             ),

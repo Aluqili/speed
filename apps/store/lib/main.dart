@@ -58,10 +58,10 @@ class StoreApp extends StatelessWidget {
           valueListenable: themeController.accentSeed,
           builder: (context, seed, __) {
             final theme = seed != null
-                ? AppThemeArabic.fromSeed(seed)
+                ? AppThemeArabic.storeFromSeed(seed)
                 : AppThemeArabic.storeTheme;
             final darkTheme = seed != null
-                ? AppThemeArabic.fromSeed(seed, dark: true)
+                ? AppThemeArabic.storeFromSeed(seed, dark: true)
                 : AppThemeArabic.storeDarkTheme;
             return MaterialApp(
               title: 'SpeedStar Store',
@@ -116,7 +116,7 @@ class _InitGateState extends State<_InitGate> {
       final defaults = <String, Object>{
         ...OpsRuntimeConfig.defaultFlagsFor('store'),
         ...AppUpdateConfig.defaultFlagsFor('store'),
-        'accent_seed': 'E85D2A',
+        'accent_seed': '0F766E',
         'store_maintenance_mode': false,
         'store_maintenance_message': 'التطبيق تحت الصيانة. حاول لاحقًا.',
       };
@@ -158,7 +158,7 @@ class _InitGateState extends State<_InitGate> {
             title: 'SpeedStar Store',
             subtitle: 'جاهزين لاستقبال الطلبات بقوة 🔥',
             imageAsset: 'assets/branding/app_icon_store.png.jpeg',
-            accent: Color(0xFFE85D2A),
+            accent: AppThemeArabic.storePrimary,
           );
         }
         if (_maintenanceMode) {
@@ -282,7 +282,7 @@ class _NotificationPermissionGateState
         title: 'SpeedStar Store',
         subtitle: 'جارٍ التحقق من إعدادات التنبيهات',
         imageAsset: 'assets/branding/app_icon_store.png.jpeg',
-        accent: Color(0xFFE85D2A),
+        accent: AppThemeArabic.storePrimary,
       );
     }
 
@@ -314,8 +314,8 @@ class _NotificationPermissionGateState
                       borderRadius: BorderRadius.circular(28),
                       boxShadow: [
                         BoxShadow(
-                          color:
-                              const Color(0xFFE85D2A).withValues(alpha: 0.12),
+                          color: AppThemeArabic.storePrimary
+                              .withValues(alpha: 0.12),
                           blurRadius: 30,
                           offset: const Offset(0, 14),
                         ),
@@ -329,13 +329,13 @@ class _NotificationPermissionGateState
                           width: 68,
                           height: 68,
                           decoration: BoxDecoration(
-                            color:
-                                const Color(0xFFE85D2A).withValues(alpha: 0.12),
+                            color: AppThemeArabic.storePrimary
+                                .withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(22),
                           ),
                           child: const Icon(
                             Icons.notifications_active_rounded,
-                            color: Color(0xFFE85D2A),
+                            color: AppThemeArabic.storePrimary,
                             size: 34,
                           ),
                         ),
@@ -367,7 +367,7 @@ class _NotificationPermissionGateState
                             children: [
                               Icon(
                                 Icons.info_outline_rounded,
-                                color: Color(0xFFE85D2A),
+                                color: AppThemeArabic.storePrimary,
                               ),
                               SizedBox(width: 10),
                               Expanded(
@@ -386,7 +386,7 @@ class _NotificationPermissionGateState
                             onPressed:
                                 _requesting ? null : _requestNotifications,
                             style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFFE85D2A),
+                              backgroundColor: AppThemeArabic.storePrimary,
                               minimumSize: const Size.fromHeight(54),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(18),

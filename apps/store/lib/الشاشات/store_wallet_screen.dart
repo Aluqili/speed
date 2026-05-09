@@ -141,7 +141,7 @@ class _StoreWalletScreenState extends State<StoreWalletScreen> {
         .doc(widget.restaurantId);
 
     return Scaffold(
-      backgroundColor: AppThemeArabic.clientBackground,
+      backgroundColor: AppThemeArabic.storeBackground,
       appBar: AppBar(
         title: const Text('محفظة المطعم'),
         centerTitle: true,
