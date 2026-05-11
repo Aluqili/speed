@@ -2297,6 +2297,88 @@ function renderOrderItemsRows(items = []) {
   return `<div class="order-items-table">${table(['الصنف', 'الكمية', 'ملاحظات', 'السعر'], rows)}</div>`;
 }
 
+function toAdminMoneyValue(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatAdminMoney(value) {
+  return `${Math.round(toAdminMoneyValue(value)).toLocaleString('ar-EG')} ج.س`;
+}
+
+function computeOrderFinancialBreakdown(orderData = {}) {
+  const subtotal = toAdminMoneyValue(orderData.total ?? orderData.subtotal ?? orderData.itemsSubtotal);
+  const clientDeliveryFee = toAdminMoneyValue(orderData.deliveryFee ?? orderData.clientDeliveryFee);
+  const largeOrderFee = toAdminMoneyValue(orderData.largeOrderFee);
+  const discountAmount = toAdminMoneyValue(orderData.discountAmount);
+  const totalBeforeDiscount = toAdminMoneyValue(
+    orderData.totalBeforeDiscount ?? (subtotal + clientDeliveryFee + largeOrderFee)
+  );
+  const fallbackTotal = Math.max(0, totalBeforeDiscount - discountAmount);
+  const totalWithDelivery = toAdminMoneyValue(orderData.totalWithDelivery || orderData.orderTotal || fallbackTotal);
+
+  const restaurantShare = toAdminMoneyValue(
+    orderData.restaurantShare ?? orderData.storeShare ?? orderData.restaurantNet ?? subtotal
+  );
+  const driverShare = toAdminMoneyValue(
+    orderData.driverShare
+      ?? orderData.deliveryFeeForDriver
+      ?? orderData.courierFee
+      ?? orderData.driverFee
+      ?? orderData.courierDeliveryFee
+      ?? 0
+  );
+  let platformShare = toAdminMoneyValue(orderData.platformShare ?? orderData.platformFee);
+  if (platformShare <= 0) {
+    platformShare = Math.max(0, totalWithDelivery - restaurantShare - driverShare);
+  }
+
+  return {
+    subtotal,
+    clientDeliveryFee,
+    deliveryFee: clientDeliveryFee,
+    largeOrderFee,
+    discountAmount,
+    totalBeforeDiscount,
+    totalWithDelivery,
+    restaurantShare,
+    driverShare,
+    platformShare,
+    walletUsed: toAdminMoneyValue(orderData.walletUsedAmount ?? orderData.walletRequestedAmount),
+    paymentMethod: String(orderData.paymentMethod || '-'),
+  };
+}
+
+function renderOrderFinancialBreakdown(financial) {
+  const cells = [
+    ['قيمة الأصناف', financial.subtotal],
+    ['سعر التوصيل على العميل', financial.clientDeliveryFee],
+    ['رسوم الطلب الكبير', financial.largeOrderFee],
+    ['الخصم', financial.discountAmount],
+    ['الإجمالي قبل الخصم', financial.totalBeforeDiscount],
+    ['الإجمالي النهائي', financial.totalWithDelivery],
+    ['مستحق المطعم', financial.restaurantShare],
+    ['مستحق المندوب', financial.driverShare],
+    ['حساب المنصة', financial.platformShare],
+    ['المحفظة المستخدمة', financial.walletUsed],
+  ];
+
+  return `
+    <div class="order-detail-card">
+      <strong>التفاصيل المالية</strong>
+      <div class="order-detail-grid" style="margin-top:10px;">
+        ${cells.map(([label, value]) => `
+          <div class="order-detail-card">
+            <span class="muted">${escapeHtml(label)}</span><br />
+            <b>${formatAdminMoney(value)}</b>
+          </div>
+        `).join('')}
+      </div>
+      <div class="muted" style="margin-top:8px;">طريقة الدفع: ${escapeHtml(financial.paymentMethod)}</div>
+    </div>
+  `;
+}
+
 async function refreshActivePortal(tabId) {
   const activeId = tabId || document.querySelector('.tab-panel.active')?.id || 'dashboard';
   const refreshButton = document.querySelector(`[data-portal-refresh="${activeId}"]`);
@@ -2817,41 +2899,7 @@ function mountDashboard() {
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
-  const computeFinancial = (orderData) => {
-    const subtotal = toMoney(orderData.total ?? orderData.subtotal);
-    const deliveryFee = toMoney(orderData.deliveryFee);
-    const largeOrderFee = toMoney(orderData.largeOrderFee);
-    const discountAmount = toMoney(orderData.discountAmount);
-    const fallbackTotal = Math.max(0, subtotal + deliveryFee + largeOrderFee - discountAmount);
-    const totalWithDelivery = toMoney(orderData.totalWithDelivery || fallbackTotal);
-
-    let restaurantShare = toMoney(orderData.restaurantShare ?? orderData.storeShare ?? subtotal);
-  let driverShare = toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? orderData.deliveryFee ?? 0);
-    let platformShare = toMoney(orderData.platformShare);
-
-    if (!Number.isFinite(platformShare) || platformShare <= 0) {
-      platformShare = totalWithDelivery - restaurantShare - driverShare;
-    }
-
-    if (platformShare < 0) {
-      platformShare = 0;
-      const maxRestaurantShare = Math.max(0, totalWithDelivery - driverShare);
-      if (restaurantShare > maxRestaurantShare) {
-        restaurantShare = maxRestaurantShare;
-      }
-    }
-
-    return {
-      subtotal,
-      deliveryFee,
-      largeOrderFee,
-      discountAmount,
-      totalWithDelivery,
-      restaurantShare,
-      driverShare,
-      platformShare,
-    };
-  };
+  const computeFinancial = (orderData) => computeOrderFinancialBreakdown(orderData);
 
   const formatMoney = (value) => `${Math.round(toMoney(value)).toLocaleString('ar-EG')} ج.س`;
 
@@ -2876,6 +2924,7 @@ function mountDashboard() {
       <div><span class="kv"><b>العميل:</b> ${resolveClientDisplay(data.clientId, data.clientName)}</span><span class="kv"><b>المطعم:</b> ${resolveRestaurantDisplay(data.restaurantId, data.restaurantName)}</span></div>
       <div><span class="kv"><b>المندوب:</b> ${resolveDriverDisplay(data.assignedDriverId || data.offeredDriverId, data.assignedDriverName || '')}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.clientPhone || '-')}</span></div>
       <div><span class="kv"><b>الإجمالي:</b> ${formatMoney(financial.totalWithDelivery)}</span><span class="kv"><b>حصة المطعم:</b> ${formatMoney(financial.restaurantShare)}</span><span class="kv"><b>حصة المندوب:</b> ${formatMoney(financial.driverShare)}</span><span class="kv"><b>حصة المنصة:</b> ${formatMoney(financial.platformShare)}</span></div>
+      ${renderOrderFinancialBreakdown(financial)}
       ${items ? `
         <div style="margin-top:8px;"><b>العناصر:</b></div>
         <div style="overflow:auto; border:1px solid #eef2f7; border-radius:10px; margin-top:6px;">
@@ -3064,41 +3113,11 @@ function mountFinance() {
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
-  const computeFinancial = (orderData) => {
-    const subtotal = toMoney(orderData.total ?? orderData.subtotal);
-    const deliveryFee = toMoney(orderData.deliveryFee);
-    const largeOrderFee = toMoney(orderData.largeOrderFee);
-    const discountAmount = toMoney(orderData.discountAmount);
-    const fallbackTotal = Math.max(0, subtotal + deliveryFee + largeOrderFee - discountAmount);
-    const totalWithDelivery = toMoney(orderData.totalWithDelivery || fallbackTotal);
-
-    let restaurantShare = toMoney(orderData.restaurantShare ?? orderData.storeShare ?? subtotal);
-  let driverShare = toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? orderData.deliveryFee ?? 0);
-    let platformShare = toMoney(orderData.platformShare);
-    if (platformShare <= 0) {
-      platformShare = totalWithDelivery - restaurantShare - driverShare;
-    }
-    if (platformShare < 0) {
-      platformShare = 0;
-      const maxRestaurantShare = Math.max(0, totalWithDelivery - driverShare);
-      if (restaurantShare > maxRestaurantShare) restaurantShare = maxRestaurantShare;
-    }
-
-    return {
-      subtotal,
-      deliveryFee,
-      largeOrderFee,
-      discountAmount,
-      totalWithDelivery,
-      restaurantShare,
-      driverShare,
-      platformShare,
-    };
-  };
+  const computeFinancial = (orderData) => computeOrderFinancialBreakdown(orderData);
 
   const needsFinancialUpdate = (orderData, computed) => {
     const sameRestaurant = Math.round(toMoney(orderData.restaurantShare)) === Math.round(computed.restaurantShare);
-    const sameDriver = Math.round(toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? orderData.deliveryFee)) === Math.round(computed.driverShare);
+    const sameDriver = Math.round(toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? orderData.courierFee ?? orderData.driverFee ?? orderData.courierDeliveryFee)) === Math.round(computed.driverShare);
     const samePlatform = Math.round(toMoney(orderData.platformShare)) === Math.round(computed.platformShare);
     const sameTotal = Math.round(toMoney(orderData.totalWithDelivery)) === Math.round(computed.totalWithDelivery);
     return !(sameRestaurant && sameDriver && samePlatform && sameTotal);
@@ -4600,6 +4619,7 @@ function renderOperationsOrderDetails(orderId) {
 
   const data = entry.data || {};
   const timeline = getOrderTimelineEntries(data);
+  const financial = computeOrderFinancialBreakdown(data);
   const availableCouriers = courierDirectoryCache.filter((item) => {
     const courier = item.data || {};
     return courier.isApproved === true || String(courier.approvalStatus || '').trim().toLowerCase() === 'approved';
@@ -4626,6 +4646,7 @@ function renderOperationsOrderDetails(orderId) {
         <div class="order-detail-card"><strong>المندوب الحالي</strong>${resolveDriverDisplay(data.assignedDriverId || data.offeredDriverId, data.assignedDriverName || '')}</div>
         <div class="order-detail-card"><strong>العنوان</strong>${escapeHtml(data.deliveryAddress || data.address || '-')}</div>
       </div>
+      ${renderOrderFinancialBreakdown(financial)}
       <div class="order-actions-row">
         <select id="orderAssignDriver-${escapeHtml(orderId)}">
           <option value="">اختر مندوبًا للتحويل اليدوي</option>

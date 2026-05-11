@@ -921,6 +921,17 @@ function isDeliveredOrderStatus(raw) {
   return normalizeOrderStatusForNotification(raw) === 'delivered';
 }
 
+function resolveCourierOrderFee(order = {}) {
+  return Math.round(toSafeNumber(
+    order.deliveryFeeForDriver
+      ?? order.driverShare
+      ?? order.courierFee
+      ?? order.driverFee
+      ?? order.courierDeliveryFee
+      ?? 0,
+  ));
+}
+
 async function syncCourierWalletSummary(driverId) {
   const normalizedDriverId = String(driverId || '').trim();
   if (!normalizedDriverId) return;
@@ -945,7 +956,7 @@ async function syncCourierWalletSummary(driverId) {
     deliveredOrdersCount += 1;
     walletLifetimeEarnings += Math.max(
       0,
-      Math.round(toSafeNumber(order.deliveryFeeForDriver ?? order.deliveryFee)),
+      resolveCourierOrderFee(order),
     );
   });
 
@@ -2892,8 +2903,8 @@ exports.syncCourierWalletOnOrderUpdate = onDocumentUpdated(
     const afterDriverId = String(after.assignedDriverId || '').trim();
     const beforeDelivered = isDeliveredOrderStatus(before.orderStatus || before.status);
     const afterDelivered = isDeliveredOrderStatus(after.orderStatus || after.status);
-    const beforeDriverFee = Math.round(toSafeNumber(before.deliveryFeeForDriver ?? before.deliveryFee));
-    const afterDriverFee = Math.round(toSafeNumber(after.deliveryFeeForDriver ?? after.deliveryFee));
+    const beforeDriverFee = resolveCourierOrderFee(before);
+    const afterDriverFee = resolveCourierOrderFee(after);
 
     const shouldSync =
       beforeDriverId !== afterDriverId
