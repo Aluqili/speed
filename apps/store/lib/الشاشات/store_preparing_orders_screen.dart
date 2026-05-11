@@ -114,6 +114,14 @@ List<String> _itemSummaryLines(Map<String, dynamic> data) {
       .toList();
 }
 
+String _orderNotes(Map<String, dynamic> data) {
+  for (final key in ['notes', 'orderNotes', 'specialInstructions']) {
+    final value = data[key]?.toString().trim() ?? '';
+    if (value.isNotEmpty) return value;
+  }
+  return '';
+}
+
 class StorePreparingOrdersScreen extends StatelessWidget {
   final String restaurantId;
 
@@ -178,6 +186,7 @@ class StorePreparingOrdersScreen extends StatelessWidget {
                         .fold<num>(0, (sum, item) => sum + _itemQuantity(item))
                     : 0;
                 final itemNotes = _itemNotesSummary(data);
+                final orderNotes = _orderNotes(data);
                 final orderCode = formatUnifiedOrderCode(
                   orderNumber: data['orderNumber'],
                   orderId: data['orderId'],
@@ -340,6 +349,38 @@ class StorePreparingOrdersScreen extends StatelessWidget {
                                     style: const TextStyle(
                                       color: AppThemeArabic.storeTextPrimary,
                                     ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      if (orderNotes.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppThemeArabic.storeAccent
+                                .withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.sticky_note_2_outlined,
+                                size: 18,
+                                color: AppThemeArabic.storeAccent,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  orderNotes,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppThemeArabic.storeTextPrimary,
                                   ),
                                 ),
                               ),

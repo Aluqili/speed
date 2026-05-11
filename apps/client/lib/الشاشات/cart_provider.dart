@@ -86,11 +86,30 @@ class CartProvider extends ChangeNotifier {
       _currentRestaurantId = item.restaurantId;
     }
     if (item.restaurantId != _currentRestaurantId) return false;
-    final idx = _cartItems.indexWhere((i) => i.id == item.id);
+    final normalizedNotes = (item.notes ?? '').trim();
+    final idx = _cartItems.indexWhere(
+      (i) => i.id == item.id && (i.notes ?? '').trim() == normalizedNotes,
+    );
     if (idx >= 0) {
       _cartItems[idx].quantity++;
     } else {
-      _cartItems.add(item);
+      final hasSameIdWithDifferentNotes = _cartItems.any((i) => i.id == item.id);
+      if (hasSameIdWithDifferentNotes && normalizedNotes.isNotEmpty) {
+        _cartItems.add(CartItem(
+          id: '${item.id}_note_${DateTime.now().microsecondsSinceEpoch}',
+          restaurantId: item.restaurantId,
+          menuItemId: item.menuItemId,
+          sizeKey: item.sizeKey,
+          sizeLabel: item.sizeLabel,
+          name: item.name,
+          description: item.description,
+          quantity: item.quantity,
+          price: item.price,
+          notes: normalizedNotes,
+        ));
+      } else {
+        _cartItems.add(item);
+      }
     }
     await _saveCart();
     notifyListeners();
@@ -174,14 +193,9 @@ class CartProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  int getQuantity(String itemId) {
-    final item = _cartItems.firstWhere(
-      (i) => i.id == itemId,
-      orElse: () => CartItem(
-          id: '', restaurantId: '', name: '', description: '', quantity: 0, price: 0.0),
-    );
-    return item.quantity;
-  }
+  int getQuantity(String itemId) => _cartItems
+      .where((i) => i.id == itemId || i.id.startsWith('${itemId}_note_'))
+      .fold<int>(0, (sum, i) => sum + i.quantity);
 
   int getQuantityByMenuItem(String restaurantId, String menuItemId) {
     if (menuItemId.trim().isEmpty) return 0;

@@ -671,7 +671,11 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
               if ((i.sizeKey ?? '').isNotEmpty) 'sizeKey': i.sizeKey,
               if ((i.sizeLabel ?? '').isNotEmpty) 'sizeLabel': i.sizeLabel,
               'description': i.description,
-              if ((i.notes ?? '').trim().isNotEmpty) 'notes': i.notes!.trim(),
+              if ((i.notes ?? '').trim().isNotEmpty) ...{
+                'notes': i.notes!.trim(),
+                'itemNotes': i.notes!.trim(),
+                'specialInstructions': i.notes!.trim(),
+              },
               'price': i.price,
               'quantity': i.quantity,
             })
