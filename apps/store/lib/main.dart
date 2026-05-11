@@ -33,9 +33,6 @@ FirebaseOptions _resolveFirebaseOptions() {
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: _resolveFirebaseOptions());
-  if (message.notification != null) {
-    return;
-  }
   await PushNotificationService.instance.showRemoteMessageAsLocal(message);
 }
 

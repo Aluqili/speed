@@ -663,29 +663,38 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
       },
       payload: {
         aps: {
+          alert: {
+            title: String(payload.title || ''),
+            body: String(payload.body || ''),
+          },
           sound: 'default',
           contentAvailable: true,
         },
       },
     },
-    notification: {
+  };
+
+  if (!(normalizedRole === 'store' && isOrderUrgent)) {
+    message.notification = {
       title: String(payload.title || ''),
       body: String(payload.body || ''),
-    },
-  };
+    };
+  }
 
-  message.android.notification = {
-    channelId: androidChannelId,
-    visibility: 'public',
-    icon: 'ic_stat_speedstar',
-    color: '#FF6B00',
-    defaultSound: true,
-  };
+  if (!(normalizedRole === 'store' && isOrderUrgent)) {
+    message.android.notification = {
+      channelId: androidChannelId,
+      visibility: 'public',
+      icon: 'ic_stat_speedstar',
+      color: '#FF6B00',
+      defaultSound: true,
+    };
 
-  if (normalizedRole === 'client') {
-    message.android.notification.sound = 'default';
-  } else if (isOrderUrgent) {
-    message.android.notification.sound = 'incoming_order';
+    if (normalizedRole === 'client') {
+      message.android.notification.sound = 'default';
+    } else if (isOrderUrgent) {
+      message.android.notification.sound = 'incoming_order';
+    }
   }
 
   try {
