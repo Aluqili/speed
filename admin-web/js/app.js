@@ -4573,6 +4573,7 @@ async function executeAdminOrderAction(orderId, action) {
       alert('اختر مندوبًا أولاً.');
       return;
     }
+    payload.nextDriverId = driverId;
     payload.driverId = driverId;
   }
 

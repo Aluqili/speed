@@ -4430,7 +4430,7 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
 
   const orderId = String(request.data?.orderId || '').trim();
   const action = String(request.data?.action || '').trim().toLowerCase();
-  const nextDriverId = String(request.data?.nextDriverId || '').trim();
+  const nextDriverId = String(request.data?.nextDriverId || request.data?.driverId || '').trim();
   const note = String(request.data?.note || '').trim();
 
   if (!orderId || !['cancel', 'unassign_courier', 'reassign_auto', 'assign_specific'].includes(action)) {
