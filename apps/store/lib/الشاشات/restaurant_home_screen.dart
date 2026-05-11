@@ -192,6 +192,23 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
         : value.toStringAsFixed(2);
   }
 
+  num _itemQuantity(dynamic rawItem) {
+    if (rawItem is! Map) return 0;
+    final value = rawItem['quantity'] ?? rawItem['qty'] ?? 1;
+    if (value is num) return value;
+    return num.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  bool _hasItemNotes(Map<String, dynamic> data) {
+    final items = data['items'];
+    if (items is! List) return false;
+    return items.any((item) {
+      if (item is! Map) return false;
+      const keys = ['notes', 'note', 'itemNotes', 'specialInstructions'];
+      return keys.any((key) => (item[key] ?? '').toString().trim().isNotEmpty);
+    });
+  }
+
   Map<String, dynamic> _promoDetails(Map<String, dynamic> data) {
     final promo = data['promocode'];
     if (promo is Map<String, dynamic>) return promo;
@@ -1284,10 +1301,15 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     final receivable = _resolveStoreReceivable(data);
     final itemCount =
         (data['items'] is List) ? (data['items'] as List).length : 0;
+    final totalQuantity = data['items'] is List
+        ? (data['items'] as List)
+            .fold<num>(0, (sum, item) => sum + _itemQuantity(item))
+        : 0;
     final statusColor = _orderStatusColor(status);
     final isAwaitingStoreDecision =
         status == 'store_pending' || status == 'قيد المراجعة';
     final hasStoreDiscount = _hasStoreAppliedDiscount(data);
+    final hasNotes = _hasItemNotes(data);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1369,13 +1391,21 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                 children: [
                   Expanded(
                       child: _buildOrderMetaChip(
-                          Icons.shopping_bag_outlined, '$itemCount أصناف')),
+                          Icons.shopping_bag_outlined,
+                          '$itemCount أصناف / ${_formatAmount(totalQuantity)} قطعة')),
                   const SizedBox(width: 8),
                   Expanded(
                       child: _buildOrderMetaChip(Icons.payments_outlined,
                           '${_formatAmount(receivable)} ج.س')),
                 ],
               ),
+              if (hasNotes) ...[
+                const SizedBox(height: 8),
+                _buildOrderMetaChip(
+                  Icons.sticky_note_2_outlined,
+                  'يوجد ملاحظات على الأصناف',
+                ),
+              ],
               if (isAwaitingStoreDecision) ...[
                 const SizedBox(height: 12),
                 Container(

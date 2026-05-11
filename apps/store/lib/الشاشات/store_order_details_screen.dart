@@ -63,6 +63,29 @@ String _formatAmount(num value) {
       : value.toStringAsFixed(2);
 }
 
+num _itemQuantity(dynamic rawItem) {
+  if (rawItem is! Map) return 0;
+  return _safeNum(rawItem['quantity'] ?? rawItem['qty'] ?? 1);
+}
+
+num _itemPrice(dynamic rawItem) {
+  if (rawItem is! Map) return 0;
+  return _safeNum(rawItem['price'] ?? rawItem['unitPrice']);
+}
+
+String _itemName(dynamic rawItem) {
+  if (rawItem is! Map) return 'صنف';
+  final name = (rawItem['name'] ?? rawItem['title'] ?? 'صنف').toString().trim();
+  return name.isEmpty ? 'صنف' : name;
+}
+
+num _itemLineTotal(dynamic rawItem) {
+  if (rawItem is! Map) return 0;
+  final savedTotal = _safeNum(rawItem['total'] ?? rawItem['lineTotal']);
+  if (savedTotal > 0) return savedTotal;
+  return _itemQuantity(rawItem) * _itemPrice(rawItem);
+}
+
 Map<String, dynamic> _promoDetails(Map<String, dynamic> orderData) {
   final promo = orderData['promocode'];
   if (promo is Map<String, dynamic>) return promo;
@@ -124,6 +147,60 @@ String _itemSpecialNotes(dynamic rawItem) {
     if (text.isNotEmpty) return text;
   }
   return '';
+}
+
+class _ItemInfoChip extends StatelessWidget {
+  const _ItemInfoChip({
+    required this.icon,
+    required this.text,
+    this.highlighted = false,
+  });
+
+  final IconData icon;
+  final String text;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: highlighted
+            ? AppThemeArabic.storePrimary.withValues(alpha: 0.10)
+            : Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: highlighted
+              ? AppThemeArabic.storePrimary.withValues(alpha: 0.20)
+              : Colors.black12,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 15,
+            color: highlighted
+                ? AppThemeArabic.storePrimary
+                : AppThemeArabic.storeTextSecondary,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: highlighted ? FontWeight.w800 : FontWeight.w600,
+              color: highlighted
+                  ? AppThemeArabic.storePrimary
+                  : AppThemeArabic.storeTextPrimary,
+              fontFamily: 'Tajawal',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class StoreOrderDetailsScreen extends StatelessWidget {
@@ -473,9 +550,10 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                 icon: Icons.restaurant_menu_outlined,
                 child: Column(
                   children: items.map((item) {
-                    final qty = item['quantity'] ?? 0;
-                    final price = item['price'] ?? 0;
-                    final totalItemPrice = qty * price;
+                    final name = _itemName(item);
+                    final qty = _itemQuantity(item);
+                    final price = _itemPrice(item);
+                    final totalItemPrice = _itemLineTotal(item);
                     final itemNotes = _itemSpecialNotes(item);
                     return Container(
                       margin: const EdgeInsets.only(bottom: 10),
@@ -506,20 +584,45 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  item['name']?.toString() ?? 'صنف',
+                                  '${_formatAmount(qty)} × $name',
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 15,
                                     fontFamily: 'Tajawal',
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'الكمية: $qty',
-                                  style: const TextStyle(
-                                    color: AppThemeArabic.storeTextSecondary,
-                                    fontFamily: 'Tajawal',
-                                  ),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    _ItemInfoChip(
+                                      icon: Icons.confirmation_number_outlined,
+                                      text: 'الكمية: ${_formatAmount(qty)}',
+                                    ),
+                                    _ItemInfoChip(
+                                      icon: Icons.sell_outlined,
+                                      text:
+                                          'سعر الوحدة: ${_formatAmount(price)} ج.س',
+                                    ),
+                                    _ItemInfoChip(
+                                      icon: Icons.calculate_outlined,
+                                      text:
+                                          'إجمالي الصنف: ${_formatAmount(totalItemPrice)} ج.س',
+                                      highlighted: true,
+                                    ),
+                                  ],
                                 ),
+                                if (qty > 1) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'هذا الصنف مطلوب ${_formatAmount(qty)} مرات.',
+                                    style: const TextStyle(
+                                      color: AppThemeArabic.storeTextSecondary,
+                                      fontFamily: 'Tajawal',
+                                    ),
+                                  ),
+                                ],
                                 if (itemNotes.isNotEmpty) ...[
                                   const SizedBox(height: 8),
                                   Container(

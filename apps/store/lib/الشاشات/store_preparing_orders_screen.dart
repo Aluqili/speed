@@ -25,6 +25,19 @@ String _formatAmount(num value) {
       : value.toStringAsFixed(2);
 }
 
+num _itemQuantity(dynamic rawItem) {
+  if (rawItem is! Map) return 0;
+  final value = rawItem['quantity'] ?? rawItem['qty'] ?? 1;
+  if (value is num) return value;
+  return num.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+String _itemName(dynamic rawItem) {
+  if (rawItem is! Map) return 'صنف';
+  final name = (rawItem['name'] ?? rawItem['title'] ?? 'صنف').toString().trim();
+  return name.isEmpty ? 'صنف' : name;
+}
+
 Map<String, dynamic> _promoDetails(Map<String, dynamic> data) {
   final promo = data['promocode'];
   if (promo is Map<String, dynamic>) return promo;
@@ -83,11 +96,21 @@ List<String> _itemNotesSummary(Map<String, dynamic> data) {
   if (items is! List) return const [];
   return items
       .map((item) {
-        final name = item is Map ? (item['name'] ?? 'صنف').toString() : 'صنف';
+        final name = _itemName(item);
+        final quantity = _itemQuantity(item);
         final notes = _itemSpecialNotes(item);
-        return notes.isEmpty ? '' : '$name: $notes';
+        return notes.isEmpty ? '' : '${_formatAmount(quantity)} × $name: $notes';
       })
       .where((entry) => entry.isNotEmpty)
+      .toList();
+}
+
+List<String> _itemSummaryLines(Map<String, dynamic> data) {
+  final items = data['items'];
+  if (items is! List) return const [];
+  return items
+      .map((item) => '${_formatAmount(_itemQuantity(item))} × ${_itemName(item)}')
+      .take(3)
       .toList();
 }
 
@@ -149,6 +172,11 @@ class StorePreparingOrdersScreen extends StatelessWidget {
                 final discount = _storeDiscountAmount(data);
                 final itemCount =
                     data['items'] is List ? (data['items'] as List).length : 0;
+                final itemSummary = _itemSummaryLines(data);
+                final totalQuantity = data['items'] is List
+                    ? (data['items'] as List)
+                        .fold<num>(0, (sum, item) => sum + _itemQuantity(item))
+                    : 0;
                 final itemNotes = _itemNotesSummary(data);
                 final orderCode = formatUnifiedOrderCode(
                   orderNumber: data['orderNumber'],
@@ -205,15 +233,9 @@ class StorePreparingOrdersScreen extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(height: 4),
-                                Text(
-                                  data['clientName']
-                                              ?.toString()
-                                              .trim()
-                                              .isEmpty ==
-                                          false
-                                      ? data['clientName'].toString()
-                                      : 'عميل غير محدد',
-                                  style: const TextStyle(
+                                const Text(
+                                  'تفاصيل التحضير فقط - بيانات العميل مخفية',
+                                  style: TextStyle(
                                     color: AppThemeArabic.storeTextSecondary,
                                   ),
                                 ),
@@ -228,7 +250,8 @@ class StorePreparingOrdersScreen extends StatelessWidget {
                           Expanded(
                             child: _MetaChip(
                               icon: Icons.shopping_bag_outlined,
-                              label: '$itemCount أصناف',
+                              label:
+                                  '$itemCount أصناف / ${_formatAmount(totalQuantity)} قطعة',
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -246,6 +269,36 @@ class StorePreparingOrdersScreen extends StatelessWidget {
                           icon: Icons.local_offer_outlined,
                           label:
                               'بعد خصم ممول من المتجر ${_formatAmount(discount)} ج.س',
+                        ),
+                      ],
+                      if (itemSummary.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppThemeArabic.storeBackground,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'ملخص الأصناف',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: AppThemeArabic.storeTextPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ...itemSummary.map(
+                                (line) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text(line),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                       if (itemNotes.isNotEmpty) ...[
