@@ -2379,6 +2379,19 @@ function renderOrderFinancialBreakdown(financial) {
   `;
 }
 
+function buildWalletSummarySection(title, walletData = {}) {
+  return buildEntitySection(title, buildEntityFactsGrid([
+    {
+      label: 'الرصيد المستحق الآن',
+      value: formatAdminMoney(walletData.walletPendingBalance),
+      className: 'entity-fact-highlight',
+    },
+    { label: 'إجمالي المستحقات', value: formatAdminMoney(walletData.walletLifetimeEarnings) },
+    { label: 'المحول سابقًا', value: formatAdminMoney(walletData.walletTransferredTotal) },
+    { label: 'طلبات مسلمة محسوبة', value: Number(walletData.walletDeliveredOrdersCount || 0).toLocaleString('ar-EG') },
+  ]), { eyebrow: 'المحفظة' });
+}
+
 async function refreshActivePortal(tabId) {
   const activeId = tabId || document.querySelector('.tab-panel.active')?.id || 'dashboard';
   const refreshButton = document.querySelector(`[data-portal-refresh="${activeId}"]`);
@@ -4899,8 +4912,8 @@ function mountManagement() {
   }
 
   // Skeletons while waiting for Firestore data
-  if (restaurantsTable) setHtml(restaurantsTable, skeletonTable(['المتجر', 'الحالة', 'حالة القائمة', 'إجراء']));
-  if (couriersTable) setHtml(couriersTable, skeletonTable(['المندوب', 'الحالة', 'المركبة', 'إجراء']));
+  if (restaurantsTable) setHtml(restaurantsTable, skeletonTable(['المتجر', 'الرصيد', 'الحالة', 'حالة القائمة', 'إجراء']));
+  if (couriersTable) setHtml(couriersTable, skeletonTable(['المندوب', 'الرصيد', 'الحالة', 'المركبة', 'إجراء']));
 
   unsubscribers.push(
     onSnapshot(query(collection(db, 'restaurants'), where('approvalStatus', '==', 'approved')), (snap) => {
@@ -4915,6 +4928,7 @@ function mountManagement() {
         const menuApproved = data.menuApproved !== false;
         return `<tr>
           <td>${data.name || d.id}</td>
+          <td>${formatAdminMoney(data.walletPendingBalance)}</td>
           <td><span class="badge ${closed ? 'open' : 'closed'}">${closed ? 'مغلق مؤقتًا' : 'مفتوح'}</span></td>
           <td><span class="badge ${menuApproved ? 'closed' : 'open'}">${menuApproved ? 'القائمة معتمدة' : 'القائمة غير معتمدة'}</span></td>
           <td>
@@ -4925,7 +4939,7 @@ function mountManagement() {
           </td>
         </tr>`;
         });
-      setHtml(restaurantsTable, table(['المتجر', 'الحالة', 'حالة القائمة', 'إجراء'], rows));
+      setHtml(restaurantsTable, table(['المتجر', 'الرصيد', 'الحالة', 'حالة القائمة', 'إجراء'], rows));
       restaurantsTable.querySelectorAll('[data-view-store]').forEach((btn) => {
         btn.addEventListener('click', async () => {
           const id = btn.getAttribute('data-view-store');
@@ -4970,6 +4984,7 @@ function mountManagement() {
         const available = data.available === true;
         return `<tr>
           <td>${data.name || d.id}</td>
+          <td>${formatAdminMoney(data.walletPendingBalance)}</td>
           <td>${status}</td>
           <td>${available ? 'متاح' : 'غير متاح'}</td>
           <td>
@@ -4980,7 +4995,7 @@ function mountManagement() {
           </td>
         </tr>`;
       });
-      setHtml(couriersTable, table(['المندوب', 'حالة الموافقة', 'التوفر', 'إجراء'], rows));
+      setHtml(couriersTable, table(['المندوب', 'الرصيد', 'حالة الموافقة', 'التوفر', 'إجراء'], rows));
 
       couriersTable.querySelectorAll('[data-view-driver]').forEach((btn) => {
         btn.addEventListener('click', async () => {
@@ -5133,6 +5148,7 @@ async function loadCourierDetails(driverId) {
           { label: 'الموافقة', value: formatApprovalStatusLabel(driver.approvalStatus || (driver.isApproved ? 'approved' : 'pending')) },
           { label: 'التوفر', value: driver.available === true ? 'متاح' : 'غير متاح', className: driver.available === true ? 'entity-fact-highlight' : '' },
         ]), { eyebrow: 'الملف' })}
+        ${buildWalletSummarySection('محفظة المندوب', driver)}
         ${buildBankAccountsDetailsMarkup(driver)}
         ${buildEntitySection('الأداء الحالي', buildEntityFactsGrid([
           { label: 'إجمالي الطلبات', value: orders.length },
@@ -5306,6 +5322,7 @@ async function loadStoreDetails(storeId) {
           { label: 'العنوان', value: store.address || '-' },
           { label: 'خصم التوصيل/المتجر', value: String(store.deliveryDiscountPercentage ?? '-') },
         ]), { eyebrow: 'الملف' })}
+        ${buildWalletSummarySection('محفظة المطعم', store)}
         ${buildBankAccountsDetailsMarkup(store)}
         ${buildEntitySection('مؤشرات المتجر', buildEntityFactsGrid([
           { label: 'إجمالي الطلبات', value: orders.length },
