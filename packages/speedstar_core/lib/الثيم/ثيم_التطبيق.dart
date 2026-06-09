@@ -576,41 +576,70 @@ class AppThemeArabic {
     );
     return base.copyWith(
       scaffoldBackgroundColor:
-          dark ? const Color(0xFF1B140E) : courierBackground,
+          dark ? const Color(0xFF17110C) : const Color(0xFFFBF7F1),
       primaryColor: primary,
       textTheme: textTheme,
       appBarTheme: AppBarTheme(
-        backgroundColor: dark ? const Color(0xFF241A12) : courierSurface,
+        backgroundColor: dark ? const Color(0xFF221810) : courierSurface,
         surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0.5,
         centerTitle: true,
         iconTheme: IconThemeData(color: primary),
+        actionsIconTheme: IconThemeData(color: primary),
         titleTextStyle: textTheme.titleLarge?.copyWith(
-          color: primary,
-          fontWeight: FontWeight.w800,
-          fontSize: 20,
+          color: courierTextPrimary,
+          fontWeight: FontWeight.w900,
+          fontSize: 19,
+        ),
+        shape: Border(
+          bottom: BorderSide(
+            color: dark ? const Color(0xFF38291D) : const Color(0xFFEBDDCE),
+            width: 1,
+          ),
         ),
       ),
       cardTheme: CardThemeData(
-        color: dark ? const Color(0xFF2A1E15) : courierSurface,
-        elevation: dark ? 0 : 8,
-        shadowColor: primary.withValues(alpha: dark ? 0 : 0.08),
-        margin: const EdgeInsets.all(8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        color: dark ? const Color(0xFF241A12) : courierSurface,
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: BorderSide(
+            color: dark ? const Color(0xFF3C2B1E) : const Color(0xFFE9DDCF),
+          ),
+        ),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: dark ? const Color(0xFF342417) : courierTextPrimary,
         contentTextStyle: textTheme.bodyMedium?.copyWith(color: Colors.white),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: dark ? const Color(0xFF241A12) : Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: dark ? const Color(0xFF2A1E15) : Colors.white,
         hintStyle: TextStyle(
-            color: dark ? const Color(0xFFAFC4E8) : courierTextSecondary),
+          color: dark ? const Color(0xFFAFC4E8) : courierTextSecondary,
+          fontWeight: FontWeight.w500,
+        ),
         labelStyle: TextStyle(
-            color: dark ? const Color(0xFFC7D8F5) : courierTextSecondary),
+          color: dark ? const Color(0xFFC7D8F5) : courierTextSecondary,
+          fontWeight: FontWeight.w600,
+        ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
@@ -623,37 +652,53 @@ class AppThemeArabic {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: primary, width: 1.4),
+          borderSide: BorderSide(color: primary, width: 1.5),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primary,
           foregroundColor: Colors.white,
-          minimumSize: const Size.fromHeight(50),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          textStyle:
-              textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          minimumSize: const Size.fromHeight(52),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          textStyle: textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          textStyle: textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: primary,
-          minimumSize: const Size.fromHeight(48),
-          side: BorderSide(color: primary.withValues(alpha: 0.28)),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          textStyle:
-              textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          minimumSize: const Size.fromHeight(50),
+          side: BorderSide(color: primary.withValues(alpha: 0.26)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          textStyle: textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
       chipTheme: base.chipTheme.copyWith(
         backgroundColor:
-            dark ? const Color(0xFF3A291B) : const Color(0xFFF6E6CF),
+            dark ? const Color(0xFF362619) : const Color(0xFFF6E9D7),
         selectedColor: primary.withValues(alpha: 0.14),
         side: BorderSide.none,
-        labelStyle: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+        labelStyle: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       ),
       dividerTheme: DividerThemeData(
@@ -665,12 +710,13 @@ class AppThemeArabic {
         unselectedItemColor: courierTextSecondary,
         backgroundColor: dark ? const Color(0xFF221810) : Colors.white,
         type: BottomNavigationBarType.fixed,
+        elevation: 0,
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: dark ? const Color(0xFF221810) : Colors.white,
         indicatorColor: primary.withValues(alpha: 0.14),
         labelTextStyle: WidgetStatePropertyAll(
-          textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+          textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w800),
         ),
       ),
     );

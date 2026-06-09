@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import 'courier_ui.dart';
 
 class CourierPrivacyPolicyScreen extends StatelessWidget {
   const CourierPrivacyPolicyScreen({super.key});
@@ -26,60 +27,37 @@ class CourierPrivacyPolicyScreen extends StatelessWidget {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: AppThemeArabic.clientBackground,
-        appBar: AppBar(
-          title: const Text('سياسة الخصوصية',
-              style: TextStyle(
-                  color: AppThemeArabic.clientPrimary,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
-                  fontFamily: 'Tajawal')),
-          backgroundColor: Colors.white,
-          centerTitle: true,
-          elevation: 1,
-          iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-          ),
-        ),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
+        appBar: buildCourierAppBar('سياسة الخصوصية'),
+        body: CourierPageBackground(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              const CourierHeroCard(
+                title: 'خصوصية المندوب',
+                subtitle:
+                    'روابط السياسة الرسمية وحذف الحساب الخاصة بتطبيق المندوب.',
+                icon: Icons.privacy_tip_rounded,
+              ),
+              const SizedBox(height: 14),
+              CourierSectionCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'سياسة الخصوصية للمندوب',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'يوضح هذا القسم كيفية التعامل مع بيانات حساب المندوب والموقع والطلبات.',
-                      style: TextStyle(height: 1.8),
+                    const CourierSectionTitle(
+                      title: 'سياسة الخصوصية للمندوب',
+                      subtitle:
+                          'توضح كيفية التعامل مع بيانات الحساب والموقع والطلبات.',
                     ),
                     const SizedBox(height: 16),
-                    const Text(
-                      'الرابط الرسمي:',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    const SelectableText(
-                      _policyUrl,
-                      style:
-                          TextStyle(color: AppThemeArabic.clientPrimary),
-                    ),
+                    const SelectableText(_policyUrl),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(
                       onPressed: () => _openExternalUrl(context, _policyUrl),
-                      icon: const Icon(Icons.open_in_new),
+                      icon: const Icon(Icons.open_in_new_rounded),
                       label: const Text('فتح الرابط الرسمي'),
                     ),
                     const SizedBox(height: 8),
-                    ElevatedButton.icon(
+                    OutlinedButton.icon(
                       onPressed: () async {
                         await Clipboard.setData(
                           const ClipboardData(text: _policyUrl),
@@ -87,36 +65,33 @@ class CourierPrivacyPolicyScreen extends StatelessWidget {
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                              content: Text('تم نسخ رابط سياسة الخصوصية')),
+                            content: Text('تم نسخ رابط سياسة الخصوصية'),
+                          ),
                         );
                       },
-                      icon: const Icon(Icons.copy),
+                      icon: const Icon(Icons.copy_rounded),
                       label: const Text('نسخ الرابط'),
                     ),
                     const SizedBox(height: 20),
                     const Divider(),
                     const SizedBox(height: 12),
-                    const Text(
-                      'رابط حذف الحساب الرسمي:',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                    const CourierSectionTitle(
+                      title: 'حذف الحساب',
+                      subtitle: 'الرابط الرسمي لطلب حذف حساب المندوب.',
                     ),
-                    const SizedBox(height: 8),
-                    const SelectableText(
-                      _deletionUrl,
-                      style:
-                          TextStyle(color: AppThemeArabic.clientPrimary),
-                    ),
+                    const SizedBox(height: 12),
+                    const SelectableText(_deletionUrl),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(
                       onPressed: () => _openExternalUrl(context, _deletionUrl),
-                      icon: const Icon(Icons.delete_forever),
+                      icon: const Icon(Icons.delete_forever_rounded),
                       label: const Text('فتح صفحة حذف الحساب'),
                     ),
                   ],
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

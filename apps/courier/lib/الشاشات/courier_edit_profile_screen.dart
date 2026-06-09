@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:image_picker/image_picker.dart';
+import 'courier_ui.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
@@ -146,18 +147,10 @@ class _CourierEditProfileScreenState extends State<CourierEditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('تعديل الملف الشخصي', style: TextStyle(fontWeight: FontWeight.bold, color: AppThemeArabic.clientPrimary, fontFamily: 'Tajawal', fontSize: 20)),
-        backgroundColor: Colors.white,
-        elevation: 1,
-        centerTitle: true,
-        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-        ),
-      ),
-      backgroundColor: AppThemeArabic.clientBackground,
-      body: _loading
+      appBar: buildCourierAppBar('تعديل الملف الشخصي'),
+      backgroundColor: Colors.transparent,
+      body: CourierPageBackground(
+        child: _loading
           ? const Center(child: GFLoader(type: GFLoaderType.circle))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
@@ -232,6 +225,7 @@ class _CourierEditProfileScreenState extends State<CourierEditProfileScreen> {
                 ),
               ),
             ),
+      ),
     );
   }
 }

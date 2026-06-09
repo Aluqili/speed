@@ -26,6 +26,7 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
   final _discountValueController = TextEditingController();
   final _maxDiscountController = TextEditingController();
   final _minOrderController = TextEditingController();
+  final _reviewNoteController = TextEditingController();
   final _cloudinary =
       CloudinaryPublic('dvnzloec6', 'flutter_unsigned', cache: false);
 
@@ -41,6 +42,20 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
       <String, Map<String, dynamic>>{};
 
   @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _startsAt = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.hour,
+      now.minute - (now.minute % 5),
+    );
+    _endsAt = _startsAt!.add(const Duration(days: 1));
+  }
+
+  @override
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
@@ -48,6 +63,7 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
     _discountValueController.dispose();
     _maxDiscountController.dispose();
     _minOrderController.dispose();
+    _reviewNoteController.dispose();
     super.dispose();
   }
 
@@ -173,6 +189,7 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
           'endsAt': _endsAt!.toIso8601String(),
           'imageUrl': _uploadedImageUrl ?? '',
           'targetItems': _selectedItems.values.toList(),
+          'merchantReviewNote': _reviewNoteController.text.trim(),
         },
       });
 
@@ -185,14 +202,23 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
       _minOrderController.clear();
 
       if (!mounted) return;
+      final now = DateTime.now();
+      final nextStart = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        now.hour,
+        now.minute - (now.minute % 5),
+      );
       setState(() {
         _discountScope = 'order_total';
         _discountType = 'percent';
-        _startsAt = null;
-        _endsAt = null;
+        _startsAt = nextStart;
+        _endsAt = nextStart.add(const Duration(days: 1));
         _uploadedImageUrl = null;
         _selectedItemIds.clear();
         _selectedItems.clear();
+        _reviewNoteController.clear();
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -307,7 +333,7 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                   ),
                   SizedBox(height: 6),
                   Text(
-                    'يمكنك طلب خصم على الطلب، على التوصيل، أو على وجبات محددة، ولن يظهر للعميل حتى يعتمد من الأدمن.',
+                    'اطلب خصمًا على الطلب، التوصيل، أو وجبات محددة — بمجرد موافقة الأدمن يظهر العرض للعملاء فورًا.',
                     style: TextStyle(
                         color: Colors.white70, fontFamily: 'Tajawal'),
                   ),
@@ -456,6 +482,15 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                       decoration: const InputDecoration(
                         labelText: 'الحد الأدنى للطلب لتفعيل العرض',
                         hintText: '0 = بدون حد أدنى',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _reviewNoteController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'ملاحظة للأدمن (اختياري)',
+                        hintText: 'أي معلومات إضافية تريد إيصالها للمراجع',
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -614,7 +649,21 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final docs = snapshot.data?.docs.toList() ?? [];
+
+                // Sort: active first, then pending, then rejected, then by updatedAt
+                int _statusOrder(Map<String, dynamic> d) {
+                  final s = (d['status'] ?? 'pending').toString();
+                  final active = d['isActive'] == true;
+                  if (s == 'approved' && active) return 0;
+                  if (s == 'approved' && !active) return 1;
+                  if (s == 'pending') return 2;
+                  return 3;
+                }
+
                 docs.sort((a, b) {
+                  final orderA = _statusOrder(a.data());
+                  final orderB = _statusOrder(b.data());
+                  if (orderA != orderB) return orderA.compareTo(orderB);
                   final aTime = a.data()['updatedAt'];
                   final bTime = b.data()['updatedAt'];
                   final aMs =
@@ -638,22 +687,45 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                     final data = doc.data();
                     final status = (data['status'] ?? 'pending').toString();
                     final isActive = data['isActive'] == true;
+                    final isLive = status == 'approved' && isActive;
                     final color = _statusColor(status, isActive);
                     final targetItems =
                         (data['targetItems'] as List?) ?? const [];
+                    final legacyReviewNote =
+                        (data['reviewNote'] ?? '').toString().trim();
+                    final merchantReviewNote =
+                        (data['merchantReviewNote'] ??
+                                (status == 'pending' ? legacyReviewNote : ''))
+                            .toString()
+                            .trim();
+                    final adminReviewNote =
+                        (data['adminReviewNote'] ??
+                                (status == 'pending' ? '' : legacyReviewNote))
+                            .toString()
+                            .trim();
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: isLive
+                            ? const Color(0xFFF0FDF4)
+                            : Colors.white,
                         borderRadius: BorderRadius.circular(22),
-                        border: Border.all(color: color.withValues(alpha: 0.24)),
+                        border: Border.all(
+                          color: color.withValues(alpha: isLive ? 0.45 : 0.24),
+                          width: isLive ? 1.5 : 1.0,
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
+                              if (isLive) ...[
+                                const Icon(Icons.circle,
+                                    size: 10, color: Colors.green),
+                                const SizedBox(width: 6),
+                              ],
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment:
@@ -679,6 +751,7 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                                   ],
                                 ),
                               ),
+                              const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
@@ -692,6 +765,7 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                                     color: color,
                                     fontWeight: FontWeight.w700,
                                     fontFamily: 'Tajawal',
+                                    fontSize: 13,
                                   ),
                                 ),
                               ),
@@ -717,21 +791,73 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                                 _metaChip('${targetItems.length} وجبات محددة'),
                             ],
                           ),
-                          if ((data['reviewNote'] ?? '')
-                              .toString()
-                              .trim()
-                              .isNotEmpty) ...[
+                          if (adminReviewNote.isNotEmpty) ...[
                             const SizedBox(height: 10),
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFFF7ED),
+                                color: status == 'rejected'
+                                    ? const Color(0xFFFFF1F2)
+                                    : const Color(0xFFFFF7ED),
                                 borderRadius: BorderRadius.circular(14),
                               ),
-                              child: Text(
-                                'ملاحظة المراجعة: ${(data['reviewNote'] ?? '').toString()}',
-                                style: const TextStyle(fontFamily: 'Tajawal'),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    status == 'rejected'
+                                        ? Icons.info_outline
+                                        : Icons.sticky_note_2_outlined,
+                                    size: 16,
+                                    color: status == 'rejected'
+                                        ? Colors.red
+                                        : Colors.orange,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'ملاحظة الأدمن: $adminReviewNote',
+                                      style: TextStyle(
+                                        fontFamily: 'Tajawal',
+                                        color: status == 'rejected'
+                                            ? Colors.red.shade700
+                                            : Colors.orange.shade800,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (merchantReviewNote.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(
+                                    Icons.chat_bubble_outline,
+                                    size: 16,
+                                    color: AppThemeArabic.storeTextSecondary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'ملاحظتك: $merchantReviewNote',
+                                      style: const TextStyle(
+                                        fontFamily: 'Tajawal',
+                                        color: AppThemeArabic.storeTextSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],

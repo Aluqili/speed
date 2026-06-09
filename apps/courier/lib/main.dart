@@ -10,8 +10,9 @@ import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'firebase_options.dart' as dev_firebase;
 import 'firebase_options_prod.dart' as prod_firebase;
-import 'الشاشات/courier_main_screen.dart';
 import 'الشاشات/courier_link_request_screen.dart';
+import 'الشاشات/courier_main_screen.dart';
+import 'الشاشات/courier_ui.dart';
 import 'الخدمات/push_notification_service.dart';
 
 void main() {

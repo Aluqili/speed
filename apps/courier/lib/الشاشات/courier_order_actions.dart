@@ -2,28 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+
+import 'courier_confirm_delivery_screen.dart';
 
 class CourierOrderActions extends StatelessWidget {
   final String orderId;
   const CourierOrderActions({super.key, required this.orderId});
 
-  static Future<void> _driverGoToClient(String orderId, String driverId) {
-    return FirebaseFirestore.instance.collection('orders').doc(orderId).update({
-      'assignedDriverId': driverId,
-      'orderStatus': 'picked_up',
-      'status': 'picked_up',
-      'updatedAt': FieldValue.serverTimestamp(),
+  static Future<void> _driverGoToClient(String orderId, String driverId) async {
+    await FirebaseFunctions.instanceFor(region: 'me-central1')
+        .httpsCallable('courierUpdateOrderStage')
+        .call({
+      'orderId': orderId,
+      'driverId': driverId,
+      'stage': 'picked_up',
     });
   }
 
-  static Future<void> _driverCompleteDelivery(String orderId) {
-    return FirebaseFirestore.instance.collection('orders').doc(orderId).update({
-      'orderStatus': 'delivered',
-      'status': 'delivered',
-      'deliveredAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+  Future<String?> _assignedDriverId() async {
+    final doc =
+        await FirebaseFirestore.instance.collection('orders').doc(orderId).get();
+    final data = doc.data() ?? <String, dynamic>{};
+    final assignedDriverId = (data['assignedDriverId'] ?? '').toString().trim();
+    return assignedDriverId.isEmpty ? null : assignedDriverId;
   }
 
   Future<String?> _currentDriverId() async {
@@ -45,7 +48,8 @@ class CourierOrderActions extends StatelessWidget {
             GFButton(
               onPressed: () async {
                 try {
-                  final driverId = await _currentDriverId();
+                  final driverId =
+                      await _assignedDriverId() ?? await _currentDriverId();
                   if (driverId == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('يجب تسجيل الدخول كمندوب')),
@@ -73,16 +77,28 @@ class CourierOrderActions extends StatelessWidget {
             GFButton(
               onPressed: () async {
                 try {
-                  await _driverCompleteDelivery(orderId);
-                  if (context.mounted) {
+                  final driverId =
+                      await _assignedDriverId() ?? await _currentDriverId();
+                  if (driverId == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('تم تسليم الطلب')),
+                      const SnackBar(content: Text('يجب تسجيل الدخول كمندوب')),
                     );
+                    return;
                   }
+                  if (!context.mounted) return;
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CourierConfirmDeliveryScreen(
+                        orderId: orderId,
+                        driverId: driverId,
+                      ),
+                    ),
+                  );
                 } catch (e) {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('فشل التسليم: $e')),
+                      SnackBar(content: Text('تعذر فتح إثبات التسليم: $e')),
                     );
                   }
                 }

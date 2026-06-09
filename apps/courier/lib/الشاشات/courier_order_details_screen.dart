@@ -1,18 +1,19 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'dart:math';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/Ø§Ù„Ø«ÙŠÙ…/Ø«ÙŠÙ…_Ø§Ù„ØªØ·Ø¨ÙŠÙ‚.dart';
 import 'package:speedstar_core/speedstar_core.dart'
     show formatUnifiedOrderCode, OrderStatusPalette;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../helpers/courier_runtime_helpers.dart';
 
-import 'chat_screen.dart' show ChatScreen;
+import 'courier_client_contact_card.dart';
 import 'courier_go_to_restaurant_screen.dart';
 import 'courier_go_to_client_screen.dart';
 import 'courier_confirm_delivery_screen.dart';
+import 'courier_ui.dart';
 
 class CourierOrderDetailsScreen extends StatefulWidget {
   final String orderId;
@@ -84,6 +85,16 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     return (data['orderStatus'] ?? data['status'] ?? '').toString().trim();
   }
 
+  bool _isOfferForDriver(Map<String, dynamic> data) {
+    final offeredDriverId = (data['offeredDriverId'] ?? '').toString();
+    final offerDriverIds = (data['offerDriverIds'] as List?)
+            ?.map((id) => id.toString())
+            .toSet() ??
+        <String>{};
+    return offeredDriverId == widget.driverId ||
+        offerDriverIds.contains(widget.driverId);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -105,20 +116,18 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     if (docSnapshot.exists) {
       final data = docSnapshot.data()!;
       final assignedDriverId = (data['assignedDriverId'] ?? '').toString();
-      final offeredDriverId = (data['offeredDriverId'] ?? '').toString();
       final status = _getOrderStatus(data);
 
       final belongsToAnotherAssigned =
           assignedDriverId.isNotEmpty && assignedDriverId != widget.driverId;
       final belongsToAnotherOffer = status == 'courier_offer_pending' &&
-          offeredDriverId.isNotEmpty &&
-          offeredDriverId != widget.driverId;
+          !_isOfferForDriver(data);
 
       if (belongsToAnotherAssigned || belongsToAnotherOffer) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content: Text('تم استلام هذا الطلب بواسطة مندوب آخر')),
+                content: Text('ØªÙ… Ø§Ø³ØªÙ„Ø§Ù… Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨ Ø¨ÙˆØ§Ø³Ø·Ø© Ù…Ù†Ø¯ÙˆØ¨ Ø¢Ø®Ø±')),
           );
           Navigator.of(context).pop();
         }
@@ -357,11 +366,9 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     if (orderData == null) return;
 
     final status = _getOrderStatus(orderData!);
-    final offeredDriverId = (orderData!['offeredDriverId'] ?? '').toString();
-    if (status != 'courier_offer_pending' ||
-        offeredDriverId != widget.driverId) {
+    if (status != 'courier_offer_pending' || !_isOfferForDriver(orderData!)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('هذا العرض غير متاح لك الآن')),
+        const SnackBar(content: Text('Ù‡Ø°Ø§ Ø§Ù„Ø¹Ø±Ø¶ ØºÙŠØ± Ù…ØªØ§Ø­ Ù„Ùƒ Ø§Ù„Ø¢Ù†')),
       );
       return;
     }
@@ -384,7 +391,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم قبول الطلب')),
+      const SnackBar(content: Text('ØªÙ… Ù‚Ø¨ÙˆÙ„ Ø§Ù„Ø·Ù„Ø¨')),
     );
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -430,7 +437,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
 
     if (status == 'courier_assigned' ||
         status == 'pickup_ready' ||
-        status == 'جاهز للتوصيل') {
+        status == 'Ø¬Ø§Ù‡Ø² Ù„Ù„ØªÙˆØµÙŠÙ„') {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => CourierGoToRestaurantScreen(
@@ -442,7 +449,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
       return;
     }
 
-    if (status == 'picked_up' || status == 'قيد التوصيل') {
+    if (status == 'picked_up' || status == 'Ù‚ÙŠØ¯ Ø§Ù„ØªÙˆØµÙŠÙ„') {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => CourierGoToClientScreen(
@@ -455,7 +462,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
       return;
     }
 
-    if (status == 'arrived_to_client' || status == 'وصل إلى العميل') {
+    if (status == 'arrived_to_client' || status == 'ÙˆØµÙ„ Ø¥Ù„Ù‰ Ø§Ù„Ø¹Ù…ÙŠÙ„') {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => CourierConfirmDeliveryScreen(
@@ -477,14 +484,9 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     });
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم رفض العرض وسيتم إرساله لمندوب آخر')),
+      const SnackBar(content: Text('ØªÙ… Ø±ÙØ¶ Ø§Ù„Ø¹Ø±Ø¶ ÙˆØ³ÙŠØªÙ… Ø¥Ø±Ø³Ø§Ù„Ù‡ Ù„Ù…Ù†Ø¯ÙˆØ¨ Ø¢Ø®Ø±')),
     );
     Navigator.pop(context);
-  }
-
-  String _generateChatId(String user1, String user2) {
-    final ids = [user1, user2]..sort();
-    return ids.join('_');
   }
 
   bool _isOrderFinished(String status) {
@@ -492,38 +494,26 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     return normalized == 'delivered' ||
         normalized == 'cancelled' ||
         normalized == 'store_rejected' ||
-        status.trim() == 'تم التوصيل' ||
-        status.trim() == 'ملغي';
+        status.trim() == 'ØªÙ… Ø§Ù„ØªÙˆØµÙŠÙ„' ||
+        status.trim() == 'Ù…Ù„ØºÙŠ';
   }
 
   @override
   Widget build(BuildContext context) {
     final data = orderData;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('تفاصيل الطلب',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: AppThemeArabic.courierPrimary,
-                fontFamily: 'Tajawal',
-                fontSize: 20)),
-        backgroundColor: Colors.white,
-        elevation: 1,
-        centerTitle: true,
-        iconTheme: const IconThemeData(color: AppThemeArabic.courierPrimary),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-        ),
-      ),
-      backgroundColor: AppThemeArabic.courierBackground,
-      body: data == null
+      appBar: buildCourierAppBar('تفاصيل الطلب'),
+      backgroundColor: Colors.transparent,
+      body: CourierPageBackground(
+        child: data == null
           ? const Center(child: CircularProgressIndicator())
           : Builder(builder: (context) {
               final status = _getOrderStatus(data);
-              final clientId = (data['clientId'] ?? '').toString().trim();
               final isFinished = _isOrderFinished(status);
-              final isOfferForMe = status == 'courier_offer_pending' &&
-                  (data['offeredDriverId'] ?? '').toString() == widget.driverId;
+              final isOfferForMe =
+                  status == 'courier_offer_pending' && _isOfferForDriver(data);
+              final isAssignedToMe =
+                  (data['assignedDriverId'] ?? '').toString() == widget.driverId;
 
               final restaurantLocation = _resolvePoint(
                 data,
@@ -629,7 +619,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'العميل: ${data['clientName'] ?? 'غير متوفر'}',
+                          'Ø§Ù„Ø¹Ù…ÙŠÙ„: ${data['clientName'] ?? 'ØºÙŠØ± Ù…ØªÙˆÙØ±'}',
                           style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -645,7 +635,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            'الحالة: ${OrderStatusPalette.displayText(status)}',
+                            'Ø§Ù„Ø­Ø§Ù„Ø©: ${OrderStatusPalette.displayText(status)}',
                             style: TextStyle(
                               color: OrderStatusPalette.colorForStatus(status),
                               fontWeight: FontWeight.w700,
@@ -688,7 +678,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                             ),
                           )
                         else
-                          const Text('لا توجد بيانات موقع كافية لعرض الخريطة'),
+                          const Text('Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¨ÙŠØ§Ù†Ø§Øª Ù…ÙˆÙ‚Ø¹ ÙƒØ§ÙÙŠØ© Ù„Ø¹Ø±Ø¶ Ø§Ù„Ø®Ø±ÙŠØ·Ø©'),
                         const SizedBox(height: 12),
                         if (restaurantLocation != null ||
                             clientLocation != null)
@@ -709,7 +699,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                                   children: [
                                     Icon(Icons.storefront_rounded, size: 16),
                                     SizedBox(width: 6),
-                                    Text('المطعم'),
+                                    Text('Ø§Ù„Ù…Ø·Ø¹Ù…'),
                                   ],
                                 ),
                               ),
@@ -726,7 +716,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                                   children: [
                                     Icon(Icons.person_rounded, size: 16),
                                     SizedBox(width: 6),
-                                    Text('العميل'),
+                                    Text('Ø§Ù„Ø¹Ù…ÙŠÙ„'),
                                   ],
                                 ),
                               ),
@@ -742,29 +732,36 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                             if (driverToRestaurantKm != null)
                               Chip(
                                 label: Text(
-                                  'يبعد المطعم عنك: ${courierFormatDistance(driverToRestaurantKm)}',
+                                  'ÙŠØ¨Ø¹Ø¯ Ø§Ù„Ù…Ø·Ø¹Ù… Ø¹Ù†Ùƒ: ${courierFormatDistance(driverToRestaurantKm)}',
                                 ),
                               ),
                             if (restaurantToClientKm != null)
                               Chip(
                                 label: Text(
-                                  'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
+                                  'ÙŠØ¨Ø¹Ø¯ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø¹Ù† Ø§Ù„Ù…Ø·Ø¹Ù…: ${courierFormatDistance(restaurantToClientKm)}',
                                 ),
                               ),
                             Chip(
                                 label: Text(
-                                    'رسومك: ${courierFormatMoney(deliveryFee)} ج.س')),
+                                    'Ø±Ø³ÙˆÙ…Ùƒ: ${courierFormatMoney(deliveryFee)} Ø¬.Ø³')),
                           ],
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
+                  if (isAssignedToMe) ...[
+                    CourierClientContactCard(
+                      orderData: data,
+                      driverId: widget.driverId,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   if (isOfferForMe) ...[
                     ElevatedButton.icon(
                       onPressed: _acceptOrder,
                       icon: const Icon(Icons.check_circle_outline),
-                      label: const Text('قبول العرض وبدء الرحلة'),
+                      label: const Text('Ù‚Ø¨ÙˆÙ„ Ø§Ù„Ø¹Ø±Ø¶ ÙˆØ¨Ø¯Ø¡ Ø§Ù„Ø±Ø­Ù„Ø©'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppThemeArabic.courierAccent,
                         foregroundColor: Colors.white,
@@ -778,7 +775,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                     OutlinedButton.icon(
                       onPressed: _rejectOffer,
                       icon: const Icon(Icons.close),
-                      label: const Text('رفض العرض'),
+                      label: const Text('Ø±ÙØ¶ Ø§Ù„Ø¹Ø±Ø¶'),
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size.fromHeight(52),
                         shape: RoundedRectangleBorder(
@@ -786,12 +783,11 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                         ),
                       ),
                     ),
-                  ] else if ((data['assignedDriverId'] ?? '').toString() ==
-                      widget.driverId) ...[
+                  ] else if (isAssignedToMe) ...[
                     ElevatedButton.icon(
                       onPressed: _openProfessionalFlow,
                       icon: const Icon(Icons.navigation_outlined),
-                      label: const Text('فتح شاشة التنفيذ الاحترافية'),
+                      label: const Text('ÙØªØ­ Ø´Ø§Ø´Ø© Ø§Ù„ØªÙ†ÙÙŠØ° Ø§Ù„Ø§Ø­ØªØ±Ø§ÙÙŠØ©'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppThemeArabic.courierPrimary,
                         foregroundColor: Colors.white,
@@ -803,47 +799,15 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                     ),
                   ] else
                     const Center(
-                      child: Text('هذا الطلب تم استلامه بواسطة مندوب آخر.'),
+                      child: Text('Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨ ØªÙ… Ø§Ø³ØªÙ„Ø§Ù…Ù‡ Ø¨ÙˆØ§Ø³Ø·Ø© Ù…Ù†Ø¯ÙˆØ¨ Ø¢Ø®Ø±.'),
                     ),
-                  const SizedBox(height: 14),
-                  if (!isFinished && clientId.isNotEmpty)
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        final doc = await FirebaseFirestore.instance
-                            .collection('drivers')
-                            .doc(widget.driverId)
-                            .get();
-                        final driverName = doc.data()?['name'] ?? 'مندوب';
-                        final chatId =
-                            _generateChatId(widget.driverId, clientId);
-                        if (!mounted) return;
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ChatScreen(
-                              currentUserId: widget.driverId,
-                              otherUserId: clientId,
-                              currentUserRole: 'driver',
-                              chatId: chatId,
-                              currentUserName: driverName,
-                            ),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.chat_bubble_outline),
-                      label: const Text('الدردشة مع العميل'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppThemeArabic.courierAccent,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(52),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
+                  if (!isFinished) const SizedBox(height: 14),
                 ],
               );
             }),
+        ),
+      ),
     );
   }
 }
+

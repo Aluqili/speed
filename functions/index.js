@@ -14,6 +14,7 @@ const SCHEDULE_REGION = 'us-central1';
 const COURIER_OFFER_TIMEOUT_SECONDS = 40;
 const ASSIGNMENT_CYCLE_RESET_SECONDS = 120;
 const MAX_DRIVER_RESTAURANT_DISTANCE_KM = 20;
+const MAX_COURIER_BROADCAST_DRIVERS = 30;
 const BOOTSTRAP_ADMIN_EMAILS = ['admin@speedstar.com', 'speedstarapp0@gmail.com'];
 const ADMIN_PERMISSION_KEYS = [
   'dashboard',
@@ -1000,6 +1001,36 @@ function getStatus(order) {
   return String(order.orderStatus || order.status || '').trim();
 }
 
+async function ensureAuthenticatedDriver(request, driverId) {
+  const authUid = String(request.auth?.uid || '').trim();
+  const normalizedDriverId = String(driverId || '').trim();
+  if (!authUid) {
+    throw new HttpsError('unauthenticated', 'Authentication is required');
+  }
+  if (!normalizedDriverId) {
+    throw new HttpsError('invalid-argument', 'driverId is required');
+  }
+  if (authUid === normalizedDriverId) {
+    return;
+  }
+
+  const driverSnap = await db.collection('drivers').doc(normalizedDriverId).get();
+  if (!driverSnap.exists) {
+    throw new HttpsError('not-found', 'Driver not found');
+  }
+  const driver = driverSnap.data() || {};
+  const ownerCandidates = [
+    driver.ownerUid,
+    driver.ownerId,
+    driver.userId,
+    driver.uid,
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+
+  if (!ownerCandidates.includes(authUid)) {
+    throw new HttpsError('permission-denied', 'driverId must belong to authenticated user');
+  }
+}
+
 function normalizePromoCode(rawCode) {
   return String(rawCode || '').trim().toUpperCase();
 }
@@ -1306,7 +1337,7 @@ exports.submitStoreOfferRequest = onCall({ region: REGION }, async (request) => 
   const maxDiscount = Math.max(0, toSafeNumber(offer.maxDiscount));
   const minOrder = Math.max(0, toSafeNumber(offer.minOrder));
   const targetItems = normalizeStoreOfferTargetItems(offer.targetItems || []);
-  const reviewNote = String(offer.reviewNote || '').trim();
+  const merchantReviewNote = String(offer.merchantReviewNote || offer.reviewNote || '').trim();
   const startsAt = parseOptionalTimestampInput(offer.startsAt, 'offer.startsAt', { required: true });
   const endsAt = parseOptionalTimestampInput(offer.endsAt, 'offer.endsAt', { required: true });
 
@@ -1363,7 +1394,7 @@ exports.submitStoreOfferRequest = onCall({ region: REGION }, async (request) => 
     summaryText,
     status: 'pending',
     isActive: false,
-    reviewNote,
+    merchantReviewNote,
     startsAt,
     endsAt,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1413,9 +1444,12 @@ exports.reviewStoreOfferRequest = onCall({ region: REGION }, async (request) => 
 
   const patch = {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    reviewNote,
     reviewedByUid: actorUid,
   };
+  if (reviewNote) {
+    patch.reviewNote = reviewNote;
+    patch.adminReviewNote = reviewNote;
+  }
 
   if (action === 'approve') {
     patch.status = 'approved';
@@ -1468,7 +1502,7 @@ exports.adminCreateStoreOffer = onCall({ region: REGION }, async (request) => {
   const maxDiscount = Math.max(0, toSafeNumber(offer.maxDiscount));
   const minOrder = Math.max(0, toSafeNumber(offer.minOrder));
   const targetItems = normalizeStoreOfferTargetItems(offer.targetItems || []);
-  const reviewNote = String(offer.reviewNote || '').trim();
+  const adminReviewNote = String(offer.adminReviewNote || offer.reviewNote || '').trim();
   const startsAt = parseOptionalTimestampInput(offer.startsAt, 'offer.startsAt', { required: true });
   const endsAt = parseOptionalTimestampInput(offer.endsAt, 'offer.endsAt', { required: true });
   const isActive = offer.isActive !== false;
@@ -1526,7 +1560,8 @@ exports.adminCreateStoreOffer = onCall({ region: REGION }, async (request) => {
     summaryText,
     status: 'approved',
     isActive,
-    reviewNote,
+    reviewNote: adminReviewNote,
+    adminReviewNote,
     startsAt,
     endsAt,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -2390,6 +2425,9 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
   const clientId = String(afterData.clientId || '').trim();
   const restaurantId = String(afterData.restaurantId || '').trim();
   const offeredDriverId = String(afterData.offeredDriverId || '').trim();
+  const offerDriverIds = Array.isArray(afterData.offerDriverIds)
+    ? afterData.offerDriverIds.map((id) => String(id || '').trim()).filter(Boolean)
+    : [];
   const assignedDriverId = String(afterData.assignedDriverId || '').trim();
 
   const tasks = [];
@@ -2430,12 +2468,17 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
   }
 
   if (afterStatus === 'courier_offer_pending') {
-    sendCourier(
-      offeredDriverId || assignedDriverId,
-      '🚚 عرض توصيل جديد',
-      `يوجد طلب رقم ${orderNumber} بانتظار قبولك.`,
-      'courier_offer_pending'
-    );
+    const targetDriverIds = offerDriverIds.length
+      ? offerDriverIds
+      : [offeredDriverId || assignedDriverId].filter(Boolean);
+    for (const driverId of targetDriverIds) {
+      sendCourier(
+        driverId,
+        '🚚 عرض توصيل جديد',
+        `يوجد طلب رقم ${orderNumber} بانتظار قبولك.`,
+        'courier_offer_pending'
+      );
+    }
   }
 
   if (afterStatus === 'courier_assigned') {
@@ -3115,6 +3158,8 @@ function inferKhartoumStateIdFromCoords(coords) {
 function driverStateId(driver) {
   const explicitState = normalizeStateId(
     driver.stateId ||
+    driver.workStateId ||
+    driver.serviceArea?.stateId ||
     driver.driverStateId ||
     driver.addressStateId ||
     driver.defaultAddressStateId ||
@@ -3384,15 +3429,16 @@ async function countBlockingOrdersForManagedUser(role, uid) {
   }
 
   if (role === 'courier') {
-    const [assignedSnap, offeredSnap] = await Promise.all([
+    const [assignedSnap, offeredSnap, groupOfferSnap] = await Promise.all([
       db.collection('orders').where('assignedDriverId', '==', uid).limit(300).get(),
       db.collection('orders').where('offeredDriverId', '==', uid).limit(300).get(),
+      db.collection('orders').where('offerDriverIds', 'array-contains', uid).limit(300).get(),
     ]);
 
     const seen = new Set();
     let count = 0;
 
-    [...assignedSnap.docs, ...offeredSnap.docs].forEach((docSnap) => {
+    [...assignedSnap.docs, ...offeredSnap.docs, ...groupOfferSnap.docs].forEach((docSnap) => {
       if (seen.has(docSnap.id)) return;
       seen.add(docSnap.id);
       if (isActiveOrderLifecycleStatus(getStatus(docSnap.data() || {}))) {
@@ -3952,7 +3998,10 @@ async function assignNextCourier(orderRef) {
     let stateId = orderStateId(order);
 
     const now = admin.firestore.Timestamp.now();
-    const candidatesRaw = Array.isArray(order.candidateDrivers) ? order.candidateDrivers : [];
+    const candidatesRaw = Array.isArray(order.candidateDrivers) ? order.candidateDrivers.map(String) : [];
+    const rejectedDriverIds = Array.isArray(order.rejectedByDrivers) ? order.rejectedByDrivers.map(String) : [];
+    const timedOutDriverIds = Array.isArray(order.timedOutByDrivers) ? order.timedOutByDrivers.map(String) : [];
+    const excludedDriverIds = new Set([...candidatesRaw, ...rejectedDriverIds, ...timedOutDriverIds]);
     const previousCycleStartedAt = order.assignmentCycleStartedAt;
     const cycleStartedMillis = previousCycleStartedAt?.toMillis?.() || 0;
     const cycleExpired =
@@ -4000,9 +4049,10 @@ async function assignNextCourier(orderRef) {
     let candidates = candidatesRaw.filter((id) => availableDriverIds.has(String(id)));
     if (cycleExpired) {
       candidates = [];
+      excludedDriverIds.clear();
     }
 
-    let remainingDrivers = driverSnap.docs.filter((d) => !candidates.includes(d.id));
+    let remainingDrivers = driverSnap.docs.filter((d) => !excludedDriverIds.has(d.id));
     let assignmentBackoffReason = 'no-available-next-driver-in-cycle';
     const availableDriversCount = remainingDrivers.length;
     let sameStateDriversCount = availableDriversCount;
@@ -4019,12 +4069,19 @@ async function assignNextCourier(orderRef) {
       }
     }
 
-    let nextDriver = null;
-    let nextDriverDistanceKm = null;
+    let offerDrivers = [];
+    let longDistanceDrivers = [];
+    const requestedRadius = toSafeNumber(
+      order.courierOfferRadiusKm ?? order.maxDriverDistanceKm,
+      MAX_DRIVER_RESTAURANT_DISTANCE_KM,
+    );
+    const offerRadiusKm = Math.max(1, requestedRadius || MAX_DRIVER_RESTAURANT_DISTANCE_KM);
 
     if (remainingDrivers.length > 0) {
       if (!restaurantCoords) {
-        nextDriver = remainingDrivers[0];
+        offerDrivers = remainingDrivers
+          .slice(0, MAX_COURIER_BROADCAST_DRIVERS)
+          .map((doc) => ({ doc, distanceKm: null }));
       } else {
         const ranked = remainingDrivers.map((d) => {
           const driverData = d.data() || {};
@@ -4041,21 +4098,36 @@ async function assignNextCourier(orderRef) {
         }).sort((a, b) => a.distanceKm - b.distanceKm);
 
         const withinRange = ranked.filter((item) =>
-          Number.isFinite(item.distanceKm) && item.distanceKm <= MAX_DRIVER_RESTAURANT_DISTANCE_KM
+          Number.isFinite(item.distanceKm) && item.distanceKm <= offerRadiusKm
         );
 
         if (withinRange.length > 0) {
-          nextDriver = withinRange[0].doc;
-          nextDriverDistanceKm = withinRange[0].distanceKm;
+          offerDrivers = withinRange.slice(0, MAX_COURIER_BROADCAST_DRIVERS);
         } else {
-          assignmentBackoffReason = 'no-driver-within-20km';
+          longDistanceDrivers = ranked
+            .filter((item) => {
+              const driverData = item.doc.data() || {};
+              return Number.isFinite(item.distanceKm) &&
+                driverData.acceptsLongDistance === true;
+            })
+            .slice(0, 20);
+          assignmentBackoffReason = `no-driver-within-${offerRadiusKm}km`;
         }
       }
     }
 
-    if (!nextDriver) {
+    if (!offerDrivers.length) {
+      const longDistanceDriverIds = longDistanceDrivers.map((item) => item.doc.id);
+      const longDistanceDriverDistancesKm = {};
+      for (const item of longDistanceDrivers) {
+        longDistanceDriverDistancesKm[item.doc.id] = Number(item.distanceKm.toFixed(3));
+      }
       tx.update(orderRef, {
         candidateDrivers: candidates,
+        longDistanceDriverIds,
+        longDistanceDriverDistancesKm,
+        longDistanceDriversCount: longDistanceDriverIds.length,
+        longDistanceCandidatesUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         assignmentCycleStartedAt: cycleExpired ? now : (previousCycleStartedAt || now),
         assignmentLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
         assignmentOrderStateId: stateId || '',
@@ -4073,10 +4145,18 @@ async function assignNextCourier(orderRef) {
       now.toMillis() + COURIER_OFFER_TIMEOUT_SECONDS * 1000
     );
 
-    const nextCandidates = [...candidates, nextDriver.id];
+    const offerDriverIds = offerDrivers.map((item) => item.doc.id);
+    const nextCandidates = Array.from(new Set([...candidates, ...offerDriverIds]));
+    const offerDriverDistancesKm = {};
+    for (const item of offerDrivers) {
+      if (Number.isFinite(item.distanceKm)) {
+        offerDriverDistancesKm[item.doc.id] = Number(item.distanceKm.toFixed(3));
+      }
+    }
 
     tx.update(orderRef, {
-      offeredDriverId: nextDriver.id,
+      offeredDriverId: offerDriverIds[0],
+      offerDriverIds,
       offerStartedAt: now,
       offerExpiresAt: expiresAt,
       assignmentAttempts: Number(order.assignmentAttempts || 0) + 1,
@@ -4084,8 +4164,15 @@ async function assignNextCourier(orderRef) {
       assignmentCycleStartedAt: cycleExpired ? now : (previousCycleStartedAt || now),
       orderStatus: 'courier_offer_pending',
       status: 'courier_offer_pending',
-      offeredDriverDistanceKm: nextDriverDistanceKm,
-      maxDriverDistanceKm: MAX_DRIVER_RESTAURANT_DISTANCE_KM,
+      offeredDriverDistanceKm: offerDriverDistancesKm[offerDriverIds[0]] ?? null,
+      offerDriverDistancesKm,
+      offerEligibleDriversCount: offerDriverIds.length,
+      longDistanceDriverIds: admin.firestore.FieldValue.delete(),
+      longDistanceDriverDistancesKm: admin.firestore.FieldValue.delete(),
+      longDistanceDriversCount: admin.firestore.FieldValue.delete(),
+      longDistanceCandidatesUpdatedAt: admin.firestore.FieldValue.delete(),
+      maxDriverDistanceKm: offerRadiusKm,
+      courierOfferRadiusKm: offerRadiusKm,
       assignmentLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
       assignmentOrderStateId: stateId || '',
       assignmentAvailableDriversCount: availableDriversCount,
@@ -4094,16 +4181,18 @@ async function assignNextCourier(orderRef) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    tx.set(db.collection('driverNotifications').doc(), {
-      driverId: nextDriver.id,
-      orderId: snap.id,
-      type: 'courier_offer',
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      expiresAt,
-      read: false,
-    });
+    for (const driverId of offerDriverIds) {
+      tx.set(db.collection('driverNotifications').doc(), {
+        driverId,
+        orderId: snap.id,
+        type: 'courier_offer',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt,
+        read: false,
+      });
+    }
 
-    return { assigned: true, driverId: nextDriver.id };
+    return { assigned: true, driverIds: offerDriverIds, radiusKm: offerRadiusKm };
   });
 }
 
@@ -4164,6 +4253,9 @@ exports.handleCourierOfferTimeouts = onSchedule({
     const ref = doc.ref;
     const data = doc.data() || {};
     const offeredDriverId = String(data.offeredDriverId || '').trim();
+    const offerDriverIds = Array.isArray(data.offerDriverIds)
+      ? data.offerDriverIds.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
     const offerExpiresAt = data.offerExpiresAt;
 
     let shouldReassign = false;
@@ -4171,10 +4263,17 @@ exports.handleCourierOfferTimeouts = onSchedule({
       shouldReassign = true;
     }
 
-    if (!shouldReassign && offeredDriverId) {
-      const driverSnap = await db.collection('drivers').doc(offeredDriverId).get();
-      const driverData = driverSnap.data() || {};
-      if (!driverSnap.exists || driverData.available !== true) {
+    const activeOfferDriverIds = offerDriverIds.length ? offerDriverIds : (offeredDriverId ? [offeredDriverId] : []);
+
+    if (!shouldReassign && activeOfferDriverIds.length) {
+      const activeDriverSnaps = await Promise.all(
+        activeOfferDriverIds.map((driverId) => db.collection('drivers').doc(driverId).get())
+      );
+      const anyAvailable = activeDriverSnaps.some((driverSnap) => {
+        const driverData = driverSnap.data() || {};
+        return driverSnap.exists && driverData.available === true;
+      });
+      if (!anyAvailable) {
         shouldReassign = true;
       }
     }
@@ -4190,19 +4289,28 @@ exports.handleCourierOfferTimeouts = onSchedule({
       if (getStatus(order) !== 'courier_offer_pending') return;
 
       const activeOfferedDriverId = String(order.offeredDriverId || '').trim();
+      const activeOfferDriverIds = Array.isArray(order.offerDriverIds)
+        ? order.offerDriverIds.map((id) => String(id || '').trim()).filter(Boolean)
+        : [];
       const existingCandidates = Array.isArray(order.candidateDrivers)
         ? order.candidateDrivers.map(String)
         : [];
-      const nextCandidates = activeOfferedDriverId
-        ? Array.from(new Set([...existingCandidates, activeOfferedDriverId]))
-        : existingCandidates;
+      const timeoutDriverIds = activeOfferDriverIds.length
+        ? activeOfferDriverIds
+        : (activeOfferedDriverId ? [activeOfferedDriverId] : []);
+      const nextCandidates = Array.from(new Set([...existingCandidates, ...timeoutDriverIds]));
 
       tx.update(ref, {
         assignedDriverId: admin.firestore.FieldValue.delete(),
         offeredDriverId: admin.firestore.FieldValue.delete(),
+        offerDriverIds: admin.firestore.FieldValue.delete(),
+        offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
         offerStartedAt: admin.firestore.FieldValue.delete(),
         offerExpiresAt: admin.firestore.FieldValue.delete(),
         candidateDrivers: nextCandidates,
+        ...(timeoutDriverIds.length
+          ? { timedOutByDrivers: admin.firestore.FieldValue.arrayUnion(...timeoutDriverIds) }
+          : {}),
         orderStatus: 'courier_searching',
         status: 'courier_searching',
         lastOfferTimeoutAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -4382,17 +4490,12 @@ exports.syncRestaurantClosuresFromWorkingHours = onSchedule({
 exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
   const { orderId, driverId, decision } = request.data || {};
   const pricingConfig = await getPricingConfigCached();
-  if (!request.auth?.uid) {
-    throw new HttpsError('unauthenticated', 'Authentication is required');
-  }
   if (!orderId || !driverId || !decision) {
     throw new HttpsError('invalid-argument', 'orderId, driverId, decision are required');
   }
-  if (String(request.auth.uid) !== String(driverId)) {
-    throw new HttpsError('permission-denied', 'driverId must match authenticated user');
-  }
-  if (decision !== 'accept' && decision !== 'reject') {
-    throw new HttpsError('invalid-argument', 'decision must be accept or reject');
+  await ensureAuthenticatedDriver(request, driverId);
+  if (!['accept', 'reject', 'timeout'].includes(decision)) {
+    throw new HttpsError('invalid-argument', 'decision must be accept, reject or timeout');
   }
 
   const orderRef = db.collection('orders').doc(orderId);
@@ -4405,7 +4508,14 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
     if (status !== 'courier_offer_pending') {
       throw new HttpsError('failed-precondition', 'Order is not in courier_offer_pending');
     }
-    if (String(order.offeredDriverId || '') !== String(driverId)) {
+    const offerDriverIds = Array.isArray(order.offerDriverIds)
+      ? order.offerDriverIds.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
+    const legacyOfferedDriverId = String(order.offeredDriverId || '').trim();
+    const offerIsForDriver = offerDriverIds.length
+      ? offerDriverIds.includes(String(driverId))
+      : legacyOfferedDriverId === String(driverId);
+    if (!offerIsForDriver) {
       throw new HttpsError('permission-denied', 'This offer is not assigned to this driver');
     }
 
@@ -4417,6 +4527,8 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
         assignedDriverId: driverId,
         deliveryFeeForDriver: driverFee,
         offeredDriverId: admin.firestore.FieldValue.delete(),
+        offerDriverIds: admin.firestore.FieldValue.delete(),
+        offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
         offerStartedAt: admin.firestore.FieldValue.delete(),
         offerExpiresAt: admin.firestore.FieldValue.delete(),
         acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -4426,23 +4538,123 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
       return;
     }
 
-    tx.update(orderRef, {
+    const remainingOfferDriverIds = (offerDriverIds.length ? offerDriverIds : [legacyOfferedDriverId])
+      .filter((id) => id && id !== String(driverId));
+    const driverDistances = order.offerDriverDistancesKm && typeof order.offerDriverDistancesKm === 'object'
+      ? { ...order.offerDriverDistancesKm }
+      : {};
+    delete driverDistances[String(driverId)];
+
+    const patch = {
       assignedDriverId: admin.firestore.FieldValue.delete(),
-      offeredDriverId: admin.firestore.FieldValue.delete(),
-      offerStartedAt: admin.firestore.FieldValue.delete(),
-      offerExpiresAt: admin.firestore.FieldValue.delete(),
-      orderStatus: 'courier_searching',
-      status: 'courier_searching',
       rejectedByDrivers: admin.firestore.FieldValue.arrayUnion(driverId),
+      ...(decision === 'timeout' ? { timedOutByDrivers: admin.firestore.FieldValue.arrayUnion(driverId) } : {}),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    };
+
+    if (remainingOfferDriverIds.length) {
+      patch.offeredDriverId = remainingOfferDriverIds[0];
+      patch.offerDriverIds = remainingOfferDriverIds;
+      patch.offerDriverDistancesKm = driverDistances;
+      patch.offerEligibleDriversCount = remainingOfferDriverIds.length;
+    } else {
+      patch.offeredDriverId = admin.firestore.FieldValue.delete();
+      patch.offerDriverIds = admin.firestore.FieldValue.delete();
+      patch.offerDriverDistancesKm = admin.firestore.FieldValue.delete();
+      patch.offerStartedAt = admin.firestore.FieldValue.delete();
+      patch.offerExpiresAt = admin.firestore.FieldValue.delete();
+      patch.orderStatus = 'courier_searching';
+      patch.status = 'courier_searching';
+    }
+
+    tx.update(orderRef, patch);
   });
 
-  if (decision === 'reject') {
+  if (decision === 'reject' || decision === 'timeout') {
     await assignNextCourier(orderRef);
   }
 
   return { ok: true };
+});
+
+exports.courierUpdateOrderStage = onCall({ region: REGION }, async (request) => {
+  const { orderId, driverId, stage, proofImageUrl } = request.data || {};
+
+  const normalizedOrderId = String(orderId || '').trim();
+  const normalizedDriverId = String(driverId || '').trim();
+  const normalizedStage = String(stage || '').trim();
+  const normalizedProofImageUrl = String(proofImageUrl || '').trim();
+
+  if (!normalizedOrderId || !normalizedDriverId || !normalizedStage) {
+    throw new HttpsError('invalid-argument', 'orderId, driverId and stage are required');
+  }
+  await ensureAuthenticatedDriver(request, normalizedDriverId);
+
+  const stageConfig = {
+    picked_up: {
+      allowedStatuses: new Set(['courier_assigned', 'pickup_ready', 'جاهز للتوصيل']),
+      patch: {
+        orderStatus: 'picked_up',
+        status: 'picked_up',
+        pickedUpAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+    },
+    arrived_to_client: {
+      allowedStatuses: new Set(['picked_up', 'قيد التوصيل']),
+      patch: {
+        orderStatus: 'arrived_to_client',
+        status: 'arrived_to_client',
+        arrivedToClientAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+    },
+    delivered: {
+      allowedStatuses: new Set(['arrived_to_client', 'وصل إلى العميل']),
+      patch: {
+        orderStatus: 'delivered',
+        status: 'delivered',
+        deliveredAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+    },
+  };
+
+  const config = stageConfig[normalizedStage];
+  if (!config) {
+    throw new HttpsError('invalid-argument', 'Unsupported courier stage');
+  }
+  if (normalizedStage === 'delivered' && !normalizedProofImageUrl) {
+    throw new HttpsError('invalid-argument', 'proofImageUrl is required for delivery');
+  }
+
+  const orderRef = db.collection('orders').doc(normalizedOrderId);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(orderRef);
+    if (!snap.exists) throw new HttpsError('not-found', 'Order not found');
+
+    const order = snap.data() || {};
+    if (String(order.assignedDriverId || '') !== normalizedDriverId) {
+      throw new HttpsError('permission-denied', 'This order is not assigned to this driver');
+    }
+
+    const status = getStatus(order);
+    if (!config.allowedStatuses.has(status)) {
+      throw new HttpsError('failed-precondition', `Order cannot move from ${status || 'empty'} to ${normalizedStage}`);
+    }
+
+    tx.update(orderRef, {
+      ...config.patch,
+      ...(normalizedStage === 'delivered' ? { proofImageUrl: normalizedProofImageUrl } : {}),
+      courierLastStage: normalizedStage,
+      courierLastStageAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  return {
+    ok: true,
+    orderId: normalizedOrderId,
+    driverId: normalizedDriverId,
+    stage: normalizedStage,
+  };
 });
 
 exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
@@ -4453,7 +4665,7 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
   const nextDriverId = String(request.data?.nextDriverId || request.data?.driverId || '').trim();
   const note = String(request.data?.note || '').trim();
 
-  if (!orderId || !['cancel', 'unassign_courier', 'reassign_auto', 'assign_specific'].includes(action)) {
+  if (!orderId || !['cancel', 'unassign_courier', 'reassign_auto', 'assign_specific', 'expand_courier_radius'].includes(action)) {
     throw new HttpsError('invalid-argument', 'orderId and a valid action are required');
   }
 
@@ -4504,6 +4716,12 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
       cancelledByAdminUid: request.auth.uid,
       cancellationReason: note || 'admin_cancelled',
       offeredDriverId: admin.firestore.FieldValue.delete(),
+      offerDriverIds: admin.firestore.FieldValue.delete(),
+      offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
+      longDistanceDriverIds: admin.firestore.FieldValue.delete(),
+      longDistanceDriverDistancesKm: admin.firestore.FieldValue.delete(),
+      longDistanceDriversCount: admin.firestore.FieldValue.delete(),
+      longDistanceCandidatesUpdatedAt: admin.firestore.FieldValue.delete(),
       offerStartedAt: admin.firestore.FieldValue.delete(),
       offerExpiresAt: admin.firestore.FieldValue.delete(),
     }, { merge: true });
@@ -4572,6 +4790,12 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
       ...adminPatch,
       assignedDriverId: admin.firestore.FieldValue.delete(),
       offeredDriverId: admin.firestore.FieldValue.delete(),
+      offerDriverIds: admin.firestore.FieldValue.delete(),
+      offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
+      longDistanceDriverIds: admin.firestore.FieldValue.delete(),
+      longDistanceDriverDistancesKm: admin.firestore.FieldValue.delete(),
+      longDistanceDriversCount: admin.firestore.FieldValue.delete(),
+      longDistanceCandidatesUpdatedAt: admin.firestore.FieldValue.delete(),
       offerStartedAt: admin.firestore.FieldValue.delete(),
       offerExpiresAt: admin.firestore.FieldValue.delete(),
       acceptedAt: admin.firestore.FieldValue.delete(),
@@ -4600,6 +4824,50 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
         autoAssigned: Boolean(assignResult.assigned),
       };
     }
+  }
+
+  if (action === 'expand_courier_radius') {
+    const radiusKm = Math.max(1, Math.min(100, toSafeNumber(request.data?.radiusKm)));
+    if (!Number.isFinite(radiusKm) || radiusKm <= 0) {
+      throw new HttpsError('invalid-argument', 'radiusKm must be a positive number');
+    }
+    if (previousAssignedDriverId) {
+      throw new HttpsError('failed-precondition', 'Cannot expand radius after courier assignment');
+    }
+
+    await orderRef.set({
+      ...adminPatch,
+      courierOfferRadiusKm: radiusKm,
+      maxDriverDistanceKm: radiusKm,
+      offeredDriverId: admin.firestore.FieldValue.delete(),
+      offerDriverIds: admin.firestore.FieldValue.delete(),
+      offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
+      longDistanceDriverIds: admin.firestore.FieldValue.delete(),
+      longDistanceDriverDistancesKm: admin.firestore.FieldValue.delete(),
+      longDistanceDriversCount: admin.firestore.FieldValue.delete(),
+      longDistanceCandidatesUpdatedAt: admin.firestore.FieldValue.delete(),
+      offerStartedAt: admin.firestore.FieldValue.delete(),
+      offerExpiresAt: admin.firestore.FieldValue.delete(),
+      orderStatus: 'courier_searching',
+      status: 'courier_searching',
+      assignmentBackoffReason: admin.firestore.FieldValue.delete(),
+      radiusExpandedAt: admin.firestore.FieldValue.serverTimestamp(),
+      radiusExpandedByUid: request.auth.uid,
+    }, { merge: true });
+
+    const assignResult = await assignNextCourier(orderRef);
+    const refreshed = await orderRef.get();
+    const refreshedData = refreshed.data() || {};
+    result = {
+      ...result,
+      status: getStatus(refreshedData),
+      assignedDriverId: '',
+      radiusKm,
+      autoAssigned: Boolean(assignResult.assigned),
+      offeredDriverIds: Array.isArray(refreshedData.offerDriverIds)
+        ? refreshedData.offerDriverIds.map(String)
+        : [],
+    };
   }
 
   if (action === 'assign_specific') {
@@ -4638,6 +4906,12 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
       ...adminPatch,
       assignedDriverId: nextDriverId,
       offeredDriverId: admin.firestore.FieldValue.delete(),
+      offerDriverIds: admin.firestore.FieldValue.delete(),
+      offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
+      longDistanceDriverIds: admin.firestore.FieldValue.delete(),
+      longDistanceDriverDistancesKm: admin.firestore.FieldValue.delete(),
+      longDistanceDriversCount: admin.firestore.FieldValue.delete(),
+      longDistanceCandidatesUpdatedAt: admin.firestore.FieldValue.delete(),
       offerStartedAt: admin.firestore.FieldValue.delete(),
       offerExpiresAt: admin.firestore.FieldValue.delete(),
       deliveryFeeForDriver: driverFee,
@@ -4871,6 +5145,71 @@ exports.updateManagedUserProfile = onCall({ region: REGION }, async (request) =>
     if (hasOwnValue(rawFields, 'region')) {
       const value = normalizeManagedTextValue(rawFields.region, 120);
       rolePatch.region = value;
+      applicationPatch.region = value;
+    }
+    if (hasOwnValue(rawFields, 'stateId')) {
+      const value = normalizeStateId(rawFields.stateId);
+      rolePatch.stateId = value;
+      applicationPatch.stateId = value;
+    }
+    if (hasOwnValue(rawFields, 'stateName')) {
+      const value = normalizeManagedTextValue(rawFields.stateName, 120);
+      rolePatch.stateName = value;
+      applicationPatch.stateName = value;
+    }
+    if (hasOwnValue(rawFields, 'city')) {
+      const value = normalizeManagedTextValue(rawFields.city, 120);
+      rolePatch.city = value;
+      applicationPatch.city = value;
+    }
+    if (hasOwnValue(rawFields, 'workStateId')) {
+      const value = normalizeStateId(rawFields.workStateId);
+      rolePatch.workStateId = value;
+      applicationPatch.workStateId = value;
+    }
+    if (hasOwnValue(rawFields, 'workStateName')) {
+      const value = normalizeManagedTextValue(rawFields.workStateName, 120);
+      rolePatch.workStateName = value;
+      applicationPatch.workStateName = value;
+    }
+    if (hasOwnValue(rawFields, 'workLocalityId')) {
+      const value = normalizeManagedTextValue(rawFields.workLocalityId, 120);
+      rolePatch.workLocalityId = value;
+      applicationPatch.workLocalityId = value;
+    }
+    if (hasOwnValue(rawFields, 'workLocalityName')) {
+      const value = normalizeManagedTextValue(rawFields.workLocalityName, 120);
+      rolePatch.workLocalityName = value;
+      applicationPatch.workLocalityName = value;
+    }
+    if (hasOwnValue(rawFields, 'workAreaId')) {
+      const value = normalizeManagedTextValue(rawFields.workAreaId, 120);
+      rolePatch.workAreaId = value;
+      applicationPatch.workAreaId = value;
+    }
+    if (hasOwnValue(rawFields, 'workAreaName')) {
+      const value = normalizeManagedTextValue(rawFields.workAreaName, 120);
+      rolePatch.workAreaName = value;
+      applicationPatch.workAreaName = value;
+    }
+    if (hasOwnValue(rawFields, 'workAreaLabel')) {
+      const value = normalizeManagedTextValue(rawFields.workAreaLabel, 240);
+      rolePatch.workAreaLabel = value;
+      applicationPatch.workAreaLabel = value;
+    }
+    if (hasOwnValue(rawFields, 'serviceArea')) {
+      const rawArea = rawFields.serviceArea || {};
+      const value = {
+        stateId: normalizeStateId(rawArea.stateId),
+        stateName: normalizeManagedTextValue(rawArea.stateName, 120),
+        localityId: normalizeManagedTextValue(rawArea.localityId, 120),
+        localityName: normalizeManagedTextValue(rawArea.localityName, 120),
+        areaId: normalizeManagedTextValue(rawArea.areaId, 120),
+        areaName: normalizeManagedTextValue(rawArea.areaName, 120),
+        label: normalizeManagedTextValue(rawArea.label, 240),
+      };
+      rolePatch.serviceArea = value;
+      applicationPatch.serviceArea = value;
     }
     if (hasOwnValue(rawFields, 'idImageUrl')) {
       const value = normalizeManagedTextValue(rawFields.idImageUrl, 2000);
@@ -5141,6 +5480,26 @@ exports.submitCourierApplication = onCall({ region: REGION }, async (request) =>
   const vehiclePlate = String(data.vehiclePlate || '').trim();
   const nationalIdNumber = String(data.nationalIdNumber || '').trim();
   const idImageUrl = String(data.idImageUrl || '').trim();
+  const workStateId = normalizeStateId(data.workStateId || data.stateId || 'khartoum') || 'khartoum';
+  const workStateName = String(data.workStateName || data.stateName || 'ولاية الخرطوم').trim();
+  const workLocalityId = String(data.workLocalityId || '').trim();
+  const workLocalityName = String(data.workLocalityName || '').trim();
+  const workAreaId = String(data.workAreaId || '').trim();
+  const workAreaName = String(data.workAreaName || '').trim();
+  const workAreaLabel = String(
+    data.workAreaLabel ||
+    data.region ||
+    [workStateName, workLocalityName, workAreaName].filter(Boolean).join(' - ')
+  ).trim();
+  const serviceArea = {
+    stateId: workStateId,
+    stateName: workStateName,
+    localityId: workLocalityId,
+    localityName: workLocalityName,
+    areaId: workAreaId,
+    areaName: workAreaName,
+    label: workAreaLabel,
+  };
 
   if (!email || !email.includes('@')) {
     throw new HttpsError('invalid-argument', 'Valid email is required');
@@ -5185,6 +5544,18 @@ exports.submitCourierApplication = onCall({ region: REGION }, async (request) =>
     vehiclePlate,
     nationalIdNumber,
     idImageUrl,
+    stateId: workStateId,
+    stateName: workStateName,
+    city: workLocalityName,
+    region: workAreaLabel,
+    workStateId,
+    workStateName,
+    workLocalityId,
+    workLocalityName,
+    workAreaId,
+    workAreaName,
+    workAreaLabel,
+    serviceArea,
     email,
     ownerUid,
     driverId: ownerUid,
@@ -5192,6 +5563,8 @@ exports.submitCourierApplication = onCall({ region: REGION }, async (request) =>
     approvalStatus: 'pending',
     isApproved: false,
     available: false,
+    acceptsLongDistance: false,
+    longDistanceEnabledAt: null,
     availabilityDayKey: '',
     availabilityTodayMs: 0,
     availabilityCurrentStartedAt: null,
@@ -5517,10 +5890,32 @@ exports.approveCourierApplication = onCall({ region: REGION }, async (request) =
     vehiclePlate: String(appData.vehiclePlate || '').trim(),
     nationalIdNumber: String(appData.nationalIdNumber || '').trim(),
     idImageUrl: String(appData.idImageUrl || '').trim(),
+    stateId: normalizeStateId(appData.workStateId || appData.stateId || 'khartoum') || 'khartoum',
+    stateName: String(appData.workStateName || appData.stateName || 'ولاية الخرطوم').trim(),
+    city: String(appData.workLocalityName || appData.city || '').trim(),
+    region: String(appData.workAreaLabel || appData.region || '').trim(),
+    workStateId: normalizeStateId(appData.workStateId || appData.stateId || 'khartoum') || 'khartoum',
+    workStateName: String(appData.workStateName || appData.stateName || 'ولاية الخرطوم').trim(),
+    workLocalityId: String(appData.workLocalityId || '').trim(),
+    workLocalityName: String(appData.workLocalityName || '').trim(),
+    workAreaId: String(appData.workAreaId || '').trim(),
+    workAreaName: String(appData.workAreaName || '').trim(),
+    workAreaLabel: String(appData.workAreaLabel || appData.region || '').trim(),
+    serviceArea: appData.serviceArea || {
+      stateId: normalizeStateId(appData.workStateId || appData.stateId || 'khartoum') || 'khartoum',
+      stateName: String(appData.workStateName || appData.stateName || 'ولاية الخرطوم').trim(),
+      localityId: String(appData.workLocalityId || '').trim(),
+      localityName: String(appData.workLocalityName || '').trim(),
+      areaId: String(appData.workAreaId || '').trim(),
+      areaName: String(appData.workAreaName || '').trim(),
+      label: String(appData.workAreaLabel || appData.region || '').trim(),
+    },
     ownerUid: driverId,
     approvalStatus: 'approved',
     isApproved: true,
     available: false,
+    acceptsLongDistance: false,
+    longDistanceEnabledAt: null,
     availabilityDayKey: '',
     availabilityTodayMs: 0,
     availabilityCurrentStartedAt: null,

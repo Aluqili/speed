@@ -1,14 +1,15 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:speedstar_core/speedstar_core.dart'
     show OrderStatusPalette, formatUnifiedOrderCode;
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/Ø§Ù„Ø«ÙŠÙ…/Ø«ÙŠÙ…_Ø§Ù„ØªØ·Ø¨ÙŠÙ‚.dart';
 
 import 'courier_confirm_delivery_screen.dart';
 import 'courier_go_to_client_screen.dart';
 import 'courier_go_to_restaurant_screen.dart';
+import 'courier_ui.dart';
 
 class CourierOrderProcessScreen extends StatefulWidget {
   final String orderId;
@@ -42,13 +43,13 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
     switch (status) {
       case 'courier_assigned':
       case 'pickup_ready':
-      case 'جاهز للتوصيل':
+      case 'Ø¬Ø§Ù‡Ø² Ù„Ù„ØªÙˆØµÙŠÙ„':
         return 'going_to_restaurant';
       case 'picked_up':
-      case 'قيد التوصيل':
+      case 'Ù‚ÙŠØ¯ Ø§Ù„ØªÙˆØµÙŠÙ„':
         return 'going_to_client';
       case 'arrived_to_client':
-      case 'وصل إلى العميل':
+      case 'ÙˆØµÙ„ Ø¥Ù„Ù‰ Ø§Ù„Ø¹Ù…ÙŠÙ„':
         return 'arrived_to_client';
       default:
         return widget.stage;
@@ -58,26 +59,26 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
   String _stageLabel(String stage) {
     switch (stage) {
       case 'going_to_restaurant':
-        return 'التوجه إلى المطعم';
+        return 'Ø§Ù„ØªÙˆØ¬Ù‡ Ø¥Ù„Ù‰ Ø§Ù„Ù…Ø·Ø¹Ù…';
       case 'going_to_client':
-        return 'التوجه إلى العميل';
+        return 'Ø§Ù„ØªÙˆØ¬Ù‡ Ø¥Ù„Ù‰ Ø§Ù„Ø¹Ù…ÙŠÙ„';
       case 'arrived_to_client':
-        return 'إثبات التسليم';
+        return 'Ø¥Ø«Ø¨Ø§Øª Ø§Ù„ØªØ³Ù„ÙŠÙ…';
       default:
-        return 'متابعة الطلب';
+        return 'Ù…ØªØ§Ø¨Ø¹Ø© Ø§Ù„Ø·Ù„Ø¨';
     }
   }
 
   String _stageDescription(String stage) {
     switch (stage) {
       case 'going_to_restaurant':
-        return 'تجهيز الملاحة والوصول إلى المطعم لاستلام الطلب.';
+        return 'ØªØ¬Ù‡ÙŠØ² Ø§Ù„Ù…Ù„Ø§Ø­Ø© ÙˆØ§Ù„ÙˆØµÙˆÙ„ Ø¥Ù„Ù‰ Ø§Ù„Ù…Ø·Ø¹Ù… Ù„Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø·Ù„Ø¨.';
       case 'going_to_client':
-        return 'عرض خط السير إلى العميل وتحديث الرحلة بشكل مباشر.';
+        return 'Ø¹Ø±Ø¶ Ø®Ø· Ø§Ù„Ø³ÙŠØ± Ø¥Ù„Ù‰ Ø§Ù„Ø¹Ù…ÙŠÙ„ ÙˆØªØ­Ø¯ÙŠØ« Ø§Ù„Ø±Ø­Ù„Ø© Ø¨Ø´ÙƒÙ„ Ù…Ø¨Ø§Ø´Ø±.';
       case 'arrived_to_client':
-        return 'التأكد من بيانات العميل وإتمام التسليم بنجاح.';
+        return 'Ø§Ù„ØªØ£ÙƒØ¯ Ù…Ù† Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø¹Ù…ÙŠÙ„ ÙˆØ¥ØªÙ…Ø§Ù… Ø§Ù„ØªØ³Ù„ÙŠÙ… Ø¨Ù†Ø¬Ø§Ø­.';
       default:
-        return 'جار تجهيز تفاصيل الرحلة الحالية.';
+        return 'Ø¬Ø§Ø± ØªØ¬Ù‡ÙŠØ² ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø±Ø­Ù„Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©.';
     }
   }
 
@@ -104,7 +105,7 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
     required String title,
     required String message,
     Color iconColor = AppThemeArabic.courierPrimary,
-    String actionLabel = 'العودة',
+    String actionLabel = 'Ø§Ù„Ø¹ÙˆØ¯Ø©',
   }) {
     return Center(
       child: Padding(
@@ -170,6 +171,8 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
             ],
           ),
         ),
+      ),
+      ),
       ),
     );
   }
@@ -334,23 +337,10 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppThemeArabic.courierBackground,
-      appBar: AppBar(
-        title: const Text('متابعة الطلب الحالي',
-            style: TextStyle(
-                color: AppThemeArabic.courierPrimary,
-                fontWeight: FontWeight.bold,
-                fontSize: 20,
-                fontFamily: 'Tajawal')),
-        backgroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 1,
-        iconTheme: const IconThemeData(color: AppThemeArabic.courierPrimary),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-        ),
-      ),
-      body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      backgroundColor: Colors.transparent,
+      appBar: buildCourierAppBar('مسار الطلب'),
+      body: CourierPageBackground(
+        child: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         future: _fetchOrder(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
@@ -360,7 +350,7 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
           final doc = snapshot.data!;
           if (!doc.exists) {
             GetStorage().remove('current_order');
-            return const Center(child: Text('الطلب غير موجود.'));
+            return const Center(child: Text('Ø§Ù„Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯.'));
           }
 
           final data = doc.data() ?? <String, dynamic>{};
@@ -369,19 +359,19 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
           if (_routeError != null) {
             return _buildCenteredState(
               icon: Icons.warning_amber_rounded,
-              title: 'تعذر فتح مرحلة التنفيذ',
+              title: 'ØªØ¹Ø°Ø± ÙØªØ­ Ù…Ø±Ø­Ù„Ø© Ø§Ù„ØªÙ†ÙÙŠØ°',
               message: _routeError!,
               iconColor: OrderStatusPalette.pending,
             );
           }
 
-          if (status == 'delivered' || status == 'تم التوصيل') {
+          if (status == 'delivered' || status == 'ØªÙ… Ø§Ù„ØªÙˆØµÙŠÙ„') {
             GetStorage().remove('current_order');
             return _buildCenteredState(
               icon: Icons.check_circle,
-              title: 'تم إنهاء هذا الطلب بالفعل',
+              title: 'ØªÙ… Ø¥Ù†Ù‡Ø§Ø¡ Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨ Ø¨Ø§Ù„ÙØ¹Ù„',
               message:
-                  'تم تسليم الطلب أو إغلاقه، ولن تظهر لك مرحلة تنفيذ جديدة له.',
+                  'ØªÙ… ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø·Ù„Ø¨ Ø£Ùˆ Ø¥ØºÙ„Ø§Ù‚Ù‡ØŒ ÙˆÙ„Ù† ØªØ¸Ù‡Ø± Ù„Ùƒ Ù…Ø±Ø­Ù„Ø© ØªÙ†ÙÙŠØ° Ø¬Ø¯ÙŠØ¯Ø© Ù„Ù‡.',
               iconColor: OrderStatusPalette.delivered,
             );
           }
@@ -437,7 +427,7 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                'رحلة الطلب الجارية',
+                                'Ø±Ø­Ù„Ø© Ø§Ù„Ø·Ù„Ø¨ Ø§Ù„Ø¬Ø§Ø±ÙŠØ©',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontFamily: 'Tajawal',
@@ -486,7 +476,7 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            'الحالة: ${OrderStatusPalette.displayText(status)}',
+                            'Ø§Ù„Ø­Ø§Ù„Ø©: ${OrderStatusPalette.displayText(status)}',
                             style: const TextStyle(
                               color: Colors.white,
                               fontFamily: 'Tajawal',
@@ -506,7 +496,7 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
-                              'العميل: ${data['clientName']}',
+                              'Ø§Ù„Ø¹Ù…ÙŠÙ„: ${data['clientName']}',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontFamily: 'Tajawal',
@@ -537,7 +527,7 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'سير التنفيذ',
+                      'Ø³ÙŠØ± Ø§Ù„ØªÙ†ÙÙŠØ°',
                       style: TextStyle(
                         fontFamily: 'Tajawal',
                         fontWeight: FontWeight.w800,
@@ -583,7 +573,7 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'جار فتح شاشة التنفيذ المناسبة',
+                            'Ø¬Ø§Ø± ÙØªØ­ Ø´Ø§Ø´Ø© Ø§Ù„ØªÙ†ÙÙŠØ° Ø§Ù„Ù…Ù†Ø§Ø³Ø¨Ø©',
                             style: TextStyle(
                               fontFamily: 'Tajawal',
                               fontWeight: FontWeight.w800,
@@ -592,7 +582,7 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'سيتم تحويلك تلقائيًا إلى ${_stageLabel(stage)} خلال لحظات.',
+                            'Ø³ÙŠØªÙ… ØªØ­ÙˆÙŠÙ„Ùƒ ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ Ø¥Ù„Ù‰ ${_stageLabel(stage)} Ø®Ù„Ø§Ù„ Ù„Ø­Ø¸Ø§Øª.',
                             style: const TextStyle(
                               fontFamily: 'Tajawal',
                               color: AppThemeArabic.courierTextSecondary,
@@ -608,6 +598,9 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
           );
         },
       ),
+      ),
     );
   }
 }
+
+

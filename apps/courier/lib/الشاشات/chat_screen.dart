@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'dart:io';
 import 'package:intl/intl.dart';
+import 'courier_ui.dart';
 import 'package:speedstar_core/src/config/ops_runtime_config.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
@@ -63,6 +64,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.addListener(_onMessageChanged);
     _loadChatConfig();
     _fetchOtherUserName();
+    _markAsRead();
   }
 
   Future<void> _loadChatConfig() async {
@@ -145,6 +147,23 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  Future<void> _markAsRead() async {
+    if (widget.currentUserId.isEmpty || widget.chatId.isEmpty) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(widget.currentUserId)
+          .collection('chatReadStatus')
+          .doc(widget.chatId)
+          .set(
+        {'lastReadAt': FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      );
+    } catch (_) {
+      // Read receipts must not block chat usage.
+    }
+  }
+
   Future<String> _detectUserType(String userId) async {
     final firestore = FirebaseFirestore.instance;
     if ((await firestore.collection('clients').doc(userId).get()).exists) {
@@ -159,7 +178,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return 'غير معروف';
   }
 
-  void _sendMessage({String? text, String? imageUrl}) async {
+  Future<void> _sendMessage({String? text, String? imageUrl}) async {
     if ((text == null || text.trim().isEmpty) && imageUrl == null) return;
 
     String senderType = widget.currentUserRole;
@@ -182,16 +201,24 @@ class _ChatScreenState extends State<ChatScreen> {
       if (imageUrl != null) 'imageUrl': imageUrl,
     };
 
-    await FirebaseFirestore.instance
-        .collection(_messagesCollection)
-        .add(message);
+    try {
+      await FirebaseFirestore.instance
+          .collection(_messagesCollection)
+          .add(message);
+      await _markAsRead();
 
-    _messageController.clear();
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent + 100,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
+      _messageController.clear();
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent + 100,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل إرسال الرسالة: $e')),
       );
     }
   }
@@ -257,7 +284,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (!_chatEnabled && _isSupportChat) {
       return Scaffold(
-        backgroundColor: AppThemeArabic.courierBackground,
+        backgroundColor: Colors.transparent,
         appBar: AppBar(
           title: const Text('الدردشة',
               style: TextStyle(
@@ -273,12 +300,15 @@ class _ChatScreenState extends State<ChatScreen> {
             borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
           ),
         ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              _chatDisabledMessage,
-              textAlign: TextAlign.center,
+        body: CourierPageBackground(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: CourierEmptyState(
+                title: 'الدردشة متوقفة',
+                message: _chatDisabledMessage,
+                icon: Icons.chat_bubble_outline_rounded,
+              ),
             ),
           ),
         ),
@@ -286,7 +316,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     return Scaffold(
-      backgroundColor: AppThemeArabic.courierBackground,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: Text(otherUserName.isNotEmpty ? otherUserName : 'تحميل...'),
         backgroundColor: Colors.white,
@@ -323,7 +353,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: CourierPageBackground(
+        child: Column(
         children: [
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
@@ -350,6 +381,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (messages.isEmpty) {
                   return const Center(child: Text('لا توجد رسائل بعد'));
                 }
+                _markAsRead();
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (_scrollController.hasClients) {
                     _scrollController.jumpTo(
@@ -465,6 +497,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

@@ -9,6 +9,7 @@ import 'courier_active_orders_screen.dart';
 import 'courier_order_history_screen.dart';
 import 'courier_notifications_screen.dart';
 import 'courier_profile_screen.dart';
+import 'courier_ui.dart';
 import 'courier_new_orders_screen.dart'; // ✅ إضافة شاشة الطلبات الجديدة
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
@@ -24,6 +25,7 @@ class CourierHomeScreen extends StatefulWidget {
 
 class _CourierHomeScreenState extends State<CourierHomeScreen> {
   bool isAvailable = false;
+  bool acceptsLongDistance = false;
   bool _loadingAvailability = true;
   final Location location = Location();
 
@@ -58,6 +60,8 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
 
     return {
       'available': nextAvailable,
+      if (!nextAvailable) 'acceptsLongDistance': false,
+      if (!nextAvailable) 'longDistanceEnabledAt': null,
       'availabilityDayKey': todayKey,
       'availabilityTodayMs': totalTodayMs < 0 ? 0 : totalTodayMs,
       'availabilityCurrentStartedAt': nextAvailable ? Timestamp.now() : null,
@@ -94,6 +98,8 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
         _ensureAvailabilityTrackingSeed(data);
         setState(() {
           isAvailable = (data['available'] as bool?) ?? false;
+          acceptsLongDistance =
+              isAvailable && ((data['acceptsLongDistance'] as bool?) ?? false);
           _loadingAvailability = false;
         });
       } else {
@@ -102,12 +108,15 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
             .doc(widget.driverId)
             .set({
           'available': false,
+          'acceptsLongDistance': false,
+          'longDistanceEnabledAt': null,
           'availabilityDayKey': _todayAvailabilityKey(),
           'availabilityTodayMs': 0,
           'availabilityCurrentStartedAt': null,
         });
         setState(() {
           isAvailable = false;
+          acceptsLongDistance = false;
           _loadingAvailability = false;
         });
       }
@@ -160,14 +169,24 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
         return;
       }
     }
-    setState(() => isAvailable = value);
+    setState(() {
+      isAvailable = value;
+      if (!value) acceptsLongDistance = false;
+    });
     final driverRef = FirebaseFirestore.instance.collection('drivers').doc(widget.driverId);
     final snapshot = await driverRef.get();
     final data = snapshot.data() ?? <String, dynamic>{};
-    await FirebaseFirestore.instance
-        .collection('drivers')
-        .doc(widget.driverId)
-      .update(_buildAvailabilityPatch(data, value));
+    await driverRef.set(_buildAvailabilityPatch(data, value), SetOptions(merge: true));
+  }
+
+  Future<void> _toggleLongDistance(bool value) async {
+    if (!isAvailable && value) return;
+    setState(() => acceptsLongDistance = value);
+    await FirebaseFirestore.instance.collection('drivers').doc(widget.driverId).set({
+      'acceptsLongDistance': value,
+      'longDistanceEnabledAt': value ? FieldValue.serverTimestamp() : null,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   // عرض إشعار محلي
@@ -192,20 +211,12 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppThemeArabic.clientBackground,
-      appBar: AppBar(
-        title: const Text('الرئيسية - المندوب', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
-        backgroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 1,
-        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: _loadingAvailability
+      backgroundColor: Colors.transparent,
+      appBar: buildCourierAppBar('الرئيسية - المندوب'),
+      body: CourierPageBackground(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: _loadingAvailability
             ? const Center(child: CircularProgressIndicator())
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,6 +234,17 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
                     subtitle: Text(isAvailable ? 'متاح' : 'غير متاح'),
                     value: isAvailable,
                     onChanged: _toggleAvailability,
+                  ),
+                  SwitchListTile(
+                    title: const Text('توصيل المسافات البعيدة'),
+                    subtitle: Text(
+                      isAvailable
+                          ? 'أظهرني للأدمن عند وجود طلبات بعيدة'
+                          : 'فعّل التوفر أولًا',
+                    ),
+                    value: acceptsLongDistance,
+                    onChanged: isAvailable ? _toggleLongDistance : null,
+                    secondary: const Icon(Icons.alt_route_rounded),
                   ),
                   const SizedBox(height: 24),
 
@@ -312,6 +334,7 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
                   ),
                 ],
               ),
+          ),
       ),
     );
   }

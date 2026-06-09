@@ -15,6 +15,7 @@ import 'package:speedstar_core/src/config/ops_runtime_config.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 
+import '../الخدمات/location_service.dart';
 import 'courier_order_history_screen.dart';
 import 'courier_account_tab.dart';
 import 'courier_earnings_screen.dart';
@@ -23,6 +24,7 @@ import 'courier_order_process_screen.dart';
 import 'courier_wallet_screen.dart';
 import 'chat_screen.dart';
 import 'courier_notifications_screen.dart';
+import 'courier_ui.dart';
 
 const Color primaryColor = AppThemeArabic.courierPrimary;
 const Color backgroundColor = AppThemeArabic.courierBackground;
@@ -50,6 +52,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
   LatLng _currentLocation = const LatLng(15.5007, 32.5599);
   bool _mapCreated = false;
   bool isAvailable = false;
+  bool acceptsLongDistance = false;
   StreamSubscription<Position>? _locationSubscription;
   StreamSubscription<QuerySnapshot>? _ordersListener;
   String? _lastOfferOrderId;
@@ -94,6 +97,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
 
     return {
       'available': nextAvailable,
+      if (!nextAvailable) 'acceptsLongDistance': false,
+      if (!nextAvailable) 'longDistanceEnabledAt': null,
       'availabilityDayKey': todayKey,
       'availabilityTodayMs': totalTodayMs < 0 ? 0 : totalTodayMs,
       'availabilityCurrentStartedAt': nextAvailable ? Timestamp.now() : null,
@@ -113,6 +118,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(LocationService.instance.startLocationUpdates(widget.driverId));
     _initLocation();
     _loadAvailability();
     _saveFcmToken();
@@ -270,24 +276,29 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     _ordersListener?.cancel();
     _ordersListener = FirebaseFirestore.instance
         .collection('orders')
-        .where('orderStatus', isEqualTo: 'courier_offer_pending')
-        .where('offeredDriverId', isEqualTo: widget.driverId)
+        .where('offerDriverIds', arrayContains: widget.driverId)
         .snapshots()
         .listen((snapshot) {
-      if (snapshot.docs.isEmpty) {
+      final offerDocs = snapshot.docs.where((doc) {
+        final data = doc.data();
+        final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
+        return status == 'courier_offer_pending';
+      }).toList();
+
+      if (offerDocs.isEmpty) {
         _lastOfferOrderId = null;
         _updateOfferRingtoneLoop(false);
         return;
       }
 
       _updateOfferRingtoneLoop(true);
-      for (final doc in snapshot.docs) {
+      for (final doc in offerDocs) {
         if (_notifiedOfferOrderIds.contains(doc.id)) continue;
         _notifiedOfferOrderIds.add(doc.id);
         _playIncomingOfferTone();
       }
 
-      final doc = snapshot.docs.first;
+      final doc = offerDocs.first;
       final orderId = doc.id;
       if (_lastOfferOrderId == orderId) return;
       _lastOfferOrderId = orderId;
@@ -352,13 +363,24 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     if (_mapCreated) {
       _mapController?.animateCamera(CameraUpdate.newLatLng(_currentLocation));
     }
-    FirebaseFirestore.instance
-        .collection('drivers')
-        .doc(widget.driverId)
-        .update({
+    FirebaseFirestore.instance.collection('drivers').doc(widget.driverId).set({
       'location': GeoPoint(position.latitude, position.longitude),
+      'currentLocation': {
+        'lat': position.latitude,
+        'lng': position.longitude,
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'accuracy': position.accuracy,
+        'heading': position.heading,
+        'speed': position.speed,
+      },
+      'lastLocation': GeoPoint(position.latitude, position.longitude),
+      'latitude': position.latitude,
+      'longitude': position.longitude,
       'lastLocationUpdate': FieldValue.serverTimestamp(),
-    });
+      'lastUpdated': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<void> _showLocationDialog() async {
@@ -390,13 +412,19 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     if (doc.exists) {
       final data = doc.data() ?? <String, dynamic>{};
       _ensureAvailabilityTrackingSeed(data);
-      setState(
-          () => isAvailable = (data['available'] as bool?) ?? false);
+      setState(() {
+        isAvailable = (data['available'] as bool?) ?? false;
+        acceptsLongDistance =
+            isAvailable && ((data['acceptsLongDistance'] as bool?) ?? false);
+      });
     }
   }
 
   Future<void> _toggleAvailability(bool v) async {
-    setState(() => isAvailable = v);
+    setState(() {
+      isAvailable = v;
+      if (!v) acceptsLongDistance = false;
+    });
     final driverRef = FirebaseFirestore.instance.collection('drivers').doc(widget.driverId);
     final snapshot = await driverRef.get();
     final data = snapshot.data() ?? <String, dynamic>{};
@@ -404,7 +432,17 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     if (!v) {
       patch['currentOrderId'] = null;
     }
-    await driverRef.update(patch);
+    await driverRef.set(patch, SetOptions(merge: true));
+  }
+
+  Future<void> _toggleLongDistance(bool value) async {
+    if (!isAvailable && value) return;
+    setState(() => acceptsLongDistance = value);
+    await FirebaseFirestore.instance.collection('drivers').doc(widget.driverId).set({
+      'acceptsLongDistance': value,
+      'longDistanceEnabledAt': value ? FieldValue.serverTimestamp() : null,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<void> _confirmAndLogout() async {
@@ -430,6 +468,328 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     }
   }
 
+  Future<void> _openCurrentOrder() async {
+    final box = GetStorage();
+    final currentOrder = box.read('current_order');
+    final currentAssignedOrder = await _findCurrentAssignedOrder();
+
+    String? orderId;
+    String stage = 'going_to_restaurant';
+    if (currentAssignedOrder != null) {
+      orderId = currentAssignedOrder['orderId'];
+      final status = currentAssignedOrder['status'] ?? '';
+      stage = _stageFromStatus(status);
+      box.write('current_order', {
+        'orderId': orderId,
+        'stage': stage,
+      });
+    } else if (currentOrder != null && currentOrder['orderId'] != null) {
+      orderId = currentOrder['orderId'].toString();
+      stage = (currentOrder['stage'] ?? 'going_to_restaurant').toString();
+    }
+
+    if (!mounted) return;
+    if (orderId != null && orderId.isNotEmpty) {
+      Navigator.pop(context);
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => CourierOrderProcessScreen(
+            orderId: orderId!,
+            stage: stage,
+          ),
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('لا يوجد طلب حالي - لم يتم تعيين أي طلب بعد'),
+      ),
+    );
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: Colors.transparent,
+      child: CourierPageBackground(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+            child: Column(
+              children: [
+                CourierHeroCard(
+                  title: 'لوحة المندوب',
+                  subtitle: isAvailable
+                      ? 'أنت الآن ظاهر لاستقبال الطلبات ويمكنك متابعة رحلتك بسرعة.'
+                      : 'فعّل التوفر عندما تكون جاهزًا لاستقبال الطلبات الجديدة.',
+                  icon: Icons.route_rounded,
+                  trailing: Switch(
+                    value: isAvailable,
+                    onChanged: _toggleAvailability,
+                    activeColor: Colors.white,
+                    activeTrackColor: Colors.white.withValues(alpha: 0.35),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SwitchListTile(
+                  value: acceptsLongDistance,
+                  onChanged: isAvailable ? _toggleLongDistance : null,
+                  secondary: const Icon(Icons.alt_route_rounded),
+                  title: const Text('توصيل المسافات البعيدة'),
+                  subtitle: Text(
+                    isAvailable
+                        ? 'فعّلها إذا كنت مستعدًا لطلبات خارج النطاق القريب.'
+                        : 'فعّل التوفر أولًا حتى يظهر هذا الخيار للأدمن.',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      CourierMenuTile(
+                        title: 'الطلب الحالي',
+                        subtitle: 'العودة سريعًا إلى الرحلة الجارية',
+                        icon: Icons.assignment_turned_in_rounded,
+                        onTap: _openCurrentOrder,
+                      ),
+                      const SizedBox(height: 10),
+                      CourierMenuTile(
+                        title: 'سجل الطلبات',
+                        subtitle: 'مراجعة الطلبات المكتملة السابقة',
+                        icon: Icons.history_rounded,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                CourierOrderHistoryScreen(driverId: widget.driverId),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      CourierMenuTile(
+                        title: 'الحساب',
+                        subtitle: 'البيانات الشخصية والإعدادات الأساسية',
+                        icon: Icons.person_outline_rounded,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                CourierAccountTab(driverId: widget.driverId),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      CourierMenuTile(
+                        title: 'الأرباح',
+                        subtitle: 'ملخص الأداء والدخل المنجز',
+                        icon: Icons.bar_chart_rounded,
+                        iconColor: AppThemeArabic.courierAccent,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                CourierEarningsScreen(driverId: widget.driverId),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      CourierMenuTile(
+                        title: 'المحفظة',
+                        subtitle: 'بيانات التحويلات والمبالغ المستحقة',
+                        icon: Icons.account_balance_wallet_outlined,
+                        iconColor: AppThemeArabic.courierAccent,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                CourierWalletScreen(driverId: widget.driverId),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                CourierSectionCard(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 18,
+                            backgroundColor: (isAvailable
+                                    ? AppThemeArabic.courierAccent
+                                    : AppThemeArabic.clientError)
+                                .withValues(alpha: 0.14),
+                            child: Icon(
+                              isAvailable ? Icons.check_circle : Icons.pause_circle,
+                              color: isAvailable
+                                  ? AppThemeArabic.courierAccent
+                                  : AppThemeArabic.clientError,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              isAvailable ? 'متاح للطلبات الآن' : 'غير متاح حاليًا',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: AppThemeArabic.courierTextPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _confirmAndLogout,
+                          icon: const Icon(Icons.logout_rounded),
+                          label: const Text('تسجيل الخروج'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppThemeArabic.clientError,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopMapCard() {
+    return CourierSectionCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: AppThemeArabic.courierPrimary.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.near_me_rounded,
+              color: AppThemeArabic.courierPrimary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'منطقة العمل الحالية',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppThemeArabic.courierTextPrimary,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'الخريطة تعرض موقعك والمطاعم المفتوحة والأكثر نشاطًا حولك.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppThemeArabic.courierTextSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomMapPanel() {
+    return CourierSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: CourierSectionTitle(
+                  title: isAvailable ? 'جاهز للاستقبال' : 'وضع التوقف',
+                  subtitle: _hasPendingOffer
+                      ? 'هناك عرض طلب قيد الانتظار الآن.'
+                      : 'أدر توفرك وارجع سريعًا للطلبات الجارية.',
+                ),
+              ),
+              Switch(
+                value: isAvailable,
+                onChanged: _toggleAvailability,
+                activeColor: AppThemeArabic.courierAccent,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: CourierMetricCard(
+                  label: 'مطاعم ظاهرة',
+                  value: _restaurantCircles.length.toString(),
+                  icon: Icons.storefront_rounded,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: CourierMetricCard(
+                  label: 'عروض بانتظارك',
+                  value: _hasPendingOffer ? '1+' : '0',
+                  icon: Icons.notifications_active_rounded,
+                  tone: _hasPendingOffer
+                      ? AppThemeArabic.courierAccent
+                      : AppThemeArabic.courierPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _openCurrentOrder,
+                  icon: const Icon(Icons.route_rounded),
+                  label: const Text('الرحلة الحالية'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            CourierOrderHistoryScreen(driverId: widget.driverId),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.history_rounded),
+                  label: const Text('السجل'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
     try {
@@ -447,6 +807,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
             .doc(widget.driverId)
             .set({
           'available': false,
+          'acceptsLongDistance': false,
+          'longDistanceEnabledAt': null,
           'availabilityDayKey': _todayAvailabilityKey(),
           'availabilityTodayMs': 0,
           'availabilityCurrentStartedAt': null,
@@ -603,6 +965,9 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
   void dispose() {
     _mapController?.dispose();
     _locationSubscription?.cancel();
+    unawaited(
+      LocationService.instance.stopLocationUpdates(stopNativeService: false),
+    );
     _ordersListener?.cancel();
     _stopOfferRingtoneLoop();
     _ringtonePlayer.dispose();
@@ -796,6 +1161,13 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                       ),
                     ],
                   ),
+                ),
+                SwitchListTile(
+                  value: acceptsLongDistance,
+                  onChanged: isAvailable ? _toggleLongDistance : null,
+                  secondary: const Icon(Icons.route_rounded),
+                  title: const Text('المسافات البعيدة'),
+                  subtitle: const Text('إظهارك للأدمن كخيار للطلبات البعيدة'),
                 ),
                 const Divider(),
                 Card(
@@ -1041,6 +1413,15 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                       ],
                     ),
                   ),
+                ),
+              ),
+              Positioned(
+                left: 18,
+                right: 18,
+                bottom: 18,
+                child: SafeArea(
+                  top: false,
+                  child: _buildBottomMapPanel(),
                 ),
               ),
             ],

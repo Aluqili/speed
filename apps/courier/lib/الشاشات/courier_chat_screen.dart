@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
+import 'courier_ui.dart';
+
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
 
@@ -26,7 +28,7 @@ class _ChatScreenState extends State<ChatScreen> {
     currentUserRole = args['currentUserRole'];
   }
 
-  void _sendMessage() async {
+  Future<void> _sendMessage() async {
     final messageText = _messageController.text.trim();
     if (messageText.isEmpty) return;
 
@@ -43,118 +45,138 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title =
-        currentUserRole == 'driver' ? 'دردشة مع العميل' : 'دردشة مع المندوب';
+    final title = currentUserRole == 'driver'
+        ? 'دردشة مع العميل'
+        : 'دردشة مع المندوب';
 
     return Scaffold(
-      backgroundColor: AppThemeArabic.clientBackground,
-      appBar: AppBar(
-        title: Text(title, style: const TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
-        backgroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 1,
-        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-        ),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('chats')
-                  .where('participants', arrayContains: currentUserId)
-                  .orderBy('timestamp', descending: false)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+      appBar: buildCourierAppBar(title),
+      body: CourierPageBackground(
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('chats')
+                    .where('participants', arrayContains: currentUserId)
+                    .orderBy('timestamp', descending: false)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                final messages = snapshot.data!.docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  return (data['senderId'] == currentUserId &&
-                          data['receiverId'] == otherUserId) ||
-                      (data['senderId'] == otherUserId &&
-                          data['receiverId'] == currentUserId);
-                }).toList();
+                  final docs = snapshot.data?.docs ?? [];
+                  final messages = docs.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    return (data['senderId'] == currentUserId &&
+                            data['receiverId'] == otherUserId) ||
+                        (data['senderId'] == otherUserId &&
+                            data['receiverId'] == currentUserId);
+                  }).toList();
 
-                if (messages.isEmpty) {
-                  return const Center(child: Text('لا توجد رسائل بعد.'));
-                }
+                  if (messages.isEmpty) {
+                    return const CourierEmptyState(
+                      title: 'لا توجد رسائل بعد',
+                      message: 'ابدأ المحادثة عند الحاجة لتنسيق التسليم.',
+                      icon: Icons.chat_bubble_outline_rounded,
+                    );
+                  }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(10),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final msg = messages[index].data() as Map<String, dynamic>;
-                    final isMe = msg['senderId'] == currentUserId;
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(14),
+                    itemCount: messages.length,
+                    itemBuilder: (context, index) {
+                      final msg =
+                          messages[index].data() as Map<String, dynamic>;
+                      final isMe = msg['senderId'] == currentUserId;
 
-                    return Align(
-                      alignment: isMe
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: isMe
-                              ? AppThemeArabic.clientSurface
-                              : Theme.of(context).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(msg['message'],
-                                style: const TextStyle(fontSize: 16)),
-                            if (msg['timestamp'] != null)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
+                      return Align(
+                        alignment:
+                            isMe ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Container(
+                          constraints: BoxConstraints(
+                            maxWidth: MediaQuery.sizeOf(context).width * 0.76,
+                          ),
+                          margin: const EdgeInsets.symmetric(vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isMe
+                                ? AppThemeArabic.courierPrimary
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isMe
+                                  ? AppThemeArabic.courierPrimary
+                                  : const Color(0xFFE9DDCF),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                (msg['message'] ?? '').toString(),
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: isMe
+                                      ? Colors.white
+                                      : AppThemeArabic.courierTextPrimary,
+                                ),
+                              ),
+                              if (msg['timestamp'] != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
                                   (msg['timestamp'] as Timestamp)
                                       .toDate()
                                       .toLocal()
                                       .toString()
                                       .substring(0, 16),
-                                  style: const TextStyle(
-                                      fontSize: 10, color: Colors.grey),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: isMe
+                                        ? Colors.white70
+                                        : AppThemeArabic.courierTextSecondary,
+                                  ),
                                 ),
-                              ),
-                          ],
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: CourierSectionCard(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _messageController,
+                        decoration: const InputDecoration(
+                          hintText: 'اكتب رسالتك...',
                         ),
                       ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _messageController,
-                    decoration: const InputDecoration(
-                      hintText: 'اكتب رسالتك...',
-                      border: OutlineInputBorder(),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      icon: const Icon(Icons.send_rounded),
+                      onPressed: _sendMessage,
+                    ),
+                  ],
                 ),
-                IconButton(
-                  icon: const Icon(Icons.send),
-                  onPressed: _sendMessage,
-                  color: Colors.blue,
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -138,6 +138,22 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
         _refreshRoute();
       }
 
+      final orderDriverLoc = data['driverLocation'];
+      if (orderDriverLoc is GeoPoint) {
+        _driverLocation =
+            LatLng(orderDriverLoc.latitude, orderDriverLoc.longitude);
+      } else {
+        final current = data['driverCurrentLocation'];
+        if (current is Map &&
+            current['lat'] != null &&
+            current['lng'] != null) {
+          _driverLocation = LatLng(
+            (current['lat'] as num).toDouble(),
+            (current['lng'] as num).toDouble(),
+          );
+        }
+      }
+
       final driverId = data['assignedDriverId'] as String?;
       if (driverId != null && _driverId != driverId) {
         setState(() => _driverId = driverId);

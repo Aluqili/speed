@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
-import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+
+import 'courier_ui.dart';
 
 class CourierEarningsScreen extends StatefulWidget {
   final String driverId;
@@ -32,7 +33,7 @@ class _CourierEarningsScreenState extends State<CourierEarningsScreen> {
     double earnings = 0;
     int orders = 0;
 
-    for (var doc in snapshot.docs) {
+    for (final doc in snapshot.docs) {
       final data = doc.data();
       final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
       if (status != 'delivered' && status != 'تم التوصيل') continue;
@@ -44,6 +45,7 @@ class _CourierEarningsScreenState extends State<CourierEarningsScreen> {
       orders++;
     }
 
+    if (!mounted) return;
     setState(() {
       totalEarnings = earnings;
       totalOrders = orders;
@@ -54,74 +56,121 @@ class _CourierEarningsScreenState extends State<CourierEarningsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppThemeArabic.clientBackground,
-      appBar: AppBar(
-        title: const Text('أرباحي', style: TextStyle(color: AppThemeArabic.clientPrimary, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Tajawal')),
-        backgroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 1,
-        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-        ),
-      ),
-      body: isLoading
-          ? const Center(child: GFLoader(type: GFLoaderType.circle))
-          : Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
+      appBar: buildCourierAppBar('أرباحي'),
+      body: CourierPageBackground(
+        child: isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.all(16),
                 children: [
-                  const SizedBox(height: 20),
-                  GFCard(
-                    elevation: 8,
-                    color: AppThemeArabic.clientSurface,
-                    padding: const EdgeInsets.all(24),
-                    borderRadius: BorderRadius.circular(16),
-                    content: Column(
+                  CourierHeroCard(
+                    title: '${totalEarnings.toStringAsFixed(2)} ج.س',
+                    subtitle: 'إجمالي العائد من الطلبات المكتملة حتى الآن.',
+                    icon: Icons.payments_rounded,
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: CourierMetricCard(
+                          label: 'طلبات مكتملة',
+                          value: '$totalOrders',
+                          icon: Icons.task_alt_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: CourierMetricCard(
+                          label: 'متوسط العائد',
+                          value: totalOrders == 0
+                              ? '0'
+                              : (totalEarnings / totalOrders).toStringAsFixed(1),
+                          icon: Icons.trending_up_rounded,
+                          tone: AppThemeArabic.courierAccent,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  CourierSectionCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'مجموع الأرباح',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        const CourierSectionTitle(
+                          title: 'ملخص الأداء',
+                          subtitle:
+                              'عرض سريع يساعدك على فهم نشاطك واتجاه أرباحك.',
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          '${totalEarnings.toStringAsFixed(2)} ج.س',
-                          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.green),
-                        ),
-                        const SizedBox(height: 24),
-                        const Divider(thickness: 1),
                         const SizedBox(height: 16),
-                        const Text(
-                          'عدد الطلبات المنفذة',
-                          style: TextStyle(fontSize: 18),
+                        _SummaryRow(
+                          label: 'إجمالي الأرباح',
+                          value: '${totalEarnings.toStringAsFixed(2)} ج.س',
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '$totalOrders طلب',
-                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blue),
+                        const SizedBox(height: 10),
+                        _SummaryRow(
+                          label: 'عدد الطلبات المنجزة',
+                          value: '$totalOrders طلب',
+                        ),
+                        const SizedBox(height: 10),
+                        _SummaryRow(
+                          label: 'متوسط العائد لكل طلب',
+                          value: totalOrders == 0
+                              ? '0 ج.س'
+                              : '${(totalEarnings / totalOrders).toStringAsFixed(2)} ج.س',
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 40),
-                  GFButton(
-                    onPressed: () {
-                      _loadEarnings(); // 🔄 تحديث الأرباح بالضغط
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      setState(() => isLoading = true);
+                      await _loadEarnings();
+                      if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('تم تحديث البيانات')),
+                        const SnackBar(content: Text('تم تحديث بيانات الأرباح')),
                       );
                     },
-                    text: 'تحديث الأرباح',
-                    color: AppThemeArabic.clientPrimary,
-                    size: GFSize.LARGE,
-                    fullWidthButton: true,
-                    shape: GFButtonShape.pills,
-                    icon: const Icon(Icons.refresh),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('تحديث الأرباح'),
                   ),
                 ],
               ),
+      ),
+    );
+  }
+}
+
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              color: AppThemeArabic.courierTextSecondary,
             ),
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            color: AppThemeArabic.courierTextPrimary,
+          ),
+        ),
+      ],
     );
   }
 }

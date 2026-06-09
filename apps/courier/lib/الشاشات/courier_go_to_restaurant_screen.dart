@@ -1,18 +1,20 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'dart:math' as math;
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/Ø§Ù„Ø«ÙŠÙ…/Ø«ÙŠÙ…_Ø§Ù„ØªØ·Ø¨ÙŠÙ‚.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import '../helpers/courier_runtime_helpers.dart';
 
-import 'chat_screen.dart';
+import 'courier_client_contact_card.dart';
 import 'courier_go_to_client_screen.dart';
+import 'courier_ui.dart';
 
 class CourierGoToRestaurantScreen extends StatelessWidget {
   final String orderId;
@@ -33,7 +35,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
     }
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تعذر فتح خرائط Google على هذا الجهاز')),
+      const SnackBar(content: Text('ØªØ¹Ø°Ø± ÙØªØ­ Ø®Ø±Ø§Ø¦Ø· Google Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø²')),
     );
   }
 
@@ -68,6 +70,8 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
         ),
         80,
       ),
+      ),
+      ),
     );
   }
 
@@ -75,16 +79,16 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
     final approved = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('تأكيد الاستلام'),
-        content: const Text('هل أنت متأكد أنك استلمت الطلب من المطعم؟'),
+        title: const Text('ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…'),
+        content: const Text('Ù‡Ù„ Ø£Ù†Øª Ù…ØªØ£ÙƒØ¯ Ø£Ù†Ùƒ Ø§Ø³ØªÙ„Ù…Øª Ø§Ù„Ø·Ù„Ø¨ Ù…Ù† Ø§Ù„Ù…Ø·Ø¹Ù…ØŸ'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('إلغاء'),
+            child: const Text('Ø¥Ù„ØºØ§Ø¡'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('تأكيد الاستلام'),
+            child: const Text('ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…'),
           ),
         ],
       ),
@@ -315,46 +319,6 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
     });
   }
 
-  String _generateChatId(String user1, String user2) {
-    final sorted = [user1, user2]..sort();
-    return '${sorted[0]}_${sorted[1]}';
-  }
-
-  Future<void> _openClientChat(
-    BuildContext context,
-    Map<String, dynamic> orderData,
-  ) async {
-    final clientId = (orderData['clientId'] ?? '').toString().trim();
-    if (clientId.isEmpty) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('لا يمكن فتح الدردشة لعدم توفر معرف العميل')),
-      );
-      return;
-    }
-
-    final doc = await FirebaseFirestore.instance
-        .collection('drivers')
-        .doc(driverId)
-        .get();
-    final driverName = (doc.data()?['name'] ?? 'مندوب').toString();
-
-    if (!context.mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          currentUserId: driverId,
-          otherUserId: clientId,
-          currentUserRole: 'driver',
-          chatId: _generateChatId(driverId, clientId),
-          currentUserName: driverName,
-        ),
-      ),
-    );
-  }
-
   Widget _detailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -384,7 +348,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
 
   Widget _buildOrderDetails(Map<String, dynamic> orderData) {
     final items = (orderData['items'] as List?) ?? const [];
-    final paymentMethod = (orderData['paymentMethod'] ?? 'غير محدد').toString();
+    final paymentMethod = (orderData['paymentMethod'] ?? 'ØºÙŠØ± Ù…Ø­Ø¯Ø¯').toString();
     final totalWithDelivery =
         (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
 
@@ -392,7 +356,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
       child: ExpansionTile(
         initiallyExpanded: true,
         title: const Text(
-          'تفاصيل الطلب',
+          'ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø·Ù„Ø¨',
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
         collapsedTextColor: Colors.black87,
@@ -402,7 +366,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
           _detailRow(
-            'رقم الطلب',
+            'Ø±Ù‚Ù… Ø§Ù„Ø·Ù„Ø¨',
             formatUnifiedOrderCode(
               orderNumber: orderData['orderNumber'],
               orderId: orderData['orderId'],
@@ -410,16 +374,16 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
             ),
           ),
           _detailRow(
-              'العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
-          _detailRow('المطعم',
-              (orderData['restaurantName'] ?? 'غير معروف').toString()),
-          _detailRow('طريقة الدفع', paymentMethod),
-          _detailRow('الإجمالي', '$totalWithDelivery ج.س'),
+              'Ø§Ù„Ø¹Ù…ÙŠÙ„', (orderData['clientName'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ').toString()),
+          _detailRow('Ø§Ù„Ù…Ø·Ø¹Ù…',
+              (orderData['restaurantName'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ').toString()),
+          _detailRow('Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹', paymentMethod),
+          _detailRow('Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ', '$totalWithDelivery Ø¬.Ø³'),
           const SizedBox(height: 8),
           const Align(
             alignment: Alignment.centerRight,
             child: Text(
-              'العناصر',
+              'Ø§Ù„Ø¹Ù†Ø§ØµØ±',
               style:
                   TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
             ),
@@ -429,7 +393,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
             const Align(
               alignment: Alignment.centerRight,
               child: Text(
-                'لا توجد عناصر',
+                'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¹Ù†Ø§ØµØ±',
                 style: TextStyle(color: Colors.black87),
               ),
             )
@@ -438,12 +402,12 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
               final map = (item is Map<String, dynamic>)
                   ? item
                   : Map<String, dynamic>.from(item as Map);
-              final name = (map['name'] ?? 'عنصر').toString();
+              final name = (map['name'] ?? 'Ø¹Ù†ØµØ±').toString();
               final qty = (map['quantity'] ?? 1).toString();
               return Align(
                 alignment: Alignment.centerRight,
                 child: Text(
-                  '• $name × $qty',
+                  'â€¢ $name Ã— $qty',
                   style: const TextStyle(color: Colors.black87),
                 ),
               );
@@ -502,25 +466,10 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppThemeArabic.courierBackground,
-      appBar: AppBar(
-        title: const Text(
-          'الذهاب إلى المطعم',
-          style: TextStyle(
-              color: AppThemeArabic.courierPrimary,
-              fontWeight: FontWeight.bold,
-              fontSize: 20,
-              fontFamily: 'Tajawal'),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 1,
-        centerTitle: true,
-        iconTheme: const IconThemeData(color: AppThemeArabic.courierPrimary),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-        ),
-      ),
-      body: FutureBuilder<Map<String, dynamic>?>(
+      backgroundColor: Colors.transparent,
+      appBar: buildCourierAppBar('الذهاب إلى المطعم'),
+      body: CourierPageBackground(
+        child: FutureBuilder<Map<String, dynamic>?>(
         future: _fetchOrderData(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -532,7 +481,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
               child: Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  'حدث خطأ أثناء تحميل الطلب. حاول إعادة فتح الشاشة.',
+                  'Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø·Ù„Ø¨. Ø­Ø§ÙˆÙ„ Ø¥Ø¹Ø§Ø¯Ø© ÙØªØ­ Ø§Ù„Ø´Ø§Ø´Ø©.',
                   style: TextStyle(color: Colors.black87),
                   textAlign: TextAlign.center,
                 ),
@@ -543,7 +492,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
           if (!snapshot.hasData || snapshot.data == null) {
             return const Center(
               child: Text(
-                'الطلب غير موجود أو تعذر تحميل بياناته',
+                'Ø§Ù„Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ Ø£Ùˆ ØªØ¹Ø°Ø± ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§ØªÙ‡',
                 style: TextStyle(color: Colors.black87),
               ),
             );
@@ -553,7 +502,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
           final String restaurantName =
               (orderData['restaurantName'] ?? '').toString().trim().isNotEmpty
                   ? orderData['restaurantName'].toString().trim()
-                  : 'اسم غير معروف';
+                  : 'Ø§Ø³Ù… ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ';
 
           final restaurantLocationRaw = orderData['restaurantLocation'];
           final clientLocationRaw = orderData['clientLocation'];
@@ -627,28 +576,16 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             children: [
               _buildJourneyHeader(
-                title: 'المرحلة 1 من 3 · التوجه للمطعم',
-                subtitle: 'عند وصولك للمطعم واستلام الطلب اضغط «استلام الطلب»',
+                title: 'Ø§Ù„Ù…Ø±Ø­Ù„Ø© 1 Ù…Ù† 3 Â· Ø§Ù„ØªÙˆØ¬Ù‡ Ù„Ù„Ù…Ø·Ø¹Ù…',
+                subtitle: 'Ø¹Ù†Ø¯ ÙˆØµÙˆÙ„Ùƒ Ù„Ù„Ù…Ø·Ø¹Ù… ÙˆØ§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø·Ù„Ø¨ Ø§Ø¶ØºØ· Â«Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø·Ù„Ø¨Â»',
                 icon: Icons.store_mall_directory_outlined,
               ),
               const SizedBox(height: 12),
               _buildOrderDetails(orderData),
               const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _openClientChat(context, orderData),
-                  icon: const Icon(Icons.chat_bubble_outline),
-                  label: const Text('الدردشة مع العميل'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppThemeArabic.courierAccent,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(50),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
+              CourierClientContactCard(
+                orderData: orderData,
+                driverId: driverId,
               ),
               const SizedBox(height: 12),
               Container(
@@ -683,19 +620,19 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                   if (driverToRestaurantKm != null)
                     Chip(
                       label: Text(
-                        'يبعد المطعم عنك: ${courierFormatDistance(driverToRestaurantKm)}',
+                        'ÙŠØ¨Ø¹Ø¯ Ø§Ù„Ù…Ø·Ø¹Ù… Ø¹Ù†Ùƒ: ${courierFormatDistance(driverToRestaurantKm)}',
                       ),
                     ),
                   if (restaurantToClientKm != null)
                     Chip(
                       label: Text(
-                        'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
+                        'ÙŠØ¨Ø¹Ø¯ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø¹Ù† Ø§Ù„Ù…Ø·Ø¹Ù…: ${courierFormatDistance(restaurantToClientKm)}',
                       ),
                     ),
                   if (driverFee > 0)
                     Chip(
                       label: Text(
-                        'رسوم التوصيل: ${courierFormatMoney(driverFee)} ج.س',
+                        'Ø±Ø³ÙˆÙ… Ø§Ù„ØªÙˆØµÙŠÙ„: ${courierFormatMoney(driverFee)} Ø¬.Ø³',
                       ),
                     ),
                 ],
@@ -777,7 +714,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                         children: [
                           Icon(Icons.storefront_rounded, size: 16),
                           SizedBox(width: 6),
-                          Text('المطعم'),
+                          Text('Ø§Ù„Ù…Ø·Ø¹Ù…'),
                         ],
                       ),
                     ),
@@ -794,7 +731,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                         children: [
                           Icon(Icons.person_rounded, size: 16),
                           SizedBox(width: 6),
-                          Text('العميل'),
+                          Text('Ø§Ù„Ø¹Ù…ÙŠÙ„'),
                         ],
                       ),
                     ),
@@ -829,54 +766,130 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Text(
-                    'لا توجد إحداثيات للمطعم في الطلب، لذلك لا يمكن عرض الخريطة حالياً.',
+                    'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¥Ø­Ø¯Ø§Ø«ÙŠØ§Øª Ù„Ù„Ù…Ø·Ø¹Ù… ÙÙŠ Ø§Ù„Ø·Ù„Ø¨ØŒ Ù„Ø°Ù„Ùƒ Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø¹Ø±Ø¶ Ø§Ù„Ø®Ø±ÙŠØ·Ø© Ø­Ø§Ù„ÙŠØ§Ù‹.',
                     style: TextStyle(color: Colors.black87),
                   ),
                 ),
               ],
               const SizedBox(height: 20),
-              GFButton(
-                onPressed: () async {
-                  final confirmed = await _confirmPickup(context);
-                  if (!confirmed) return;
-                  await FirebaseFirestore.instance
-                      .collection('orders')
-                      .doc(orderId)
-                      .update({
-                    'orderStatus': 'picked_up',
-                    'status': 'picked_up',
-                    'pickedUpAt': FieldValue.serverTimestamp(),
-                    'updatedAt': FieldValue.serverTimestamp(),
-                    if (clientLat != null) 'clientLat': clientLat,
-                    if (clientLng != null) 'clientLng': clientLng,
-                    if (restaurantLat != null) 'restaurantLat': restaurantLat,
-                    if (restaurantLng != null) 'restaurantLng': restaurantLng,
-                  });
-                  await _saveCurrentStage('going_to_client');
-                  if (!context.mounted) return;
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => CourierGoToClientScreen(
-                        orderId: orderId,
-                        clientLocation: clientLocation,
-                        driverId: driverId,
-                      ),
-                    ),
-                  );
-                },
-                text: 'استلام الطلب',
-                icon: const Icon(Icons.check_circle),
-                color: AppThemeArabic.courierAccent,
-                shape: GFButtonShape.pills,
-                fullWidthButton: true,
-                size: GFSize.LARGE,
-                textStyle:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+              _PickupFromRestaurantButton(
+                orderId: orderId,
+                driverId: driverId,
+                clientLocation: clientLocation,
+                clientLat: clientLat,
+                clientLng: clientLng,
+                restaurantLat: restaurantLat,
+                restaurantLng: restaurantLng,
+                confirmPickup: _confirmPickup,
+                saveNextStage: () => _saveCurrentStage('going_to_client'),
               ),
             ],
           );
         },
       ),
+      ),
     );
   }
 }
+
+class _PickupFromRestaurantButton extends StatefulWidget {
+  const _PickupFromRestaurantButton({
+    required this.orderId,
+    required this.driverId,
+    required this.clientLocation,
+    required this.clientLat,
+    required this.clientLng,
+    required this.restaurantLat,
+    required this.restaurantLng,
+    required this.confirmPickup,
+    required this.saveNextStage,
+  });
+
+  final String orderId;
+  final String driverId;
+  final LatLng? clientLocation;
+  final double? clientLat;
+  final double? clientLng;
+  final double? restaurantLat;
+  final double? restaurantLng;
+  final Future<bool> Function(BuildContext context) confirmPickup;
+  final Future<void> Function() saveNextStage;
+
+  @override
+  State<_PickupFromRestaurantButton> createState() =>
+      _PickupFromRestaurantButtonState();
+}
+
+class _PickupFromRestaurantButtonState
+    extends State<_PickupFromRestaurantButton> {
+  bool _confirmingPickup = false;
+
+  Future<void> _handlePickup() async {
+    if (_confirmingPickup) return;
+    final confirmed = await widget.confirmPickup(context);
+    if (!confirmed) return;
+
+    setState(() => _confirmingPickup = true);
+    try {
+      await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('courierUpdateOrderStage')
+          .call({
+        'orderId': widget.orderId,
+        'driverId': widget.driverId,
+        'stage': 'picked_up',
+      });
+      await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(widget.orderId)
+          .set({
+        if (widget.clientLat != null) 'clientLat': widget.clientLat,
+        if (widget.clientLng != null) 'clientLng': widget.clientLng,
+        if (widget.restaurantLat != null) 'restaurantLat': widget.restaurantLat,
+        if (widget.restaurantLng != null) 'restaurantLng': widget.restaurantLng,
+      }, SetOptions(merge: true));
+      await widget.saveNextStage();
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => CourierGoToClientScreen(
+            orderId: widget.orderId,
+            clientLocation: widget.clientLocation,
+            driverId: widget.driverId,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ØªØ¹Ø°Ø± ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _confirmingPickup = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GFButton(
+      onPressed: _handlePickup,
+      text: _confirmingPickup ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…...' : 'Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø·Ù„Ø¨',
+      icon: _confirmingPickup
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : const Icon(Icons.check_circle),
+      color: AppThemeArabic.courierAccent,
+      shape: GFButtonShape.pills,
+      fullWidthButton: true,
+      size: GFSize.LARGE,
+      textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+    );
+  }
+}
+
+

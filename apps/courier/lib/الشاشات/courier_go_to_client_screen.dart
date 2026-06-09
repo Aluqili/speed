@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -9,12 +9,13 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/Ø§Ù„Ø«ÙŠÙ…/Ø«ÙŠÙ…_Ø§Ù„ØªØ·Ø¨ÙŠÙ‚.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import '../helpers/courier_runtime_helpers.dart';
 import '../helpers/smart_location_tracker.dart';
-import 'chat_screen.dart';
+import 'courier_client_contact_card.dart';
 import 'courier_confirm_delivery_screen.dart';
+import 'courier_ui.dart';
 
 class CourierGoToClientScreen extends StatefulWidget {
   final String orderId;
@@ -40,6 +41,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
   List<LatLng> _routePoints = const [];
   String _routeKey = '';
   bool _fetchingRoute = false;
+  bool _confirmingArrival = false;
 
   @override
   void initState() {
@@ -77,7 +79,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('لا يوجد موقع عميل في هذا الطلب لفتحه على الخرائط')),
+            content: Text('Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ù…ÙˆÙ‚Ø¹ Ø¹Ù…ÙŠÙ„ ÙÙŠ Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨ Ù„ÙØªØ­Ù‡ Ø¹Ù„Ù‰ Ø§Ù„Ø®Ø±Ø§Ø¦Ø·')),
       );
       return;
     }
@@ -91,7 +93,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تعذر فتح خرائط Google على هذا الجهاز')),
+      const SnackBar(content: Text('ØªØ¹Ø°Ø± ÙØªØ­ Ø®Ø±Ø§Ø¦Ø· Google Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø²')),
     );
   }
 
@@ -145,6 +147,8 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
           northeast: LatLng(maxLat, maxLng),
         ),
         80,
+      ),
+      ),
       ),
     );
   }
@@ -312,43 +316,6 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
     return data;
   }
 
-  String _generateChatId(String user1, String user2) {
-    final sorted = [user1, user2]..sort();
-    return '${sorted[0]}_${sorted[1]}';
-  }
-
-  Future<void> _openClientChat(Map<String, dynamic> orderData) async {
-    final clientId = (orderData['clientId'] ?? '').toString().trim();
-    if (clientId.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('لا يمكن فتح الدردشة لعدم توفر معرف العميل')),
-      );
-      return;
-    }
-
-    final doc = await FirebaseFirestore.instance
-        .collection('drivers')
-        .doc(widget.driverId)
-        .get();
-    final driverName = (doc.data()?['name'] ?? 'مندوب').toString();
-
-    if (!mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          currentUserId: widget.driverId,
-          otherUserId: clientId,
-          currentUserRole: 'driver',
-          chatId: _generateChatId(widget.driverId, clientId),
-          currentUserName: driverName,
-        ),
-      ),
-    );
-  }
-
   Widget _detailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -378,7 +345,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
 
   Widget _buildOrderDetails(Map<String, dynamic> orderData) {
     final items = (orderData['items'] as List?) ?? const [];
-    final paymentMethod = (orderData['paymentMethod'] ?? 'غير محدد').toString();
+    final paymentMethod = (orderData['paymentMethod'] ?? 'ØºÙŠØ± Ù…Ø­Ø¯Ø¯').toString();
     final totalWithDelivery =
         (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
 
@@ -386,7 +353,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
       child: ExpansionTile(
         initiallyExpanded: true,
         title: const Text(
-          'تفاصيل الطلب',
+          'ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø·Ù„Ø¨',
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
         collapsedTextColor: Colors.black87,
@@ -396,7 +363,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
           _detailRow(
-            'رقم الطلب',
+            'Ø±Ù‚Ù… Ø§Ù„Ø·Ù„Ø¨',
             formatUnifiedOrderCode(
               orderNumber: orderData['orderNumber'],
               orderId: orderData['orderId'],
@@ -404,16 +371,16 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
             ),
           ),
           _detailRow(
-              'العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
-          _detailRow('المطعم',
-              (orderData['restaurantName'] ?? 'غير معروف').toString()),
-          _detailRow('طريقة الدفع', paymentMethod),
-          _detailRow('الإجمالي', '$totalWithDelivery ج.س'),
+              'Ø§Ù„Ø¹Ù…ÙŠÙ„', (orderData['clientName'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ').toString()),
+          _detailRow('Ø§Ù„Ù…Ø·Ø¹Ù…',
+              (orderData['restaurantName'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ').toString()),
+          _detailRow('Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹', paymentMethod),
+          _detailRow('Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ', '$totalWithDelivery Ø¬.Ø³'),
           const SizedBox(height: 8),
           const Align(
             alignment: Alignment.centerRight,
             child: Text(
-              'العناصر',
+              'Ø§Ù„Ø¹Ù†Ø§ØµØ±',
               style:
                   TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
             ),
@@ -423,7 +390,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
             const Align(
               alignment: Alignment.centerRight,
               child: Text(
-                'لا توجد عناصر',
+                'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¹Ù†Ø§ØµØ±',
                 style: TextStyle(color: Colors.black87),
               ),
             )
@@ -432,12 +399,12 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
               final map = (item is Map<String, dynamic>)
                   ? item
                   : Map<String, dynamic>.from(item as Map);
-              final name = (map['name'] ?? 'عنصر').toString();
+              final name = (map['name'] ?? 'Ø¹Ù†ØµØ±').toString();
               final qty = (map['quantity'] ?? 1).toString();
               return Align(
                 alignment: Alignment.centerRight,
                 child: Text(
-                  '• $name × $qty',
+                  'â€¢ $name Ã— $qty',
                   style: const TextStyle(color: Colors.black87),
                 ),
               );
@@ -496,23 +463,10 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppThemeArabic.courierBackground,
-      appBar: AppBar(
-        title: const Text('الذهاب إلى العميل',
-            style: TextStyle(
-                color: AppThemeArabic.courierPrimary,
-                fontWeight: FontWeight.bold,
-                fontSize: 20,
-                fontFamily: 'Tajawal')),
-        backgroundColor: Colors.white,
-        elevation: 1,
-        centerTitle: true,
-        iconTheme: const IconThemeData(color: AppThemeArabic.courierPrimary),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-        ),
-      ),
-      body: FutureBuilder<Map<String, dynamic>?>(
+      backgroundColor: Colors.transparent,
+      appBar: buildCourierAppBar('الذهاب إلى العميل'),
+      body: CourierPageBackground(
+        child: FutureBuilder<Map<String, dynamic>?>(
         future: _fetchOrderData(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -522,14 +476,14 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
           if (!snapshot.hasData || snapshot.data == null) {
             return const Center(
               child: Text(
-                'الطلب غير موجود أو تعذر تحميل بياناته',
+                'Ø§Ù„Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ Ø£Ùˆ ØªØ¹Ø°Ø± ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§ØªÙ‡',
                 style: TextStyle(color: Colors.black87),
               ),
             );
           }
 
           final orderData = snapshot.data!;
-          final String clientName = orderData['clientName'] ?? 'عميل غير معروف';
+          final String clientName = orderData['clientName'] ?? 'Ø¹Ù…ÙŠÙ„ ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ';
           final clientLocation = _resolvePoint(
                 orderData,
                 rawKey: 'clientLocation',
@@ -575,28 +529,16 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
             padding: const EdgeInsets.all(16),
             children: [
               _buildJourneyHeader(
-                title: 'المرحلة 2 من 3 · التوجه للعميل',
-                subtitle: 'تابع الملاحة حتى تصل، ثم أكّد الوصول للعميل',
+                title: 'Ø§Ù„Ù…Ø±Ø­Ù„Ø© 2 Ù…Ù† 3 Â· Ø§Ù„ØªÙˆØ¬Ù‡ Ù„Ù„Ø¹Ù…ÙŠÙ„',
+                subtitle: 'ØªØ§Ø¨Ø¹ Ø§Ù„Ù…Ù„Ø§Ø­Ø© Ø­ØªÙ‰ ØªØµÙ„ØŒ Ø«Ù… Ø£ÙƒÙ‘Ø¯ Ø§Ù„ÙˆØµÙˆÙ„ Ù„Ù„Ø¹Ù…ÙŠÙ„',
                 icon: Icons.home_work_outlined,
               ),
               const SizedBox(height: 12),
               _buildOrderDetails(orderData),
               const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _openClientChat(orderData),
-                  icon: const Icon(Icons.chat_bubble_outline),
-                  label: const Text('الدردشة مع العميل'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppThemeArabic.courierAccent,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(50),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
+              CourierClientContactCard(
+                orderData: orderData,
+                driverId: widget.driverId,
               ),
               const SizedBox(height: 12),
               Container(
@@ -631,19 +573,19 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                   if (driverToClientKm != null)
                     Chip(
                       label: Text(
-                        'يبعد العميل عنك: ${courierFormatDistance(driverToClientKm)}',
+                        'ÙŠØ¨Ø¹Ø¯ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø¹Ù†Ùƒ: ${courierFormatDistance(driverToClientKm)}',
                       ),
                     ),
                   if (restaurantToClientKm != null)
                     Chip(
                       label: Text(
-                        'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
+                        'ÙŠØ¨Ø¹Ø¯ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø¹Ù† Ø§Ù„Ù…Ø·Ø¹Ù…: ${courierFormatDistance(restaurantToClientKm)}',
                       ),
                     ),
                   if (driverFee > 0)
                     Chip(
                       label: Text(
-                        'رسوم التوصيل: ${courierFormatMoney(driverFee)} ج.س',
+                        'Ø±Ø³ÙˆÙ… Ø§Ù„ØªÙˆØµÙŠÙ„: ${courierFormatMoney(driverFee)} Ø¬.Ø³',
                       ),
                     ),
                 ],
@@ -711,7 +653,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Text(
-                    'لا توجد إحداثيات لموقع العميل في هذا الطلب، يمكنك المتابعة يدويًا.',
+                    'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¥Ø­Ø¯Ø§Ø«ÙŠØ§Øª Ù„Ù…ÙˆÙ‚Ø¹ Ø§Ù„Ø¹Ù…ÙŠÙ„ ÙÙŠ Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨ØŒ ÙŠÙ…ÙƒÙ†Ùƒ Ø§Ù„Ù…ØªØ§Ø¨Ø¹Ø© ÙŠØ¯ÙˆÙŠÙ‹Ø§.',
                     style: TextStyle(color: Colors.black87),
                   ),
                 ),
@@ -753,7 +695,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                       children: [
                         Icon(Icons.storefront_rounded, size: 16),
                         SizedBox(width: 6),
-                        Text('المطعم'),
+                        Text('Ø§Ù„Ù…Ø·Ø¹Ù…'),
                       ],
                     ),
                   ),
@@ -770,7 +712,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                       children: [
                         Icon(Icons.person_rounded, size: 16),
                         SizedBox(width: 6),
-                        Text('العميل'),
+                        Text('Ø§Ù„Ø¹Ù…ÙŠÙ„'),
                       ],
                     ),
                   ),
@@ -779,34 +721,54 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
               const SizedBox(height: 20),
               GFButton(
                 onPressed: () async {
-                  await FirebaseFirestore.instance
-                      .collection('orders')
-                      .doc(widget.orderId)
-                      .update({
-                    'orderStatus': 'arrived_to_client',
-                    'status': 'arrived_to_client',
-                    'arrivedToClientAt': FieldValue.serverTimestamp(),
-                    'updatedAt': FieldValue.serverTimestamp(),
-                  });
+                  if (_confirmingArrival) return;
+                  setState(() => _confirmingArrival = true);
+                  try {
+                    await FirebaseFunctions.instanceFor(region: 'me-central1')
+                        .httpsCallable('courierUpdateOrderStage')
+                        .call({
+                      'orderId': widget.orderId,
+                      'driverId': widget.driverId,
+                      'stage': 'arrived_to_client',
+                    });
 
-                  final box = GetStorage();
-                  box.write('current_order', {
-                    'orderId': widget.orderId,
-                    'stage': 'arrived_to_client',
-                  });
+                    final box = GetStorage();
+                    box.write('current_order', {
+                      'orderId': widget.orderId,
+                      'stage': 'arrived_to_client',
+                    });
 
-                  if (!context.mounted) return;
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => CourierConfirmDeliveryScreen(
-                        orderId: widget.orderId,
-                        driverId: widget.driverId,
+                    if (!context.mounted) return;
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(
+                        builder: (_) => CourierConfirmDeliveryScreen(
+                          orderId: widget.orderId,
+                          driverId: widget.driverId,
+                        ),
                       ),
-                    ),
-                  );
+                    );
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('ØªØ¹Ø°Ø± ØªØ£ÙƒÙŠØ¯ Ø§Ù„ÙˆØµÙˆÙ„ Ù„Ù„Ø¹Ù…ÙŠÙ„: $e'),
+                      ),
+                    );
+                  } finally {
+                    if (mounted) setState(() => _confirmingArrival = false);
+                  }
                 },
-                text: 'تأكيد الوصول للعميل',
-                icon: const Icon(Icons.check_circle),
+                text: _confirmingArrival ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ£ÙƒÙŠØ¯...' : 'ØªØ£ÙƒÙŠØ¯ Ø§Ù„ÙˆØµÙˆÙ„ Ù„Ù„Ø¹Ù…ÙŠÙ„',
+                icon: _confirmingArrival
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.check_circle),
                 color: AppThemeArabic.courierAccent,
                 shape: GFButtonShape.pills,
                 fullWidthButton: true,
@@ -818,6 +780,9 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
           );
         },
       ),
+      ),
     );
   }
 }
+
+

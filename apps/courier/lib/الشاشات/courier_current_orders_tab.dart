@@ -4,6 +4,8 @@ import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart'
     show formatUnifiedOrderCode, OrderStatusPalette;
 import 'courier_order_details_screen.dart'; // تأكد أن هذا الملف موجود
+import 'courier_client_contact_card.dart';
+import 'courier_ui.dart';
 
 class CourierCurrentOrdersTab extends StatelessWidget {
   final String driverId;
@@ -22,8 +24,9 @@ class CourierCurrentOrdersTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppThemeArabic.clientBackground,
-      body: StreamBuilder<QuerySnapshot>(
+      appBar: buildCourierAppBar('الطلبات الحالية'),
+      body: CourierPageBackground(
+        child: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('orders')
             .where('assignedDriverId', isEqualTo: driverId)
@@ -51,6 +54,7 @@ class CourierCurrentOrdersTab extends StatelessWidget {
           }
 
           return ListView.builder(
+            padding: const EdgeInsets.all(16),
             itemCount: orders.length,
             itemBuilder: (context, index) {
               final data = orders[index].data() as Map<String, dynamic>;
@@ -62,15 +66,22 @@ class CourierCurrentOrdersTab extends StatelessWidget {
                 docId: orders[index].id,
               );
 
-              return Card(
-                margin: const EdgeInsets.all(8),
-                color: AppThemeArabic.clientSurface,
-                child: ListTile(
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: CourierSectionCard(
+                  padding: EdgeInsets.zero,
+                  child: ListTile(
                   title: Text('طلب $unifiedOrderCode'),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('العميل: ${data['clientName'] ?? 'غير معروف'}'),
+                      const SizedBox(height: 6),
+                      CourierClientContactCard(
+                        orderData: data,
+                        driverId: driverId,
+                        compact: true,
+                      ),
                       const SizedBox(height: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -92,7 +103,7 @@ class CourierCurrentOrdersTab extends StatelessWidget {
                   ),
                   trailing: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                        backgroundColor: AppThemeArabic.clientPrimary,
+                        backgroundColor: AppThemeArabic.courierPrimary,
                         foregroundColor: Colors.white),
                     child: const Text('عرض التفاصيل'),
                     onPressed: () {
@@ -107,11 +118,13 @@ class CourierCurrentOrdersTab extends StatelessWidget {
                       );
                     },
                   ),
+                  ),
                 ),
               );
             },
           );
         },
+        ),
       ),
     );
   }

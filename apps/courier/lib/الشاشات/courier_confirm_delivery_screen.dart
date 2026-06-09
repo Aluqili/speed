@@ -1,15 +1,18 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
-import 'package:get_storage/get_storage.dart'; // ✅ لإزالة الطلب من التخزين المحلي
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:get_storage/get_storage.dart'; // âœ… Ù„Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ø·Ù„Ø¨ Ù…Ù† Ø§Ù„ØªØ®Ø²ÙŠÙ† Ø§Ù„Ù…Ø­Ù„ÙŠ
+import 'package:speedstar_core/Ø§Ù„Ø«ÙŠÙ…/Ø«ÙŠÙ…_Ø§Ù„ØªØ·Ø¨ÙŠÙ‚.dart';
 import 'package:speedstar_core/speedstar_core.dart'
     show formatUnifiedOrderCode, OrderStatusPalette;
 import '../helpers/courier_runtime_helpers.dart';
 import 'chat_screen.dart';
+import 'courier_ui.dart';
 
 class CourierConfirmDeliveryScreen extends StatefulWidget {
   final String orderId;
@@ -133,7 +136,13 @@ class _CourierConfirmDeliveryScreenState
   }
 
   Future<void> _uploadAndFinish() async {
-    if (_proofImage == null) return;
+    if (_proofImage == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ø§Ù„ØªÙ‚Ø· ØµÙˆØ±Ø© Ø¥Ø«Ø¨Ø§Øª Ø§Ù„ØªØ³Ù„ÙŠÙ… Ø£ÙˆÙ„Ø§Ù‹')),
+      );
+      return;
+    }
+    if (_uploading) return;
 
     setState(() => _uploading = true);
 
@@ -143,18 +152,16 @@ class _CourierConfirmDeliveryScreenState
             resourceType: CloudinaryResourceType.Image),
       );
 
-      await FirebaseFirestore.instance
-          .collection('orders')
-          .doc(widget.orderId)
-          .update({
-        'status': 'delivered',
-        'orderStatus': 'delivered',
-        'deliveredAt': Timestamp.now(),
+      await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('courierUpdateOrderStage')
+          .call({
+        'orderId': widget.orderId,
+        'driverId': widget.driverId,
+        'stage': 'delivered',
         'proofImageUrl': response.secureUrl,
-        'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // ✅ إزالة الطلب من التخزين المحلي
+      // âœ… Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ø·Ù„Ø¨ Ù…Ù† Ø§Ù„ØªØ®Ø²ÙŠÙ† Ø§Ù„Ù…Ø­Ù„ÙŠ
       final box = GetStorage();
       box.remove('current_order');
 
@@ -162,15 +169,18 @@ class _CourierConfirmDeliveryScreenState
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ تم رفع إثبات التسليم')),
+          const SnackBar(content: Text('âœ… ØªÙ… Ø±ÙØ¹ Ø¥Ø«Ø¨Ø§Øª Ø§Ù„ØªØ³Ù„ÙŠÙ…')),
         );
         Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } catch (e) {
-      setState(() => _uploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشل رفع الصورة: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('ÙØ´Ù„ Ø¥Ù†Ù‡Ø§Ø¡ Ø§Ù„Ø·Ù„Ø¨: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
     }
   }
 
@@ -236,9 +246,9 @@ class _CourierConfirmDeliveryScreenState
 
   Widget _buildOrderDetails(Map<String, dynamic> orderData) {
     final items = (orderData['items'] as List?) ?? const [];
-    final paymentMethod = (orderData['paymentMethod'] ?? 'غير محدد').toString();
+    final paymentMethod = (orderData['paymentMethod'] ?? 'ØºÙŠØ± Ù…Ø­Ø¯Ø¯').toString();
     final status =
-        (orderData['orderStatus'] ?? orderData['status'] ?? 'غير محدد')
+        (orderData['orderStatus'] ?? orderData['status'] ?? 'ØºÙŠØ± Ù…Ø­Ø¯Ø¯')
             .toString();
     final totalWithDelivery =
         (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
@@ -250,7 +260,7 @@ class _CourierConfirmDeliveryScreenState
       child: ExpansionTile(
         initiallyExpanded: true,
         title: const Text(
-          'تفاصيل الطلب',
+          'ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø·Ù„Ø¨',
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
         collapsedTextColor: Colors.black87,
@@ -260,7 +270,7 @@ class _CourierConfirmDeliveryScreenState
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
           _detailRow(
-            'رقم الطلب',
+            'Ø±Ù‚Ù… Ø§Ù„Ø·Ù„Ø¨',
             formatUnifiedOrderCode(
               orderNumber: orderData['orderNumber'],
               orderId: orderData['orderId'],
@@ -268,9 +278,9 @@ class _CourierConfirmDeliveryScreenState
             ),
           ),
           _detailRow(
-              'العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
-          _detailRow('المطعم',
-              (orderData['restaurantName'] ?? 'غير معروف').toString()),
+              'Ø§Ù„Ø¹Ù…ÙŠÙ„', (orderData['clientName'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ').toString()),
+          _detailRow('Ø§Ù„Ù…Ø·Ø¹Ù…',
+              (orderData['restaurantName'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ').toString()),
           Align(
             alignment: Alignment.centerRight,
             child: Container(
@@ -281,7 +291,7 @@ class _CourierConfirmDeliveryScreenState
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
-                'الحالة: ${OrderStatusPalette.displayText(status)}',
+                'Ø§Ù„Ø­Ø§Ù„Ø©: ${OrderStatusPalette.displayText(status)}',
                 style: TextStyle(
                   color: OrderStatusPalette.colorForStatus(status),
                   fontWeight: FontWeight.w700,
@@ -289,15 +299,15 @@ class _CourierConfirmDeliveryScreenState
               ),
             ),
           ),
-          _detailRow('طريقة الدفع', paymentMethod),
-          _detailRow('الإجمالي', '$totalWithDelivery ج.س'),
+          _detailRow('Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹', paymentMethod),
+          _detailRow('Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ', '$totalWithDelivery Ø¬.Ø³'),
           if (driverFee > 0)
-            _detailRow('رسوم التوصيل', '${courierFormatMoney(driverFee)} ج.س'),
+            _detailRow('Ø±Ø³ÙˆÙ… Ø§Ù„ØªÙˆØµÙŠÙ„', '${courierFormatMoney(driverFee)} Ø¬.Ø³'),
           const SizedBox(height: 8),
           const Align(
             alignment: Alignment.centerRight,
             child: Text(
-              'العناصر',
+              'Ø§Ù„Ø¹Ù†Ø§ØµØ±',
               style:
                   TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
             ),
@@ -307,7 +317,7 @@ class _CourierConfirmDeliveryScreenState
             const Align(
               alignment: Alignment.centerRight,
               child: Text(
-                'لا توجد عناصر',
+                'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¹Ù†Ø§ØµØ±',
                 style: TextStyle(color: Colors.black87),
               ),
             )
@@ -316,12 +326,12 @@ class _CourierConfirmDeliveryScreenState
               final map = (item is Map<String, dynamic>)
                   ? item
                   : Map<String, dynamic>.from(item as Map);
-              final name = (map['name'] ?? 'عنصر').toString();
+              final name = (map['name'] ?? 'Ø¹Ù†ØµØ±').toString();
               final qty = (map['quantity'] ?? 1).toString();
               return Align(
                 alignment: Alignment.centerRight,
                 child: Text(
-                  '• $name × $qty',
+                  'â€¢ $name Ã— $qty',
                   style: const TextStyle(color: Colors.black87),
                 ),
               );
@@ -354,7 +364,7 @@ class _CourierConfirmDeliveryScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'المرحلة 3 من 3 · تأكيد التسليم',
+                  'Ø§Ù„Ù…Ø±Ø­Ù„Ø© 3 Ù…Ù† 3 Â· ØªØ£ÙƒÙŠØ¯ Ø§Ù„ØªØ³Ù„ÙŠÙ…',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -363,7 +373,7 @@ class _CourierConfirmDeliveryScreenState
                 ),
                 SizedBox(height: 2),
                 Text(
-                  'التقط صورة واضحة كإثبات ثم أنهِ الطلب.',
+                  'Ø§Ù„ØªÙ‚Ø· ØµÙˆØ±Ø© ÙˆØ§Ø¶Ø­Ø© ÙƒØ¥Ø«Ø¨Ø§Øª Ø«Ù… Ø£Ù†Ù‡Ù Ø§Ù„Ø·Ù„Ø¨.',
                   style: TextStyle(color: Colors.black54),
                 ),
               ],
@@ -379,28 +389,15 @@ class _CourierConfirmDeliveryScreenState
     final total = (_orderData?['totalWithDelivery'] ?? 0).toDouble();
     final paymentStatus = (_orderData?['paymentStatus'] ?? '').toString();
     final isPaid = _orderData?['paid'] == true || paymentStatus == 'paid';
-    final clientName = _orderData?['clientName'] ?? 'غير معروف';
+    final clientName = _orderData?['clientName'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ';
     final clientPhone = _resolveClientPhone(_orderData);
     final clientId = (_orderData?['clientId'] ?? '').toString();
 
     return Scaffold(
-      backgroundColor: AppThemeArabic.courierBackground,
-      appBar: AppBar(
-        title: const Text('إثبات التسليم',
-            style: TextStyle(
-                color: AppThemeArabic.courierPrimary,
-                fontWeight: FontWeight.bold,
-                fontSize: 20,
-                fontFamily: 'Tajawal')),
-        backgroundColor: Colors.white,
-        elevation: 1,
-        centerTitle: true,
-        iconTheme: const IconThemeData(color: AppThemeArabic.courierPrimary),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-        ),
-      ),
-      body: _orderData == null
+      backgroundColor: Colors.transparent,
+      appBar: buildCourierAppBar('إثبات التسليم'),
+      body: CourierPageBackground(
+        child: _orderData == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
@@ -419,7 +416,7 @@ class _CourierConfirmDeliveryScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('👤 معلومات العميل:',
+                      const Text('ðŸ‘¤ Ù…Ø¹Ù„ÙˆÙ…Ø§Øª Ø§Ù„Ø¹Ù…ÙŠÙ„:',
                           style: TextStyle(
                               fontSize: 18, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 12),
@@ -439,7 +436,7 @@ class _CourierConfirmDeliveryScreenState
                             color: AppThemeArabic.courierPrimary),
                         const SizedBox(width: 8),
                         Text(
-                          clientPhone.isEmpty ? 'غير متاح' : clientPhone,
+                          clientPhone.isEmpty ? 'ØºÙŠØ± Ù…ØªØ§Ø­' : clientPhone,
                           style: const TextStyle(
                               fontSize: 16, color: Colors.black87),
                         ),
@@ -455,7 +452,7 @@ class _CourierConfirmDeliveryScreenState
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                       content: Text(
-                                          'لا يمكن فتح الدردشة لعدم توفر معرف العميل')),
+                                          'Ù„Ø§ ÙŠÙ…ÙƒÙ† ÙØªØ­ Ø§Ù„Ø¯Ø±Ø¯Ø´Ø© Ù„Ø¹Ø¯Ù… ØªÙˆÙØ± Ù…Ø¹Ø±Ù Ø§Ù„Ø¹Ù…ÙŠÙ„')),
                                 );
                                 return;
                               }
@@ -463,7 +460,7 @@ class _CourierConfirmDeliveryScreenState
                                   .collection('drivers')
                                   .doc(widget.driverId)
                                   .get();
-                              final driverName = doc.data()?['name'] ?? 'مندوب';
+                              final driverName = doc.data()?['name'] ?? 'Ù…Ù†Ø¯ÙˆØ¨';
                               if (!mounted) return;
                               Navigator.push(
                                 context,
@@ -479,7 +476,7 @@ class _CourierConfirmDeliveryScreenState
                                 ),
                               );
                             },
-                            text: 'دردشة',
+                            text: 'Ø¯Ø±Ø¯Ø´Ø©',
                             icon: const Icon(Icons.chat, size: 18),
                             size: GFSize.SMALL,
                             color: AppThemeArabic.courierPrimary,
@@ -487,10 +484,29 @@ class _CourierConfirmDeliveryScreenState
                           ),
                           GFButton(
                             onPressed: () => _callClient(clientPhone),
-                            text: 'اتصال',
+                            text: 'Ø§ØªØµØ§Ù„',
                             icon: const Icon(Icons.call, size: 18),
                             size: GFSize.SMALL,
                             color: AppThemeArabic.clientSuccess,
+                            shape: GFButtonShape.pills,
+                          ),
+                          GFButton(
+                            onPressed: clientPhone.isEmpty
+                                ? null
+                                : () async {
+                                    await Clipboard.setData(
+                                      ClipboardData(text: clientPhone),
+                                    );
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('ØªÙ… Ù†Ø³Ø® Ø±Ù‚Ù… Ø§Ù„Ø¹Ù…ÙŠÙ„')),
+                                    );
+                                  },
+                            text: 'Ù†Ø³Ø®',
+                            icon: const Icon(Icons.copy, size: 18),
+                            size: GFSize.SMALL,
+                            color: AppThemeArabic.courierAccent,
                             shape: GFButtonShape.pills,
                           ),
                         ],
@@ -508,8 +524,8 @@ class _CourierConfirmDeliveryScreenState
                   ),
                   child: Text(
                     isPaid
-                        ? '✅ حالة الدفع: تم الدفع مسبقًا'
-                        : '❗ حالة الدفع: لم يتم الدفع بعد — يجب تحصيل $total ج.س',
+                        ? 'âœ… Ø­Ø§Ù„Ø© Ø§Ù„Ø¯ÙØ¹: ØªÙ… Ø§Ù„Ø¯ÙØ¹ Ù…Ø³Ø¨Ù‚Ù‹Ø§'
+                        : 'â— Ø­Ø§Ù„Ø© Ø§Ù„Ø¯ÙØ¹: Ù„Ù… ÙŠØªÙ… Ø§Ù„Ø¯ÙØ¹ Ø¨Ø¹Ø¯ â€” ÙŠØ¬Ø¨ ØªØ­ØµÙŠÙ„ $total Ø¬.Ø³',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -530,7 +546,7 @@ class _CourierConfirmDeliveryScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        '📸 إثبات التسليم',
+                        'ðŸ“¸ Ø¥Ø«Ø¨Ø§Øª Ø§Ù„ØªØ³Ù„ÙŠÙ…',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -544,7 +560,7 @@ class _CourierConfirmDeliveryScreenState
                               child: Image.file(_proofImage!),
                             )
                           : const Text(
-                              'لم يتم اختيار صورة بعد',
+                              'Ù„Ù… ÙŠØªÙ… Ø§Ø®ØªÙŠØ§Ø± ØµÙˆØ±Ø© Ø¨Ø¹Ø¯',
                               style: TextStyle(color: Colors.black87),
                             ),
                     ],
@@ -555,8 +571,8 @@ class _CourierConfirmDeliveryScreenState
                   children: [
                     Expanded(
                       child: GFButton(
-                        onPressed: _pickImage,
-                        text: 'اختيار الصورة',
+                        onPressed: _uploading ? null : _pickImage,
+                        text: 'Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„ØµÙˆØ±Ø©',
                         icon: const Icon(Icons.camera_alt),
                         color: AppThemeArabic.courierPrimary,
                         fullWidthButton: true,
@@ -572,7 +588,7 @@ class _CourierConfirmDeliveryScreenState
                     Expanded(
                       child: GFButton(
                         onPressed: _uploading ? null : _uploadAndFinish,
-                        text: _uploading ? 'جاري الرفع...' : 'إنهاء الطلب',
+                        text: _uploading ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„Ø±ÙØ¹...' : 'Ø¥Ù†Ù‡Ø§Ø¡ Ø§Ù„Ø·Ù„Ø¨',
                         icon: const Icon(Icons.done),
                         color: AppThemeArabic.courierAccent,
                         fullWidthButton: true,
@@ -588,6 +604,8 @@ class _CourierConfirmDeliveryScreenState
                 ),
               ],
             ),
+        ),
     );
   }
 }
+

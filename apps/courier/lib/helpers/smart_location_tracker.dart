@@ -83,12 +83,44 @@ class SmartLocationTracker {
     }
 
     // تحديث Firestore بموقع المندوب
-    await FirebaseFirestore.instance.collection('drivers').doc(driverId).update({
+    await FirebaseFirestore.instance.collection('drivers').doc(driverId).set({
       'location': GeoPoint(lat, lng),
+      'currentLocation': {
+        'lat': lat,
+        'lng': lng,
+        'latitude': lat,
+        'longitude': lng,
+        'accuracy': pos.accuracy,
+        'heading': pos.heading,
+        'speed': pos.speed,
+      },
+      'lastLocation': GeoPoint(lat, lng),
+      'latitude': lat,
+      'longitude': lng,
       if (inferredStateId.isNotEmpty) 'stateId': inferredStateId,
       if (inferredStateId.isNotEmpty) 'region': inferredStateId,
-      'lastUpdated': Timestamp.now(),
-    });
+      'activeOrderId': orderId,
+      'lastLocationUpdate': FieldValue.serverTimestamp(),
+      'lastUpdated': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await FirebaseFirestore.instance.collection('orders').doc(orderId).set({
+      'driverLocation': GeoPoint(lat, lng),
+      'driverCurrentLocation': {
+        'lat': lat,
+        'lng': lng,
+        'latitude': lat,
+        'longitude': lng,
+        'accuracy': pos.accuracy,
+        'heading': pos.heading,
+        'speed': pos.speed,
+      },
+      'driverLat': lat,
+      'driverLng': lng,
+      'driverLocationUpdatedAt': FieldValue.serverTimestamp(),
+      'lastLocationUpdate': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
 
     _lastLat = lat;
     _lastLng = lng;

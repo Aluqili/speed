@@ -1,17 +1,19 @@
-import 'package:flutter/material.dart';
-import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
-import 'courier_order_details_screen.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/material.dart';
 import 'package:speedstar_core/speedstar_core.dart'
-    show formatUnifiedOrderCode, OrderStatusPalette;
+    show OrderStatusPalette, formatUnifiedOrderCode;
+
+import 'courier_client_contact_card.dart';
+import 'courier_confirm_delivery_screen.dart';
+import 'courier_order_details_screen.dart';
+import 'courier_ui.dart';
 
 class CourierActiveOrdersScreen extends StatelessWidget {
   final String driverId;
 
   const CourierActiveOrdersScreen({super.key, required this.driverId});
 
-  // الحالات المطلوبة للعرض
   static const List<String> validStatuses = [
     'courier_assigned',
     'pickup_ready',
@@ -24,111 +26,147 @@ class CourierActiveOrdersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('orders')
-          .where('assignedDriverId', isEqualTo: driverId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: GFLoader(type: GFLoaderType.circle));
-        }
+    return Scaffold(
+      appBar: buildCourierAppBar('الطلبات النشطة'),
+      body: CourierPageBackground(
+        child: StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('orders')
+              .where('assignedDriverId', isEqualTo: driverId)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text('لا توجد طلبات نشطة حالياً.'));
-        }
+            final orders = (snapshot.data?.docs ?? []).where((d) {
+              final m = d.data() as Map<String, dynamic>;
+              final status = (m['orderStatus'] ?? m['status'] ?? '').toString();
+              return validStatuses.contains(status);
+            }).toList();
 
-        final orders = snapshot.data!.docs.where((d) {
-          final m = d.data() as Map<String, dynamic>;
-          final status = (m['orderStatus'] ?? m['status'] ?? '').toString();
-          return validStatuses.contains(status);
-        }).toList();
+            if (orders.isEmpty) {
+              return const CourierEmptyState(
+                title: 'لا توجد طلبات نشطة',
+                message: 'عند تعيين طلب جديد لك سيظهر هنا مع إجراءات التنفيذ.',
+                icon: Icons.inbox_outlined,
+              );
+            }
 
-        if (orders.isEmpty) {
-          return const Center(child: Text('لا توجد طلبات نشطة حالياً.'));
-        }
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                CourierHeroCard(
+                  title: '${orders.length} طلب جاري',
+                  subtitle:
+                      'تابع الرحلات الحالية وحدث حالتها بسرعة من هذه الشاشة.',
+                  icon: Icons.route_rounded,
+                ),
+                const SizedBox(height: 16),
+                ...orders.map((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final orderId = doc.id;
+                  final status =
+                      (data['orderStatus'] ?? data['status'] ?? '').toString();
 
-        return ListView.builder(
-          padding: const EdgeInsets.only(top: 8, bottom: 12),
-          itemCount: orders.length,
-          itemBuilder: (context, index) {
-            final doc = orders[index];
-            final data = doc.data() as Map<String, dynamic>;
-            final orderId = doc.id;
-            final status =
-                (data['orderStatus'] ?? data['status'] ?? '').toString();
-
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: GFCard(
-                elevation: 5,
-                color: AppThemeArabic.clientSurface,
-                content: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'رقم الطلب: ${formatUnifiedOrderCode(orderNumber: data['orderNumber'], orderId: data['orderId'], docId: orderId)}',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 6),
-                    Text('العميل: ${data['clientName'] ?? 'غير معروف'}'),
-                    const SizedBox(height: 6),
-                    Text('الإجمالي: ${data['total'] ?? 0} ج.س'),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: OrderStatusPalette.backgroundForStatus(status),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          OrderStatusPalette.displayText(status),
-                          style: TextStyle(
-                            color: OrderStatusPalette.colorForStatus(status),
-                            fontWeight: FontWeight.w700,
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: CourierSectionCard(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  formatUnifiedOrderCode(
+                                    orderNumber: data['orderNumber'],
+                                    orderId: data['orderId'],
+                                    docId: orderId,
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: OrderStatusPalette.backgroundForStatus(
+                                      status),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  OrderStatusPalette.displayText(status),
+                                  style: TextStyle(
+                                    color: OrderStatusPalette.colorForStatus(
+                                        status),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // زر الإجراءات بناءً على الحالة
-                    _buildActionButton(context, status, orderId),
-
-                    const SizedBox(height: 8),
-                    GFButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => CourierOrderDetailsScreen(
-                              orderId: orderId,
-                              driverId: driverId,
+                          const SizedBox(height: 12),
+                          Text(
+                            'العميل: ${data['clientName'] ?? 'غير معروف'}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
-                        );
-                      },
-                      text: 'عرض تفاصيل الطلب',
-                      icon: const Icon(Icons.description),
-                      color: AppThemeArabic.clientPrimary,
-                      fullWidthButton: true,
-                      size: GFSize.MEDIUM,
+                          const SizedBox(height: 10),
+                          CourierClientContactCard(
+                            orderData: data,
+                            driverId: driverId,
+                            compact: true,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'الإجمالي: ${data['total'] ?? 0} ج.س',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 14),
+                          _buildActionButton(context, status, orderId, driverId),
+                          const SizedBox(height: 10),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => CourierOrderDetailsScreen(
+                                    orderId: orderId,
+                                    driverId: driverId,
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.description_outlined),
+                            label: const Text('عرض تفاصيل الطلب'),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
-              ),
+                  );
+                }),
+              ],
             );
           },
-        );
-      },
+        ),
+      ),
     );
   }
 
   Widget _buildActionButton(
-      BuildContext context, String status, String orderId) {
+    BuildContext context,
+    String status,
+    String orderId,
+    String driverId,
+  ) {
     String? buttonText;
     String? newStatus;
 
@@ -146,34 +184,46 @@ class CourierActiveOrdersScreen extends StatelessWidget {
         break;
       case 'arrived_to_client':
       case 'وصل إلى العميل':
-        buttonText = 'وصلت إلى العميل';
+        buttonText = 'تأكيد التسليم';
         newStatus = 'delivered';
         break;
     }
 
     if (buttonText == null || newStatus == null) return const SizedBox();
 
-    return GFButton(
-      onPressed: () async {
-        await FirebaseFirestore.instance
-            .collection('orders')
-            .doc(orderId)
-            .update({
-          'orderStatus': newStatus,
-          'status': newStatus,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: () async {
+          if (newStatus == 'delivered') {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CourierConfirmDeliveryScreen(
+                  orderId: orderId,
+                  driverId: driverId,
+                ),
+              ),
+            );
+            return;
+          }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✅ تم تحديث حالة الطلب إلى "$newStatus"')),
-        );
-      },
-      text: buttonText,
-      icon: const Icon(Icons.check_circle),
-      color: AppThemeArabic.clientPrimary,
-      fullWidthButton: true,
-      size: GFSize.LARGE,
-      shape: GFButtonShape.pills,
+          await FirebaseFunctions.instanceFor(region: 'me-central1')
+              .httpsCallable('courierUpdateOrderStage')
+              .call({
+            'orderId': orderId,
+            'driverId': driverId,
+            'stage': newStatus,
+          });
+
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('تم تحديث حالة الطلب إلى "$newStatus"')),
+          );
+        },
+        icon: const Icon(Icons.check_circle_rounded),
+        label: Text(buttonText),
+      ),
     );
   }
 }

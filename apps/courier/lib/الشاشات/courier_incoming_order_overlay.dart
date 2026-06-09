@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get_storage/get_storage.dart';
@@ -13,6 +12,7 @@ import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart'
     show formatUnifiedOrderCode, OrderStatusPalette;
 import 'courier_go_to_restaurant_screen.dart';
+import 'courier_ui.dart';
 
 class CourierIncomingOrderOverlay extends StatefulWidget {
   final String driverId;
@@ -51,6 +51,7 @@ class _CourierIncomingOrderOverlayState
   final AudioPlayer _audioPlayer = AudioPlayer();
   GoogleMapController? _mapController;
   bool _isMapExpanded = false;
+  bool _responding = false;
 
   int _calculateDriverFee(double routeKm) {
     if (routeKm < 2) return 2000;
@@ -131,11 +132,14 @@ class _CourierIncomingOrderOverlayState
   }
 
   Future<void> _handleTimeout() async {
-    await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(widget.orderId)
-        .update({
-      'driverResponse': 'timeout',
+    if (_responding) return;
+    _responding = true;
+    await FirebaseFunctions.instanceFor(region: 'me-central1')
+        .httpsCallable('courierRespondToOffer')
+        .call({
+      'orderId': widget.orderId,
+      'driverId': widget.driverId,
+      'decision': 'timeout',
     });
     _audioPlayer.stop();
     if (mounted) {
@@ -144,18 +148,24 @@ class _CourierIncomingOrderOverlayState
   }
 
   Future<void> _acceptOrder() async {
-    // تم حذف شرط readyByRestaurant، يمكن قبول الطلب مباشرة
-    await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(widget.orderId)
-        .update({
-      'driverResponse': 'accepted',
-      'driverResponded': true,
-      'assignedDriverId': widget.driverId,
-      'orderStatus': 'courier_assigned',
-      'status': 'courier_assigned',
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    if (_responding) return;
+    setState(() => _responding = true);
+    try {
+      await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('courierRespondToOffer')
+          .call({
+        'orderId': widget.orderId,
+        'driverId': widget.driverId,
+        'decision': 'accept',
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _responding = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر قبول الطلب: $e')),
+      );
+      return;
+    }
 
     _countdownTimer?.cancel();
     _audioPlayer.stop();
@@ -192,12 +202,24 @@ class _CourierIncomingOrderOverlayState
   }
 
   Future<void> _rejectOrder() async {
-    await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(widget.orderId)
-        .update({
-      'driverResponse': 'rejected',
-    });
+    if (_responding) return;
+    setState(() => _responding = true);
+    try {
+      await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('courierRespondToOffer')
+          .call({
+        'orderId': widget.orderId,
+        'driverId': widget.driverId,
+        'decision': 'reject',
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _responding = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر رفض الطلب: $e')),
+      );
+      return;
+    }
     _audioPlayer.stop();
     if (mounted) Navigator.of(context).pop();
   }
@@ -586,8 +608,9 @@ class _CourierIncomingOrderOverlayState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppThemeArabic.clientBackground,
-      body: Column(
+      backgroundColor: Colors.transparent,
+      body: CourierPageBackground(
+        child: Column(
         children: [
           Expanded(
             child: _buildInitialOfferScreen(),
@@ -602,7 +625,7 @@ class _CourierIncomingOrderOverlayState
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: _rejectOrder,
+                    onPressed: _responding ? null : _rejectOrder,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppThemeArabic.clientError,
                       foregroundColor: Colors.white,
@@ -612,16 +635,16 @@ class _CourierIncomingOrderOverlayState
                       ),
                     ),
                     icon: const Icon(Icons.close),
-                    label: const Text('رفض'),
+                    label: Text(_responding ? 'جاري الرد...' : 'رفض'),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   flex: 2,
                   child: ElevatedButton.icon(
-                    onPressed: _acceptOrder,
+                    onPressed: _responding ? null : _acceptOrder,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppThemeArabic.clientSuccess,
+                      backgroundColor: AppThemeArabic.courierAccent,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -629,8 +652,8 @@ class _CourierIncomingOrderOverlayState
                       ),
                     ),
                     icon: const Icon(Icons.check_circle_outline),
-                    label: const Text(
-                      'قبول الطلب وبدء الرحلة',
+                    label: Text(
+                      _responding ? 'جاري القبول...' : 'قبول الطلب وبدء الرحلة',
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
@@ -639,6 +662,7 @@ class _CourierIncomingOrderOverlayState
             ),
           ),
         ],
+        ),
       ),
     );
   }

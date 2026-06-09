@@ -1,11 +1,11 @@
-import 'package:flutter/material.dart';
-import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
+
 import 'courier_privacy_policy_screen.dart';
+import 'courier_ui.dart';
 import 'courier_wallet_screen.dart';
 
 class CourierAccountTab extends StatefulWidget {
@@ -35,11 +35,10 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
         .collection('drivers')
         .doc(widget.driverId)
         .get();
-    if (doc.exists) {
-      setState(() {
-        driverData = doc.data();
-      });
-    }
+    if (!doc.exists || !mounted) return;
+    setState(() {
+      driverData = doc.data();
+    });
   }
 
   Future<void> _fetchCompletedOrders() async {
@@ -50,22 +49,23 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
 
     double total = 0;
     int completed = 0;
-    for (var doc in snapshot.docs) {
+    for (final doc in snapshot.docs) {
       final data = doc.data();
       final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
       if (status != 'delivered' && status != 'تم التوصيل') continue;
-      total +=
-          (data['deliveryFeeForDriver'] ?? data['deliveryFee'] ?? 0).toDouble();
+      final fee = data['deliveryFeeForDriver'] ?? data['deliveryFee'] ?? 0;
+      total += fee is num ? fee.toDouble() : 0;
       completed++;
     }
 
+    if (!mounted) return;
     setState(() {
       completedOrders = completed;
       totalEarnings = total;
     });
   }
 
-  void _editField(String fieldName, String currentValue) async {
+  Future<void> _editField(String fieldName, String currentValue) async {
     final controller = TextEditingController(text: currentValue);
     final result = await showDialog<String>(
       context: context,
@@ -73,29 +73,30 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
         title: Text('تعديل $fieldName'),
         content: TextField(
           controller: controller,
-          decoration: InputDecoration(hintText: 'ادخل $fieldName الجديد'),
+          decoration: InputDecoration(hintText: 'أدخل $fieldName الجديد'),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
           ElevatedButton(
-              onPressed: () => Navigator.pop(context, controller.text),
-              child: const Text('حفظ')),
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('حفظ'),
+          ),
         ],
       ),
     );
 
-    if (result != null && result != currentValue) {
-      await FirebaseFirestore.instance
-          .collection('drivers')
-          .doc(widget.driverId)
-          .update({fieldName: result});
-      _fetchDriverData();
-    }
+    if (result == null || result == currentValue) return;
+    await FirebaseFirestore.instance
+        .collection('drivers')
+        .doc(widget.driverId)
+        .update({fieldName: result});
+    _fetchDriverData();
   }
 
-  void _changePassword() async {
+  Future<void> _changePassword() async {
     final controller = TextEditingController();
     final result = await showDialog<String>(
       context: context,
@@ -108,27 +109,36 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
           ElevatedButton(
-              onPressed: () => Navigator.pop(context, controller.text),
-              child: const Text('تغيير')),
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('تغيير'),
+          ),
         ],
       ),
     );
 
-    if (result != null && result.length >= 6) {
-      try {
-        await FirebaseAuth.instance.currentUser?.updatePassword(result);
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('✅ تم تغيير كلمة المرور')));
-      } catch (e) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('خطأ: $e')));
-      }
-    } else if (result != null) {
+    if (result == null) return;
+    if (result.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('⚠️ كلمة المرور قصيرة جدًا')));
+        const SnackBar(content: Text('كلمة المرور قصيرة جدًا')),
+      );
+      return;
+    }
+
+    try {
+      await FirebaseAuth.instance.currentUser?.updatePassword(result);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تغيير كلمة المرور')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر تغيير كلمة المرور: $e')),
+      );
     }
   }
 
@@ -158,7 +168,7 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
       builder: (ctx) => AlertDialog(
         title: const Text('حذف حساب المندوب'),
         content: const Text(
-          'سيتم إرسال طلب حذف حساب المندوب نهائياً. هل تريد المتابعة؟',
+          'سيتم إرسال طلب حذف الحساب للإدارة. هل تريد المتابعة؟',
         ),
         actions: [
           TextButton(
@@ -166,9 +176,8 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
             child: const Text('إلغاء'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('متابعة الحذف'),
+            child: const Text('متابعة'),
           ),
         ],
       ),
@@ -176,13 +185,8 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
 
     if (confirmed != true) return;
 
-    final messenger = ScaffoldMessenger.of(context);
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      messenger.showSnackBar(
-          const SnackBar(content: Text('لا يوجد مستخدم مسجل حالياً')));
-      return;
-    }
+    if (user == null) return;
 
     setState(() => _isDeletingAccount = true);
     try {
@@ -212,13 +216,9 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
       }, SetOptions(merge: true));
 
       await _logout();
-      if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('تم إرسال طلب حذف الحساب بنجاح')),
-      );
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تعذر إرسال طلب الحذف: $e')),
       );
     } finally {
@@ -229,151 +229,120 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
   @override
   Widget build(BuildContext context) {
     if (driverData == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
-    final name = driverData!['name'] ?? 'غير معروف';
-    final phone = driverData!['phone'] ?? 'غير متاح';
+    final name = (driverData!['name'] ?? 'غير معروف').toString();
+    final phone = (driverData!['phone'] ?? 'غير متاح').toString();
 
     return Scaffold(
-      backgroundColor: AppThemeArabic.clientBackground,
-      appBar: AppBar(
-        title: const Text('حسابي',
-            style: TextStyle(
-                color: AppThemeArabic.clientPrimary,
-                fontWeight: FontWeight.bold,
-                fontSize: 20,
-                fontFamily: 'Tajawal')),
-        backgroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 1,
-        iconTheme: const IconThemeData(color: AppThemeArabic.clientPrimary),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+      appBar: buildCourierAppBar('حسابي'),
+      body: CourierPageBackground(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            GFCard(
-              padding: const EdgeInsets.all(16),
-              elevation: 4,
-              content: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('👤 معلومات الحساب',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const Divider(height: 20),
-                  Row(
-                    children: [
-                      const Text('الاسم: ', style: TextStyle(fontSize: 16)),
-                      Expanded(
-                          child:
-                              Text(name, style: const TextStyle(fontSize: 16))),
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.grey),
-                        onPressed: () => _editField('name', name),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      const Text('رقم الهاتف: ',
-                          style: TextStyle(fontSize: 16)),
-                      Expanded(
-                          child: Text(phone,
-                              style: const TextStyle(fontSize: 16))),
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.grey),
-                        onPressed: () => _editField('phone', phone),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text('📄 معرف المندوب: ${widget.driverId}',
-                      style: const TextStyle(fontSize: 14, color: Colors.grey)),
-                ],
-              ),
+            CourierHeroCard(
+              title: name,
+              subtitle: 'إدارة بياناتك الشخصية وأمان الحساب والتحويلات.',
+              icon: Icons.person_rounded,
             ),
-            const SizedBox(height: 20),
-            GFCard(
-              padding: const EdgeInsets.all(16),
-              elevation: 4,
-              content: Column(
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: CourierMetricCard(
+                    label: 'طلبات مكتملة',
+                    value: '$completedOrders',
+                    icon: Icons.task_alt_rounded,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: CourierMetricCard(
+                    label: 'إجمالي الأرباح',
+                    value: totalEarnings.toStringAsFixed(1),
+                    icon: Icons.payments_rounded,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            CourierSectionCard(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('📊 إحصائيات',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const Divider(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('الطلبات المكتملة:',
-                          style: TextStyle(fontSize: 16)),
-                      Text('$completedOrders',
-                          style: const TextStyle(fontSize: 16)),
-                    ],
+                  const CourierSectionTitle(
+                    title: 'معلومات الحساب',
+                    subtitle: 'يمكنك تحديث البيانات الأساسية من هنا.',
+                  ),
+                  const SizedBox(height: 16),
+                  _AccountFieldTile(
+                    title: 'الاسم',
+                    value: name,
+                    icon: Icons.badge_outlined,
+                    onEdit: () => _editField('name', name),
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('إجمالي الأرباح:',
-                          style: TextStyle(fontSize: 16)),
-                      Text('$totalEarnings ج.س',
-                          style: const TextStyle(fontSize: 16)),
-                    ],
+                  _AccountFieldTile(
+                    title: 'رقم الهاتف',
+                    value: phone,
+                    icon: Icons.phone_outlined,
+                    onEdit: () => _editField('phone', phone),
+                  ),
+                  const SizedBox(height: 10),
+                  _AccountFieldTile(
+                    title: 'معرف المندوب',
+                    value: widget.driverId,
+                    icon: Icons.fingerprint_rounded,
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
-            GFButton(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        CourierWalletScreen(driverId: widget.driverId),
+            const SizedBox(height: 16),
+            CourierSectionCard(
+              child: Column(
+                children: [
+                  _ActionTile(
+                    title: 'المحفظة والتحويلات',
+                    subtitle: 'مراجعة الرصيد والتحويلات وبيانات الاستلام',
+                    icon: Icons.account_balance_wallet_outlined,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              CourierWalletScreen(driverId: widget.driverId),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-              text: 'محفظتي والتحويلات',
-              icon: const Icon(Icons.account_balance_wallet),
-              fullWidthButton: true,
-              color: AppThemeArabic.clientPrimary,
-              shape: GFButtonShape.pills,
-            ),
-            const SizedBox(height: 12),
-            GFButton(
-              onPressed: _changePassword,
-              text: 'تغيير كلمة المرور',
-              icon: const Icon(Icons.lock),
-              fullWidthButton: true,
-              color: GFColors.DANGER,
-              shape: GFButtonShape.pills,
-            ),
-            const SizedBox(height: 12),
-            GFButton(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const CourierPrivacyPolicyScreen(),
+                  const SizedBox(height: 10),
+                  _ActionTile(
+                    title: 'تغيير كلمة المرور',
+                    subtitle: 'رفع أمان الحساب وتحديث كلمة المرور الحالية',
+                    icon: Icons.lock_outline_rounded,
+                    onTap: _changePassword,
                   ),
-                );
-              },
-              text: 'سياسة الخصوصية',
-              icon: const Icon(Icons.privacy_tip),
-              fullWidthButton: true,
-              color: AppThemeArabic.clientPrimary,
-              shape: GFButtonShape.pills,
+                  const SizedBox(height: 10),
+                  _ActionTile(
+                    title: 'سياسة الخصوصية',
+                    subtitle: 'الاطلاع على حقوقك وآلية معالجة البيانات',
+                    icon: Icons.privacy_tip_outlined,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const CourierPrivacyPolicyScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            GFButton(
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
               onPressed: _isDeletingAccount ? null : _requestAccountDeletion,
-              text: _isDeletingAccount ? 'جاري إرسال الطلب...' : 'حذف الحساب',
               icon: _isDeletingAccount
                   ? const SizedBox(
                       width: 18,
@@ -383,11 +352,135 @@ class _CourierAccountTabState extends State<CourierAccountTab> {
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(Icons.delete_forever),
-              fullWidthButton: true,
-              color: GFColors.DANGER,
-              shape: GFButtonShape.pills,
+                  : const Icon(Icons.delete_forever_rounded),
+              label: Text(
+                _isDeletingAccount ? 'جاري إرسال الطلب...' : 'طلب حذف الحساب',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE85142),
+              ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountFieldTile extends StatelessWidget {
+  const _AccountFieldTile({
+    required this.title,
+    required this.value,
+    required this.icon,
+    this.onEdit,
+  });
+
+  final String title;
+  final String value;
+  final IconData icon;
+  final VoidCallback? onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F1E7),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: Colors.white,
+            child: Icon(icon),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF7A6857),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onEdit != null)
+            IconButton(
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Ink(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8F1E7),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: Colors.white,
+              child: Icon(icon),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF7A6857),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded, size: 16),
           ],
         ),
       ),
