@@ -12,7 +12,6 @@ import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:speedstar_core/speedstar_core.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'firebase_options.dart' as dev_firebase;
 import 'firebase_options_prod.dart' as prod_firebase;
 import 'الشاشات/store_home_screen.dart';
 import 'الشاشات/store_link_request_screen.dart';
@@ -20,13 +19,8 @@ import 'الشاشات/store_notifications_screen.dart';
 import 'الشاشات/store_order_details_screen.dart';
 import 'الخدمات/push_notification_service.dart';
 
-const String _firebaseEnv =
-    String.fromEnvironment('FIREBASE_ENV', defaultValue: 'dev');
-
 FirebaseOptions _resolveFirebaseOptions() {
-  return _firebaseEnv == 'prod'
-      ? prod_firebase.DefaultFirebaseOptions.currentPlatform
-      : dev_firebase.DefaultFirebaseOptions.currentPlatform;
+  return prod_firebase.DefaultFirebaseOptions.currentPlatform;
 }
 
 @pragma('vm:entry-point')
@@ -118,7 +112,7 @@ class _InitGateState extends State<_InitGate> {
         'store_maintenance_message': 'التطبيق تحت الصيانة. حاول لاحقًا.',
       };
       await rc.setDefaults(defaults);
-      await rc.fetchAndActivate();
+      await _fetchRemoteConfigOrThrow(rc);
       final accent = rc.getString('accent_seed');
       _maintenanceMode = rc.getBool('store_maintenance_mode');
       final update = await AppUpdateConfig.fromRemoteConfig(
@@ -138,12 +132,35 @@ class _InitGateState extends State<_InitGate> {
         final seed = parseColorHex(accent);
         ThemeController.instance.setAccentSeed(seed);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('Firebase init failed: $e');
+      debugPrintStack(stackTrace: stackTrace);
+      _maintenanceMode = true;
+      _maintenanceMessage =
+          'تعذر تحميل إعدادات تطبيق المتجر من لوحة التحكم. تحقق من الاتصال بالإنترنت ثم حاول مرة أخرى.';
     }
   }
 
   // تم نقل تحليل اللون إلى الحزمة المشتركة عبر parseColorHex
+
+  Future<void> _fetchRemoteConfigOrThrow(FirebaseRemoteConfig rc) async {
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        final activated = await rc
+            .fetchAndActivate()
+            .timeout(const Duration(seconds: 12));
+        if (activated || rc.lastFetchStatus == RemoteConfigFetchStatus.success) {
+          return;
+        }
+        lastError = 'Remote Config fetch status: ${rc.lastFetchStatus.name}';
+      } catch (e) {
+        lastError = e;
+      }
+      await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+    }
+    throw StateError('Remote Config fetch failed: $lastError');
+  }
 
   @override
   Widget build(BuildContext context) {

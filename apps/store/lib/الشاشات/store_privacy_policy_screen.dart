@@ -5,9 +5,9 @@ class StorePrivacyPolicyScreen extends StatelessWidget {
   const StorePrivacyPolicyScreen({super.key});
 
   static const String _policyUrl =
-      'https://speedstar-dev.web.app/legal/privacy-store-ar.html';
+      'https://speedstarapp.web.app/legal/privacy-store-ar.html';
   static const String _deletionUrl =
-      'https://speedstar-dev.web.app/legal/account-deletion-store-ar.html';
+      'https://speedstarapp.web.app/legal/account-deletion-store-ar.html';
 
   @override
   Widget build(BuildContext context) {

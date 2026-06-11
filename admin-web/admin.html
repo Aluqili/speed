@@ -130,7 +130,13 @@
           </div>
           <div class="auth-actions">
             <span id="topbarPortalName" class="topbar-portal-name" hidden></span>
-            <span id="envBadge" class="muted">ENV: PROD</span>
+            <label class="env-switcher" for="envSelect">
+              <span id="envBadge" class="muted">ENV: PROD</span>
+              <select id="envSelect" aria-label="اختيار بيئة البورد">
+                <option value="prod">PROD</option>
+                <option value="dev">DEV</option>
+              </select>
+            </label>
             <span id="authState" class="muted">غير مسجل</span>
             <button class="dark-mode-btn" id="darkModeBtn" title="تبديل الوضع الليلي" aria-label="تبديل الوضع الليلي">🌙</button>
           </div>

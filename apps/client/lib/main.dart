@@ -7,7 +7,6 @@ import 'package:speedstar_core/speedstar_core.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'firebase_options.dart' as dev_firebase;
 import 'firebase_options_prod.dart' as prod_firebase;
 import 'الشاشات/client_home_screen.dart';
 import 'الشاشات/cart_provider.dart' as client_cart;
@@ -67,9 +66,6 @@ class _InitGateClient extends StatefulWidget {
 }
 
 class _InitGateClientState extends State<_InitGateClient> {
-  static const String _firebaseEnv =
-      String.fromEnvironment('FIREBASE_ENV', defaultValue: 'dev');
-
   late Future<void> _initFuture;
   bool _maintenanceMode = false;
   // ignore: unused_field
@@ -92,10 +88,9 @@ class _InitGateClientState extends State<_InitGateClient> {
   Future<void> _safeInit() async {
     final startedAt = DateTime.now();
     try {
-      final firebaseOptions = _firebaseEnv == 'prod'
-          ? prod_firebase.DefaultFirebaseOptions.currentPlatform
-          : dev_firebase.DefaultFirebaseOptions.currentPlatform;
-      await Firebase.initializeApp(options: firebaseOptions);
+      await Firebase.initializeApp(
+        options: prod_firebase.DefaultFirebaseOptions.currentPlatform,
+      );
 
       // تهيئة الإشعارات في الخلفية — لا تعيق التحميل
       unawaited(PushNotificationService.instance.initialize().catchError((_) {}));
@@ -137,8 +132,7 @@ class _InitGateClientState extends State<_InitGateClient> {
       };
       await rc.setDefaults(defaults);
       // استخدام القيم المخزنة فوراً ثم جلب الجديدة في الخلفية
-      await rc.activate();
-        unawaited(rc.fetchAndActivate().catchError((_) => false));
+      await _fetchRemoteConfigOrThrow(rc);
       final accent = rc.getString('accent_seed');
       _maintenanceMode = rc.getBool('client_maintenance_mode');
       _clientPhoneSignInEnabled =
@@ -160,8 +154,12 @@ class _InitGateClientState extends State<_InitGateClient> {
         final seed = parseColorHex(accent);
         ThemeController.instance.setAccentSeed(seed);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('Firebase init failed: $e');
+      debugPrintStack(stackTrace: stackTrace);
+      _maintenanceMode = true;
+      _maintenanceMessage =
+          'تعذر تحميل إعدادات التطبيق من لوحة التحكم. تحقق من الاتصال بالإنترنت ثم حاول مرة أخرى.';
     } finally {
       if (!_firstFrameAllowed) {
         final elapsed = DateTime.now().difference(startedAt);
@@ -176,6 +174,25 @@ class _InitGateClientState extends State<_InitGateClient> {
   }
 
   // تم نقل تحليل اللون إلى الحزمة المشتركة عبر parseColorHex
+
+  Future<void> _fetchRemoteConfigOrThrow(FirebaseRemoteConfig rc) async {
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        final activated = await rc
+            .fetchAndActivate()
+            .timeout(const Duration(seconds: 12));
+        if (activated || rc.lastFetchStatus == RemoteConfigFetchStatus.success) {
+          return;
+        }
+        lastError = 'Remote Config fetch status: ${rc.lastFetchStatus.name}';
+      } catch (e) {
+        lastError = e;
+      }
+      await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+    }
+    throw StateError('Remote Config fetch failed: $lastError');
+  }
 
   @override
   Widget build(BuildContext context) {

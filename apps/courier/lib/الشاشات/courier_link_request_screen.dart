@@ -153,7 +153,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
     required Map<String, dynamic> workArea,
   }) async {
     final uri = Uri.parse(
-      'https://me-central1-speedstar-dev.cloudfunctions.net/submitCourierApplication',
+      'https://me-central1-speedstar-prod-4c7c5.cloudfunctions.net/submitCourierApplication',
     );
 
     final response = await http.post(

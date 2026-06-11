@@ -33,6 +33,7 @@ import {
 
 import {
   configForEnv,
+  setAdminEnv,
   resolveAdminEnv,
   staticAdminEmails
 } from './firebase-config.js?v=20260315-loginfix1';
@@ -68,6 +69,7 @@ const loginStatus = document.getElementById('loginStatus');
 const logoutBtn = document.getElementById('logoutBtn');
 const authState = document.getElementById('authState');
 const envBadge = document.getElementById('envBadge');
+const envSelect = document.getElementById('envSelect');
 const adminGlobalSearch = document.getElementById('adminGlobalSearch');
 const adminSearchMeta = document.getElementById('adminSearchMeta');
 const adminSearchResults = document.getElementById('adminSearchResults');
@@ -594,6 +596,7 @@ const mapUiState = {
 let clientDirectoryCache = [];
 const activeSubpanelByPortal = {};
 const opsAlertPrefsKey = 'speedstar-admin-ops-audio-enabled';
+const OPS_LAST_TAB_KEY = 'speedstar-admin-last-tab';
 let opsAudioContext = null;
 let opsSpeechPrimed = false;
 let opsAudioControlsBound = false;
@@ -1170,11 +1173,20 @@ function setToCsv(setValues) {
 
 function syncEnvUi() {
   if (envBadge) {
-    envBadge.textContent = `ENV: PROD | ${firebaseConfig.projectId}`;
+    envBadge.textContent = `ENV: ${activeEnv.toUpperCase()} | ${firebaseConfig.projectId}`;
+  }
+  if (envSelect) {
+    envSelect.value = activeEnv;
   }
 }
 
 syncEnvUi();
+if (envSelect) {
+  envSelect.addEventListener('change', () => {
+    const nextEnv = setAdminEnv(envSelect.value);
+    window.location.search = `?env=${encodeURIComponent(nextEnv)}`;
+  });
+}
 bindOpsAudioControls();
 
 function loadOpsAudioPreference() {
@@ -2314,11 +2326,55 @@ document.addEventListener('click', (e) => {
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 
+function focusAdminGlobalSearch() {
+  if (!adminGlobalSearch) return;
+  adminGlobalSearch.focus();
+  adminGlobalSearch.select?.();
+}
+
+function refreshAdminWorkspace() {
+  const refreshButton = document.querySelector('[data-ops-action="refresh"]');
+  if (refreshButton) {
+    refreshButton.classList.add('btn-loading');
+    refreshButton.disabled = true;
+  }
+
+  Promise.resolve(mountAll())
+    .catch((err) => {
+      console.error('manual admin refresh failed', err);
+      setLoginStatus('تعذر تحديث بيانات اللوحة الآن. حاول مرة أخرى.', 'error');
+    })
+    .finally(() => {
+      if (refreshButton) {
+        refreshButton.classList.remove('btn-loading');
+        refreshButton.disabled = false;
+      }
+    });
+}
+
 document.addEventListener('keydown', (e) => {
   // Ignore when typing in inputs
   const tag = document.activeElement?.tagName?.toLowerCase();
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
   if (document.activeElement?.isContentEditable) return;
+
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    focusAdminGlobalSearch();
+    return;
+  }
+
+  if (e.key === '/' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    focusAdminGlobalSearch();
+    return;
+  }
+
+  if (e.altKey && e.key.toLowerCase() === 'r') {
+    e.preventDefault();
+    refreshAdminWorkspace();
+    return;
+  }
 
   // Escape → close confirmation overlays / mobile sidebar
   if (e.key === 'Escape') {
@@ -2642,6 +2698,7 @@ function activateTab(id) {
 
   // Update URL hash silently
   try { history.replaceState(null, '', `#${id}`); } catch (_) {}
+  try { localStorage.setItem(OPS_LAST_TAB_KEY, id); } catch (_) {}
 
   // Update topbar breadcrumb
   const portalNames = {
@@ -2719,10 +2776,74 @@ function applyAdminGlobalFilter() {
   renderAdminSearchResults({ visibleRows, totalRows: rows.length });
 }
 
-if (adminGlobalSearch) {
-  adminGlobalSearch.addEventListener('input', () => {
+let adminGlobalFilterFrame = 0;
+function scheduleAdminGlobalFilter() {
+  if (adminGlobalFilterFrame) cancelAnimationFrame(adminGlobalFilterFrame);
+  adminGlobalFilterFrame = requestAnimationFrame(() => {
+    adminGlobalFilterFrame = 0;
     applyAdminGlobalFilter();
   });
+}
+
+if (adminGlobalSearch) {
+  adminGlobalSearch.addEventListener('input', () => {
+    scheduleAdminGlobalFilter();
+  });
+}
+
+function initAdminExperienceEnhancements() {
+  if (!document.body || document.body.dataset.adminExperienceReady === '1') return;
+  document.body.dataset.adminExperienceReady = '1';
+
+  const dock = document.createElement('div');
+  dock.className = 'ops-control-dock';
+  dock.setAttribute('aria-label', 'أدوات التحكم السريعة');
+  dock.innerHTML = `
+    <button type="button" class="ops-control-btn" data-ops-action="search" title="بحث سريع">
+      <span aria-hidden="true">⌕</span><span>بحث</span>
+    </button>
+    <button type="button" class="ops-control-btn" data-ops-action="refresh" title="تحديث البيانات">
+      <span aria-hidden="true">↻</span><span>تحديث</span>
+    </button>
+    <button type="button" class="ops-control-btn" data-ops-action="top" title="أعلى الصفحة">
+      <span aria-hidden="true">↑</span><span>أعلى</span>
+    </button>
+    <button type="button" class="ops-control-btn" data-ops-action="print" title="طباعة التقرير الحالي">
+      <span aria-hidden="true">⎙</span><span>طباعة</span>
+    </button>
+  `;
+  document.body.appendChild(dock);
+
+  dock.querySelector('[data-ops-action="search"]')?.addEventListener('click', focusAdminGlobalSearch);
+  dock.querySelector('[data-ops-action="refresh"]')?.addEventListener('click', refreshAdminWorkspace);
+  dock.querySelector('[data-ops-action="top"]')?.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+  dock.querySelector('[data-ops-action="print"]')?.addEventListener('click', () => window.print());
+
+  const authActions = document.querySelector('.auth-actions');
+  if (authActions && !document.getElementById('opsNetworkStatus')) {
+    const status = document.createElement('span');
+    status.id = 'opsNetworkStatus';
+    status.className = 'ops-network-status';
+    authActions.prepend(status);
+
+    const syncNetworkStatus = () => {
+      const online = navigator.onLine !== false;
+      status.textContent = online ? 'متصل' : 'غير متصل';
+      status.classList.toggle('is-online', online);
+      status.classList.toggle('is-offline', !online);
+    };
+    window.addEventListener('online', syncNetworkStatus);
+    window.addEventListener('offline', syncNetworkStatus);
+    syncNetworkStatus();
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initAdminExperienceEnhancements, { once: true });
+} else {
+  initAdminExperienceEnhancements();
 }
 
 if (mapResetViewBtn) {
@@ -2874,10 +2995,17 @@ async function handleAuthenticatedUser(user) {
     loginCard.hidden = true;
     appPanel.hidden = false;
     logoutBtn.hidden = false;
-    activateTab(getFirstAccessibleTabId());
-    // Navigate to hash tab if present (e.g. link directly to #finance)
+
     const hashTab = (location.hash || '').replace('#', '').trim();
-    if (hashTab && canAccessPortal(hashTab)) activateTab(hashTab);
+    let storedTab = '';
+    try { storedTab = localStorage.getItem(OPS_LAST_TAB_KEY) || ''; } catch (_) {}
+    const initialTab =
+      hashTab && canAccessPortal(hashTab)
+        ? hashTab
+        : storedTab && canAccessPortal(storedTab)
+          ? storedTab
+          : getFirstAccessibleTabId();
+    activateTab(initialTab);
     primeBrowserNotificationsPermission();
     setLoginStatus('تم تسجيل الدخول بنجاح.', 'success');
 

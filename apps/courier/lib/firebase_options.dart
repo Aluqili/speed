@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart'
 ///
 /// Example:
 /// ```dart
-/// import 'firebase_options.dart';
+/// import 'firebase_options_prod.dart';
 /// // ...
 /// await Firebase.initializeApp(
 ///   options: DefaultFirebaseOptions.currentPlatform,
@@ -47,31 +47,31 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBrCx60bLuiz6Jxy59FLS9FDrnpGXk61TY',
-    appId: '1:904679257048:web:4127af2462133830a5f8ad',
-    messagingSenderId: '904679257048',
-    projectId: 'speedstar-dev',
-    authDomain: 'speedstar-dev.firebaseapp.com',
-    storageBucket: 'speedstar-dev.firebasestorage.app',
-    measurementId: 'G-5RS0BVKF4T',
+    apiKey: 'AIzaSyC10zs_5aUEwcsXRLNQQexCTyqH9uYsnqs',
+    appId: '1:1092982695441:web:aa2827b6d0e8e2fca733b0',
+    messagingSenderId: '1092982695441',
+    projectId: 'speedstar-prod-4c7c5',
+    authDomain: 'speedstar-prod-4c7c5.firebaseapp.com',
+    storageBucket: 'speedstar-prod-4c7c5.firebasestorage.app',
+    measurementId: 'G-7J776NP96S',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDppu3x1GzC9_kmZ6AV4EKks8HjQiYqEpE',
-    appId: '1:904679257048:android:cf8c5ed99d5c8ff4a5f8ad',
-    messagingSenderId: '904679257048',
-    projectId: 'speedstar-dev',
-    storageBucket: 'speedstar-dev.firebasestorage.app',
+    apiKey: 'AIzaSyCbgGPciw_z3b_4K3kqw5IIfCCzwDSviQ4',
+    appId: '1:1092982695441:android:2cb45a47aed9ef5da733b0',
+    messagingSenderId: '1092982695441',
+    projectId: 'speedstar-prod-4c7c5',
+    storageBucket: 'speedstar-prod-4c7c5.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAMqaEQayZDAULoc9s7NHgWWsXQMiMR06o',
-    appId: '1:904679257048:ios:5483d3bbc6239034a5f8ad',
-    messagingSenderId: '904679257048',
-    projectId: 'speedstar-dev',
-    storageBucket: 'speedstar-dev.firebasestorage.app',
-    androidClientId: '904679257048-cdkqfljgodknddvql60ua4tvv1uu87u6.apps.googleusercontent.com',
-    iosClientId: '904679257048-sdb544tg3keff62sgjbdrnb8ertoj5j4.apps.googleusercontent.com',
+    apiKey: 'AIzaSyA0U7PsxceG-KqItAp55dWNq2JRdZjPdSE',
+    appId: '1:1092982695441:ios:00e55b6ee0e287c2a733b0',
+    messagingSenderId: '1092982695441',
+    projectId: 'speedstar-prod-4c7c5',
+    storageBucket: 'speedstar-prod-4c7c5.firebasestorage.app',
+    androidClientId: '1092982695441-6jb7sf0b7c0a43c7o848krneav8u5mie.apps.googleusercontent.com',
+    iosClientId: '1092982695441-hhe65p74u5uoqbh36bl3e3jmaf3dtmsi.apps.googleusercontent.com',
     iosBundleId: 'com.speedstar.courier',
   );
 }

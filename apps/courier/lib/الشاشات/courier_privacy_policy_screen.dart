@@ -8,9 +8,9 @@ class CourierPrivacyPolicyScreen extends StatelessWidget {
   const CourierPrivacyPolicyScreen({super.key});
 
   static const String _policyUrl =
-      'https://speedstar-dev.web.app/legal/privacy-courier-ar.html';
+      'https://speedstarapp.web.app/legal/privacy-courier-ar.html';
   static const String _deletionUrl =
-      'https://speedstar-dev.web.app/legal/account-deletion-courier-ar.html';
+      'https://speedstarapp.web.app/legal/account-deletion-courier-ar.html';
 
   Future<void> _openExternalUrl(BuildContext context, String url) async {
     final uri = Uri.parse(url);

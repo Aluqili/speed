@@ -8,7 +8,6 @@ import 'package:speedstar_core/speedstar_core.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'firebase_options.dart' as dev_firebase;
 import 'firebase_options_prod.dart' as prod_firebase;
 import 'الشاشات/courier_link_request_screen.dart';
 import 'الشاشات/courier_main_screen.dart';
@@ -60,9 +59,6 @@ class _InitGateCourier extends StatefulWidget {
 }
 
 class _InitGateCourierState extends State<_InitGateCourier> {
-  static const String _firebaseEnv =
-      String.fromEnvironment('FIREBASE_ENV', defaultValue: 'dev');
-
   late Future<void> _initFuture;
   bool _maintenanceMode = false;
   String _maintenanceMessage = 'التطبيق تحت الصيانة. حاول لاحقًا.';
@@ -81,11 +77,8 @@ class _InitGateCourierState extends State<_InitGateCourier> {
 
   Future<void> _safeInit() async {
     try {
-      final firebaseOptions = _firebaseEnv == 'prod'
-          ? prod_firebase.DefaultFirebaseOptions.currentPlatform
-          : dev_firebase.DefaultFirebaseOptions.currentPlatform;
       await Firebase.initializeApp(
-        options: firebaseOptions,
+        options: prod_firebase.DefaultFirebaseOptions.currentPlatform,
       );
       await PushNotificationService.instance.initialize();
       final rc = FirebaseRemoteConfig.instance;
@@ -107,7 +100,7 @@ class _InitGateCourierState extends State<_InitGateCourier> {
         'pricing_driver_delivery_extra_per_km': 500.0,
       };
       await rc.setDefaults(defaults);
-      await rc.fetchAndActivate();
+      await _fetchRemoteConfigOrThrow(rc);
       final accent = rc.getString('accent_seed');
       _maintenanceMode = rc.getBool('courier_maintenance_mode');
       final update = await AppUpdateConfig.fromRemoteConfig(
@@ -129,12 +122,35 @@ class _InitGateCourierState extends State<_InitGateCourier> {
         final seed = parseColorHex(accent);
         ThemeController.instance.setAccentSeed(seed);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('Firebase init failed: $e');
+      debugPrintStack(stackTrace: stackTrace);
+      _maintenanceMode = true;
+      _maintenanceMessage =
+          'تعذر تحميل إعدادات تطبيق المندوب من لوحة التحكم. تحقق من الاتصال بالإنترنت ثم حاول مرة أخرى.';
     }
   }
 
   // تم نقل تحليل اللون إلى الحزمة المشتركة عبر parseColorHex
+
+  Future<void> _fetchRemoteConfigOrThrow(FirebaseRemoteConfig rc) async {
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        final activated = await rc
+            .fetchAndActivate()
+            .timeout(const Duration(seconds: 12));
+        if (activated || rc.lastFetchStatus == RemoteConfigFetchStatus.success) {
+          return;
+        }
+        lastError = 'Remote Config fetch status: ${rc.lastFetchStatus.name}';
+      } catch (e) {
+        lastError = e;
+      }
+      await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+    }
+    throw StateError('Remote Config fetch failed: $lastError');
+  }
 
   @override
   Widget build(BuildContext context) {
