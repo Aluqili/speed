@@ -394,7 +394,7 @@ class _CourierIncomingOrderOverlayState
                         ),
                         const Spacer(),
                         Text(
-                          '⏱ $_remainingSeconds ثانية',
+                          '$_remainingSeconds ثانية',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -406,7 +406,7 @@ class _CourierIncomingOrderOverlayState
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'اقبل العرض للانتقال مباشرةً إلى شاشة التوجه للمطعم.',
+                      'اقبل العرض للانتقال مباشرة إلى شاشة التوجه للمطعم.',
                       style: TextStyle(color: Colors.grey.shade700),
                     ),
                     const SizedBox(height: 12),
@@ -430,7 +430,7 @@ class _CourierIncomingOrderOverlayState
                                   markerId: const MarkerId('restaurant'),
                                   position: widget.restaurantLocation,
                                   infoWindow:
-                                      const InfoWindow(title: '🍽️ المطعم'),
+                                      const InfoWindow(title: 'المطعم'),
                                   icon: BitmapDescriptor.defaultMarkerWithHue(
                                       BitmapDescriptor.hueRed),
                                 ),
@@ -438,7 +438,7 @@ class _CourierIncomingOrderOverlayState
                                   markerId: const MarkerId('client'),
                                   position: widget.clientLocation,
                                   infoWindow:
-                                      const InfoWindow(title: '🏠 العميل'),
+                                      const InfoWindow(title: 'العميل'),
                                   icon: BitmapDescriptor.defaultMarkerWithHue(
                                       BitmapDescriptor.hueAzure),
                                 ),
@@ -446,7 +446,7 @@ class _CourierIncomingOrderOverlayState
                                   markerId: const MarkerId('driver'),
                                   position: widget.driverLocation,
                                   infoWindow:
-                                      const InfoWindow(title: '🧑‍✈️ موقعك'),
+                                      const InfoWindow(title: 'موقع المندوب'),
                                   icon: BitmapDescriptor.defaultMarkerWithHue(
                                       BitmapDescriptor.hueYellow),
                                 ),
@@ -481,6 +481,11 @@ class _CourierIncomingOrderOverlayState
                                       : Icons.fullscreen,
                                   color: Colors.blue),
                             ),
+                          ),
+                          const Positioned(
+                            right: 8,
+                            bottom: 8,
+                            child: _MapLegend(),
                           ),
                         ],
                       ),
@@ -540,7 +545,7 @@ class _CourierIncomingOrderOverlayState
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '💰 رسوم التوصيل المتوقعة: $_driverFee ج.س',
+                        'رسوم التوصيل المتوقعة: $_driverFee ج.س',
                         style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -664,6 +669,96 @@ class _CourierIncomingOrderOverlayState
         ],
         ),
       ),
+    );
+  }
+}
+
+class _MapLegend extends StatelessWidget {
+  const _MapLegend();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x22000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _LegendItem(color: Colors.amber, label: 'المندوب'),
+            SizedBox(height: 5),
+            _LegendItem(color: Colors.red, label: 'المطعم'),
+            SizedBox(height: 5),
+            _LegendItem(color: Colors.lightBlue, label: 'العميل'),
+            SizedBox(height: 7),
+            _LegendLine(color: Colors.green, label: 'المندوب إلى المطعم'),
+            SizedBox(height: 5),
+            _LegendLine(color: Colors.blueAccent, label: 'المطعم إلى العميل'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LegendItem extends StatelessWidget {
+  const _LegendItem({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.location_on, size: 16, color: color),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
+}
+
+class _LegendLine extends StatelessWidget {
+  const _LegendLine({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 18,
+          height: 3,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+        ),
+      ],
     );
   }
 }

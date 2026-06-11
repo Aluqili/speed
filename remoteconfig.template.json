@@ -48,6 +48,12 @@
       },
       "valueType": "STRING"
     },
+    "courier_force_update_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
     "store_force_update_enabled": {
       "defaultValue": {
         "value": "true"
@@ -74,13 +80,13 @@
     },
     "courier_force_update_enabled": {
       "defaultValue": {
-        "value": "false"
+        "value": "true"
       },
       "valueType": "BOOLEAN"
     },
     "courier_min_build_android": {
       "defaultValue": {
-        "value": "1"
+        "value": "5"
       },
       "valueType": "NUMBER"
     },

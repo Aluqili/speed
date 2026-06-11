@@ -194,6 +194,7 @@ class _ChatScreenState extends State<ChatScreen> {
       'senderType': senderType,
       'senderName': widget.currentUserName,
       'receiverId': widget.otherUserId,
+      'receiverType': _isSupportChat ? 'support' : 'client',
       'participants': [widget.currentUserId, widget.otherUserId],
       'participantsKey': [widget.currentUserId, widget.otherUserId]..sort(),
       'timestamp': FieldValue.serverTimestamp(),

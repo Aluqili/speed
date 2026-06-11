@@ -451,15 +451,10 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
         return _isStorePendingStatus(_getOrderStatus(data));
       }).toList();
 
-      _updateStoreRingtoneLoop(pendingDocs.isNotEmpty);
-
       for (final doc in pendingDocs) {
         final orderId = doc.id;
         if (_notifiedOrders.contains(orderId)) continue;
         _notifiedOrders.add(orderId);
-        if (!_usesNativePersistentAlert) {
-          _playIncomingOrderTone();
-        }
 
         if (autoAcceptOrders && !temporarilyClosed) {
           _setOrderStatus(orderId, 'courier_searching');

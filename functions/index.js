@@ -586,18 +586,18 @@ function extractFcmTokens(data) {
 
 function notificationPayloadToData(payload, role, userId) {
   const notificationType = String(payload?.type || '').trim().toLowerCase();
-  const isPickupReadyNotice = notificationType === 'courier_pickup_ready';
-  const isOrderUrgent =
-    !isPickupReadyNotice && (
-    notificationType.includes('order')
-    || notificationType.includes('offer')
-    || notificationType.includes('pickup')
-    || notificationType.includes('courier'));
+  const tone = String(payload?.tone || '').trim().toLowerCase();
   const normalizedRole = String(role || '').trim().toLowerCase();
-  const isStore = normalizedRole === 'store';
+  const isUrgentNotification =
+    tone === 'urgent' ||
+    (normalizedRole === 'store' && (
+      notificationType === 'store_new_order' ||
+      notificationType === 'store_courier_assigned'
+    )) ||
+    (normalizedRole === 'courier' && notificationType === 'courier_assigned');
   const androidChannelId = normalizedRole === 'client'
     ? 'speedstar_client_alerts_v3'
-    : isOrderUrgent && isStore
+    : isUrgentNotification && normalizedRole === 'store'
     ? 'speedstar_store_orders_incoming_v6'
     : 'speedstar_alerts';
 
@@ -611,11 +611,12 @@ function notificationPayloadToData(payload, role, userId) {
     chatId: payload.chatId ? String(payload.chatId) : '',
     senderId: payload.senderId ? String(payload.senderId) : '',
     senderType: payload.senderType ? String(payload.senderType) : '',
+    tone,
     audience: String(role || ''),
     userId: String(userId || ''),
     channelId: androidChannelId,
-    playSound: normalizedRole === 'client' || isOrderUrgent ? 'true' : 'false',
-    urgent: isOrderUrgent ? '1' : '0',
+    playSound: normalizedRole === 'client' || isUrgentNotification ? 'true' : 'false',
+    urgent: isUrgentNotification ? '1' : '0',
   };
 }
 
@@ -630,18 +631,20 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
   }
 
   const notificationType = String(payload?.type || '').trim().toLowerCase();
-  const isPickupReadyNotice = notificationType === 'courier_pickup_ready';
-  const isOrderUrgent =
-    !isPickupReadyNotice && (
-    notificationType.includes('order')
-    || notificationType.includes('offer')
-    || notificationType.includes('pickup')
-    || notificationType.includes('courier'));
-  const storeOrdersChannelId = 'speedstar_store_orders_incoming_v6';
-  const sharedOrdersChannelId = 'speedstar_orders_incoming_v1';
+  const tone = String(payload?.tone || '').trim().toLowerCase();
+  const isUrgentTone = tone === 'urgent';
+  const storeOrdersChannelId = 'speedstar_store_orders_incoming_v7';
+  const sharedOrdersChannelId = 'speedstar_orders_incoming_v2';
+  const isUrgentNotification =
+    isUrgentTone ||
+    (normalizedRole === 'store' && (
+      notificationType === 'store_new_order' ||
+      notificationType === 'store_courier_assigned'
+    )) ||
+    (normalizedRole === 'courier' && notificationType === 'courier_assigned');
   const androidChannelId = normalizedRole === 'client'
     ? 'speedstar_client_alerts_v3'
-    : isOrderUrgent
+    : isUrgentNotification
       ? (normalizedRole === 'store' ? storeOrdersChannelId : sharedOrdersChannelId)
       : 'speedstar_alerts';
 
@@ -675,14 +678,14 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
     },
   };
 
-  if (!(normalizedRole === 'store' && isOrderUrgent)) {
+  if (!(normalizedRole === 'store' && isUrgentNotification)) {
     message.notification = {
       title: String(payload.title || ''),
       body: String(payload.body || ''),
     };
   }
 
-  if (!(normalizedRole === 'store' && isOrderUrgent)) {
+  if (!(normalizedRole === 'store' && isUrgentNotification)) {
     message.android.notification = {
       channelId: androidChannelId,
       visibility: 'public',
@@ -693,7 +696,7 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
 
     if (normalizedRole === 'client') {
       message.android.notification.sound = 'default';
-    } else if (isOrderUrgent) {
+    } else if (isUrgentNotification) {
       message.android.notification.sound = 'incoming_order';
     }
   }
@@ -864,6 +867,49 @@ async function notifyClientAboutMessage(clientId, data, options = {}) {
   }));
 }
 
+async function notifyExplicitMessageRecipient(data, options = {}) {
+  const receiverId = String(data?.receiverId || data?.recipientId || '').trim();
+  const senderId = String(data?.senderId || data?.actorUid || '').trim();
+  if (!receiverId || receiverId === senderId || receiverId === 'support') return 0;
+
+  const explicitRole = normalizeAudienceRole(
+    data?.receiverType ||
+      data?.receiverRole ||
+      data?.recipientType ||
+      data?.targetRole ||
+      ''
+  );
+  let role = explicitRole;
+
+  if (!role) {
+    const senderRole = normalizeAudienceRole(data?.senderType || data?.senderRole || '');
+    if (senderRole === 'client') role = 'courier';
+    if (senderRole === 'courier') role = 'client';
+  }
+
+  if (!role || role === 'support') return 0;
+
+  const senderName = String(data?.senderName || options.senderFallback || '').trim();
+  const preview = messageNotificationPreview(data);
+  const body = senderName ? `${senderName}: ${preview}` : preview;
+  const conversationId = String(data?.conversationId || '').trim();
+
+  return await sendNotificationToSingleUser(role, receiverId, buildNotificationPayload({
+    title: options.title || 'رسالة جديدة',
+    body,
+    type: options.type || 'chat_message',
+    source: options.source || 'chat',
+    extra: {
+      conversationId,
+      chatId: conversationId,
+      senderId,
+      senderType: String(data?.senderType || '').trim(),
+      receiverId,
+      messageId: String(options.messageId || '').trim(),
+    },
+  }));
+}
+
 async function sendNotificationToRole(role, payload, maxRecipients = 500) {
   const normalizedRole = normalizeAudienceRole(role);
   if (!normalizedRole) return 0;
@@ -932,14 +978,28 @@ function isDeliveredOrderStatus(raw) {
 }
 
 function resolveCourierOrderFee(order = {}) {
-  return Math.round(toSafeNumber(
-    order.deliveryFeeForDriver
-      ?? order.driverShare
-      ?? order.courierFee
-      ?? order.driverFee
-      ?? order.courierDeliveryFee
-      ?? 0,
-  ));
+  const directFee = toNumberOrNull(
+    order.deliveryFeeForDriver ??
+      order.driverShare ??
+      order.courierFee ??
+      order.driverFee ??
+      order.courierDeliveryFee
+  );
+  if (directFee != null && directFee > 0) {
+    return Math.round(directFee);
+  }
+
+  const calculatedFee = resolveDriverFeeForPricing(order, DEFAULT_PRICING_CONFIG);
+  if (calculatedFee != null && calculatedFee > 0) {
+    return Math.round(calculatedFee);
+  }
+
+  const deliveryFee = toNumberOrNull(order.deliveryFee);
+  if (deliveryFee != null && deliveryFee > 0) {
+    return Math.round(deliveryFee);
+  }
+
+  return Math.round(DEFAULT_PRICING_CONFIG.driverDeliveryBaseFee || 3000);
 }
 
 async function syncCourierWalletSummary(driverId) {
@@ -987,16 +1047,15 @@ async function syncCourierWalletSummary(driverId) {
 function normalizeOrderStatusForNotification(raw) {
   const status = String(raw || '').trim();
   const map = {
-    'قيد المراجعة': 'store_pending',
-    'قيد التجهيز': 'courier_searching',
-    'قيد التوصيل': 'picked_up',
-    'بانتظار المطعم': 'store_pending',
-    'تم التوصيل': 'delivered',
-    'ملغي': 'cancelled',
+    '\u0642\u064a\u062f \u0627\u0644\u0645\u0631\u0627\u062c\u0639\u0629': 'store_pending',
+    '\u0642\u064a\u062f \u0627\u0644\u062a\u062c\u0647\u064a\u0632': 'courier_searching',
+    '\u0642\u064a\u062f \u0627\u0644\u062a\u0648\u0635\u064a\u0644': 'picked_up',
+    '\u0628\u0627\u0646\u062a\u0638\u0627\u0631 \u0627\u0644\u0645\u0637\u0639\u0645': 'store_pending',
+    '\u062a\u0645 \u0627\u0644\u062a\u0648\u0635\u064a\u0644': 'delivered',
+    '\u0645\u0644\u063a\u064a': 'cancelled',
   };
   return map[status] || status;
 }
-
 function getStatus(order) {
   return String(order.orderStatus || order.status || '').trim();
 }
@@ -2431,39 +2490,39 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
   const assignedDriverId = String(afterData.assignedDriverId || '').trim();
 
   const tasks = [];
-  const sendClient = (title, body, type) => {
+  const sendClient = (title, body, type, extra = {}) => {
     if (!clientId) return;
     tasks.push(
       sendNotificationToSingleUser(
         'client',
         clientId,
-        buildNotificationPayload({ title, body, type, source: 'order-workflow', orderId })
+        buildNotificationPayload({ title, body, type, source: 'order-workflow', orderId, extra })
       )
     );
   };
-  const sendCourier = (driverId, title, body, type) => {
+  const sendCourier = (driverId, title, body, type, extra = {}) => {
     if (!driverId) return;
     tasks.push(
       sendNotificationToSingleUser(
         'courier',
         driverId,
-        buildNotificationPayload({ title, body, type, source: 'order-workflow', orderId })
+        buildNotificationPayload({ title, body, type, source: 'order-workflow', orderId, extra })
       )
     );
   };
-  const sendStore = (title, body, type) => {
+  const sendStore = (title, body, type, extra = {}) => {
     if (!restaurantId) return;
     tasks.push(
       sendNotificationToSingleUser(
         'store',
         restaurantId,
-        buildNotificationPayload({ title, body, type, source: 'order-workflow', orderId })
+        buildNotificationPayload({ title, body, type, source: 'order-workflow', orderId, extra })
       )
     );
   };
 
   if (afterStatus === 'store_pending') {
-    sendStore('📥 طلب جديد', `لديك طلب جديد رقم ${orderNumber} بانتظار المراجعة.`, 'store_new_order');
+    sendStore('📥 طلب جديد', `لديك طلب جديد رقم ${orderNumber} بانتظار المراجعة.`, 'store_new_order', { tone: 'urgent' });
     sendClient('✅ تم استلام طلبك', `تم استلام طلبك رقم ${orderNumber} وجارٍ مراجعته من المتجر.`, 'client_order_received');
   }
 
@@ -2476,19 +2535,21 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
         driverId,
         '🚚 عرض توصيل جديد',
         `يوجد طلب رقم ${orderNumber} بانتظار قبولك.`,
-        'courier_offer_pending'
+        'courier_offer_pending',
+        { tone: 'urgent' }
       );
     }
   }
 
   if (afterStatus === 'courier_assigned') {
     sendClient('🛵 تم تعيين مندوب', `تم تعيين مندوب لطلبك رقم ${orderNumber}.`, 'client_courier_assigned');
-    sendStore('🛵 تم تعيين مندوب', `تم تعيين مندوب للطلب رقم ${orderNumber}.`, 'store_courier_assigned');
+    sendStore('🛵 تم تعيين مندوب', `تم تعيين مندوب للطلب رقم ${orderNumber}.`, 'store_courier_assigned', { tone: 'urgent' });
     sendCourier(
       assignedDriverId || offeredDriverId,
       '✅ تم إسناد الطلب لك',
       `تم اعتمادك لتوصيل الطلب رقم ${orderNumber}.`,
-      'courier_assigned'
+      'courier_assigned',
+      { tone: 'urgent' }
     );
   }
 
@@ -2740,6 +2801,14 @@ exports.notifyClientOnSupportMessageCreated = onDocumentCreated(
   },
   async (event) => {
     const data = event.data?.data() || {};
+    const explicitSent = await notifyExplicitMessageRecipient(data, {
+      title: 'رسالة من الدعم الفني',
+      type: 'support_message',
+      source: 'support',
+      senderFallback: 'الدعم الفني',
+      messageId: event.params?.messageId,
+    });
+    if (explicitSent > 0) return;
     const clientId = await resolveClientRecipientForSupportMessage(data, event.params || {});
     if (!clientId) {
       logger.warn('support message push skipped: client not resolved', {
@@ -2769,6 +2838,14 @@ exports.notifyClientOnNestedSupportMessageCreated = onDocumentCreated(
   },
   async (event) => {
     const data = event.data?.data() || {};
+    const explicitSent = await notifyExplicitMessageRecipient(data, {
+      title: 'رسالة من الدعم الفني',
+      type: 'support_message',
+      source: 'support',
+      senderFallback: 'الدعم الفني',
+      messageId: event.params?.messageId,
+    });
+    if (explicitSent > 0) return;
     const clientId = await resolveClientRecipientForSupportMessage(data, event.params || {});
     if (!clientId) {
       logger.warn('nested support message push skipped: client not resolved', {
@@ -2798,6 +2875,13 @@ exports.notifyClientOnDirectChatMessageCreated = onDocumentCreated(
   },
   async (event) => {
     const data = event.data?.data() || {};
+    const explicitSent = await notifyExplicitMessageRecipient(data, {
+      title: 'رسالة جديدة',
+      type: String(data.chatKind || '') === 'support' ? 'support_message' : 'chat_message',
+      source: String(data.chatKind || '') === 'support' ? 'support' : 'chat',
+      messageId: event.params?.messageId,
+    });
+    if (explicitSent > 0) return;
     const chatKind = String(data.chatKind || '').trim().toLowerCase();
     if (chatKind === 'support') return;
 
@@ -2830,6 +2914,13 @@ exports.notifyClientOnNestedDirectChatMessageCreated = onDocumentCreated(
   },
   async (event) => {
     const data = event.data?.data() || {};
+    const explicitSent = await notifyExplicitMessageRecipient(data, {
+      title: 'رسالة جديدة',
+      type: String(data.chatKind || '') === 'support' ? 'support_message' : 'chat_message',
+      source: String(data.chatKind || '') === 'support' ? 'support' : 'chat',
+      messageId: event.params?.messageId,
+    });
+    if (explicitSent > 0) return;
     const chatKind = String(data.chatKind || '').trim().toLowerCase();
     const conversationId = String(data.conversationId || event.params?.chatId || '').trim();
     if (chatKind === 'support' || conversationId.includes('-support')) {
@@ -3024,9 +3115,9 @@ function normalizeStateId(raw) {
   if (!value) return '';
 
   const normalized = value
-    .replace(/[أإآ]/g, 'ا')
-    .replace(/ة/g, 'ه')
-    .replace(/ى/g, 'ي')
+    .replace(/[\u0623\u0625\u0622]/g, '\u0627')
+    .replace(/\u0629/g, '\u0647')
+    .replace(/\u0649/g, '\u064A')
     .toLowerCase();
 
   const compact = normalized
@@ -3035,17 +3126,18 @@ function normalizeStateId(raw) {
     .trim();
 
   const khartoumTokens = [
-    'الخرطوم',
-    'ولاية الخرطوم',
-    'خرطوم',
+    '\u0627\u0644\u062e\u0631\u0637\u0648\u0645',
+    '\u0648\u0644\u0627\u064a\u0647 \u0627\u0644\u062e\u0631\u0637\u0648\u0645',
+    '\u0648\u0644\u0627\u064a\u0629 \u0627\u0644\u062e\u0631\u0637\u0648\u0645',
+    '\u062e\u0631\u0637\u0648\u0645',
     'khartoum',
     'khartum',
-    'بحري',
+    '\u0628\u062d\u0631\u064a',
     'bahri',
     'khartoum north',
-    'ام درمان',
-    'امدرمان',
-    'ام درمان الكبرى',
+    '\u0627\u0645 \u062f\u0631\u0645\u0627\u0646',
+    '\u0627\u0645\u062f\u0631\u0645\u0627\u0646',
+    '\u0627\u0645 \u062f\u0631\u0645\u0627\u0646 \u0627\u0644\u0643\u0628\u0631\u064a',
     'omdurman',
     'omdorman',
     'oum durman',
@@ -3058,13 +3150,13 @@ function normalizeStateId(raw) {
   }
 
   const riverNileTokens = [
-    'عطبره',
-    'عطبرة',
+    '\u0639\u0637\u0628\u0631\u0647',
+    '\u0639\u0637\u0628\u0631\u0629',
     'atbara',
     'atbarah',
-    'نهر النيل',
-    'ولاية نهر النيل',
-    'ولايه نهر النيل',
+    '\u0646\u0647\u0631 \u0627\u0644\u0646\u064a\u0644',
+    '\u0648\u0644\u0627\u064a\u0629 \u0646\u0647\u0631 \u0627\u0644\u0646\u064a\u0644',
+    '\u0648\u0644\u0627\u064a\u0647 \u0646\u0647\u0631 \u0627\u0644\u0646\u064a\u0644',
     'river nile',
     'nile river',
     'nahr al nil',
@@ -3077,48 +3169,8 @@ function normalizeStateId(raw) {
     }
   }
 
-  const khartoumAliases = new Set([
-    'الخرطوم',
-    'ولاية الخرطوم',
-    'خرطوم',
-    'khartoum',
-    'khartum',
-    'بحري',
-    'bahri',
-    'khartoum north',
-    'ام درمان',
-    'امدرمان',
-    'ام درمان الكبرى',
-    'omdurman',
-    'omdorman',
-    'oum durman',
-  ]);
-
-  if (khartoumAliases.has(normalized)) {
-    return 'khartoum';
-  }
-
-  const riverNileAliases = new Set([
-    'عطبره',
-    'عطبرة',
-    'atbara',
-    'atbarah',
-    'نهر النيل',
-    'ولاية نهر النيل',
-    'ولايه نهر النيل',
-    'river nile',
-    'nile river',
-    'nahr al nil',
-    'nahr el nil',
-  ]);
-
-  if (riverNileAliases.has(normalized)) {
-    return 'river_nile';
-  }
-
-  return normalized;
+  return compact || normalized;
 }
-
 function orderStateId(order) {
   return normalizeStateId(
     order.stateId ||
@@ -4063,9 +4115,10 @@ async function assignNextCourier(orderRef) {
         return driverStateId(data) === stateId;
       });
       sameStateDriversCount = sameStateDrivers.length;
-      remainingDrivers = sameStateDrivers;
-      if (sameStateDrivers.length === 0) {
-        assignmentBackoffReason = 'no-driver-in-same-state';
+      if (sameStateDrivers.length > 0) {
+        remainingDrivers = sameStateDrivers;
+      } else {
+        assignmentBackoffReason = 'no-driver-in-same-state-fallback-to-distance';
       }
     }
 
@@ -4359,6 +4412,8 @@ exports.recalculateRecentOrderPricing = onSchedule({
     const order = doc.data() || {};
     const recalculated = recalculateOrderTotals(order, pricingConfig);
     const storedDeliveryFee = Math.round(toNumberOrNull(order.deliveryFee) || 0);
+    const recalculatedDriverFee = calculateDriverFeeFromOrder(order, pricingConfig);
+    const storedDriverFee = Math.round(toNumberOrNull(order.deliveryFeeForDriver) || 0);
     const storedLargeFee = Math.round(toNumberOrNull(order.largeOrderFee) || 0);
     const storedTotalBeforeDiscount = Math.round(
       toNumberOrNull(order.totalBeforeDiscount)
@@ -4369,6 +4424,7 @@ exports.recalculateRecentOrderPricing = onSchedule({
 
     if (
       storedDeliveryFee === recalculated.deliveryFee &&
+      storedDriverFee === recalculatedDriverFee &&
       storedLargeFee === recalculated.largeOrderFee &&
       storedTotalBeforeDiscount === recalculated.totalBeforeDiscount &&
       storedTotalWithDelivery === recalculated.totalWithDelivery
@@ -4378,6 +4434,7 @@ exports.recalculateRecentOrderPricing = onSchedule({
 
     batch.update(doc.ref, {
       deliveryFee: recalculated.deliveryFee,
+      deliveryFeeForDriver: recalculatedDriverFee,
       largeOrderFee: recalculated.largeOrderFee,
       totalBeforeDiscount: recalculated.totalBeforeDiscount,
       totalWithDelivery: recalculated.totalWithDelivery,
@@ -4521,11 +4578,16 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
 
     if (decision === 'accept') {
       const driverFee = calculateDriverFeeFromOrder(order, pricingConfig);
+      const driverSnap = await db.collection('drivers').doc(driverId).get();
+      const driverName = driverSnap.exists ? String((driverSnap.data() || {}).name || (driverSnap.data() || {}).displayName || '').trim() : '';
       tx.update(orderRef, {
         orderStatus: 'courier_assigned',
         status: 'courier_assigned',
         assignedDriverId: driverId,
+        assignedDriverName: driverName,
         deliveryFeeForDriver: driverFee,
+        driverShare: driverFee,
+        courierFee: driverFee,
         offeredDriverId: admin.firestore.FieldValue.delete(),
         offerDriverIds: admin.firestore.FieldValue.delete(),
         offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
@@ -4902,9 +4964,11 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
 
     const pricingConfig = await getPricingConfigCached();
     const driverFee = calculateDriverFeeFromOrder(order, pricingConfig);
+    const assignedDriverName = String(driverData.name || driverData.displayName || '').trim();
     await orderRef.set({
       ...adminPatch,
       assignedDriverId: nextDriverId,
+      assignedDriverName,
       offeredDriverId: admin.firestore.FieldValue.delete(),
       offerDriverIds: admin.firestore.FieldValue.delete(),
       offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
@@ -4915,6 +4979,8 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
       offerStartedAt: admin.firestore.FieldValue.delete(),
       offerExpiresAt: admin.firestore.FieldValue.delete(),
       deliveryFeeForDriver: driverFee,
+      driverShare: driverFee,
+      courierFee: driverFee,
       orderStatus: 'courier_assigned',
       status: 'courier_assigned',
       acceptedAt: admin.firestore.FieldValue.serverTimestamp(),

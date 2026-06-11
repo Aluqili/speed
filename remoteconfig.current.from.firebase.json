@@ -48,6 +48,12 @@
       },
       "valueType": "STRING"
     },
+    "courier_force_update_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
     "store_force_update_enabled": {
       "defaultValue": {
         "value": "true"

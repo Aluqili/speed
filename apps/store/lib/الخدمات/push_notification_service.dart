@@ -13,7 +13,7 @@ class PushNotificationService {
   static final PushNotificationService instance = PushNotificationService._();
 
   static const String _channelId = 'speedstar_alerts';
-  static const String _ordersChannelId = 'speedstar_store_orders_incoming_v6';
+  static const String _ordersChannelId = 'speedstar_store_orders_incoming_v7';
   static const MethodChannel _alertServiceChannel =
       MethodChannel('speedstar/store_alert_service');
 
@@ -221,7 +221,7 @@ class PushNotificationService {
   Future<void> showRemoteMessageAsLocal(RemoteMessage message) async {
     final payload = _payloadFromRemoteMessage(message);
     _emitOrderAlert(payload);
-    if (_isOrderAlert(payload)) {
+    if (_isUrgentAlert(payload)) {
       await startPersistentOrderAlert(
         title: payload['title']?.toString(),
         body: payload['body']?.toString(),
@@ -238,7 +238,7 @@ class PushNotificationService {
   Future<void> _showForegroundAlert(RemoteMessage message) async {
     final payload = _payloadFromRemoteMessage(message);
     _emitOrderAlert(payload);
-    if (_isOrderAlert(payload)) {
+    if (_isUrgentAlert(payload)) {
       await startPersistentOrderAlert(
         title: payload['title']?.toString(),
         body: payload['body']?.toString(),
@@ -278,8 +278,9 @@ class PushNotificationService {
     }
   }
 
-  bool _isOrderAlert(Map<String, dynamic> payload) {
+  bool _isUrgentAlert(Map<String, dynamic> payload) {
     final type = (payload['type'] ?? '').toString().toLowerCase();
+    final tone = (payload['tone'] ?? '').toString().toLowerCase();
     final explicitChannel =
         (payload['channelId'] ?? payload['androidChannelId'] ?? '')
             .toString()
@@ -287,19 +288,18 @@ class PushNotificationService {
     final urgentFlag = (payload['urgent'] ?? payload['playSound'] ?? '')
         .toString()
         .toLowerCase();
-    return explicitChannel == _ordersChannelId.toLowerCase() ||
+    return tone == 'urgent' ||
+        explicitChannel == _ordersChannelId.toLowerCase() ||
         urgentFlag == '1' ||
         urgentFlag == 'true' ||
-        type.contains('order') ||
-        type.contains('offer') ||
-        type.contains('pickup') ||
-        type.contains('courier');
+        type == 'store_new_order' ||
+        type == 'store_courier_assigned';
   }
 
   Future<void> _showLocalAlert(Map<String, dynamic> payload) async {
     final title = (payload['title'] ?? 'إشعار جديد').toString();
     final body = (payload['body'] ?? '').toString();
-    final isOrderAlert = _isOrderAlert(payload);
+    final isOrderAlert = _isUrgentAlert(payload);
     final androidChannelId = isOrderAlert ? _ordersChannelId : _channelId;
 
     final details = NotificationDetails(
@@ -338,7 +338,7 @@ class PushNotificationService {
   }
 
   void _emitOrderAlert(Map<String, dynamic> payload) {
-    if (!_isOrderAlert(payload) || _orderAlertController.isClosed) {
+    if (!_isUrgentAlert(payload) || _orderAlertController.isClosed) {
       return;
     }
     _orderAlertController.add(payload);

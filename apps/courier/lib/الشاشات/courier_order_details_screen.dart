@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'dart:math';
-import 'package:speedstar_core/Ø§Ù„Ø«ÙŠÙ…/Ø«ÙŠÙ…_Ø§Ù„ØªØ·Ø¨ÙŠÙ‚.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart'
     show formatUnifiedOrderCode, OrderStatusPalette;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -127,7 +127,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content: Text('ØªÙ… Ø§Ø³ØªÙ„Ø§Ù… Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨ Ø¨ÙˆØ§Ø³Ø·Ø© Ù…Ù†Ø¯ÙˆØ¨ Ø¢Ø®Ø±')),
+                content: Text('تم استلام هذا الطلب بواسطة مندوب آخر')),
           );
           Navigator.of(context).pop();
         }
@@ -368,7 +368,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     final status = _getOrderStatus(orderData!);
     if (status != 'courier_offer_pending' || !_isOfferForDriver(orderData!)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ù‡Ø°Ø§ Ø§Ù„Ø¹Ø±Ø¶ ØºÙŠØ± Ù…ØªØ§Ø­ Ù„Ùƒ Ø§Ù„Ø¢Ù†')),
+        const SnackBar(content: Text('هذا العرض غير متاح لك الآن')),
       );
       return;
     }
@@ -391,7 +391,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('ØªÙ… Ù‚Ø¨ÙˆÙ„ Ø§Ù„Ø·Ù„Ø¨')),
+      const SnackBar(content: Text('تم قبول الطلب')),
     );
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -437,7 +437,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
 
     if (status == 'courier_assigned' ||
         status == 'pickup_ready' ||
-        status == 'Ø¬Ø§Ù‡Ø² Ù„Ù„ØªÙˆØµÙŠÙ„') {
+        status == 'جاهز للتوصيل') {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => CourierGoToRestaurantScreen(
@@ -449,7 +449,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
       return;
     }
 
-    if (status == 'picked_up' || status == 'Ù‚ÙŠØ¯ Ø§Ù„ØªÙˆØµÙŠÙ„') {
+    if (status == 'picked_up' || status == 'قيد التوصيل') {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => CourierGoToClientScreen(
@@ -462,7 +462,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
       return;
     }
 
-    if (status == 'arrived_to_client' || status == 'ÙˆØµÙ„ Ø¥Ù„Ù‰ Ø§Ù„Ø¹Ù…ÙŠÙ„') {
+    if (status == 'arrived_to_client' || status == 'وصل إلى العميل') {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => CourierConfirmDeliveryScreen(
@@ -484,7 +484,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     });
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('ØªÙ… Ø±ÙØ¶ Ø§Ù„Ø¹Ø±Ø¶ ÙˆØ³ÙŠØªÙ… Ø¥Ø±Ø³Ø§Ù„Ù‡ Ù„Ù…Ù†Ø¯ÙˆØ¨ Ø¢Ø®Ø±')),
+      const SnackBar(content: Text('تم رفض العرض وسيتم إرساله لمندوب آخر')),
     );
     Navigator.pop(context);
   }
@@ -494,8 +494,8 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     return normalized == 'delivered' ||
         normalized == 'cancelled' ||
         normalized == 'store_rejected' ||
-        status.trim() == 'ØªÙ… Ø§Ù„ØªÙˆØµÙŠÙ„' ||
-        status.trim() == 'Ù…Ù„ØºÙŠ';
+        status.trim() == 'تم التوصيل' ||
+        status.trim() == 'ملغي';
   }
 
   @override
@@ -619,7 +619,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Ø§Ù„Ø¹Ù…ÙŠÙ„: ${data['clientName'] ?? 'ØºÙŠØ± Ù…ØªÙˆÙØ±'}',
+                          'العميل: ${data['clientName'] ?? 'غير متوفر'}',
                           style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -635,7 +635,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            'Ø§Ù„Ø­Ø§Ù„Ø©: ${OrderStatusPalette.displayText(status)}',
+                            'الحالة: ${OrderStatusPalette.displayText(status)}',
                             style: TextStyle(
                               color: OrderStatusPalette.colorForStatus(status),
                               fontWeight: FontWeight.w700,
@@ -678,7 +678,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                             ),
                           )
                         else
-                          const Text('Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¨ÙŠØ§Ù†Ø§Øª Ù…ÙˆÙ‚Ø¹ ÙƒØ§ÙÙŠØ© Ù„Ø¹Ø±Ø¶ Ø§Ù„Ø®Ø±ÙŠØ·Ø©'),
+                          const Text('لا توجد بيانات موقع كافية لعرض الخريطة'),
                         const SizedBox(height: 12),
                         if (restaurantLocation != null ||
                             clientLocation != null)
@@ -699,7 +699,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                                   children: [
                                     Icon(Icons.storefront_rounded, size: 16),
                                     SizedBox(width: 6),
-                                    Text('Ø§Ù„Ù…Ø·Ø¹Ù…'),
+                                    Text('المطعم'),
                                   ],
                                 ),
                               ),
@@ -716,7 +716,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                                   children: [
                                     Icon(Icons.person_rounded, size: 16),
                                     SizedBox(width: 6),
-                                    Text('Ø§Ù„Ø¹Ù…ÙŠÙ„'),
+                                    Text('العميل'),
                                   ],
                                 ),
                               ),
@@ -732,18 +732,18 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                             if (driverToRestaurantKm != null)
                               Chip(
                                 label: Text(
-                                  'ÙŠØ¨Ø¹Ø¯ Ø§Ù„Ù…Ø·Ø¹Ù… Ø¹Ù†Ùƒ: ${courierFormatDistance(driverToRestaurantKm)}',
+                                  'يبعد المطعم عنك: ${courierFormatDistance(driverToRestaurantKm)}',
                                 ),
                               ),
                             if (restaurantToClientKm != null)
                               Chip(
                                 label: Text(
-                                  'ÙŠØ¨Ø¹Ø¯ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø¹Ù† Ø§Ù„Ù…Ø·Ø¹Ù…: ${courierFormatDistance(restaurantToClientKm)}',
+                                  'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
                                 ),
                               ),
                             Chip(
                                 label: Text(
-                                    'Ø±Ø³ÙˆÙ…Ùƒ: ${courierFormatMoney(deliveryFee)} Ø¬.Ø³')),
+                                    'رسومك: ${courierFormatMoney(deliveryFee)} ج.س')),
                           ],
                         ),
                       ],
@@ -754,6 +754,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                     CourierClientContactCard(
                       orderData: data,
                       driverId: widget.driverId,
+                      showPhone: true,
                     ),
                     const SizedBox(height: 16),
                   ],
@@ -761,7 +762,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                     ElevatedButton.icon(
                       onPressed: _acceptOrder,
                       icon: const Icon(Icons.check_circle_outline),
-                      label: const Text('Ù‚Ø¨ÙˆÙ„ Ø§Ù„Ø¹Ø±Ø¶ ÙˆØ¨Ø¯Ø¡ Ø§Ù„Ø±Ø­Ù„Ø©'),
+                      label: const Text('قبول العرض وبدء الرحلة'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppThemeArabic.courierAccent,
                         foregroundColor: Colors.white,
@@ -775,7 +776,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                     OutlinedButton.icon(
                       onPressed: _rejectOffer,
                       icon: const Icon(Icons.close),
-                      label: const Text('Ø±ÙØ¶ Ø§Ù„Ø¹Ø±Ø¶'),
+                      label: const Text('رفض العرض'),
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size.fromHeight(52),
                         shape: RoundedRectangleBorder(
@@ -787,7 +788,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                     ElevatedButton.icon(
                       onPressed: _openProfessionalFlow,
                       icon: const Icon(Icons.navigation_outlined),
-                      label: const Text('ÙØªØ­ Ø´Ø§Ø´Ø© Ø§Ù„ØªÙ†ÙÙŠØ° Ø§Ù„Ø§Ø­ØªØ±Ø§ÙÙŠØ©'),
+                      label: const Text('فتح شاشة التنفيذ الاحترافية'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppThemeArabic.courierPrimary,
                         foregroundColor: Colors.white,
@@ -799,14 +800,13 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                     ),
                   ] else
                     const Center(
-                      child: Text('Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨ ØªÙ… Ø§Ø³ØªÙ„Ø§Ù…Ù‡ Ø¨ÙˆØ§Ø³Ø·Ø© Ù…Ù†Ø¯ÙˆØ¨ Ø¢Ø®Ø±.'),
+                      child: Text('هذا الطلب تم استلامه بواسطة مندوب آخر.'),
                     ),
                   if (!isFinished) const SizedBox(height: 14),
                 ],
               );
             }),
         ),
-      ),
     );
   }
 }

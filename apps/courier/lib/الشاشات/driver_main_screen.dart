@@ -1167,7 +1167,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   onChanged: isAvailable ? _toggleLongDistance : null,
                   secondary: const Icon(Icons.route_rounded),
                   title: const Text('المسافات البعيدة'),
-                  subtitle: const Text('إظهارك للأدمن كخيار للطلبات البعيدة'),
+                  subtitle: const Text('استقبال طلبات خارج النطاق القريب'),
                 ),
                 const Divider(),
                 Card(

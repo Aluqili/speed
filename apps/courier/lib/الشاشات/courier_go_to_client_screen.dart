@@ -9,7 +9,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:speedstar_core/Ø§Ù„Ø«ÙŠÙ…/Ø«ÙŠÙ…_Ø§Ù„ØªØ·Ø¨ÙŠÙ‚.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import '../helpers/courier_runtime_helpers.dart';
 import '../helpers/smart_location_tracker.dart';
@@ -79,7 +79,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ù…ÙˆÙ‚Ø¹ Ø¹Ù…ÙŠÙ„ ÙÙŠ Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨ Ù„ÙØªØ­Ù‡ Ø¹Ù„Ù‰ Ø§Ù„Ø®Ø±Ø§Ø¦Ø·')),
+            content: Text('لا يوجد موقع عميل في هذا الطلب لفتحه على الخرائط')),
       );
       return;
     }
@@ -93,7 +93,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('ØªØ¹Ø°Ø± ÙØªØ­ Ø®Ø±Ø§Ø¦Ø· Google Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø²')),
+      const SnackBar(content: Text('تعذر فتح خرائط Google على هذا الجهاز')),
     );
   }
 
@@ -147,8 +147,6 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
           northeast: LatLng(maxLat, maxLng),
         ),
         80,
-      ),
-      ),
       ),
     );
   }
@@ -345,7 +343,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
 
   Widget _buildOrderDetails(Map<String, dynamic> orderData) {
     final items = (orderData['items'] as List?) ?? const [];
-    final paymentMethod = (orderData['paymentMethod'] ?? 'ØºÙŠØ± Ù…Ø­Ø¯Ø¯').toString();
+    final paymentMethod = (orderData['paymentMethod'] ?? 'غير محدد').toString();
     final totalWithDelivery =
         (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
 
@@ -353,7 +351,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
       child: ExpansionTile(
         initiallyExpanded: true,
         title: const Text(
-          'ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø·Ù„Ø¨',
+          'تفاصيل الطلب',
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
         collapsedTextColor: Colors.black87,
@@ -363,7 +361,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
           _detailRow(
-            'Ø±Ù‚Ù… Ø§Ù„Ø·Ù„Ø¨',
+            'رقم الطلب',
             formatUnifiedOrderCode(
               orderNumber: orderData['orderNumber'],
               orderId: orderData['orderId'],
@@ -371,16 +369,16 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
             ),
           ),
           _detailRow(
-              'Ø§Ù„Ø¹Ù…ÙŠÙ„', (orderData['clientName'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ').toString()),
-          _detailRow('Ø§Ù„Ù…Ø·Ø¹Ù…',
-              (orderData['restaurantName'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ').toString()),
-          _detailRow('Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹', paymentMethod),
-          _detailRow('Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ', '$totalWithDelivery Ø¬.Ø³'),
+              'العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
+          _detailRow('المطعم',
+              (orderData['restaurantName'] ?? 'غير معروف').toString()),
+          _detailRow('طريقة الدفع', paymentMethod),
+          _detailRow('الإجمالي', '$totalWithDelivery ج.س'),
           const SizedBox(height: 8),
           const Align(
             alignment: Alignment.centerRight,
             child: Text(
-              'Ø§Ù„Ø¹Ù†Ø§ØµØ±',
+              'العناصر',
               style:
                   TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
             ),
@@ -390,7 +388,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
             const Align(
               alignment: Alignment.centerRight,
               child: Text(
-                'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¹Ù†Ø§ØµØ±',
+                'لا توجد عناصر',
                 style: TextStyle(color: Colors.black87),
               ),
             )
@@ -399,12 +397,12 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
               final map = (item is Map<String, dynamic>)
                   ? item
                   : Map<String, dynamic>.from(item as Map);
-              final name = (map['name'] ?? 'Ø¹Ù†ØµØ±').toString();
+              final name = (map['name'] ?? 'عنصر').toString();
               final qty = (map['quantity'] ?? 1).toString();
               return Align(
                 alignment: Alignment.centerRight,
                 child: Text(
-                  'â€¢ $name Ã— $qty',
+                  '• $name × $qty',
                   style: const TextStyle(color: Colors.black87),
                 ),
               );
@@ -476,14 +474,14 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
           if (!snapshot.hasData || snapshot.data == null) {
             return const Center(
               child: Text(
-                'Ø§Ù„Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ Ø£Ùˆ ØªØ¹Ø°Ø± ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§ØªÙ‡',
+                'الطلب غير موجود أو تعذر تحميل بياناته',
                 style: TextStyle(color: Colors.black87),
               ),
             );
           }
 
           final orderData = snapshot.data!;
-          final String clientName = orderData['clientName'] ?? 'Ø¹Ù…ÙŠÙ„ ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ';
+          final String clientName = orderData['clientName'] ?? 'عميل غير معروف';
           final clientLocation = _resolvePoint(
                 orderData,
                 rawKey: 'clientLocation',
@@ -529,8 +527,8 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
             padding: const EdgeInsets.all(16),
             children: [
               _buildJourneyHeader(
-                title: 'Ø§Ù„Ù…Ø±Ø­Ù„Ø© 2 Ù…Ù† 3 Â· Ø§Ù„ØªÙˆØ¬Ù‡ Ù„Ù„Ø¹Ù…ÙŠÙ„',
-                subtitle: 'ØªØ§Ø¨Ø¹ Ø§Ù„Ù…Ù„Ø§Ø­Ø© Ø­ØªÙ‰ ØªØµÙ„ØŒ Ø«Ù… Ø£ÙƒÙ‘Ø¯ Ø§Ù„ÙˆØµÙˆÙ„ Ù„Ù„Ø¹Ù…ÙŠÙ„',
+                title: 'المرحلة 2 من 3 · التوجه للعميل',
+                subtitle: 'تابع الملاحة حتى تصل، ثم أكّد الوصول للعميل',
                 icon: Icons.home_work_outlined,
               ),
               const SizedBox(height: 12),
@@ -539,6 +537,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
               CourierClientContactCard(
                 orderData: orderData,
                 driverId: widget.driverId,
+                showPhone: true,
               ),
               const SizedBox(height: 12),
               Container(
@@ -573,19 +572,19 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                   if (driverToClientKm != null)
                     Chip(
                       label: Text(
-                        'ÙŠØ¨Ø¹Ø¯ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø¹Ù†Ùƒ: ${courierFormatDistance(driverToClientKm)}',
+                        'يبعد العميل عنك: ${courierFormatDistance(driverToClientKm)}',
                       ),
                     ),
                   if (restaurantToClientKm != null)
                     Chip(
                       label: Text(
-                        'ÙŠØ¨Ø¹Ø¯ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø¹Ù† Ø§Ù„Ù…Ø·Ø¹Ù…: ${courierFormatDistance(restaurantToClientKm)}',
+                        'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
                       ),
                     ),
                   if (driverFee > 0)
                     Chip(
                       label: Text(
-                        'Ø±Ø³ÙˆÙ… Ø§Ù„ØªÙˆØµÙŠÙ„: ${courierFormatMoney(driverFee)} Ø¬.Ø³',
+                        'رسوم التوصيل: ${courierFormatMoney(driverFee)} ج.س',
                       ),
                     ),
                 ],
@@ -653,7 +652,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Text(
-                    'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¥Ø­Ø¯Ø§Ø«ÙŠØ§Øª Ù„Ù…ÙˆÙ‚Ø¹ Ø§Ù„Ø¹Ù…ÙŠÙ„ ÙÙŠ Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨ØŒ ÙŠÙ…ÙƒÙ†Ùƒ Ø§Ù„Ù…ØªØ§Ø¨Ø¹Ø© ÙŠØ¯ÙˆÙŠÙ‹Ø§.',
+                    'لا توجد إحداثيات لموقع العميل في هذا الطلب، يمكنك المتابعة يدويًا.',
                     style: TextStyle(color: Colors.black87),
                   ),
                 ),
@@ -695,7 +694,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                       children: [
                         Icon(Icons.storefront_rounded, size: 16),
                         SizedBox(width: 6),
-                        Text('Ø§Ù„Ù…Ø·Ø¹Ù…'),
+                        Text('المطعم'),
                       ],
                     ),
                   ),
@@ -712,7 +711,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                       children: [
                         Icon(Icons.person_rounded, size: 16),
                         SizedBox(width: 6),
-                        Text('Ø§Ù„Ø¹Ù…ÙŠÙ„'),
+                        Text('العميل'),
                       ],
                     ),
                   ),
@@ -751,14 +750,14 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('ØªØ¹Ø°Ø± ØªØ£ÙƒÙŠØ¯ Ø§Ù„ÙˆØµÙˆÙ„ Ù„Ù„Ø¹Ù…ÙŠÙ„: $e'),
+                        content: Text('تعذر تأكيد الوصول للعميل: $e'),
                       ),
                     );
                   } finally {
                     if (mounted) setState(() => _confirmingArrival = false);
                   }
                 },
-                text: _confirmingArrival ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ£ÙƒÙŠØ¯...' : 'ØªØ£ÙƒÙŠØ¯ Ø§Ù„ÙˆØµÙˆÙ„ Ù„Ù„Ø¹Ù…ÙŠÙ„',
+                text: _confirmingArrival ? 'جاري التأكيد...' : 'تأكيد الوصول للعميل',
                 icon: _confirmingArrival
                     ? const SizedBox(
                         width: 18,

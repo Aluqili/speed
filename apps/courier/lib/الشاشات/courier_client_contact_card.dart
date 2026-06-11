@@ -12,11 +12,13 @@ class CourierClientContactCard extends StatefulWidget {
     required this.orderData,
     required this.driverId,
     this.compact = false,
+    this.showPhone = false,
   });
 
   final Map<String, dynamic> orderData;
   final String driverId;
   final bool compact;
+  final bool showPhone;
 
   @override
   State<CourierClientContactCard> createState() =>
@@ -36,7 +38,9 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
     super.initState();
     _clientName = _resolveClientName(widget.orderData);
     _clientPhone = _resolveClientPhone(widget.orderData);
-    if ((_clientName.isEmpty || _clientPhone.isEmpty) && _clientId.isNotEmpty) {
+    if ((_clientName.isEmpty ||
+            (widget.showPhone && _clientPhone.isEmpty)) &&
+        _clientId.isNotEmpty) {
       _loadClientProfile();
     }
   }
@@ -44,10 +48,12 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
   @override
   void didUpdateWidget(CourierClientContactCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.orderData != widget.orderData) {
+    if (oldWidget.orderData != widget.orderData ||
+        oldWidget.showPhone != widget.showPhone) {
       _clientName = _resolveClientName(widget.orderData);
       _clientPhone = _resolveClientPhone(widget.orderData);
-      if ((_clientName.isEmpty || _clientPhone.isEmpty) &&
+      if ((_clientName.isEmpty ||
+              (widget.showPhone && _clientPhone.isEmpty)) &&
           _clientId.isNotEmpty) {
         _loadClientProfile();
       }
@@ -138,7 +144,9 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
   Future<void> _openChat() async {
     if (_clientId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('لا يمكن فتح الدردشة لعدم توفر معرف العميل')),
+        const SnackBar(
+          content: Text('لا يمكن فتح الدردشة لعدم توفر معرف العميل'),
+        ),
       );
       return;
     }
@@ -168,9 +176,9 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
   }
 
   Future<void> _copyPhone() async {
-    final phone = _clientPhone.trim();
-    if (phone.isEmpty) return;
-    await Clipboard.setData(ClipboardData(text: phone));
+    final normalized = normalizeCourierPhone(_clientPhone);
+    if (normalized.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: normalized));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('تم نسخ رقم العميل')),
@@ -180,7 +188,8 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
   @override
   Widget build(BuildContext context) {
     final name = _clientName.isNotEmpty ? _clientName : 'العميل';
-    final phone = _clientPhone.trim();
+    final phone = normalizeCourierPhone(_clientPhone);
+    final shouldShowPhone = widget.showPhone;
     final hasPhone = phone.isNotEmpty;
 
     return Container(
@@ -198,8 +207,10 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
               CircleAvatar(
                 backgroundColor:
                     AppThemeArabic.courierPrimary.withValues(alpha: 0.12),
-                child: const Icon(Icons.person_rounded,
-                    color: AppThemeArabic.courierPrimary),
+                child: const Icon(
+                  Icons.person_rounded,
+                  color: AppThemeArabic.courierPrimary,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -215,9 +226,15 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      hasPhone
-                          ? normalizeCourierPhone(phone)
-                          : (_loadingClient ? 'جاري جلب الرقم...' : 'رقم العميل غير متاح'),
+                      shouldShowPhone
+                          ? (hasPhone
+                              ? phone
+                              : (_loadingClient
+                                  ? 'جاري جلب بيانات العميل...'
+                                  : 'رقم العميل غير متاح'))
+                          : (_loadingClient
+                              ? 'جاري جلب بيانات العميل...'
+                              : 'التواصل متاح عبر الدردشة داخل التطبيق'),
                       style: const TextStyle(
                         color: AppThemeArabic.courierTextSecondary,
                         fontWeight: FontWeight.w600,
@@ -233,25 +250,28 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              FilledButton.icon(
-                onPressed:
-                    hasPhone ? () => launchCourierPhoneCall(context, phone) : null,
-                icon: const Icon(Icons.call_rounded, size: 18),
-                label: const Text('اتصال'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppThemeArabic.courierAccent,
-                  foregroundColor: Colors.white,
+              if (shouldShowPhone) ...[
+                FilledButton.icon(
+                  onPressed: hasPhone
+                      ? () => launchCourierPhoneCall(context, _clientPhone)
+                      : null,
+                  icon: const Icon(Icons.call_rounded, size: 18),
+                  label: const Text('اتصال'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppThemeArabic.courierAccent,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
-              ),
+                OutlinedButton.icon(
+                  onPressed: hasPhone ? _copyPhone : null,
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  label: const Text('نسخ الرقم'),
+                ),
+              ],
               OutlinedButton.icon(
                 onPressed: _clientId.isEmpty ? null : _openChat,
                 icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
                 label: const Text('دردشة'),
-              ),
-              OutlinedButton.icon(
-                onPressed: hasPhone ? _copyPhone : null,
-                icon: const Icon(Icons.copy_rounded, size: 18),
-                label: const Text('نسخ'),
               ),
             ],
           ),

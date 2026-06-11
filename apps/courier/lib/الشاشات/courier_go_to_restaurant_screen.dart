@@ -8,7 +8,7 @@ import 'package:get_storage/get_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'dart:math' as math;
-import 'package:speedstar_core/Ø§Ù„Ø«ÙŠÙ…/Ø«ÙŠÙ…_Ø§Ù„ØªØ·Ø¨ÙŠÙ‚.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import '../helpers/courier_runtime_helpers.dart';
 
@@ -35,7 +35,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
     }
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('ØªØ¹Ø°Ø± ÙØªØ­ Ø®Ø±Ø§Ø¦Ø· Google Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø²')),
+      const SnackBar(content: Text('تعذر فتح خرائط Google على هذا الجهاز')),
     );
   }
 
@@ -70,8 +70,6 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
         ),
         80,
       ),
-      ),
-      ),
     );
   }
 
@@ -79,16 +77,16 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
     final approved = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…'),
-        content: const Text('Ù‡Ù„ Ø£Ù†Øª Ù…ØªØ£ÙƒØ¯ Ø£Ù†Ùƒ Ø§Ø³ØªÙ„Ù…Øª Ø§Ù„Ø·Ù„Ø¨ Ù…Ù† Ø§Ù„Ù…Ø·Ø¹Ù…ØŸ'),
+        title: const Text('تأكيد الاستلام'),
+        content: const Text('هل أنت متأكد أنك استلمت الطلب من المطعم؟'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Ø¥Ù„ØºØ§Ø¡'),
+            child: const Text('إلغاء'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…'),
+            child: const Text('تأكيد الاستلام'),
           ),
         ],
       ),
@@ -348,7 +346,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
 
   Widget _buildOrderDetails(Map<String, dynamic> orderData) {
     final items = (orderData['items'] as List?) ?? const [];
-    final paymentMethod = (orderData['paymentMethod'] ?? 'ØºÙŠØ± Ù…Ø­Ø¯Ø¯').toString();
+    final paymentMethod = (orderData['paymentMethod'] ?? 'غير محدد').toString();
     final totalWithDelivery =
         (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
 
@@ -356,7 +354,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
       child: ExpansionTile(
         initiallyExpanded: true,
         title: const Text(
-          'ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø·Ù„Ø¨',
+          'تفاصيل الطلب',
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
         collapsedTextColor: Colors.black87,
@@ -366,7 +364,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
           _detailRow(
-            'Ø±Ù‚Ù… Ø§Ù„Ø·Ù„Ø¨',
+            'رقم الطلب',
             formatUnifiedOrderCode(
               orderNumber: orderData['orderNumber'],
               orderId: orderData['orderId'],
@@ -374,16 +372,16 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
             ),
           ),
           _detailRow(
-              'Ø§Ù„Ø¹Ù…ÙŠÙ„', (orderData['clientName'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ').toString()),
-          _detailRow('Ø§Ù„Ù…Ø·Ø¹Ù…',
-              (orderData['restaurantName'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ').toString()),
-          _detailRow('Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹', paymentMethod),
-          _detailRow('Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ', '$totalWithDelivery Ø¬.Ø³'),
+              'العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
+          _detailRow('المطعم',
+              (orderData['restaurantName'] ?? 'غير معروف').toString()),
+          _detailRow('طريقة الدفع', paymentMethod),
+          _detailRow('الإجمالي', '$totalWithDelivery ج.س'),
           const SizedBox(height: 8),
           const Align(
             alignment: Alignment.centerRight,
             child: Text(
-              'Ø§Ù„Ø¹Ù†Ø§ØµØ±',
+              'العناصر',
               style:
                   TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
             ),
@@ -393,7 +391,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
             const Align(
               alignment: Alignment.centerRight,
               child: Text(
-                'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¹Ù†Ø§ØµØ±',
+                'لا توجد عناصر',
                 style: TextStyle(color: Colors.black87),
               ),
             )
@@ -402,12 +400,12 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
               final map = (item is Map<String, dynamic>)
                   ? item
                   : Map<String, dynamic>.from(item as Map);
-              final name = (map['name'] ?? 'Ø¹Ù†ØµØ±').toString();
+              final name = (map['name'] ?? 'عنصر').toString();
               final qty = (map['quantity'] ?? 1).toString();
               return Align(
                 alignment: Alignment.centerRight,
                 child: Text(
-                  'â€¢ $name Ã— $qty',
+                  '• $name × $qty',
                   style: const TextStyle(color: Colors.black87),
                 ),
               );
@@ -481,7 +479,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
               child: Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  'Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø·Ù„Ø¨. Ø­Ø§ÙˆÙ„ Ø¥Ø¹Ø§Ø¯Ø© ÙØªØ­ Ø§Ù„Ø´Ø§Ø´Ø©.',
+                  'حدث خطأ أثناء تحميل الطلب. حاول إعادة فتح الشاشة.',
                   style: TextStyle(color: Colors.black87),
                   textAlign: TextAlign.center,
                 ),
@@ -492,7 +490,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
           if (!snapshot.hasData || snapshot.data == null) {
             return const Center(
               child: Text(
-                'Ø§Ù„Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ Ø£Ùˆ ØªØ¹Ø°Ø± ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§ØªÙ‡',
+                'الطلب غير موجود أو تعذر تحميل بياناته',
                 style: TextStyle(color: Colors.black87),
               ),
             );
@@ -502,7 +500,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
           final String restaurantName =
               (orderData['restaurantName'] ?? '').toString().trim().isNotEmpty
                   ? orderData['restaurantName'].toString().trim()
-                  : 'Ø§Ø³Ù… ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ';
+                  : 'اسم غير معروف';
 
           final restaurantLocationRaw = orderData['restaurantLocation'];
           final clientLocationRaw = orderData['clientLocation'];
@@ -576,8 +574,8 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             children: [
               _buildJourneyHeader(
-                title: 'Ø§Ù„Ù…Ø±Ø­Ù„Ø© 1 Ù…Ù† 3 Â· Ø§Ù„ØªÙˆØ¬Ù‡ Ù„Ù„Ù…Ø·Ø¹Ù…',
-                subtitle: 'Ø¹Ù†Ø¯ ÙˆØµÙˆÙ„Ùƒ Ù„Ù„Ù…Ø·Ø¹Ù… ÙˆØ§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø·Ù„Ø¨ Ø§Ø¶ØºØ· Â«Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø·Ù„Ø¨Â»',
+                title: 'المرحلة 1 من 3 · التوجه للمطعم',
+                subtitle: 'عند وصولك للمطعم واستلام الطلب اضغط «استلام الطلب»',
                 icon: Icons.store_mall_directory_outlined,
               ),
               const SizedBox(height: 12),
@@ -586,6 +584,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
               CourierClientContactCard(
                 orderData: orderData,
                 driverId: driverId,
+                showPhone: true,
               ),
               const SizedBox(height: 12),
               Container(
@@ -620,19 +619,19 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                   if (driverToRestaurantKm != null)
                     Chip(
                       label: Text(
-                        'ÙŠØ¨Ø¹Ø¯ Ø§Ù„Ù…Ø·Ø¹Ù… Ø¹Ù†Ùƒ: ${courierFormatDistance(driverToRestaurantKm)}',
+                        'يبعد المطعم عنك: ${courierFormatDistance(driverToRestaurantKm)}',
                       ),
                     ),
                   if (restaurantToClientKm != null)
                     Chip(
                       label: Text(
-                        'ÙŠØ¨Ø¹Ø¯ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø¹Ù† Ø§Ù„Ù…Ø·Ø¹Ù…: ${courierFormatDistance(restaurantToClientKm)}',
+                        'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
                       ),
                     ),
                   if (driverFee > 0)
                     Chip(
                       label: Text(
-                        'Ø±Ø³ÙˆÙ… Ø§Ù„ØªÙˆØµÙŠÙ„: ${courierFormatMoney(driverFee)} Ø¬.Ø³',
+                        'رسوم التوصيل: ${courierFormatMoney(driverFee)} ج.س',
                       ),
                     ),
                 ],
@@ -714,7 +713,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                         children: [
                           Icon(Icons.storefront_rounded, size: 16),
                           SizedBox(width: 6),
-                          Text('Ø§Ù„Ù…Ø·Ø¹Ù…'),
+                          Text('المطعم'),
                         ],
                       ),
                     ),
@@ -731,7 +730,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                         children: [
                           Icon(Icons.person_rounded, size: 16),
                           SizedBox(width: 6),
-                          Text('Ø§Ù„Ø¹Ù…ÙŠÙ„'),
+                          Text('العميل'),
                         ],
                       ),
                     ),
@@ -766,7 +765,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Text(
-                    'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¥Ø­Ø¯Ø§Ø«ÙŠØ§Øª Ù„Ù„Ù…Ø·Ø¹Ù… ÙÙŠ Ø§Ù„Ø·Ù„Ø¨ØŒ Ù„Ø°Ù„Ùƒ Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø¹Ø±Ø¶ Ø§Ù„Ø®Ø±ÙŠØ·Ø© Ø­Ø§Ù„ÙŠØ§Ù‹.',
+                    'لا توجد إحداثيات للمطعم في الطلب، لذلك لا يمكن عرض الخريطة حالياً.',
                     style: TextStyle(color: Colors.black87),
                   ),
                 ),
@@ -861,7 +860,7 @@ class _PickupFromRestaurantButtonState
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ØªØ¹Ø°Ø± ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…: $e')),
+        SnackBar(content: Text('تعذر تسجيل الاستلام: $e')),
       );
     } finally {
       if (mounted) setState(() => _confirmingPickup = false);
@@ -872,7 +871,7 @@ class _PickupFromRestaurantButtonState
   Widget build(BuildContext context) {
     return GFButton(
       onPressed: _handlePickup,
-      text: _confirmingPickup ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…...' : 'Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø·Ù„Ø¨',
+      text: _confirmingPickup ? 'جاري الاستلام...' : 'استلام الطلب',
       icon: _confirmingPickup
           ? const SizedBox(
               width: 18,

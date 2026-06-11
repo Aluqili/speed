@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'courier_ui.dart';
-import 'package:speedstar_core/Ø§Ù„Ø«ÙŠÙ…/Ø«ÙŠÙ…_Ø§Ù„ØªØ·Ø¨ÙŠÙ‚.dart';
+import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 class CourierLinkRequestScreen extends StatefulWidget {
   const CourierLinkRequestScreen({
@@ -201,7 +201,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
     final workArea = _workAreaPayload;
     if (_idImage == null) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø±ÙØ¹ ØµÙˆØ±Ø© Ø§Ù„Ù‡ÙˆÙŠØ©/Ø§Ù„Ø±Ø®ØµØ©')),
+        const SnackBar(content: Text('الرجاء رفع صورة الهوية/الرخصة')),
       );
       return;
     }
@@ -213,7 +213,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
       if (idImageUrl == null) {
         setState(() => _submitting = false);
         messenger.showSnackBar(
-          const SnackBar(content: Text('ÙØ´Ù„ Ø±ÙØ¹ ØµÙˆØ±Ø© Ø§Ù„Ù‡ÙˆÙŠØ©/Ø§Ù„Ø±Ø®ØµØ©')),
+          const SnackBar(content: Text('فشل رفع صورة الهوية/الرخصة')),
         );
         return;
       }
@@ -230,7 +230,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
           setState(() => _submitting = false);
           messenger.showSnackBar(
             const SnackBar(
-                content: Text('Ø£Ø¯Ø®Ù„ Ø¨Ø±ÙŠØ¯Ù‹Ø§ ØµØ­ÙŠØ­Ù‹Ø§ ÙˆÙƒÙ„Ù…Ø© Ù…Ø±ÙˆØ± 6 Ø£Ø­Ø±Ù ÙØ£ÙƒØ«Ø±')),
+                content: Text('أدخل بريدًا صحيحًا وكلمة مرور 6 أحرف فأكثر')),
           );
           return;
         }
@@ -278,7 +278,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
         }
 
         if (ownerUid.isEmpty) {
-          throw Exception('ØªØ¹Ø°Ø± Ø¥Ù†Ø´Ø§Ø¡ Ø·Ù„Ø¨ Ø§Ù„Ù…Ù†Ø¯ÙˆØ¨');
+          throw Exception('تعذر إنشاء طلب المندوب');
         }
       }
 
@@ -314,15 +314,15 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
       setState(() => _submitting = false);
       messenger.showSnackBar(
         const SnackBar(
-            content: Text('ØªÙ… Ø¥Ø±Ø³Ø§Ù„ Ø·Ù„Ø¨ Ø§Ù„Ù…Ù†Ø¯ÙˆØ¨. Ø§Ù†ØªØ¸Ø± Ù…ÙˆØ§ÙÙ‚Ø© Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©.')),
+            content: Text('تم إرسال طلب المندوب. انتظر موافقة الإدارة.')),
       );
       Navigator.pop(context, true);
     } on FirebaseFunctionsException catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
       final message = e.code == 'invalid-argument'
-          ? 'Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙƒØªÙ…Ù„Ø©: ${e.message ?? e.code}'
-          : 'ØªØ¹Ø°Ø± Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø·Ù„Ø¨ (Cloud Function): ${e.message ?? e.code}';
+          ? 'بيانات الطلب غير مكتملة: ${e.message ?? e.code}'
+          : 'تعذر إرسال الطلب (Cloud Function): ${e.message ?? e.code}';
       messenger.showSnackBar(
         SnackBar(content: Text(message)),
       );
@@ -330,7 +330,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
       if (!mounted) return;
       setState(() => _submitting = false);
       messenger.showSnackBar(
-        SnackBar(content: Text('ØªØ¹Ø°Ø± Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø·Ù„Ø¨: $e')),
+        SnackBar(content: Text('تعذر إرسال الطلب: $e')),
       );
     }
   }
@@ -351,43 +351,43 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
               children: [
                 TextFormField(
                   controller: _nameController,
-                  decoration: const InputDecoration(labelText: 'Ø§Ø³Ù… Ø§Ù„Ù…Ù†Ø¯ÙˆØ¨'),
+                  decoration: const InputDecoration(labelText: 'اسم المندوب'),
                   validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø¥Ø¯Ø®Ø§Ù„ Ø§Ù„Ø§Ø³Ù…'
+                      ? 'الرجاء إدخال الاسم'
                       : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'Ø±Ù‚Ù… Ø§Ù„Ø¬ÙˆØ§Ù„'),
+                  decoration: const InputDecoration(labelText: 'رقم الجوال'),
                   validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø¥Ø¯Ø®Ø§Ù„ Ø±Ù‚Ù… Ø§Ù„Ø¬ÙˆØ§Ù„'
+                      ? 'الرجاء إدخال رقم الجوال'
                       : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _vehicleTypeController,
-                  decoration: const InputDecoration(labelText: 'Ù†ÙˆØ¹ Ø§Ù„Ù…Ø±ÙƒØ¨Ø©'),
+                  decoration: const InputDecoration(labelText: 'نوع المركبة'),
                   validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø¥Ø¯Ø®Ø§Ù„ Ù†ÙˆØ¹ Ø§Ù„Ù…Ø±ÙƒØ¨Ø©'
+                      ? 'الرجاء إدخال نوع المركبة'
                       : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _vehiclePlateController,
-                  decoration: const InputDecoration(labelText: 'Ø±Ù‚Ù… Ø§Ù„Ù„ÙˆØ­Ø©'),
+                  decoration: const InputDecoration(labelText: 'رقم اللوحة'),
                   validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø¥Ø¯Ø®Ø§Ù„ Ø±Ù‚Ù… Ø§Ù„Ù„ÙˆØ­Ø©'
+                      ? 'الرجاء إدخال رقم اللوحة'
                       : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _nationalIdController,
                   decoration:
-                      const InputDecoration(labelText: 'Ø±Ù‚Ù… Ø§Ù„Ù‡ÙˆÙŠØ©/Ø§Ù„Ø±Ø®ØµØ©'),
+                      const InputDecoration(labelText: 'رقم الهوية/الرخصة'),
                   validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø¥Ø¯Ø®Ø§Ù„ Ø±Ù‚Ù… Ø§Ù„Ù‡ÙˆÙŠØ©/Ø§Ù„Ø±Ø®ØµØ©'
+                      ? 'الرجاء إدخال رقم الهوية/الرخصة'
                       : null,
                 ),
                 const SizedBox(height: 12),
@@ -395,12 +395,12 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                   controller: _emailController,
                   readOnly: !_requiresAccountCreation,
                   decoration:
-                      const InputDecoration(labelText: 'Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ'),
+                      const InputDecoration(labelText: 'البريد الإلكتروني'),
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) {
-                      return 'Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø¥Ø¯Ø®Ø§Ù„ Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ';
+                      return 'الرجاء إدخال البريد الإلكتروني';
                     }
-                    if (!v.contains('@')) return 'Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ ØºÙŠØ± ØµØ§Ù„Ø­';
+                    if (!v.contains('@')) return 'البريد الإلكتروني غير صالح';
                     return null;
                   },
                 ),
@@ -409,10 +409,10 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
-                    decoration: const InputDecoration(labelText: 'ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±'),
+                    decoration: const InputDecoration(labelText: 'كلمة المرور'),
                     validator: (v) {
                       if (v == null || v.length < 6) {
-                        return 'Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¯Ù†Ù‰ Ù„Ø·ÙˆÙ„ ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± 6 Ø£Ø­Ø±Ù';
+                        return 'الحد الأدنى لطول كلمة المرور 6 أحرف';
                       }
                       return null;
                     },
@@ -467,7 +467,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                 ),
                 const SizedBox(height: 12),
                 _idImage == null
-                    ? const Text('Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ ØµÙˆØ±Ø© Ø§Ù„Ù‡ÙˆÙŠØ©/Ø§Ù„Ø±Ø®ØµØ© Ø¨Ø¹Ø¯')
+                    ? const Text('لم يتم رفع صورة الهوية/الرخصة بعد')
                     : ClipRRect(
                         borderRadius: BorderRadius.circular(10),
                         child: Image.file(_idImage!,
@@ -477,7 +477,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                 ElevatedButton.icon(
                   onPressed: _pickIdImage,
                   icon: const Icon(Icons.badge),
-                  label: const Text('Ø±ÙØ¹ ØµÙˆØ±Ø© Ø§Ù„Ù‡ÙˆÙŠØ©/Ø§Ù„Ø±Ø®ØµØ©'),
+                  label: const Text('رفع صورة الهوية/الرخصة'),
                 ),
                 const SizedBox(height: 20),
                 ElevatedButton(
@@ -488,7 +488,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø·Ù„Ø¨'),
+                      : const Text('إرسال الطلب'),
                 ),
               ],
             ),

@@ -81,6 +81,7 @@ class CourierCurrentOrdersTab extends StatelessWidget {
                         orderData: data,
                         driverId: driverId,
                         compact: true,
+                        showPhone: true,
                       ),
                       const SizedBox(height: 6),
                       Container(

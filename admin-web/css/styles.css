@@ -953,6 +953,7 @@ textarea { resize: vertical; min-height: 88px; }
 
 .modern-table thead th.sortable-th {
   cursor: pointer;
+  -webkit-user-select: none;
   user-select: none;
 }
 .modern-table thead th.sortable-th:hover { background: var(--primary-soft); color: var(--primary); }
@@ -1698,6 +1699,7 @@ textarea { resize: vertical; min-height: 88px; }
   color: var(--primary-dark);
   font-weight: 600;
   font-size: 12px;
+  box-shadow: var(--shadow-sm);
 }
 
 .map-details-card {
@@ -1705,6 +1707,7 @@ textarea { resize: vertical; min-height: 88px; }
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--surface-alt);
+  box-shadow: var(--shadow-sm);
 }
 
 .map-details-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
@@ -1739,6 +1742,16 @@ textarea { resize: vertical; min-height: 88px; }
 .map-pin--driver span { transform: rotate(-22deg); }
 .map-pin--driver.map-pin--online  { background: linear-gradient(145deg,#16a34a,#15803d); }
 .map-pin--driver.map-pin--offline { background: linear-gradient(145deg,#94a3b8,#64748b); }
+.map-pin--driver.map-pin--current {
+  background: linear-gradient(145deg,#2563eb,#0f4cbd);
+  transform: rotate(22deg) scale(1.08);
+  animation: mapPinPulse 1.35s ease-in-out infinite;
+  box-shadow: 0 0 0 5px rgba(37,99,235,0.18), 0 4px 12px rgba(0,0,0,0.28);
+}
+
+.map-pin--driver.map-pin--current span {
+  transform: rotate(-22deg) scale(1.04);
+}
 
 .map-pin--client { border-radius: 999px; }
 .map-pin--client.map-pin--active { background: linear-gradient(145deg,#38bdf8,#2563eb); }
@@ -1750,6 +1763,25 @@ textarea { resize: vertical; min-height: 88px; }
 .map-pin--order { border-radius: 999px; animation: mapPinPulse 1.6s ease-in-out infinite; }
 .map-pin--order.map-pin--active   { background: linear-gradient(145deg,#ef4444,#991b1b); }
 .map-pin--order.map-pin--selected { background: linear-gradient(145deg,#2563eb,#1d4ed8); animation-duration: 1.2s; }
+
+.order-detail-card--driver-current {
+  border-color: rgba(37,99,235,0.32);
+  background: linear-gradient(180deg, rgba(239,246,255,0.95), rgba(255,255,255,0.98));
+  box-shadow: 0 10px 24px rgba(37,99,235,0.08);
+}
+
+.order-detail-card--driver-current strong::after {
+  content: 'الحالي';
+  display: inline-flex;
+  margin-right: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(37,99,235,0.12);
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: middle;
+}
 
 @keyframes mapPinPulse {
   0%   { box-shadow: 0 0 0 0 rgba(239,68,68,0.35), 0 4px 12px rgba(0,0,0,0.25); }
@@ -2316,6 +2348,35 @@ body[data-active-portal="pending"]      { --active-portal-accent:#ca8a04; --acti
   .card { padding: 14px; }
   .portal-header { padding: 14px; }
 
+  .admin-search-inline,
+  .search-result-item,
+  .entity-hero,
+  .order-detail-head {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .order-actions-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .entity-hero,
+  .order-detail-head {
+    gap: 10px;
+  }
+
+  .entity-hero-side,
+  .order-detail-head .btn,
+  .order-actions-row .btn,
+  .order-actions-row select {
+    width: 100%;
+  }
+
+  .order-detail-card { min-width: 0; }
+  .order-detail-grid { grid-template-columns: 1fr; }
+  .map-selection-banner { line-height: 1.8; }
+
   .modern-table { min-width: 0; }
   .modern-table thead { display: none; }
 
@@ -2365,6 +2426,17 @@ body[data-active-portal="pending"]      { --active-portal-accent:#ca8a04; --acti
 
   .support-filters input, .support-filters select { font-size: 14px; min-height: 40px; }
   .support-bubble { max-width: 92%; }
+
+  .map-legend-bar,
+  .map-details,
+  .map-insight-card,
+  .map-selection-banner {
+    font-size: 12px;
+  }
+
+  .map-details-card {
+    padding: 12px;
+  }
 
   .map-route-node { width: 100%; justify-content: center; }
   .map-route-arrow { width: 100%; text-align: center; }

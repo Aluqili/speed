@@ -16,6 +16,15 @@ class CourierOrderHistoryScreen extends StatelessWidget {
     return '${dt.day}/${dt.month}/${dt.year} - ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
+  String _driverFeeText(Map<String, dynamic> data) {
+    final fee = data['deliveryFeeForDriver'] ??
+        data['driverShare'] ??
+        data['courierFee'] ??
+        data['deliveryFee'] ??
+        0;
+    return '$fee ج.س';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -38,10 +47,22 @@ class CourierOrderHistoryScreen extends StatelessWidget {
               return status == 'delivered' || status == 'تم التوصيل';
             }).toList();
 
+            orders.sort((a, b) {
+              final aData = a.data() as Map<String, dynamic>;
+              final bData = b.data() as Map<String, dynamic>;
+              final aTime = aData['deliveredAt'] ?? aData['updatedAt'];
+              final bTime = bData['deliveredAt'] ?? bData['updatedAt'];
+              if (aTime is Timestamp && bTime is Timestamp) {
+                return bTime.compareTo(aTime);
+              }
+              return 0;
+            });
+
             if (orders.isEmpty) {
               return const CourierEmptyState(
                 title: 'لا يوجد سجل مكتمل بعد',
-                message: 'ستظهر هنا الطلبات التي أنهيتها بنجاح مع وقت التسليم.',
+                message:
+                    'ستظهر هنا الطلبات التي أنهيتها بنجاح مع وقت التسليم.',
                 icon: Icons.inventory_2_outlined,
               );
             }
@@ -51,7 +72,7 @@ class CourierOrderHistoryScreen extends StatelessWidget {
               children: [
                 CourierHeroCard(
                   title: '${orders.length} طلب مكتمل',
-                  subtitle: 'راجع طلباتك السابقة ووقت الإنجاز لكل رحلة.',
+                  subtitle: 'راجع طلباتك السابقة ورسوم المندوب لكل رحلة.',
                   icon: Icons.history_rounded,
                 ),
                 const SizedBox(height: 16),
@@ -64,6 +85,10 @@ class CourierOrderHistoryScreen extends StatelessWidget {
                     orderId: data['orderId'],
                     docId: doc.id,
                   );
+                  final items = (data['items'] is List)
+                      ? data['items'] as List<dynamic>
+                      : const <dynamic>[];
+
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: CourierSectionCard(
@@ -105,100 +130,42 @@ class CourierOrderHistoryScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 12),
                           _HistoryRow(
-                            label: 'المطعم',
-                            value: (data['restaurantName'] ?? 'غير معروف')
-                                .toString(),
-                          ),
-                          const SizedBox(height: 8),
-                          _HistoryRow(
-                            label: 'العميل',
-                            value:
-                                (data['clientName'] ?? 'غير متوفر').toString(),
+                            label: 'رسوم المندوب',
+                            value: _driverFeeText(data),
                           ),
                           const SizedBox(height: 8),
                           _HistoryRow(
                             label: 'وقت التسليم',
-                            value: _formatTimestamp(data['deliveredAt']),
+                            value: _formatTimestamp(
+                              data['deliveredAt'] ?? data['updatedAt'],
+                            ),
                           ),
-                          const SizedBox(height: 8),
-                          _HistoryRow(
-                            label: 'الإجمالي',
-                            value: '${data['total'] ?? 0} ج.س',
-                          ),
-                          const SizedBox(height: 14),
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              showModalBottomSheet(
-                                context: context,
-                                showDragHandle: true,
-                                backgroundColor: Colors.transparent,
-                                builder: (_) => Directionality(
-                                  textDirection: TextDirection.rtl,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: CourierSectionCard(
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const CourierSectionTitle(
-                                            title: 'تفاصيل الطلب',
-                                            subtitle:
-                                                'بيانات أساسية للطلب الذي تم تسليمه.',
-                                          ),
-                                          const SizedBox(height: 16),
-                                          _HistoryRow(
-                                            label: 'العميل',
-                                            value: (data['clientName'] ??
-                                                    'غير متوفر')
-                                                .toString(),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          _HistoryRow(
-                                            label: 'الهاتف',
-                                            value: (data['clientPhone'] ??
-                                                    'غير متاح')
-                                                .toString(),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          _HistoryRow(
-                                            label: 'رسوم التوصيل',
-                                            value:
-                                                '${data['deliveryFee'] ?? 0} ج.س',
-                                          ),
-                                          const SizedBox(height: 12),
-                                          const Text(
-                                            'الأصناف',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          ...((data['items'] ?? [])
-                                                  as List<dynamic>)
-                                              .map(
-                                            (item) => Padding(
-                                              padding:
-                                                  const EdgeInsets.only(bottom: 6),
-                                              child: Text(
-                                                '- ${item['name']} × ${item['quantity']}',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
+                          if (items.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            const Text(
+                              'الأصناف',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 8),
+                            ...items.map((item) {
+                              final itemData = item is Map<String, dynamic>
+                                  ? item
+                                  : <String, dynamic>{};
+                              final name =
+                                  (itemData['name'] ?? 'صنف').toString();
+                              final quantity =
+                                  (itemData['quantity'] ?? 1).toString();
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Text(
+                                  '- $name x $quantity',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               );
-                            },
-                            icon: const Icon(Icons.visibility_outlined),
-                            label: const Text('عرض التفاصيل'),
-                          ),
+                            }),
+                          ],
                         ],
                       ),
                     ),
@@ -227,7 +194,7 @@ class _HistoryRow extends StatelessWidget {
     return Row(
       children: [
         SizedBox(
-          width: 92,
+          width: 110,
           child: Text(
             label,
             style: const TextStyle(

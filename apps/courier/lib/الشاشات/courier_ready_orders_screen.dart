@@ -110,6 +110,7 @@ class CourierReadyOrdersScreen extends StatelessWidget {
                             orderData: data,
                             driverId: driverId,
                             compact: true,
+                            showPhone: true,
                           ),
                           const SizedBox(height: 10),
                           Text(

@@ -138,6 +138,7 @@ class _ChatScreenState extends State<ChatScreen> {
           : 'client',
       'senderName': widget.currentUserName,
       'receiverId': widget.otherUserId,
+      'receiverType': _isSupportChat ? 'support' : 'courier',
       'participants': [widget.currentUserId, widget.otherUserId],
       'participantsKey': ([widget.currentUserId, widget.otherUserId]..sort()),
       'timestamp': FieldValue.serverTimestamp(),
@@ -561,4 +562,3 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 }
-

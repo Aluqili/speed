@@ -2458,6 +2458,7 @@ function computeOrderFinancialBreakdown(orderData = {}) {
     restaurantShare,
     driverShare,
     platformShare,
+    platformGrossDelivery: clientDeliveryFee,
     walletUsed: toAdminMoneyValue(orderData.walletUsedAmount ?? orderData.walletRequestedAmount),
     paymentMethod: String(orderData.paymentMethod || '-'),
   };
@@ -2473,7 +2474,8 @@ function renderOrderFinancialBreakdown(financial) {
     ['الإجمالي النهائي', financial.totalWithDelivery],
     ['مستحق المطعم', financial.restaurantShare],
     ['مستحق المندوب', financial.driverShare],
-    ['حساب المنصة', financial.platformShare],
+    ['إجمالي التوصيل', financial.platformGrossDelivery],
+    ['صافي المنصة', financial.platformShare],
     ['المحفظة المستخدمة', financial.walletUsed],
   ];
 
@@ -2504,55 +2506,6 @@ function buildWalletSummarySection(title, walletData = {}) {
     { label: 'المحول سابقًا', value: formatAdminMoney(walletData.walletTransferredTotal) },
     { label: 'طلبات مسلمة محسوبة', value: Number(walletData.walletDeliveredOrdersCount || 0).toLocaleString('ar-EG') },
   ]), { eyebrow: 'المحفظة' });
-}
-
-async function refreshActivePortal(tabId) {
-  const activeId = tabId || document.querySelector('.tab-panel.active')?.id || 'dashboard';
-  const refreshButton = document.querySelector(`[data-portal-refresh="${activeId}"]`);
-  const statusNode = document.querySelector(`[data-portal-refresh-status="${activeId}"]`);
-
-  if (refreshButton) refreshButton.disabled = true;
-  if (statusNode) statusNode.textContent = 'جارٍ المزامنة...';
-
-  try {
-    if (typeof mountAll === 'function') {
-      clearSubscriptions();
-      await mountAll();
-    } else {
-      applyAdminGlobalFilter();
-      if (activeId === 'orders') renderOperationsOrders();
-      if (activeId === 'management') renderCourierActivityReport();
-    }
-
-    activateTab(activeId);
-    if (statusNode) statusNode.textContent = `آخر مزامنة: ${formatDateTimeLabel(Date.now())}`;
-  } catch (err) {
-    console.error('portal refresh failed', err);
-    if (statusNode) statusNode.textContent = 'تعذر تحديث هذه البوابة الآن.';
-  } finally {
-    if (refreshButton) refreshButton.disabled = false;
-  }
-}
-
-function injectPortalRefreshControls() {
-  document.querySelectorAll('.portal-panel').forEach((panel) => {
-    const panelId = String(panel.id || '').trim();
-    if (!panelId) return;
-    const header = panel.querySelector('.portal-header');
-    if (!header || header.querySelector('[data-portal-refresh]')) return;
-
-    const actions = document.createElement('div');
-    actions.className = 'portal-header-actions';
-    actions.innerHTML = `
-      <button class="btn ghost" type="button" data-portal-refresh="${escapeHtml(panelId)}">تحديث هذه البوابة</button>
-      <span class="portal-refresh-status" data-portal-refresh-status="${escapeHtml(panelId)}">مزامنة مباشرة</span>
-    `;
-    header.appendChild(actions);
-
-    actions.querySelector('[data-portal-refresh]')?.addEventListener('click', async () => {
-      await refreshActivePortal(panelId);
-    });
-  });
 }
 
 function normalizeAdminPermissions(rawPermissions, { fallbackToAll = true } = {}) {
@@ -2818,8 +2771,6 @@ ordersSegmentButtons.forEach((button) => {
     renderOperationsOrders();
   });
 });
-
-injectPortalRefreshControls();
 
 function setLoginStatus(message = '', tone = 'muted') {
   if (!loginStatus) return;
@@ -4773,8 +4724,18 @@ function renderOperationsOrderDetails(orderId) {
     return courier.isApproved === true || String(courier.approvalStatus || '').trim().toLowerCase() === 'approved';
   });
   const offerDriverIds = Array.isArray(data.offerDriverIds) ? data.offerDriverIds : [];
-  const courierRadiusKm = Number(data.courierOfferRadiusKm || data.maxDriverDistanceKm || 20);
   const liveDriverId = String(data.assignedDriverId || data.offeredDriverId || '').trim();
+  const liveDriverName = String(data.assignedDriverName || data.offeredDriverName || '').trim();
+  const isAwaitingOfferDecision = String(data.orderStatus || data.status || '').trim() === 'courier_offer_pending';
+  const offerAudienceCount = Number.isFinite(Number(data.offerEligibleDriversCount))
+    ? Number(data.offerEligibleDriversCount)
+    : (offerDriverIds.length || (data.offeredDriverId ? 1 : 0));
+  const courierRadiusKm = Number(data.courierOfferRadiusKm || data.maxDriverDistanceKm || 20);
+  const offerSummaryMarkup = isAwaitingOfferDecision
+    ? `<div><b>المعروض عليهم الآن:</b> ${offerAudienceCount}</div><div class="muted">العرض ما زال بانتظار قبول أحد المناديب.</div>`
+    : liveDriverId
+      ? `<div><b>المندوب الذي قبل الطلب:</b> ${resolveDriverDisplay(liveDriverId, liveDriverName || data.assignedDriverName || '')}</div><div class="muted">النطاق السابق: ${escapeHtml(`${courierRadiusKm || 20} كم`)}</div>`
+      : `<div><b>النطاق السابق:</b> ${escapeHtml(`${courierRadiusKm || 20} كم`)}</div><div class="muted">لا يوجد عرض نشط حاليًا.</div>`;
 
   operationsOrderDetails.classList.remove('muted');
   operationsOrderDetails.innerHTML = `
@@ -4795,13 +4756,13 @@ function renderOperationsOrderDetails(orderId) {
       <div class="order-detail-grid">
         <div class="order-detail-card"><strong>العميل</strong>${resolveClientDisplay(data.clientId, data.clientName)}<br />${escapeHtml(data.clientPhone || '-')}</div>
         <div class="order-detail-card"><strong>المتجر</strong>${resolveRestaurantDisplay(data.restaurantId, data.restaurantName)}</div>
-        <div class="order-detail-card" id="orderDriverCard-${escapeHtml(orderId)}">
+        <div class="order-detail-card order-detail-card--driver${liveDriverId ? ' order-detail-card--driver-current' : ''}" id="orderDriverCard-${escapeHtml(orderId)}">
           <strong>المندوب الحالي</strong>
-          <div id="orderDriverName-${escapeHtml(orderId)}">${resolveDriverDisplay(data.assignedDriverId || data.offeredDriverId, data.assignedDriverName || '')}</div>
+          <div id="orderDriverName-${escapeHtml(orderId)}">${resolveDriverDisplay(data.assignedDriverId || data.offeredDriverId, data.assignedDriverName || data.offeredDriverName || '')}</div>
           <div id="orderDriverLocation-${escapeHtml(orderId)}" class="muted">${liveDriverId ? 'جاري تحميل الموقع المباشر...' : 'لا يوجد مندوب معين حالياً'}</div>
           <div id="orderDriverUpdated-${escapeHtml(orderId)}" class="muted"></div>
         </div>
-        <div class="order-detail-card"><strong>نطاق العرض</strong>${escapeHtml(`${courierRadiusKm || 20} كم`)}<br />${escapeHtml(`المعروض عليهم الآن: ${offerDriverIds.length || (data.offeredDriverId ? 1 : 0)}`)}</div>
+        <div class="order-detail-card"><strong>نطاق العرض</strong>${offerSummaryMarkup}</div>
         <div class="order-detail-card"><strong>العنوان</strong>${escapeHtml(data.deliveryAddress || data.address || '-')}</div>
       </div>
       ${renderOrderFinancialBreakdown(financial)}
@@ -4877,10 +4838,10 @@ function renderOperationsOrderDetails(orderId) {
         || extractDriverPoint({ lat: driver.latitude, lng: driver.longitude });
       const lastUpdate = driver.lastLocationUpdate || driver.lastUpdated || driver.updatedAt || driver.createdAt;
 
-      nameEl.textContent = resolveDriverDisplay(liveDriverId, driver.name || data.assignedDriverName || '');
+      nameEl.innerHTML = resolveDriverDisplay(liveDriverId, driver.name || driver.displayName || data.assignedDriverName || '');
       locationEl.textContent = point
         ? `الموقع المباشر: ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`
-        : 'الموقع المباشر غير متاح حالياً';
+        : 'جاري تحميل الموقع المباشر...';
       updatedEl.textContent = lastUpdate ? `آخر تحديث: ${formatDateTimeLabel(lastUpdate)}` : '';
     });
   }
@@ -6270,7 +6231,7 @@ function normalizeAdminStateId(raw) {
     .toLowerCase();
 
   const compact = normalized
-    .replace(/[^ -\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/[^-\p{L}\p{N}\s]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -6747,6 +6708,9 @@ function mountSupport() {
         senderType: 'admin',
         senderName: 'الدعم الفني',
         receiverId: userId,
+        receiverType: convo.sourceApp === 'courier'
+          ? 'courier'
+          : (convo.sourceApp === 'store' ? 'store' : 'client'),
         participants: [userId, 'support', auth.currentUser?.uid || 'support'],
         participantsKey: [userId, 'support'].sort(),
         timestamp: serverTimestamp(),
@@ -7927,8 +7891,16 @@ function updateMapSelectionBanner(text) {
 
 function formatMapSelectionLabel(selection) {
   if (!selection) return 'لا يوجد عنصر مثبت حاليًا.';
+  const typeLabelMap = {
+    order: 'طلب',
+    driver: 'مندوب',
+    client: 'عميل',
+    restaurant: 'مطعم',
+  };
+  const typeLabel = typeLabelMap[selection.type] || 'عنصر';
+  const subtitle = String(selection.subtitle || '').trim();
   const pinnedLabel = mapUiState.pinDetails ? ' | البطاقة مثبتة' : '';
-  return `${selection.label || 'عنصر محدد'}${pinnedLabel}`;
+  return `${typeLabel} محدد: ${selection.label || 'عنصر محدد'}${subtitle ? ` | ${subtitle}` : ''}${pinnedLabel}`;
 }
 
 function pushMapEvent(entry) {
@@ -8607,7 +8579,12 @@ function renderEntityDetails(type, id, data, context = null) {
       <div><b>طلبات نشطة:</b> ${orders.length}</div>
       <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(formatUnifiedOrderCode(o.data.orderNumber, o.data.orderId, o.id))} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
     `, {
-      selection: { type: 'driver', id, label: `المندوب ${name}` }
+      selection: {
+        type: 'driver',
+        id,
+        label: `المندوب ${name}`,
+        subtitle: `${available ? 'متاح' : 'غير متاح'} · ${orders.length} طلب نشط`,
+      }
     });
     return;
   }
@@ -8622,7 +8599,12 @@ function renderEntityDetails(type, id, data, context = null) {
       <div><b>طلبات نشطة:</b> ${orders.length}</div>
       <ul>${orders.slice(0, 5).map((o) => `<li>${escapeHtml(formatUnifiedOrderCode(o.data.orderNumber, o.data.orderId, o.id))} - ${escapeHtml(o.data.status || o.data.orderStatus || '-')}</li>`).join('') || '<li>لا يوجد</li>'}</ul>
     `, {
-      selection: { type: 'client', id, label: `العميل ${name}` }
+        selection: {
+          type: 'client',
+          id,
+          label: `العميل ${name}`,
+          subtitle: `${orders.length} طلب نشط`,
+        }
     });
     return;
   }
@@ -8649,6 +8631,7 @@ function renderEntityDetails(type, id, data, context = null) {
       type: 'restaurant',
       id,
       label: `المطعم ${name}`,
+      subtitle: `${restaurantGeo ? 'موقع مباشر متاح' : 'موقع غير متاح'} · ${data.temporarilyClosed ? 'مغلق مؤقتًا' : 'مفتوح'}`,
       context,
       fallbackData: data
     }
@@ -8671,6 +8654,13 @@ function buildMarkerIcon({ type, variant = 'default' }) {
     popupAnchor: [0, -16],
     tooltipAnchor: [12, -12],
   });
+}
+
+function getSelectedOrderDriverId() {
+  if (!selectedOrderOnMapId) return '';
+  const orderData = mapState.orders.get(selectedOrderOnMapId)?.data;
+  if (!orderData) return '';
+  return String(orderData.assignedDriverId || orderData.offeredDriverId || '').trim();
 }
 
 function setOrUpdateMarker(stateMap, id, latLng, markerOptions, label, onClick) {
@@ -8717,6 +8707,7 @@ function refreshDriverMarkers() {
     return;
   }
   const validIds = new Set();
+  const highlightedDriverId = getSelectedOrderDriverId();
   mapState.drivers.forEach(({ data }, id) => {
     const geo = extractGeo(data, ['location', 'currentLocation', 'lastLocation', 'liveLocation', 'address.location']);
     if (!geo) return;
@@ -8724,11 +8715,12 @@ function refreshDriverMarkers() {
     const available = data.isAvailable === true || data.available === true || String(data.availabilityStatus || '').toLowerCase() === 'available';
     const lastUpdate = data.lastLocationUpdate || data.lastUpdated || data.updatedAt || data.createdAt;
     const lastUpdateLabel = lastUpdate ? formatDateTimeLabel(lastUpdate) : 'غير متاح';
+    const isCurrentDriver = highlightedDriverId && highlightedDriverId === id;
     setOrUpdateMarker(
       markerState.drivers,
       id,
       [geo.lat, geo.lng],
-      { type: 'driver', variant: available ? 'online' : 'offline' },
+      { type: 'driver', variant: isCurrentDriver ? 'current' : (available ? 'online' : 'offline') },
       `${available ? 'مندوب متاح' : 'مندوب غير متاح'}: ${data.name || id} | ${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)} | آخر تحديث: ${lastUpdateLabel}`,
       () => renderEntityDetails('driver', id, data)
     );

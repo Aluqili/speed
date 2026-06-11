@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
+export 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+
 AppBar buildCourierAppBar(
   String title, {
   List<Widget>? actions,

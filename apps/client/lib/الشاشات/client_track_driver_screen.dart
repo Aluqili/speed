@@ -21,7 +21,8 @@ class ClientTrackDriverScreen extends StatefulWidget {
       _ClientTrackDriverScreenState();
 }
 
-class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
+class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen>
+    with SingleTickerProviderStateMixin {
   static const Color _primary = ClientColors.primary;
 
   GoogleMapController? _mapController;
@@ -33,6 +34,10 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
   int? _routeDurationMinutes;
   LatLng? _lastRouteFetchOrigin;
   bool _fetchingRoute = false;
+  late final AnimationController _driverMoveCtrl;
+  LatLng? _displayedDriverLoc;
+  LatLng? _driverMoveFrom;
+  LatLng? _driverMoveTo;
   BitmapDescriptor? _driverMarkerIcon;
   BitmapDescriptor? _clientMarkerIcon;
   BitmapDescriptor? _restaurantMarkerIcon;
@@ -42,6 +47,30 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
   @override
   void initState() {
     super.initState();
+    _driverMoveCtrl = AnimationController(vsync: this)
+      ..addListener(() {
+        if (!mounted || _driverMoveFrom == null || _driverMoveTo == null) {
+          return;
+        }
+        final next = _interpolateLatLng(
+          _driverMoveFrom!,
+          _driverMoveTo!,
+          _driverMoveCtrl.value,
+        );
+        if (_displayedDriverLoc == next) return;
+        setState(() {
+          _displayedDriverLoc = next;
+        });
+      })
+      ..addStatusListener((status) {
+        if (!mounted) return;
+        if (status == AnimationStatus.completed ||
+            status == AnimationStatus.dismissed) {
+          setState(() {
+            _displayedDriverLoc = _driverMoveTo ?? _displayedDriverLoc;
+          });
+        }
+      });
     _loadMarkerIcons();
   }
 
@@ -120,6 +149,38 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
         rawKey: 'driverLocation', latKey: 'driverLat', lngKey: 'driverLng');
   }
 
+  LatLng _interpolateLatLng(LatLng from, LatLng to, double t) {
+    final clampedT = t.clamp(0.0, 1.0);
+    return LatLng(
+      from.latitude + (to.latitude - from.latitude) * clampedT,
+      from.longitude + (to.longitude - from.longitude) * clampedT,
+    );
+  }
+
+  void _animateDriverMarker(LatLng target) {
+    if (_driverMoveTo != null && _distanceM(_driverMoveTo!, target) < 1) {
+      return;
+    }
+
+    final current = _displayedDriverLoc ?? target;
+    if (_distanceM(current, target) < 3) {
+      _displayedDriverLoc = target;
+      return;
+    }
+
+    final activeStart = _driverMoveCtrl.isAnimating && _driverMoveFrom != null
+        ? _interpolateLatLng(
+            _driverMoveFrom!, _driverMoveTo ?? target, _driverMoveCtrl.value)
+        : current;
+
+    _driverMoveFrom = activeStart;
+    _driverMoveTo = target;
+    final durationMs =
+        (350 + _distanceM(activeStart, target) * 6).round().clamp(450, 1800);
+    _driverMoveCtrl.duration = Duration(milliseconds: durationMs);
+    _driverMoveCtrl.forward(from: 0.0);
+  }
+
   double _distanceM(LatLng a, LatLng b) {
     const R = 6371000.0;
     final dLat = (b.latitude - a.latitude) * pi / 180;
@@ -135,6 +196,19 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
   String _formatDistance(double meters) {
     if (meters < 1000) return '${meters.toInt()} م';
     return '${(meters / 1000).toStringAsFixed(1)} كم';
+  }
+
+  bool _isHeadingToRestaurant(String status) {
+    return status == 'courier_assigned' ||
+        status == 'pickup_ready' ||
+        status == 'courier_offer_pending';
+  }
+
+  String _activeRouteLabel(String status, bool hasRestaurant) {
+    if (_isHeadingToRestaurant(status) && hasRestaurant) {
+      return 'المندوب في الطريق إلى المطعم';
+    }
+    return 'المندوب في الطريق إليك';
   }
 
   // ─── Google Directions API ─────────────────────────────────────────────────
@@ -212,6 +286,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
 
   @override
   void dispose() {
+    _driverMoveCtrl.dispose();
     _mapController?.dispose();
     super.dispose();
   }
@@ -286,6 +361,17 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
 
                 // proximity notification
                 final dist = _distanceM(driverLoc, clientLoc);
+                final restaurantLoc = _locationFromFields(order,
+                    rawKey: 'restaurantLocation',
+                    latKey: 'restaurantLat',
+                    lngKey: 'restaurantLng');
+                final headingToRestaurant =
+                    _isHeadingToRestaurant(status) && restaurantLoc != null;
+                final activeDestination =
+                    headingToRestaurant ? restaurantLoc : clientLoc;
+
+                _animateDriverMarker(driverLoc);
+                final liveDriverLoc = _displayedDriverLoc ?? driverLoc;
                 if (dist <= 200 && !_notifiedClient) {
                   _notifiedClient = true;
                   Future.microtask(() {
@@ -299,10 +385,14 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
                 }
 
                 // fetch route when driver moves
-                _fetchRoute(driverLoc, clientLoc);
+                _fetchRoute(driverLoc, activeDestination);
 
                 // fit camera
-                final mapPoints = [driverLoc, clientLoc];
+                final mapPoints = [
+                  driverLoc,
+                  if (restaurantLoc != null) restaurantLoc,
+                  clientLoc,
+                ];
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted) _fitBounds(mapPoints);
                 });
@@ -322,16 +412,12 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
                         '')
                     .toString()
                     .trim();
-                final restaurantLoc = _locationFromFields(order,
-                    rawKey: 'restaurantLocation',
-                    latKey: 'restaurantLat',
-                    lngKey: 'restaurantLng');
-
                 return _buildTrackingView(
                   order: order,
-                  driverLoc: driverLoc,
+                  driverLoc: liveDriverLoc,
                   clientLoc: clientLoc,
                   restaurantLoc: restaurantLoc,
+                  status: status,
                   driverName: driverName,
                   driverPhone: driverPhone,
                   clientId: clientId,
@@ -352,6 +438,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
     required LatLng driverLoc,
     required LatLng clientLoc,
     LatLng? restaurantLoc,
+    required String status,
     required String driverName,
     required String driverPhone,
     required String clientId,
@@ -385,13 +472,27 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
         ),
     };
 
+    final headingToRestaurant =
+        _isHeadingToRestaurant(status) && restaurantLoc != null;
     final polylines = <Polyline>{
       if (_routePoints.length >= 2)
         Polyline(
-          polylineId: const PolylineId('route'),
+          polylineId: const PolylineId('active_route'),
           points: _routePoints,
+          width: 7,
+          color: headingToRestaurant
+              ? const Color(0xFFFF8A00)
+              : const Color(0xFF147AD6),
+          jointType: JointType.round,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+        ),
+      if (headingToRestaurant)
+        Polyline(
+          polylineId: const PolylineId('restaurant_to_client_hint'),
+          points: [restaurantLoc, clientLoc],
           width: 5,
-          color: _primary,
+          color: const Color(0xFF147AD6).withValues(alpha: 0.72),
           jointType: JointType.round,
           startCap: Cap.roundCap,
           endCap: Cap.roundCap,
@@ -411,7 +512,11 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
           polylines: polylines,
           onMapCreated: (c) {
             _mapController = c;
-            _fitBounds([driverLoc, clientLoc]);
+            _fitBounds([
+              driverLoc,
+              if (restaurantLoc != null) restaurantLoc,
+              clientLoc,
+            ]);
           },
           myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
@@ -434,7 +539,11 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
           left: 16,
           child: _floatingIconBtn(
             icon: Icons.fit_screen_rounded,
-            onTap: () => _fitBounds([driverLoc, clientLoc]),
+            onTap: () => _fitBounds([
+              driverLoc,
+              if (restaurantLoc != null) restaurantLoc,
+              clientLoc,
+            ]),
           ),
         ),
 
@@ -454,7 +563,7 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
                 ],
               ),
               child: Text(
-                '${_formatDistance(displayDistanceM)} متبقي  •  ~$etaMins د',
+                '${_activeRouteLabel(status, restaurantLoc != null)} • ${_formatDistance(displayDistanceM)} متبقي • ~$etaMins د',
                 style:
                     const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
@@ -463,6 +572,15 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
         ),
 
         // ── Bottom driver panel ───────────────────────────────────────
+        Positioned(
+          right: 14,
+          bottom: 122,
+          child: _TrackingLegend(
+            showRestaurant: restaurantLoc != null,
+            headingToRestaurant: headingToRestaurant,
+          ),
+        ),
+
         Positioned(
           bottom: 0,
           left: 0,
@@ -547,6 +665,116 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen> {
           ),
         ),
       );
+}
+
+class _TrackingLegend extends StatelessWidget {
+  const _TrackingLegend({
+    required this.showRestaurant,
+    required this.headingToRestaurant,
+  });
+
+  final bool showRestaurant;
+  final bool headingToRestaurant;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _LegendDot(color: ClientColors.primary, label: 'المندوب'),
+            if (showRestaurant) ...[
+              const SizedBox(height: 5),
+              const _LegendDot(color: Color(0xFFE53935), label: 'المطعم'),
+            ],
+            const SizedBox(height: 5),
+            const _LegendDot(color: Color(0xFF12A150), label: 'موقعك'),
+            const SizedBox(height: 7),
+            _LegendLine(
+              color: headingToRestaurant
+                  ? const Color(0xFFFF8A00)
+                  : const Color(0xFF147AD6),
+              label: headingToRestaurant
+                  ? 'المسار الحالي إلى المطعم'
+                  : 'المسار الحالي إليك',
+            ),
+            if (headingToRestaurant) ...[
+              const SizedBox(height: 5),
+              const _LegendLine(
+                color: Color(0xFF147AD6),
+                label: 'بعدها من المطعم إليك',
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.location_on_rounded, size: 16, color: color),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
+}
+
+class _LegendLine extends StatelessWidget {
+  const _LegendLine({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 20,
+          height: 4,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
 }
 
 // ─── Driver Bottom Panel ───────────────────────────────────────────────────

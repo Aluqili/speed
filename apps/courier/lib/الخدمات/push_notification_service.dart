@@ -16,7 +16,7 @@ class PushNotificationService {
       GlobalKey<NavigatorState>();
 
   static const String _channelId = 'speedstar_alerts';
-  static const String _ordersChannelId = 'speedstar_orders_incoming_v1';
+  static const String _ordersChannelId = 'speedstar_orders_incoming_v2';
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications =
@@ -125,11 +125,10 @@ class PushNotificationService {
     final body =
         (message.notification?.body ?? message.data['body'] ?? '').toString();
     final type = (message.data['type'] ?? '').toString().toLowerCase();
-    final isPickupReadyNotice = type == 'courier_pickup_ready';
-    final isOrderAlert = type.contains('order') ||
-        type.contains('offer') ||
-        (!isPickupReadyNotice && type.contains('pickup')) ||
-        (!isPickupReadyNotice && type.contains('courier'));
+    final tone = (message.data['tone'] ?? '').toString().toLowerCase();
+    final isOrderAlert = tone == 'urgent' ||
+      type == 'courier_assigned' ||
+      type == 'courier_offer_pending';
     final androidChannelId = isOrderAlert ? _ordersChannelId : _channelId;
 
     final details = NotificationDetails(

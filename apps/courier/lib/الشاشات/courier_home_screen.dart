@@ -239,7 +239,7 @@ class _CourierHomeScreenState extends State<CourierHomeScreen> {
                     title: const Text('توصيل المسافات البعيدة'),
                     subtitle: Text(
                       isAvailable
-                          ? 'أظهرني للأدمن عند وجود طلبات بعيدة'
+                          ? 'استقبال طلبات خارج النطاق القريب'
                           : 'فعّل التوفر أولًا',
                     ),
                     value: acceptsLongDistance,
