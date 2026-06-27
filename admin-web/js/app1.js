@@ -2617,19 +2617,7 @@ function mountDashboard() {
 
     let restaurantShare = toMoney(orderData.restaurantShare ?? orderData.storeShare ?? subtotal);
   let driverShare = toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? orderData.deliveryFee ?? 0);
-    let platformShare = toMoney(orderData.platformShare);
-
-    if (!Number.isFinite(platformShare) || platformShare <= 0) {
-      platformShare = totalWithDelivery - restaurantShare - driverShare;
-    }
-
-    if (platformShare < 0) {
-      platformShare = 0;
-      const maxRestaurantShare = Math.max(0, totalWithDelivery - driverShare);
-      if (restaurantShare > maxRestaurantShare) {
-        restaurantShare = maxRestaurantShare;
-      }
-    }
+    let platformShare = Math.max(0, totalWithDelivery - restaurantShare - driverShare);
 
     return {
       subtotal,
@@ -2800,15 +2788,7 @@ function mountFinance() {
 
     let restaurantShare = toMoney(orderData.restaurantShare ?? orderData.storeShare ?? subtotal);
   let driverShare = toMoney(orderData.driverShare ?? orderData.deliveryFeeForDriver ?? orderData.deliveryFee ?? 0);
-    let platformShare = toMoney(orderData.platformShare);
-    if (platformShare <= 0) {
-      platformShare = totalWithDelivery - restaurantShare - driverShare;
-    }
-    if (platformShare < 0) {
-      platformShare = 0;
-      const maxRestaurantShare = Math.max(0, totalWithDelivery - driverShare);
-      if (restaurantShare > maxRestaurantShare) restaurantShare = maxRestaurantShare;
-    }
+    let platformShare = Math.max(0, totalWithDelivery - restaurantShare - driverShare);
 
     return {
       subtotal,

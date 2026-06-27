@@ -164,6 +164,8 @@ const notificationBody = document.getElementById('notificationBody');
 const notificationSendBtn = document.getElementById('notificationSendBtn');
 const notificationResult = document.getElementById('notificationResult');
 const pendingTable = document.getElementById('pendingTable');
+const pendingGeoStatsSummary = document.getElementById('pendingGeoStatsSummary');
+const pendingGeoStatsTables = document.getElementById('pendingGeoStatsTables');
 const pendingMenuTable = document.getElementById('pendingMenuTable');
 const storeDetailsPanel = document.getElementById('storeDetailsPanel');
 const courierDetailsPanel = document.getElementById('courierDetailsPanel');
@@ -1808,16 +1810,18 @@ const mapRouteFailures = new Set();
 
 let leafletReadyPromise = null;
 let leafletClusterReadyPromise = null;
+let spreadsheetXlsxReadyPromise = null;
+let spreadsheetZipReadyPromise = null;
 
 const CLOUDINARY_CLOUD_NAME = 'dvnzloec6';
 const CLOUDINARY_UPLOAD_PRESET = 'flutter_unsigned';
 
-async function uploadImageToCloudinary(file) {
+async function uploadImageToCloudinary(file, fileName = file?.name || 'upload.jpg') {
   if (!file) return null;
   try {
     const formData = new FormData();
     formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-    formData.append('file', file);
+    formData.append('file', file, fileName || 'upload.jpg');
 
     const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
       method: 'POST',
@@ -2051,6 +2055,242 @@ async function ensureLeafletMarkerCluster() {
   })();
 
   await leafletClusterReadyPromise;
+}
+
+function normalizeSpreadsheetToken(raw) {
+  return String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '')
+    .replace(/[^0-9a-z\u0600-\u06ff]+/g, '');
+}
+
+function normalizeSpreadsheetDocId(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/[\/\\]+/g, '-')
+    .replace(/[\s]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function spreadsheetValue(row, aliases) {
+  if (!row || typeof row !== 'object') return '';
+  const entries = Object.entries(row);
+  for (const alias of aliases) {
+    const normalizedAlias = normalizeSpreadsheetToken(alias);
+    const matched = entries.find(([key]) => normalizeSpreadsheetToken(key) === normalizedAlias);
+    if (matched) return matched[1];
+  }
+  return '';
+}
+
+function parseSpreadsheetNumber(raw) {
+  const normalized = String(raw || '').trim().replace(',', '.');
+  if (!normalized) return null;
+  const value = Number(normalized);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return value;
+}
+
+function parseSpreadsheetBoolean(raw, fallback = true) {
+  const normalized = String(raw ?? '').trim().toLowerCase().replace(/\s+/g, '');
+  if (!normalized) return fallback;
+  if (['1', 'true', 'yes', 'y', 'on', 'active', 'enabled', 'مفعل', 'متاح', 'نعم'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'n', 'off', 'inactive', 'disabled', 'غيرمفعل', 'غيرمتاح', 'لا'].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
+function parseSpreadsheetSizes(row) {
+  const basePrice = parseSpreadsheetNumber(spreadsheetValue(row, ['price', 'baseprice', 'السعر', 'سعر']));
+  const small = parseSpreadsheetNumber(spreadsheetValue(row, ['smallPrice', 'small', 'سعرصغير', 'صغير']));
+  const medium = parseSpreadsheetNumber(spreadsheetValue(row, ['mediumPrice', 'medium', 'سعروسط', 'وسط']));
+  const large = parseSpreadsheetNumber(spreadsheetValue(row, ['largePrice', 'large', 'سعركبير', 'كبير']));
+
+  const hasAnySize = small != null || medium != null || large != null;
+  let sizes = null;
+
+  if (hasAnySize) {
+    if (small == null || medium == null || large == null) {
+      return {
+        ok: false,
+        message: 'عند استخدام الأحجام يجب تعبئة السعر الصغير والوسط والكبير كلها بأرقام أكبر من صفر.',
+      };
+    }
+    sizes = { small, medium, large };
+  }
+
+  if (basePrice == null && !sizes) {
+    return {
+      ok: false,
+      message: 'أدخل السعر الأساسي أو أسعار الأحجام.',
+    };
+  }
+
+  return {
+    ok: true,
+    price: basePrice ?? sizes.medium,
+    sizes,
+  };
+}
+
+async function ensureSpreadsheetXlsx() {
+  if (window.XLSX) return;
+  if (spreadsheetXlsxReadyPromise) {
+    await spreadsheetXlsxReadyPromise;
+    return;
+  }
+
+  spreadsheetXlsxReadyPromise = (async () => {
+    const candidates = [
+      'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+      'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+    ];
+
+    for (const src of candidates) {
+      try {
+        await loadExternalScript(src);
+        if (window.XLSX) return;
+      } catch (_) {
+      }
+    }
+
+    throw new Error('تعذر تحميل مكتبة قراءة CSV/Excel.');
+  })();
+
+  await spreadsheetXlsxReadyPromise;
+}
+
+async function ensureSpreadsheetZip() {
+  if (window.JSZip) return;
+  if (spreadsheetZipReadyPromise) {
+    await spreadsheetZipReadyPromise;
+    return;
+  }
+
+  spreadsheetZipReadyPromise = (async () => {
+    const candidates = [
+      'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
+      'https://unpkg.com/jszip@3.10.1/dist/jszip.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
+    ];
+
+    for (const src of candidates) {
+      try {
+        await loadExternalScript(src);
+        if (window.JSZip) return;
+      } catch (_) {
+      }
+    }
+
+    throw new Error('تعذر تحميل مكتبة ملفات ZIP.');
+  })();
+
+  await spreadsheetZipReadyPromise;
+}
+
+async function readSpreadsheetRows(file) {
+  await ensureSpreadsheetXlsx();
+
+  const isCsv = /\.(csv|txt)$/i.test(file.name) || /csv|text/i.test(file.type || '');
+  const workbook = isCsv
+    ? window.XLSX.read(await file.text(), { type: 'string' })
+    : window.XLSX.read(await file.arrayBuffer(), { type: 'array' });
+
+  const sheetName = workbook?.SheetNames?.[0];
+  if (!sheetName) return [];
+
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet) return [];
+
+  return window.XLSX.utils.sheet_to_json(sheet, {
+    defval: '',
+    raw: false,
+    blankrows: false,
+  });
+}
+
+async function buildSpreadsheetZipState(zipFile) {
+  await ensureSpreadsheetZip();
+  const zip = await window.JSZip.loadAsync(await zipFile.arrayBuffer());
+  const entries = [];
+
+  zip.forEach((relativePath, entry) => {
+    if (!entry.dir) {
+      entries.push({ path: relativePath, entry });
+    }
+  });
+
+  return {
+    entries,
+    cache: new Map(),
+  };
+}
+
+function findSpreadsheetZipEntry(zipState, imageKey) {
+  if (!zipState || !String(imageKey || '').trim()) return null;
+
+  const normalizedKey = normalizeSpreadsheetToken(imageKey);
+  const baseKey = normalizedKey.replace(/\.[^.]+$/, '');
+
+  return zipState.entries.find(({ path }) => {
+    const normalizedPath = normalizeSpreadsheetToken(path);
+    const baseName = normalizeSpreadsheetToken(path.split('/').pop() || '');
+    const baseNameNoExt = baseName.replace(/\.[^.]+$/, '');
+
+    return (
+      normalizedPath === normalizedKey ||
+      normalizedPath.endsWith(`/${normalizedKey}`) ||
+      normalizedPath.endsWith(`/${baseKey}`) ||
+      baseName === normalizedKey ||
+      baseNameNoExt === normalizedKey ||
+      baseNameNoExt === baseKey
+    );
+  }) || null;
+}
+
+async function resolveSpreadsheetImageUrl({ imageUrl, imageFileName, zipState, rowLabel }) {
+  const directUrl = String(imageUrl || '').trim();
+  if (directUrl) return directUrl;
+
+  const fileName = String(imageFileName || '').trim();
+  if (!fileName) return null;
+
+  if (!zipState) {
+    throw new Error(`الصف ${rowLabel}: توجد قيمة imageFileName لكن لا يوجد ملف ZIP للصور.`);
+  }
+
+  const matched = findSpreadsheetZipEntry(zipState, fileName);
+  if (!matched) {
+    throw new Error(`الصف ${rowLabel}: تعذر العثور على الصورة "${fileName}" داخل ملف ZIP.`);
+  }
+
+  if (zipState.cache.has(matched.path)) {
+    return zipState.cache.get(matched.path);
+  }
+
+  const blob = await matched.entry.async('blob');
+  const baseName = matched.path.split('/').pop() || fileName || 'upload.jpg';
+  const uploadedUrl = await uploadImageToCloudinary(blob, baseName);
+  if (!uploadedUrl) {
+    throw new Error(`الصف ${rowLabel}: تعذر رفع الصورة "${fileName}".`);
+  }
+
+  zipState.cache.set(matched.path, uploadedUrl);
+  return uploadedUrl;
+}
+
+function buildSpreadsheetTemplateCsv() {
+  return [
+    'itemId,name,category,price,smallPrice,mediumPrice,largePrice,available,imageUrl,imageFileName',
+    'pizza-margherita,بيتزا مارجريتا,بيتزا,120,,,,true,https://example.com/pizza.jpg,pizza-margherita.jpg',
+    'shawarma-chicken,شاورما دجاج,شاورما,,80,100,120,true,,shawarma-chicken.jpg'
+  ].join('\n');
 }
 
 function createMapMarkerLayer(type) {
@@ -2498,10 +2738,7 @@ function computeOrderFinancialBreakdown(orderData = {}) {
       ?? orderData.courierDeliveryFee
       ?? 0
   );
-  let platformShare = toAdminMoneyValue(orderData.platformShare ?? orderData.platformFee);
-  if (platformShare <= 0) {
-    platformShare = Math.max(0, totalWithDelivery - restaurantShare - driverShare);
-  }
+  let platformShare = Math.max(0, totalWithDelivery - restaurantShare - driverShare);
 
   return {
     subtotal,
@@ -5396,7 +5633,30 @@ async function loadCourierDetails(driverId) {
   courierDetailsPanel.innerHTML = '<span class="muted">جاري تحميل تفاصيل المندوب...</span>';
 
   try {
-    const ordersSnap = await safeGetDocs(query(collection(db, 'orders'), where('assignedDriverId', '==', driverId)));
+    const normalizedDriverId = String(driverId || '').trim();
+    if (!normalizedDriverId) {
+      courierDetailsPanel.innerHTML = '<span class="muted">معرف المندوب غير متاح.</span>';
+      return;
+    }
+
+    let driverRef = doc(db, 'drivers', normalizedDriverId);
+    let driverSnap = await getDoc(driverRef);
+    if (!driverSnap.exists()) {
+      const fallbackSnap = await safeGetDocs(query(collection(db, 'drivers'), where('ownerUid', '==', normalizedDriverId)));
+      if (fallbackSnap.docs.length) {
+        driverSnap = fallbackSnap.docs[0];
+        driverRef = driverSnap.ref;
+      } else {
+        const uidFallbackSnap = await safeGetDocs(query(collection(db, 'drivers'), where('uid', '==', normalizedDriverId)));
+        if (uidFallbackSnap.docs.length) {
+          driverSnap = uidFallbackSnap.docs[0];
+          driverRef = driverSnap.ref;
+        }
+      }
+    }
+
+    const driverDomId = driverSnap.exists() ? driverSnap.id : normalizedDriverId;
+    const ordersSnap = await safeGetDocs(query(collection(db, 'orders'), where('assignedDriverId', '==', driverDomId)));
     const orders = ordersSnap.docs.map((d) => d.data() || {});
     const activeOrderStatuses = new Set(['courier_offer_pending', 'courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client']);
     const activeOrdersCount = orders.filter((o) => activeOrderStatuses.has(String(o.orderStatus || o.status || ''))).length;
@@ -5432,7 +5692,7 @@ async function loadCourierDetails(driverId) {
             </div>
           </div>
           ${buildEntitySection('الملف التشغيلي', buildEntityFactsGrid([
-            { label: 'المعرف', value: driverId },
+            { label: 'المعرف', value: driverDomId },
             { label: 'الاسم', value: driver.name || '-' },
             { label: 'البريد', value: driver.email || '-' },
             { label: 'الهاتف', value: driver.phone || '-' },
@@ -5450,11 +5710,11 @@ async function loadCourierDetails(driverId) {
             <div class="entity-facts-grid">
               <div class="entity-fact">
                 <span>الموقع الحالي</span>
-                <strong id="driverLiveLocation-${driverId}">${liveLocationText}</strong>
+                <strong id="driverLiveLocation-${driverDomId}">${liveLocationText}</strong>
               </div>
               <div class="entity-fact">
                 <span>آخر تحديث</span>
-                <strong id="driverLiveUpdated-${driverId}">${liveUpdatedText}</strong>
+                <strong id="driverLiveUpdated-${driverDomId}">${liveUpdatedText}</strong>
               </div>
             </div>
           `, { eyebrow: 'التتبع' })}
@@ -5465,51 +5725,44 @@ async function loadCourierDetails(driverId) {
             { label: 'الطلبات النشطة', value: activeOrdersCount },
             { label: 'وقت التوفر اليوم', value: formatDurationHours(todayAvailabilityMs), className: 'entity-fact-highlight' },
           ]), { eyebrow: 'النشاط' })}
-          ${buildEntitySection('الهوية والمرفقات', `${idImage}<div class="entity-actions"><button class="btn ghost" id="driverImageChange-${driverId}">تعديل صورة الهوية/الرخصة</button><button class="btn ghost" id="driverToggleAvailability-${driverId}">${driver.available === true ? 'إيقاف التوفر' : 'تفعيل التوفر'}</button><button class="btn ghost" id="driverApprove-${driverId}">قبول</button><button class="btn danger" id="driverReject-${driverId}">رفض</button><button class="btn danger" id="driverDelete-${driverId}">حذف الحساب</button></div>`, { eyebrow: 'الإجراءات' })}
+          ${buildEntitySection('الهوية والمرفقات', `${idImage}<div class="entity-actions"><button class="btn ghost" id="driverImageChange-${driverDomId}">تعديل صورة الهوية/الرخصة</button><button class="btn ghost" id="driverToggleAvailability-${driverDomId}">${driver.available === true ? 'إيقاف التوفر' : 'تفعيل التوفر'}</button><button class="btn ghost" id="driverApprove-${driverDomId}">قبول</button><button class="btn danger" id="driverReject-${driverDomId}">رفض</button><button class="btn danger" id="driverDelete-${driverDomId}">حذف الحساب</button></div>`, { eyebrow: 'الإجراءات' })}
           ${buildEntitySection('تعديل بيانات المندوب', `
             <div class="entity-form-grid">
-              <label>الاسم<input id="driverName-${driverId}" type="text" value="${escapeHtml(driver.name || '')}" /></label>
-              <label>الهاتف<input id="driverPhone-${driverId}" type="text" value="${escapeHtml(driver.phone || '')}" /></label>
-              <label>البريد الإلكتروني<input id="driverEmail-${driverId}" type="email" value="${escapeHtml(driver.email || '')}" /></label>
-              <label>نوع المركبة<input id="driverVehicleType-${driverId}" type="text" value="${escapeHtml(driver.vehicleType || '')}" /></label>
-              <label>رقم اللوحة<input id="driverVehiclePlate-${driverId}" type="text" value="${escapeHtml(driver.vehiclePlate || '')}" /></label>
-              <label>رقم الهوية/الرخصة<input id="driverNationalId-${driverId}" type="text" value="${escapeHtml(driver.nationalIdNumber || '')}" /></label>
-              <label>محلية العمل<input id="driverWorkLocalityName-${driverId}" type="text" value="${escapeHtml(workLocalityName)}" /></label>
-              <label>منطقة العمل<input id="driverWorkAreaName-${driverId}" type="text" value="${escapeHtml(workAreaName)}" /></label>
-              <label>نطاق العمل<input id="driverRegion-${driverId}" type="text" value="${escapeHtml(workAreaLabel)}" /></label>
-              <label>رابط صورة الهوية/الرخصة<input id="driverIdImageUrl-${driverId}" type="text" value="${escapeHtml(driver.idImageUrl || '')}" /></label>
+              <label>الاسم<input id="driverName-${driverDomId}" type="text" value="${escapeHtml(driver.name || '')}" /></label>
+              <label>الهاتف<input id="driverPhone-${driverDomId}" type="text" value="${escapeHtml(driver.phone || '')}" /></label>
+              <label>البريد الإلكتروني<input id="driverEmail-${driverDomId}" type="email" value="${escapeHtml(driver.email || '')}" /></label>
+              <label>نوع المركبة<input id="driverVehicleType-${driverDomId}" type="text" value="${escapeHtml(driver.vehicleType || '')}" /></label>
+              <label>رقم اللوحة<input id="driverVehiclePlate-${driverDomId}" type="text" value="${escapeHtml(driver.vehiclePlate || '')}" /></label>
+              <label>رقم الهوية/الرخصة<input id="driverNationalId-${driverDomId}" type="text" value="${escapeHtml(driver.nationalIdNumber || '')}" /></label>
+              <label>محلية العمل<input id="driverWorkLocalityName-${driverDomId}" type="text" value="${escapeHtml(workLocalityName)}" /></label>
+              <label>منطقة العمل<input id="driverWorkAreaName-${driverDomId}" type="text" value="${escapeHtml(workAreaName)}" /></label>
+              <label>نطاق العمل<input id="driverRegion-${driverDomId}" type="text" value="${escapeHtml(workAreaLabel)}" /></label>
+              <label>رابط صورة الهوية/الرخصة<input id="driverIdImageUrl-${driverDomId}" type="text" value="${escapeHtml(driver.idImageUrl || '')}" /></label>
             </div>
             <div class="entity-actions">
-              <button class="btn primary" id="driverSave-${driverId}">حفظ التعديلات</button>
+              <button class="btn primary" id="driverSave-${driverDomId}">حفظ التعديلات</button>
             </div>
           `, { eyebrow: 'التحرير' })}
         </div>
       `;
 
-      if (liveDriverId !== driverId) return;
-      const locationEl = document.getElementById(`driverLiveLocation-${driverId}`);
-      const updatedEl = document.getElementById(`driverLiveUpdated-${driverId}`);
+      if (liveDriverId !== driverDomId) return;
+      const locationEl = document.getElementById(`driverLiveLocation-${driverDomId}`);
+      const updatedEl = document.getElementById(`driverLiveUpdated-${driverDomId}`);
       if (locationEl) locationEl.textContent = liveLocationText;
       if (updatedEl) updatedEl.textContent = liveUpdatedText;
     };
 
-    const driverRef = doc(db, 'drivers', driverId);
-    const driverSnap = await getDoc(driverRef);
-    if (!driverSnap.exists()) {
-      courierDetailsPanel.innerHTML = '<span class="muted">لم يتم العثور على بيانات المندوب.</span>';
-      return;
-    }
-
     let driver = driverSnap.data() || {};
     renderCourierPanel(driver);
 
-    activeOrderDriverId = driverId;
+    activeOrderDriverId = driverDomId;
     if (!activeOrderDriverCleanupRegistered) {
       unsubscribers.push(() => stopActiveOrderDriverListener());
       activeOrderDriverCleanupRegistered = true;
     }
     activeOrderDriverUnsubscribe = onSnapshot(driverRef, (liveSnap) => {
-      if (activeOrderDriverId !== driverId) return;
+      if (activeOrderDriverId !== driverDomId) return;
       if (!liveSnap.exists()) {
         courierDetailsPanel.innerHTML = '<span class="muted">تم حذف حساب المندوب.</span>';
         return;
@@ -5519,8 +5772,8 @@ async function loadCourierDetails(driverId) {
         || extractDriverPoint(liveDriver.currentLocation)
         || extractDriverPoint(liveDriver.lastLocation)
         || extractDriverPoint({ lat: liveDriver.latitude, lng: liveDriver.longitude });
-      const locationEl = document.getElementById(`driverLiveLocation-${driverId}`);
-      const updatedEl = document.getElementById(`driverLiveUpdated-${driverId}`);
+      const locationEl = document.getElementById(`driverLiveLocation-${driverDomId}`);
+      const updatedEl = document.getElementById(`driverLiveUpdated-${driverDomId}`);
       const availabilityPill = courierDetailsPanel.querySelector('.entity-state-pill');
       if (availabilityPill) {
         availabilityPill.textContent = liveDriver.available === true ? 'متاح الآن' : 'غير متاح';
@@ -5538,82 +5791,82 @@ async function loadCourierDetails(driverId) {
       }
     });
 
-    document.getElementById(`driverSave-${driverId}`)?.addEventListener('click', async () => {
+    document.getElementById(`driverSave-${driverDomId}`)?.addEventListener('click', async () => {
       try {
         await updateManagedUserProfile({
           role: 'courier',
-          uid: driverId,
+          uid: driverDomId,
           fields: {
-            name: (document.getElementById(`driverName-${driverId}`)?.value || '').trim(),
-            phone: (document.getElementById(`driverPhone-${driverId}`)?.value || '').trim(),
-            email: (document.getElementById(`driverEmail-${driverId}`)?.value || '').trim(),
-            vehicleType: (document.getElementById(`driverVehicleType-${driverId}`)?.value || '').trim(),
-            vehiclePlate: (document.getElementById(`driverVehiclePlate-${driverId}`)?.value || '').trim(),
-            nationalIdNumber: (document.getElementById(`driverNationalId-${driverId}`)?.value || '').trim(),
+            name: (document.getElementById(`driverName-${driverDomId}`)?.value || '').trim(),
+            phone: (document.getElementById(`driverPhone-${driverDomId}`)?.value || '').trim(),
+            email: (document.getElementById(`driverEmail-${driverDomId}`)?.value || '').trim(),
+            vehicleType: (document.getElementById(`driverVehicleType-${driverDomId}`)?.value || '').trim(),
+            vehiclePlate: (document.getElementById(`driverVehiclePlate-${driverDomId}`)?.value || '').trim(),
+            nationalIdNumber: (document.getElementById(`driverNationalId-${driverDomId}`)?.value || '').trim(),
             stateId: 'khartoum',
             stateName: 'ولاية الخرطوم',
             workStateId: 'khartoum',
             workStateName: 'ولاية الخرطوم',
-            city: (document.getElementById(`driverWorkLocalityName-${driverId}`)?.value || '').trim(),
-            workLocalityName: (document.getElementById(`driverWorkLocalityName-${driverId}`)?.value || '').trim(),
-            workAreaName: (document.getElementById(`driverWorkAreaName-${driverId}`)?.value || '').trim(),
-            workAreaLabel: (document.getElementById(`driverRegion-${driverId}`)?.value || '').trim(),
-            region: (document.getElementById(`driverRegion-${driverId}`)?.value || '').trim(),
-            idImageUrl: (document.getElementById(`driverIdImageUrl-${driverId}`)?.value || '').trim(),
+            city: (document.getElementById(`driverWorkLocalityName-${driverDomId}`)?.value || '').trim(),
+            workLocalityName: (document.getElementById(`driverWorkLocalityName-${driverDomId}`)?.value || '').trim(),
+            workAreaName: (document.getElementById(`driverWorkAreaName-${driverDomId}`)?.value || '').trim(),
+            workAreaLabel: (document.getElementById(`driverRegion-${driverDomId}`)?.value || '').trim(),
+            region: (document.getElementById(`driverRegion-${driverDomId}`)?.value || '').trim(),
+            idImageUrl: (document.getElementById(`driverIdImageUrl-${driverDomId}`)?.value || '').trim(),
           },
         });
         alert('تم حفظ بيانات المندوب بنجاح');
-        await loadCourierDetails(driverId);
+        await loadCourierDetails(driverDomId);
       } catch (err) {
         alert(`تعذر حفظ البيانات: ${err.message || err}`);
       }
     });
 
-    document.getElementById(`driverToggleAvailability-${driverId}`)?.addEventListener('click', async () => {
+    document.getElementById(`driverToggleAvailability-${driverDomId}`)?.addEventListener('click', async () => {
       try {
-        await updateDoc(doc(db, 'drivers', driverId), await buildDriverAvailabilityPatch(driverId, driver.available !== true));
-        await loadCourierDetails(driverId);
+        await updateDoc(doc(db, 'drivers', driverDomId), await buildDriverAvailabilityPatch(driverDomId, driver.available !== true));
+        await loadCourierDetails(driverDomId);
       } catch (err) {
         alert(`تعذر تحديث التوفر: ${err.message || err}`);
       }
     });
 
-    document.getElementById(`driverApprove-${driverId}`)?.addEventListener('click', async () => {
+    document.getElementById(`driverApprove-${driverDomId}`)?.addEventListener('click', async () => {
       try {
-        await updateDoc(doc(db, 'drivers', driverId), {
+        await updateDoc(doc(db, 'drivers', driverDomId), {
           approvalStatus: 'approved',
           isApproved: true,
           updatedAt: serverTimestamp(),
         });
-        await loadCourierDetails(driverId);
+        await loadCourierDetails(driverDomId);
       } catch (err) {
         alert(`تعذر قبول المندوب: ${err.message || err}`);
       }
     });
 
-    document.getElementById(`driverReject-${driverId}`)?.addEventListener('click', async () => {
+    document.getElementById(`driverReject-${driverDomId}`)?.addEventListener('click', async () => {
       try {
-        await updateDoc(doc(db, 'drivers', driverId), {
-          ...(await buildDriverAvailabilityPatch(driverId, false)),
+        await updateDoc(doc(db, 'drivers', driverDomId), {
+          ...(await buildDriverAvailabilityPatch(driverDomId, false)),
           approvalStatus: 'rejected',
           isApproved: false,
           updatedAt: serverTimestamp(),
         });
-        await loadCourierDetails(driverId);
+        await loadCourierDetails(driverDomId);
       } catch (err) {
         alert(`تعذر رفض المندوب: ${err.message || err}`);
       }
     });
 
-    document.getElementById(`driverDelete-${driverId}`)?.addEventListener('click', async () => {
+    document.getElementById(`driverDelete-${driverDomId}`)?.addEventListener('click', async () => {
       await handleManagedUserDeletion({
         role: 'courier',
-        uid: driverId,
-        displayName: driver.name || driverId,
+        uid: driverDomId,
+        displayName: driver.name || driverDomId,
       });
     });
 
-    document.getElementById(`driverImageChange-${driverId}`)?.addEventListener('click', async () => {
+    document.getElementById(`driverImageChange-${driverDomId}`)?.addEventListener('click', async () => {
       const pickedFile = await pickSingleImageFile();
       if (!pickedFile) {
         alert('لم يتم اختيار صورة');
@@ -5626,11 +5879,11 @@ async function loadCourierDetails(driverId) {
       }
 
       try {
-        await updateDoc(doc(db, 'drivers', driverId), {
+        await updateDoc(doc(db, 'drivers', driverDomId), {
           idImageUrl: uploaded,
           updatedAt: serverTimestamp(),
         });
-        await loadCourierDetails(driverId);
+        await loadCourierDetails(driverDomId);
       } catch (err) {
         alert(`تعذر تحديث الصورة: ${err.message || err}`);
       }
@@ -5714,7 +5967,7 @@ async function loadStoreDetails(storeId) {
             <label>نسبة الخصم<input id="storeDiscountPct-${storeId}" type="number" step="0.01" value="${escapeHtml(String(store.deliveryDiscountPercentage ?? ''))}" /></label>
             <label>رابط صورة الغلاف<input id="storeCoverImageUrl-${storeId}" type="text" value="${escapeHtml(store.coverImageUrl || '')}" /></label>
             <label>رابط الشعار<input id="storeLogoImageUrl-${storeId}" type="text" value="${escapeHtml(store.logoImageUrl || '')}" /></label>
-            <label>وقت التوصيل التقديري<input id="storeDeliveryTime-${storeId}" type="text" placeholder="مثال: 20-30 دقيقة" value="${escapeHtml(store.deliveryTime || '')}" /></label>
+            <label>وقت تجهيز المطعم المعتاد<input id="storeDeliveryTime-${storeId}" type="text" placeholder="مثال: 20-30 دقيقة" value="${escapeHtml(store.deliveryTime || '')}" /></label>
           </div>
           <div class="entity-actions">
             <button class="btn ghost" id="storeUploadCover-${storeId}">رفع صورة غلاف</button>
@@ -5914,6 +6167,40 @@ async function renderAdminMenuManager(storeId) {
     return { ok: true, price, sizes };
   };
 
+  const legacyMenuCategoryId = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    return raw.replace(/[\\/#?\[\]]/g, '-');
+  };
+
+  const getLegacyMenuItemRef = (legacyStoreId, category, itemId) => {
+    const categoryId = legacyMenuCategoryId(category);
+    if (!legacyStoreId || !categoryId || !itemId) return null;
+    return doc(db, 'restaurants', legacyStoreId, 'menu', categoryId, 'items', itemId);
+  };
+
+  const queueLegacyMenuMirror = (batch, legacyStoreId, itemId, itemData = {}, updates = {}) => {
+    const legacyRef = getLegacyMenuItemRef(legacyStoreId, updates.category || itemData.category, itemId);
+    if (!legacyRef) return;
+
+    const payload = {
+      name: updates.name ?? itemData.name ?? '',
+      price: updates.price ?? itemData.price ?? 0,
+      imageUrl: updates.imageUrl ?? itemData.imageUrl ?? '',
+      category: updates.category ?? itemData.category ?? '',
+      available: updates.available ?? itemData.available ?? true,
+      updatedAt: serverTimestamp(),
+    };
+
+    if (updates.sizes) {
+      payload.sizes = updates.sizes;
+    } else if (itemData.sizes) {
+      payload.sizes = itemData.sizes;
+    }
+
+    batch.set(legacyRef, payload, { merge: true });
+  };
+
   const fullMenuRef = collection(db, 'restaurants', storeId, 'full_menu');
   let snap = await safeGetDocs(fullMenuRef);
   let docs = snap.docs || [];
@@ -5947,7 +6234,7 @@ async function renderAdminMenuManager(storeId) {
       <td>${image}</td>
       <td>${available ? 'متاح' : 'غير متاح'}</td>
       <td>
-        <button class="btn ghost" data-menu-edit="${d.id}">تعديل</button>
+        <button class="btn primary" data-menu-edit="${d.id}">تعديل</button>
         <button class="btn ghost" data-menu-image="${d.id}">تعديل الصورة</button>
         <button class="btn ghost" data-menu-toggle="${d.id}" data-available="${available ? 'true' : 'false'}">${available ? 'إيقاف' : 'تفعيل'}</button>
         <button class="btn danger" data-menu-delete="${d.id}">حذف</button>
@@ -5957,6 +6244,27 @@ async function renderAdminMenuManager(storeId) {
 
   container.innerHTML = `
     <div class="admin-menu-manager">
+      <div class="admin-menu-import-card">
+        <div class="entity-section-head compact">
+          <span class="entity-section-eyebrow">استيراد جماعي</span>
+          <h5>استيراد الأصناف من CSV أو Excel</h5>
+          <p>الأعمدة المقترحة: itemId, name, category, price, smallPrice, mediumPrice, largePrice, available, imageUrl, imageFileName.</p>
+          <p class="field-hint">إذا كانت الصور داخل ملف ZIP، ضع اسم الملف في imageFileName. وإذا كانت الروابط جاهزة، استخدم imageUrl مباشرة.</p>
+          <p class="field-hint">إذا تركت itemId فارغًا، سيُنشئ النظام معرفًا ثابتًا من الاسم والفئة حتى لا تتكرر الأصناف عند إعادة الاستيراد.</p>
+        </div>
+        <div class="admin-menu-import-grid">
+          <label class="admin-menu-import-file-field">ملف الأصناف<input id="menuImportFile-${storeId}" type="file" accept=".csv,.xlsx,.xls,.csv,.txt,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" /></label>
+          <label class="admin-menu-import-file-field">ملف الصور ZIP (اختياري)<input id="menuImportZip-${storeId}" type="file" accept=".zip,application/zip" /></label>
+        </div>
+        <div class="admin-menu-import-actions">
+          <button class="btn ghost" id="pickMenuImportFile-${storeId}" type="button">اختيار ملف CSV / Excel</button>
+          <button class="btn ghost" id="pickMenuImportZip-${storeId}" type="button">اختيار ملف ZIP للصور</button>
+          <button class="btn ghost" id="downloadMenuTemplate-${storeId}" type="button">تحميل قالب مثال</button>
+          <button class="btn primary" id="importMenuItems-${storeId}" type="button">استيراد الأصناف</button>
+        </div>
+        <div class="admin-menu-import-files muted" id="menuImportFiles-${storeId}">لم يتم اختيار أي ملف بعد.</div>
+        <div id="menuImportStatus-${storeId}" class="muted normalize-result">اختر ملف CSV أو Excel لبدء الاستيراد.</div>
+      </div>
       <div class="admin-menu-create-card">
         <div class="entity-section-head compact">
           <span class="entity-section-eyebrow">إضافة سريعة</span>
@@ -5976,6 +6284,25 @@ async function renderAdminMenuManager(storeId) {
           <button class="btn primary" id="addMenuItem-${storeId}">إضافة الصنف</button>
         </div>
       </div>
+      <div class="admin-menu-edit-card" id="menuEditCard-${storeId}" hidden>
+        <div class="entity-section-head compact">
+          <span class="entity-section-eyebrow">تحرير الصنف</span>
+          <h5 id="menuEditTitle-${storeId}">تعديل صنف</h5>
+          <p>عدّل الاسم والأسعار والفئة فقط. تعديل الصورة له زر مستقل في الجدول.</p>
+        </div>
+        <div class="admin-menu-edit-grid">
+          <label>اسم الصنف<input id="menuEditName-${storeId}" type="text" /></label>
+          <label>الفئة<input id="menuEditCategory-${storeId}" type="text" /></label>
+          <label>السعر الأساسي<input id="menuEditPrice-${storeId}" type="number" step="0.01" placeholder="اختياري مع الأحجام" /></label>
+          <label>سعر صغير<input id="menuEditSmallPrice-${storeId}" type="number" step="0.01" placeholder="صغير" /></label>
+          <label>سعر وسط<input id="menuEditMediumPrice-${storeId}" type="number" step="0.01" placeholder="وسط" /></label>
+          <label>سعر كبير<input id="menuEditLargePrice-${storeId}" type="number" step="0.01" placeholder="كبير" /></label>
+        </div>
+        <div class="admin-menu-edit-actions">
+          <button class="btn primary" id="menuEditSave-${storeId}" type="button">حفظ التعديل</button>
+          <button class="btn ghost" id="menuEditCancel-${storeId}" type="button">إلغاء</button>
+        </div>
+      </div>
       <div class="admin-menu-bulk-card">
         <div class="entity-section-head compact">
           <span class="entity-section-eyebrow">تسعير</span>
@@ -5993,6 +6320,238 @@ async function renderAdminMenuManager(storeId) {
       </div>
     </div>
   `;
+
+  const menuImportFileInput = document.getElementById(`menuImportFile-${storeId}`);
+  const menuImportZipInput = document.getElementById(`menuImportZip-${storeId}`);
+  const menuImportFiles = document.getElementById(`menuImportFiles-${storeId}`);
+  const menuImportStatus = document.getElementById(`menuImportStatus-${storeId}`);
+  const menuEditCard = document.getElementById(`menuEditCard-${storeId}`);
+  const menuEditTitle = document.getElementById(`menuEditTitle-${storeId}`);
+  const menuEditName = document.getElementById(`menuEditName-${storeId}`);
+  const menuEditCategory = document.getElementById(`menuEditCategory-${storeId}`);
+  const menuEditPrice = document.getElementById(`menuEditPrice-${storeId}`);
+  const menuEditSmallPrice = document.getElementById(`menuEditSmallPrice-${storeId}`);
+  const menuEditMediumPrice = document.getElementById(`menuEditMediumPrice-${storeId}`);
+  const menuEditLargePrice = document.getElementById(`menuEditLargePrice-${storeId}`);
+  const menuEditSaveBtn = document.getElementById(`menuEditSave-${storeId}`);
+  const menuEditCancelBtn = document.getElementById(`menuEditCancel-${storeId}`);
+  const pickMenuImportFileBtn = document.getElementById(`pickMenuImportFile-${storeId}`);
+  const pickMenuImportZipBtn = document.getElementById(`pickMenuImportZip-${storeId}`);
+  const downloadMenuTemplateBtn = document.getElementById(`downloadMenuTemplate-${storeId}`);
+  const importMenuItemsBtn = document.getElementById(`importMenuItems-${storeId}`);
+
+  let menuEditActiveItemId = '';
+  let menuEditActiveLegacyCategory = '';
+
+  const hideMenuEditor = () => {
+    menuEditActiveItemId = '';
+    menuEditActiveLegacyCategory = '';
+    if (menuEditCard) menuEditCard.hidden = true;
+  };
+
+  const openMenuEditor = async (itemId) => {
+    if (!itemId) return;
+    const docSnap = await getDoc(doc(db, 'restaurants', storeId, 'full_menu', itemId));
+    if (!docSnap.exists()) {
+      alert('الصنف غير موجود');
+      return;
+    }
+
+    const item = docSnap.data() || {};
+    const sizes = normalizeSizes(item.sizes);
+    menuEditActiveItemId = itemId;
+    menuEditActiveLegacyCategory = String(item.category || '').trim();
+
+    if (menuEditTitle) {
+      menuEditTitle.textContent = `تعديل: ${item.name || itemId}`;
+    }
+    if (menuEditName) menuEditName.value = String(item.name || '');
+    if (menuEditCategory) menuEditCategory.value = String(item.category || '');
+    if (menuEditPrice) menuEditPrice.value = item.price ?? '';
+    if (menuEditSmallPrice) menuEditSmallPrice.value = sizes?.small ?? '';
+    if (menuEditMediumPrice) menuEditMediumPrice.value = sizes?.medium ?? '';
+    if (menuEditLargePrice) menuEditLargePrice.value = sizes?.large ?? '';
+    if (menuEditCard) menuEditCard.hidden = false;
+    menuEditCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    menuEditName?.focus({ preventScroll: true });
+  };
+
+  const syncMenuImportFilesLabel = () => {
+    if (!menuImportFiles) return;
+    const spreadsheetName = menuImportFileInput?.files && menuImportFileInput.files.length ? menuImportFileInput.files[0].name : 'لم يتم اختيار ملف أصناف';
+    const zipName = menuImportZipInput?.files && menuImportZipInput.files.length ? menuImportZipInput.files[0].name : 'بدون ملف ZIP';
+    menuImportFiles.textContent = `ملف الأصناف: ${spreadsheetName} | ملف الصور: ${zipName}`;
+  };
+
+  menuImportFileInput?.addEventListener('change', syncMenuImportFilesLabel);
+  menuImportZipInput?.addEventListener('change', syncMenuImportFilesLabel);
+
+  pickMenuImportFileBtn?.addEventListener('click', () => menuImportFileInput?.click());
+  pickMenuImportZipBtn?.addEventListener('click', () => menuImportZipInput?.click());
+  syncMenuImportFilesLabel();
+
+  downloadMenuTemplateBtn?.addEventListener('click', () => {
+    const csv = buildSpreadsheetTemplateCsv();
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'speedstar-menu-template.csv';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  importMenuItemsBtn?.addEventListener('click', async () => {
+    const spreadsheetFile = menuImportFileInput?.files && menuImportFileInput.files.length ? menuImportFileInput.files[0] : null;
+    const zipFile = menuImportZipInput?.files && menuImportZipInput.files.length ? menuImportZipInput.files[0] : null;
+
+    if (!spreadsheetFile) {
+      alert('اختر ملف CSV أو Excel أولًا.');
+      return;
+    }
+
+    if (menuImportStatus) {
+      menuImportStatus.textContent = 'جارٍ قراءة الملف...';
+    }
+
+    importMenuItemsBtn.disabled = true;
+
+    try {
+      const rows = await readSpreadsheetRows(spreadsheetFile);
+      if (!rows.length) {
+        throw new Error('الملف لا يحتوي على صفوف بيانات صالحة.');
+      }
+
+      const zipState = zipFile ? await buildSpreadsheetZipState(zipFile) : null;
+      const importErrors = [];
+      let importedCount = 0;
+      let skippedCount = 0;
+      let batch = writeBatch(db);
+      let batchCount = 0;
+
+      const commitBatch = async () => {
+        if (!batchCount) return;
+        await batch.commit();
+        batch = writeBatch(db);
+        batchCount = 0;
+      };
+
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index] || {};
+        const rowNumber = index + 2;
+
+        if (menuImportStatus && index % 5 === 0) {
+          menuImportStatus.textContent = `جارٍ تجهيز الصف ${rowNumber} من ${rows.length}...`;
+        }
+
+        const category = String(spreadsheetValue(row, ['category', 'section', 'الفئة', 'القسم', 'التصنيف'])).trim();
+        const itemIdRaw = String(spreadsheetValue(row, ['itemId', 'id', 'docId', 'معرف', 'معرفالصنف'])).trim();
+        const name = String(spreadsheetValue(row, ['name', 'itemName', 'اسم', 'اسمالصنف', 'الصنف'])).trim();
+        const available = parseSpreadsheetBoolean(spreadsheetValue(row, ['available', 'active', 'isActive', 'متاح', 'الحالة']), true);
+        const priceResult = parseSpreadsheetSizes(row);
+
+        if (!name) {
+          skippedCount += 1;
+          importErrors.push(`الصف ${rowNumber}: اسم الصنف مفقود.`);
+          continue;
+        }
+
+        if (!category) {
+          skippedCount += 1;
+          importErrors.push(`الصف ${rowNumber}: الفئة مفقودة للصنف "${name}".`);
+          continue;
+        }
+
+        if (!priceResult.ok) {
+          skippedCount += 1;
+          importErrors.push(`الصف ${rowNumber} (${name}): ${priceResult.message}`);
+          continue;
+        }
+
+        const imageUrlRaw = spreadsheetValue(row, ['imageUrl', 'image', 'photo', 'photoUrl', 'url', 'رابطالصورة', 'الصورة']);
+        const imageFileName = spreadsheetValue(row, ['imageFileName', 'imageKey', 'imageName', 'fileName', 'اسمالصورة', 'ملفالصورة']);
+
+        let imageUrl = String(imageUrlRaw || '').trim();
+        if (!imageUrl) {
+          try {
+            imageUrl = await resolveSpreadsheetImageUrl({
+              imageUrl: '',
+              imageFileName,
+              zipState,
+              rowLabel: rowNumber,
+            }) || '';
+          } catch (err) {
+            skippedCount += 1;
+            importErrors.push(err.message || `الصف ${rowNumber}: تعذر تجهيز الصورة.`);
+            continue;
+          }
+        }
+
+        if (!imageUrl) {
+          skippedCount += 1;
+          importErrors.push(`الصف ${rowNumber} (${name}): أضف imageUrl أو imageFileName مع ملف ZIP للصور.`);
+          continue;
+        }
+
+        const itemId = normalizeSpreadsheetDocId(itemIdRaw || `${name}-${category}`);
+        const targetRef = itemId ? doc(fullMenuRef, itemId) : doc(fullMenuRef);
+
+        batch.set(targetRef, {
+          name,
+          category,
+          price: priceResult.price,
+          ...(priceResult.sizes ? { sizes: priceResult.sizes } : {}),
+          imageUrl,
+          available,
+          updatedAt: serverTimestamp(),
+          updatedByAdminUid: auth.currentUser?.uid || null,
+          importedFromSpreadsheet: true,
+          importSourceFile: spreadsheetFile.name,
+          importRowNumber: rowNumber,
+        }, { merge: true });
+
+        batchCount += 1;
+        importedCount += 1;
+
+        if (batchCount >= 300) {
+          await commitBatch();
+        }
+      }
+
+      await commitBatch();
+
+      const summary = [
+        `تم استيراد ${importedCount} صنفًا من ${rows.length} صفًا.`,
+      ];
+      if (skippedCount) {
+        summary.push(`تم تخطي ${skippedCount} صفًا.`);
+      }
+      if (importErrors.length) {
+        summary.push(`أول الأخطاء:\n${importErrors.slice(0, 5).join('\n')}`);
+      }
+
+      const summaryText = summary.join('\n\n');
+
+      if (menuImportStatus) {
+        menuImportStatus.textContent = summaryText;
+      }
+
+      await renderAdminMenuManager(storeId);
+      const refreshedStatus = document.getElementById(`menuImportStatus-${storeId}`);
+      if (refreshedStatus) {
+        refreshedStatus.textContent = summaryText;
+      }
+    } catch (err) {
+      if (menuImportStatus) {
+        menuImportStatus.textContent = `تعذر استيراد الملف: ${err.message || err}`;
+      }
+      alert(`تعذر استيراد الملف: ${err.message || err}`);
+    } finally {
+      importMenuItemsBtn.disabled = false;
+    }
+  });
 
   const addBtn = document.getElementById(`addMenuItem-${storeId}`);
   addBtn?.addEventListener('click', async () => {
@@ -6072,35 +6631,42 @@ async function renderAdminMenuManager(storeId) {
     }
 
     try {
-      const batch = writeBatch(db);
-      docs.forEach((d) => {
-        const item = d.data() || {};
-        const oldPrice = Number(item.price || 0);
-        const updates = {
-          updatedAt: serverTimestamp(),
-          updatedByAdminUid: auth.currentUser?.uid || null,
-        };
+      const chunkSize = 200;
+      for (let start = 0; start < docs.length; start += chunkSize) {
+        const batch = writeBatch(db);
+        const chunk = docs.slice(start, start + chunkSize);
 
-        if (Number.isFinite(oldPrice) && oldPrice > 0) {
-          updates.price = Math.round(oldPrice * factor * 100) / 100;
-        }
-
-        const sizes = normalizeSizes(item.sizes);
-        if (sizes) {
-          updates.sizes = {
-            small: Math.round(sizes.small * factor * 100) / 100,
-            medium: Math.round(sizes.medium * factor * 100) / 100,
-            large: Math.round(sizes.large * factor * 100) / 100,
+        chunk.forEach((d) => {
+          const item = d.data() || {};
+          const oldPrice = Number(item.price || 0);
+          const updates = {
+            updatedAt: serverTimestamp(),
+            updatedByAdminUid: auth.currentUser?.uid || null,
           };
-          if (!updates.price) {
-            updates.price = updates.sizes.medium;
-          }
-        }
 
-        if (!updates.price) return;
-        batch.update(doc(db, 'restaurants', storeId, 'full_menu', d.id), updates);
-      });
-      await batch.commit();
+          if (Number.isFinite(oldPrice) && oldPrice > 0) {
+            updates.price = Math.round(oldPrice * factor * 100) / 100;
+          }
+
+          const sizes = normalizeSizes(item.sizes);
+          if (sizes) {
+            updates.sizes = {
+              small: Math.round(sizes.small * factor * 100) / 100,
+              medium: Math.round(sizes.medium * factor * 100) / 100,
+              large: Math.round(sizes.large * factor * 100) / 100,
+            };
+            if (!updates.price) {
+              updates.price = updates.sizes.medium;
+            }
+          }
+
+          if (!updates.price) return;
+          batch.update(doc(db, 'restaurants', storeId, 'full_menu', d.id), updates);
+          queueLegacyMenuMirror(batch, storeId, d.id, item, updates);
+        });
+
+        await batch.commit();
+      }
       await renderAdminMenuManager(storeId);
     } catch (err) {
       alert(`تعذر تعديل الأسعار: ${err.message || err}`);
@@ -6117,7 +6683,14 @@ async function renderAdminMenuManager(storeId) {
       if (!confirm('هل تريد حذف هذا الصنف؟')) return;
 
       try {
-        await deleteDoc(doc(db, 'restaurants', storeId, 'full_menu', itemId));
+        const docRef = doc(db, 'restaurants', storeId, 'full_menu', itemId);
+        const docSnap = await getDoc(docRef);
+        const itemData = docSnap.exists() ? (docSnap.data() || {}) : {};
+        const batch = writeBatch(db);
+        batch.delete(docRef);
+        const legacyRef = getLegacyMenuItemRef(storeId, itemData.category, itemId);
+        if (legacyRef) batch.delete(legacyRef);
+        await batch.commit();
         await renderAdminMenuManager(storeId);
       } catch (err) {
         alert(`تعذر حذف الصنف: ${err.message || err}`);
@@ -6132,11 +6705,21 @@ async function renderAdminMenuManager(storeId) {
       if (!itemId) return;
 
       try {
-        await updateDoc(doc(db, 'restaurants', storeId, 'full_menu', itemId), {
+        const docRef = doc(db, 'restaurants', storeId, 'full_menu', itemId);
+        const docSnap = await getDoc(docRef);
+        const itemData = docSnap.exists() ? (docSnap.data() || {}) : {};
+        await updateDoc(docRef, {
           available: !available,
           updatedAt: serverTimestamp(),
           updatedByAdminUid: auth.currentUser?.uid || null,
         });
+        const legacyRef = getLegacyMenuItemRef(storeId, itemData.category, itemId);
+        if (legacyRef) {
+          await setDoc(legacyRef, {
+            available: !available,
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+        }
         await renderAdminMenuManager(storeId);
       } catch (err) {
         alert(`تعذر تحديث حالة الصنف: ${err.message || err}`);
@@ -6148,70 +6731,81 @@ async function renderAdminMenuManager(storeId) {
     btn.addEventListener('click', async () => {
       const itemId = btn.getAttribute('data-menu-edit');
       if (!itemId) return;
-
-      const docSnap = await getDoc(doc(db, 'restaurants', storeId, 'full_menu', itemId));
-      if (!docSnap.exists()) {
-        alert('الصنف غير موجود');
-        return;
-      }
-      const item = docSnap.data() || {};
-
-      const nextName = prompt('اسم الصنف', String(item.name || ''));
-      if (nextName === null) return;
-      const currentSizes = normalizeSizes(item.sizes);
-      const nextPriceRaw = prompt('السعر الأساسي (اختياري مع الأحجام)', String(item.price ?? ''));
-      if (nextPriceRaw === null) return;
-      const nextSmallRaw = prompt('سعر صغير (اختياري)', String(currentSizes?.small ?? ''));
-      if (nextSmallRaw === null) return;
-      const nextMediumRaw = prompt('سعر وسط (اختياري)', String(currentSizes?.medium ?? ''));
-      if (nextMediumRaw === null) return;
-      const nextLargeRaw = prompt('سعر كبير (اختياري)', String(currentSizes?.large ?? ''));
-      if (nextLargeRaw === null) return;
-      const nextCategory = prompt('الفئة', String(item.category || ''));
-      if (nextCategory === null) return;
-
-      const priceResult = buildPricePayload({
-        baseRaw: nextPriceRaw,
-        smallRaw: nextSmallRaw,
-        mediumRaw: nextMediumRaw,
-        largeRaw: nextLargeRaw,
-      });
-      if (!priceResult.ok) {
-        alert(priceResult.message);
-        return;
-      }
-
-      let nextImage = String(item.imageUrl || '');
-      const wantsImageChange = confirm('هل تريد تغيير الصورة؟');
-      if (wantsImageChange) {
-        const pickedFile = await pickSingleImageFile();
-        if (!pickedFile) {
-          alert('لم يتم اختيار صورة');
-          return;
-        }
-        const uploaded = await uploadImageToCloudinary(pickedFile);
-        if (!uploaded) {
-          alert('تعذر رفع الصورة الجديدة');
-          return;
-        }
-        nextImage = uploaded;
-      }
-
-      try {
-        await updateDoc(doc(db, 'restaurants', storeId, 'full_menu', itemId), {
-          name: nextName.trim(),
-          price: priceResult.price,
-          ...(priceResult.sizes ? { sizes: priceResult.sizes } : { sizes: deleteField() }),
-          category: nextCategory.trim(),
-          imageUrl: nextImage.trim(),
-          updatedAt: serverTimestamp(),
-          updatedByAdminUid: auth.currentUser?.uid || null,
-        });
-        await renderAdminMenuManager(storeId);
-      } catch (err) {
-        alert(`تعذر تعديل الصنف: ${err.message || err}`);
-      }
+      await openMenuEditor(itemId);
     });
+  });
+
+  menuEditCancelBtn?.addEventListener('click', () => hideMenuEditor());
+
+  menuEditSaveBtn?.addEventListener('click', async () => {
+    if (!menuEditActiveItemId) return;
+
+    const nextName = String(menuEditName?.value || '').trim();
+    const nextCategory = String(menuEditCategory?.value || '').trim();
+    const priceResult = buildPricePayload({
+      baseRaw: menuEditPrice?.value || '',
+      smallRaw: menuEditSmallPrice?.value || '',
+      mediumRaw: menuEditMediumPrice?.value || '',
+      largeRaw: menuEditLargePrice?.value || '',
+    });
+
+    if (!nextName) {
+      alert('أدخل اسم الصنف');
+      return;
+    }
+    if (!nextCategory) {
+      alert('أدخل الفئة');
+      return;
+    }
+    if (!priceResult.ok) {
+      alert(priceResult.message);
+      return;
+    }
+
+    try {
+      const docRef = doc(db, 'restaurants', storeId, 'full_menu', menuEditActiveItemId);
+      const docSnap = await getDoc(docRef);
+      const itemData = docSnap.exists() ? (docSnap.data() || {}) : {};
+      const previousCategory = String(menuEditActiveLegacyCategory || itemData.category || '').trim();
+      const nextCategoryTrimmed = nextCategory.trim();
+
+      const updates = {
+        name: nextName,
+        price: priceResult.price,
+        ...(priceResult.sizes ? { sizes: priceResult.sizes } : { sizes: deleteField() }),
+        category: nextCategoryTrimmed,
+        updatedAt: serverTimestamp(),
+        updatedByAdminUid: auth.currentUser?.uid || null,
+      };
+
+      await updateDoc(docRef, updates);
+
+      const legacyBatch = writeBatch(db);
+      const nextLegacyRef = getLegacyMenuItemRef(storeId, nextCategoryTrimmed, menuEditActiveItemId);
+      const previousLegacyRef = getLegacyMenuItemRef(storeId, previousCategory, menuEditActiveItemId);
+
+      if (previousLegacyRef && previousLegacyRef.path !== nextLegacyRef?.path) {
+        legacyBatch.delete(previousLegacyRef);
+      }
+
+      if (nextLegacyRef) {
+        legacyBatch.set(nextLegacyRef, {
+          name: nextName,
+          price: priceResult.price,
+          ...(priceResult.sizes ? { sizes: priceResult.sizes } : {}),
+          category: nextCategoryTrimmed,
+          imageUrl: String(itemData.imageUrl || '').trim(),
+          available: itemData.available !== false,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
+
+      await legacyBatch.commit();
+      hideMenuEditor();
+      await renderAdminMenuManager(storeId);
+    } catch (err) {
+      alert(`تعذر تعديل الصنف: ${err.message || err}`);
+    }
   });
 
   container.querySelectorAll('[data-menu-image]').forEach((btn) => {
@@ -6232,11 +6826,21 @@ async function renderAdminMenuManager(storeId) {
       }
 
       try {
-        await updateDoc(doc(db, 'restaurants', storeId, 'full_menu', itemId), {
+        const docRef = doc(db, 'restaurants', storeId, 'full_menu', itemId);
+        const docSnap = await getDoc(docRef);
+        const itemData = docSnap.exists() ? (docSnap.data() || {}) : {};
+        await updateDoc(docRef, {
           imageUrl: uploaded,
           updatedAt: serverTimestamp(),
           updatedByAdminUid: auth.currentUser?.uid || null,
         });
+        const legacyRef = getLegacyMenuItemRef(storeId, itemData.category, itemId);
+        if (legacyRef) {
+          await setDoc(legacyRef, {
+            imageUrl: uploaded,
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+        }
         await renderAdminMenuManager(storeId);
       } catch (err) {
         alert(`تعذر تعديل الصورة: ${err.message || err}`);
@@ -6301,6 +6905,239 @@ async function getPendingDocs(collectionName) {
   byStatus.docs.forEach((d) => map.set(d.id, d));
   byApproval.docs.forEach((d) => map.set(d.id, d));
   return Array.from(map.values());
+}
+
+function getFirstNonEmptyText(values = [], fallback = 'غير محددة') {
+  for (const value of values) {
+    const text = String(value ?? '').trim();
+    if (text) return text;
+  }
+  return fallback;
+}
+
+function formatPendingDateTime(value) {
+  if (!value || typeof value.toDate !== 'function') return '-';
+  try {
+    return value.toDate().toLocaleString('ar-EG');
+  } catch (_) {
+    return '-';
+  }
+}
+
+function getApplicantGeoMeta(data = {}) {
+  const state = getFirstNonEmptyText([
+    data.workStateName,
+    data.stateName,
+    data.state,
+    data.serviceArea?.stateName,
+  ]);
+  const locality = getFirstNonEmptyText([
+    data.workLocalityName,
+    data.serviceArea?.localityName,
+    data.city,
+    data.locality,
+    data.region,
+  ]);
+  const area = getFirstNonEmptyText([
+    data.workAreaName,
+    data.serviceArea?.areaName,
+    data.workAreaLabel,
+    data.area,
+  ]);
+  return { state, locality, area };
+}
+
+function buildPendingFactsMarkup(data = {}, kind = 'store') {
+  const geo = getApplicantGeoMeta(data);
+  const facts = kind === 'courier'
+    ? [
+        { label: 'UID', value: data.ownerUid || data.driverId || data.uid || '-' },
+        { label: 'رقم الهوية', value: data.nationalIdNumber || '-' },
+        { label: 'نوع المركبة', value: data.vehicleType || '-' },
+        { label: 'رقم اللوحة', value: data.vehiclePlate || '-' },
+        { label: 'الولاية', value: geo.state },
+        { label: 'المحلية', value: geo.locality },
+        { label: 'المنطقة', value: geo.area },
+        { label: 'التوفر', value: data.available === true ? 'متاح' : 'غير متاح' },
+        { label: 'المسافات البعيدة', value: data.acceptsLongDistance === true ? 'مفعلة' : 'غير مفعلة' },
+        { label: 'حالة الاعتماد', value: formatApprovalStatusLabel(data.approvalStatus || (data.isApproved ? 'approved' : 'pending')) },
+        { label: 'تم الإنشاء', value: formatPendingDateTime(data.createdAt) },
+        { label: 'آخر تحديث', value: formatPendingDateTime(data.updatedAt) },
+      ]
+    : [
+        { label: 'UID', value: data.ownerUid || data.restaurantId || data.uid || '-' },
+        { label: 'رقم السجل', value: data.commercialRecordNumber || '-' },
+        { label: 'الولاية', value: geo.state },
+        { label: 'المحلية', value: geo.locality },
+        { label: 'المنطقة', value: geo.area },
+        { label: 'حالة القائمة', value: data.menuApproved === true ? 'معتمدة' : 'غير معتمدة' },
+        { label: 'اعتماد المتجر', value: formatApprovalStatusLabel(data.approvalStatus || (data.isApproved ? 'approved' : 'pending')) },
+        { label: 'قيد المراجعة', value: data.pendingApproval === true ? 'نعم' : 'لا' },
+        { label: 'إغلاق مؤقت', value: data.temporarilyClosed === true ? 'نعم' : 'لا' },
+        { label: 'تم الإنشاء', value: formatPendingDateTime(data.createdAt) },
+        { label: 'آخر تحديث', value: formatPendingDateTime(data.updatedAt) },
+        { label: 'طلب القائمة', value: formatPendingDateTime(data.approvalRequestedAt) },
+      ];
+
+  return buildEntityFactsGrid(facts);
+}
+
+function buildPendingApplicantCard({ kind, id, data = {}, actions = '', imageUrl = '', title = '' }) {
+  const geo = getApplicantGeoMeta(data);
+  const roleLabel = kind === 'courier' ? 'مندوب' : 'متجر';
+  const statusLabel = kind === 'courier'
+    ? formatApprovalStatusLabel(data.approvalStatus || (data.isApproved ? 'approved' : 'pending'))
+    : (data.menuApproved === true ? 'القائمة معتمدة' : 'القائمة غير معتمدة');
+  const imageBlock = imageUrl
+    ? `<div class="pending-application-media">${imageCell(imageUrl)}</div>`
+    : '';
+
+  return `
+    <article class="pending-application-card">
+      <div class="pending-application-head">
+        <div>
+          <span class="pending-application-badge">${escapeHtml(roleLabel)}</span>
+          <h4>${escapeHtml(title || data.name || id)}</h4>
+          <div class="pending-application-meta">
+            <span>UID: ${escapeHtml(String(data.ownerUid || data.driverId || data.restaurantId || data.uid || id))}</span>
+            <span>الولاية: ${escapeHtml(geo.state)}</span>
+            <span>المحلية: ${escapeHtml(geo.locality)}</span>
+            <span>المنطقة: ${escapeHtml(geo.area)}</span>
+          </div>
+        </div>
+        <div class="approval-geo-count">${escapeHtml(statusLabel)}</div>
+      </div>
+      ${buildPendingFactsMarkup(data, kind)}
+      <details>
+        <summary>البيانات الخام كاملة</summary>
+        <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+      </details>
+      ${imageBlock}
+      <div class="pending-application-actions">${actions}</div>
+    </article>
+  `;
+}
+
+function aggregateApprovedGeoStats(entries = []) {
+  const localityMap = new Map();
+  let totalCouriers = 0;
+  let totalStores = 0;
+
+  const addArea = (localityKey, localityLabel, areaKey, areaLabel, role) => {
+    if (!localityMap.has(localityKey)) {
+      localityMap.set(localityKey, {
+        key: localityKey,
+        label: localityLabel,
+        couriers: 0,
+        stores: 0,
+        total: 0,
+        areas: new Map(),
+      });
+    }
+
+    const locality = localityMap.get(localityKey);
+    locality.total += 1;
+    if (role === 'courier') locality.couriers += 1;
+    else locality.stores += 1;
+
+    if (!locality.areas.has(areaKey)) {
+      locality.areas.set(areaKey, {
+        key: areaKey,
+        label: areaLabel,
+        couriers: 0,
+        stores: 0,
+        total: 0,
+      });
+    }
+
+    const area = locality.areas.get(areaKey);
+    area.total += 1;
+    if (role === 'courier') area.couriers += 1;
+    else area.stores += 1;
+  };
+
+  entries.forEach((entry) => {
+    const role = entry.role === 'courier' ? 'courier' : 'store';
+    if (role === 'courier') totalCouriers += 1;
+    else totalStores += 1;
+
+    const geo = getApplicantGeoMeta(entry.data || {});
+    const localityLabel = geo.locality || 'غير محددة';
+    const areaLabel = geo.area || 'غير محددة';
+    const localityKey = normalizeSpreadsheetToken(localityLabel) || 'غيرمحددة';
+    const areaKey = normalizeSpreadsheetToken(`${localityLabel}:${areaLabel}`) || `${localityKey}:area`;
+    addArea(localityKey, localityLabel, areaKey, areaLabel, role);
+  });
+
+  const localities = Array.from(localityMap.values())
+    .map((locality) => ({
+      ...locality,
+      areas: Array.from(locality.areas.values()).sort((a, b) => b.total - a.total || String(a.label).localeCompare(String(b.label), 'ar')),
+    }))
+    .sort((a, b) => b.total - a.total || String(a.label).localeCompare(String(b.label), 'ar'));
+
+  const totalAreas = localities.reduce((sum, locality) => sum + locality.areas.length, 0);
+
+  return {
+    totals: {
+      couriers: totalCouriers,
+      stores: totalStores,
+      localities: localities.length,
+      areas: totalAreas,
+    },
+    localities,
+  };
+}
+
+function renderPendingGeoStats(approvedEntries = []) {
+  if (!pendingGeoStatsSummary || !pendingGeoStatsTables) return;
+
+  const stats = aggregateApprovedGeoStats(approvedEntries);
+  pendingGeoStatsSummary.innerHTML = `
+    <div class="stat"><h4>مندوبون معتمدون</h4><b>${stats.totals.couriers.toLocaleString('ar-EG')}</b></div>
+    <div class="stat"><h4>متاجر معتمدة</h4><b>${stats.totals.stores.toLocaleString('ar-EG')}</b></div>
+    <div class="stat"><h4>المحليات</h4><b>${stats.totals.localities.toLocaleString('ar-EG')}</b></div>
+    <div class="stat"><h4>المناطق</h4><b>${stats.totals.areas.toLocaleString('ar-EG')}</b></div>
+  `;
+
+  if (!stats.localities.length) {
+    pendingGeoStatsTables.innerHTML = '<div class="muted">لا توجد بيانات معتمدة كافية للإحصاءات حاليًا.</div>';
+    return;
+  }
+
+  pendingGeoStatsTables.innerHTML = `
+    <div class="approval-geo-tree">
+      ${stats.localities.map((locality) => `
+        <div class="approval-geo-locality">
+          <div class="approval-geo-locality-head">
+            <div>
+              <h4>${escapeHtml(locality.label)}</h4>
+              <div class="approval-geo-locality-meta">
+                <span>الإجمالي: ${locality.total.toLocaleString('ar-EG')}</span>
+                <span>مندوبون: ${locality.couriers.toLocaleString('ar-EG')}</span>
+                <span>متاجر: ${locality.stores.toLocaleString('ar-EG')}</span>
+              </div>
+            </div>
+            <div class="approval-geo-count">${locality.total.toLocaleString('ar-EG')}</div>
+          </div>
+          <div class="approval-geo-areas">
+            ${locality.areas.map((area) => `
+              <div class="approval-geo-area">
+                <div class="approval-geo-area-head">
+                  <strong>${escapeHtml(area.label)}</strong>
+                  <span class="approval-geo-count">${area.total.toLocaleString('ar-EG')}</span>
+                </div>
+                <div class="approval-geo-locality-meta">
+                  <span>مندوبون: ${area.couriers.toLocaleString('ar-EG')}</span>
+                  <span>متاجر: ${area.stores.toLocaleString('ar-EG')}</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 async function setStoreDecision({ appId, restaurantId, decision, ownerUid, appData = {} }) {
@@ -6486,12 +7323,18 @@ async function setMenuApprovalDirect({ restaurantId, approved = true }) {
     menuApprovedAt: approved ? serverTimestamp() : deleteField(),
     menuRejectedAt: approved ? deleteField() : serverTimestamp(),
     updatedAt: serverTimestamp(),
+    approvalRequestedAt: deleteField(),
   };
 
   if (approved) {
     updates.approvalStatus = 'approved';
     updates.isApproved = true;
+    updates.status = 'approved';
+    updates.reviewStatus = 'approved';
     Object.assign(updates, buildRestaurantVisibilityBackfill(restaurantData, addressData));
+  } else {
+    updates.status = 'rejected';
+    updates.reviewStatus = 'rejected';
   }
 
   await updateDoc(restaurantRef, updates);
@@ -6606,12 +7449,12 @@ function mountSupport() {
 
   const getConversationUserId = (conversation) => {
     if (!conversation) return '';
-    const conversationId = String(conversation.id || '');
+    const conversationId = String(conversation.conversationId || conversation.id || '');
     if (conversationId.endsWith('-support')) {
       return conversationId.slice(0, -'-support'.length);
     }
 
-    const messages = supportMessagesByConversation.get(conversationId) || [];
+    const messages = supportMessagesByConversation.get(String(conversation.id || conversationId)) || [];
     const adminUid = auth.currentUser?.uid || '';
     for (const msg of messages) {
       const participants = Array.isArray(msg.participants) ? msg.participants : [];
@@ -6632,6 +7475,12 @@ function mountSupport() {
     const search = String(supportSearchInput?.value || '').trim().toLowerCase();
     const appFilter = String(supportAppFilter?.value || 'all');
     const statusFilter = String(supportStatusFilter?.value || 'all');
+
+    const getAppLabel = (sourceApp) => {
+      if (sourceApp === 'client') return 'العملاء';
+      if (sourceApp === 'courier') return 'المندوبون';
+      return 'المتاجر';
+    };
 
     const rows = supportConversations
       .filter((item) => {
@@ -6672,19 +7521,25 @@ function mountSupport() {
 
     supportConversationList.innerHTML = rows
       .map((item) => {
-        const appLabel = item.sourceApp === 'client'
-          ? 'العملاء'
-          : item.sourceApp === 'courier'
-            ? 'المندوبون'
-            : 'المتاجر';
+        const appLabel = getAppLabel(item.sourceApp);
         return `
           <button class="support-item ${item.id === supportSelectedConversationId ? 'active' : ''}" data-support-conversation="${escapeHtml(item.id)}" type="button">
             <div class="support-item-top">
               <span class="badge ${item.status === 'closed' ? 'closed' : 'open'}">${item.status === 'closed' ? 'مغلقة' : 'مفتوحة'}</span>
-              <span class="muted">${escapeHtml(item.latestTimeText)}</span>
+              <span class="support-item-time muted">${escapeHtml(item.latestTimeText)}</span>
             </div>
-            <div class="support-item-title">${escapeHtml(item.senderName || item.userId || item.id)} ${item.unreadCount > 0 ? `<span class="support-unread">${item.unreadCount}</span>` : ''}</div>
-            <div class="support-item-sub">${escapeHtml(appLabel)} · ${escapeHtml(item.actor)} · ${escapeHtml(item.userId || '-')}</div>
+            <div class="support-item-title-row">
+              <div class="support-item-title">${escapeHtml(item.senderName || item.userId || item.id)}</div>
+              ${item.unreadCount > 0 ? `<span class="support-unread">${item.unreadCount}</span>` : ''}
+            </div>
+            <div class="support-item-meta">
+              <span class="support-item-pill">${escapeHtml(appLabel)}</span>
+              <span class="support-item-pill">${escapeHtml(item.actor)}</span>
+              <span class="support-item-pill">${item.status === 'closed' ? 'مغلقة' : 'مفتوحة'}</span>
+            </div>
+            <div class="support-item-sub">المعرف: ${escapeHtml(item.userId || '-')}
+            </div>
+            <div class="support-item-sub support-item-conversation">الخيط: ${escapeHtml(item.conversationId || item.id)}</div>
             <div class="support-item-preview">${escapeHtml(item.preview || '-')}</div>
           </button>
         `;
@@ -6733,11 +7588,16 @@ function mountSupport() {
       .reduce((max, current) => Math.max(max, current), 0);
 
     supportConversationHeader.innerHTML = `
-      <b>${escapeHtml(convo.senderName || convo.userId || convo.id)}</b>
-      <span class="kv"><b>المحادثة:</b> ${escapeHtml(convo.id)}</span>
-      <span class="kv"><b>التطبيق:</b> ${escapeHtml(appLabel)}</span>
-      <span class="kv"><b>التصنيف:</b> ${escapeHtml(convo.actor)}</span>
-      <span class="kv"><b>الحالة:</b> ${convo.status === 'closed' ? 'مغلقة' : 'مفتوحة'}</span>
+      <div class="support-header-title">${escapeHtml(convo.senderName || convo.userId || convo.id)}</div>
+      <div class="support-header-meta">
+        <span class="support-item-pill">${escapeHtml(appLabel)}</span>
+        <span class="support-item-pill">${escapeHtml(convo.actor)}</span>
+        <span class="support-item-pill ${convo.status === 'closed' ? 'closed' : 'open'}">${convo.status === 'closed' ? 'مغلقة' : 'مفتوحة'}</span>
+      </div>
+      <div class="support-header-meta support-header-meta--dim">
+        <span class="kv"><b>معرف المستخدم:</b> ${escapeHtml(convo.userId || '-')}</span>
+        <span class="kv"><b>معرف الخيط:</b> ${escapeHtml(convo.conversationId || convo.id)}</span>
+      </div>
     `;
 
     const messagesMarkup = messages.length
@@ -6829,7 +7689,8 @@ function mountSupport() {
         }
       }
       await addDoc(collection(db, 'supportMessages'), {
-        conversationId: convo.id,
+        conversationId: convo.conversationId || convo.id,
+        supportThreadKey: convo.id,
         chatKind: 'support',
         sourceApp: convo.sourceApp,
         senderId: auth.currentUser?.uid || '',
@@ -6866,7 +7727,7 @@ function mountSupport() {
     const nextStatus = convo.status === 'closed' ? 'open' : 'closed';
 
     try {
-      const q = query(collection(db, 'supportMessages'), where('conversationId', '==', supportSelectedConversationId));
+      const q = query(collection(db, 'supportMessages'), where('conversationId', '==', convo.conversationId || supportSelectedConversationId));
       const result = await getDocs(q);
       const batch = writeBatch(db);
       result.docs.forEach((docSnap) => {
@@ -6921,7 +7782,8 @@ function mountSupport() {
     supportMarkReadBtn?.addEventListener('click', async () => {
       if (!supportSelectedConversationId) return;
       try {
-        await markSupportConversationRead(supportSelectedConversationId);
+        const convo = supportConversations.find((item) => item.id === supportSelectedConversationId);
+        await markSupportConversationRead(convo?.conversationId || supportSelectedConversationId);
       } catch (err) {
         alert(`تعذر تعليم المحادثة كمقروءة: ${err.message || err}`);
       }
@@ -6952,6 +7814,16 @@ function mountSupport() {
       const conversationMap = new Map();
       const messagesMap = new Map();
 
+      const buildSupportThreadKey = (data = {}) => {
+        const conversationId = String(data.conversationId || '').trim();
+        const sourceApp = normalizeApp(data.sourceApp || 'client');
+        const explicitThreadKey = String(
+          data.supportThreadKey || data.supportThreadId || data.threadKey || data.threadId || ''
+        ).trim();
+        const baseKey = explicitThreadKey || conversationId;
+        return `${sourceApp}:${baseKey}`;
+      };
+
       snap.docs.forEach((d) => {
         const data = d.data() || {};
         const conversationId = String(data.conversationId || '');
@@ -6963,20 +7835,23 @@ function mountSupport() {
           || conversationId.endsWith('-support');
         if (!isSupport) return;
 
+        const supportThreadKey = buildSupportThreadKey(data);
+
         const message = {
           id: d.id,
           ...data,
           timestampMillis: getMillis(data.timestamp),
           timeText: fmtTime(data.timestamp),
+          supportThreadKey,
         };
 
-        if (!messagesMap.has(conversationId)) {
-          messagesMap.set(conversationId, []);
+        if (!messagesMap.has(supportThreadKey)) {
+          messagesMap.set(supportThreadKey, []);
         }
-        messagesMap.get(conversationId).push(message);
+        messagesMap.get(supportThreadKey).push(message);
 
-        if (!conversationMap.has(conversationId)) {
-          conversationMap.set(conversationId, message);
+        if (!conversationMap.has(supportThreadKey)) {
+          conversationMap.set(supportThreadKey, message);
         }
       });
 
@@ -7001,9 +7876,13 @@ function mountSupport() {
               || latestMsg.senderType
           );
           const sourceApp = normalizeApp(latestMsg.sourceApp || latest.sourceApp || 'client');
-          const userId = id.endsWith('-support') ? id.slice(0, -'-support'.length) : '';
+          const userId = String(latestMsg.userId || latestMsg.senderId || latestMsg.receiverId || '').trim()
+            || (String(latestMsg.conversationId || '').endsWith('-support')
+              ? String(latestMsg.conversationId || '').slice(0, -'-support'.length)
+              : '');
           return {
             id,
+            conversationId: String(latestMsg.conversationId || latest.conversationId || id),
             actor,
             sourceApp,
             status: String(latestMsg.status || 'open') === 'closed' ? 'closed' : 'open',
@@ -9458,12 +10337,22 @@ async function mountPending() {
     safeGetDocs(query(collection(db, 'restaurants'), where('approvalStatus', '==', 'pending')))
   ]);
 
+  const [approvedDriverSnap, approvedStoreSnap] = await Promise.all([
+    safeGetDocs(query(collection(db, 'drivers'), where('approvalStatus', '==', 'approved'))),
+    safeGetDocs(query(collection(db, 'restaurants'), where('approvalStatus', '==', 'approved'))),
+  ]);
+
   syncPendingApprovalsState(collectPendingApprovalEntries({
     courierApps,
     storeApps,
     fallbackDrivers: fallbackDriverSnap.docs,
     fallbackStores: fallbackStoreSnap.docs,
   }));
+
+  renderPendingGeoStats([
+    ...approvedDriverSnap.docs.map((docSnap) => ({ role: 'courier', data: docSnap.data() || {} })),
+    ...approvedStoreSnap.docs.map((docSnap) => ({ role: 'store', data: docSnap.data() || {} })),
+  ]);
 
   const pendingDriverIds = new Set(courierApps.map((d) => {
     const data = d.data() || {};
@@ -9475,80 +10364,73 @@ async function mountPending() {
     return data.restaurantId || data.ownerUid || data.uid || d.id;
   }));
 
-  const rows = [];
+  const courierCards = [];
+  const storeCards = [];
 
   courierApps.forEach((d) => {
     const data = d.data() || {};
     const identityNumber = data.nationalIdNumber || '-';
     const identityImageUrl = data.idImageUrl || '';
-    rows.push(`<tr>
-      <td>مندوب</td>
-      <td>${data.name || d.id}</td>
-      <td>${data.phone || '-'}</td>
-      <td>${data.email || '-'}</td>
-      <td>${data.ownerUid || data.driverId || d.id}</td>
-      <td>${identityNumber}</td>
-      <td>${imageCell(identityImageUrl)}</td>
-      <td>
+    courierCards.push(buildPendingApplicantCard({
+      kind: 'courier',
+      id: d.id,
+      data,
+      title: data.name || d.id,
+      imageUrl: identityImageUrl,
+      actions: `
         <button class="btn ghost" data-approve-courier-app="${d.id}">قبول</button>
         <button class="btn danger" data-reject-courier-app="${d.id}">رفض</button>
-      </td>
-    </tr>`);
+      `,
+    }));
   });
 
   storeApps.forEach((d) => {
     const data = d.data() || {};
-    rows.push(`<tr>
-      <td>متجر</td>
-      <td>${data.name || d.id}</td>
-      <td>${data.phone || '-'}</td>
-      <td>${data.email || '-'}</td>
-      <td>${data.ownerUid || data.restaurantId || d.id}</td>
-      <td>${data.commercialRecordNumber || '-'}</td>
-      <td>${imageCell(data.commercialRecordImageUrl || '')}</td>
-      <td>
+    storeCards.push(buildPendingApplicantCard({
+      kind: 'store',
+      id: d.id,
+      data,
+      title: data.name || d.id,
+      imageUrl: data.commercialRecordImageUrl || '',
+      actions: `
         <button class="btn ghost" data-approve-store-app="${d.id}">قبول</button>
         <button class="btn danger" data-reject-store-app="${d.id}">رفض</button>
-      </td>
-    </tr>`);
+      `,
+    }));
   });
 
   fallbackDriverSnap.docs
     .filter((d) => !pendingDriverIds.has(d.id))
     .forEach((d) => {
       const data = d.data() || {};
-      rows.push(`<tr>
-        <td>مندوب</td>
-        <td>${data.name || d.id}</td>
-        <td>${data.phone || '-'}</td>
-        <td>${data.email || '-'}</td>
-        <td>${data.ownerUid || d.id}</td>
-        <td>${data.nationalIdNumber || '-'}</td>
-        <td>${imageCell(data.idImageUrl || '')}</td>
-        <td>-</td>
-      </tr>`);
+      courierCards.push(buildPendingApplicantCard({
+        kind: 'courier',
+        id: d.id,
+        data,
+        title: data.name || d.id,
+        imageUrl: data.idImageUrl || '',
+        actions: '<span class="muted">هذا السجل غير موجود ضمن طلبات معلقة، ويمكن مراجعته فقط.</span>',
+      }));
     });
 
   fallbackStoreSnap.docs
     .filter((d) => !pendingStoreIds.has(d.id))
     .forEach((d) => {
       const data = d.data() || {};
-      rows.push(`<tr>
-        <td>متجر</td>
-        <td>${data.name || d.id}</td>
-        <td>${data.phone || '-'}</td>
-        <td>${data.email || '-'}</td>
-        <td>${data.ownerUid || d.id}</td>
-        <td>${data.commercialRecordNumber || '-'}</td>
-        <td>${imageCell(data.commercialRecordImageUrl || '')}</td>
-        <td>
+      storeCards.push(buildPendingApplicantCard({
+        kind: 'store',
+        id: d.id,
+        data,
+        title: data.name || d.id,
+        imageUrl: data.commercialRecordImageUrl || '',
+        actions: `
           <button class="btn ghost" data-approve-store-entity="${d.id}">قبول</button>
           <button class="btn danger" data-reject-store-entity="${d.id}">رفض</button>
-        </td>
-      </tr>`);
+        `,
+      }));
     });
 
-  setHtml(pendingTable, table(['النوع', 'الاسم', 'الهاتف', 'البريد', 'UID', 'السجل', 'الصورة', 'إجراء'], rows));
+  setHtml(pendingTable, `<div class="pending-application-grid">${[...courierCards, ...storeCards].join('')}</div>`);
 
   pendingTable.querySelectorAll('[data-approve-courier-app]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -9631,11 +10513,18 @@ async function mountPending() {
 
   if (!pendingMenuTable) return;
 
+  const approvedMenuSnap = await safeGetDocs(query(collection(db, 'restaurants'), where('approvalStatus', '==', 'approved')));
+
   const pendingMenuSnap = await safeGetDocs(
     query(collection(db, 'restaurants'), where('pendingApproval', '==', true))
   );
 
-  const menuRows = pendingMenuSnap.docs
+  renderPendingGeoStats([
+    ...approvedDriverSnap.docs.map((docSnap) => ({ role: 'courier', data: docSnap.data() || {} })),
+    ...approvedMenuSnap.docs.map((docSnap) => ({ role: 'store', data: docSnap.data() || {} })),
+  ]);
+
+  const menuCards = pendingMenuSnap.docs
     .map((d) => ({ id: d.id, data: d.data() || {} }))
     .sort((a, b) => {
       const at = a.data.approvalRequestedAt && typeof a.data.approvalRequestedAt.toDate === 'function'
@@ -9654,22 +10543,20 @@ async function mountPending() {
         }
       } catch (_) {}
 
-      return `<tr>
-        <td>${data.name || id}</td>
-        <td>${data.phone || '-'}</td>
-        <td>${requestedAt}</td>
-        <td>${data.menuApproved === true ? 'معتمدة' : 'غير معتمدة'}</td>
-        <td>
+      return buildPendingApplicantCard({
+        kind: 'store',
+        id,
+        data: { ...data, approvalRequestedAt: data.approvalRequestedAt, requestedAt },
+        title: data.name || id,
+        imageUrl: data.commercialRecordImageUrl || '',
+        actions: `
           <button class="btn ghost" data-approve-menu-request="${id}">قبول القائمة</button>
           <button class="btn danger" data-reject-menu-request="${id}">رفض القائمة</button>
-        </td>
-      </tr>`;
+        `,
+      });
     });
 
-  setHtml(
-    pendingMenuTable,
-    table(['المتجر', 'الهاتف', 'تاريخ الطلب', 'الحالة الحالية', 'إجراء'], menuRows)
-  );
+  setHtml(pendingMenuTable, `<div class="pending-application-grid">${menuCards.join('')}</div>`);
 
   pendingMenuTable.querySelectorAll('[data-approve-menu-request]').forEach((btn) => {
     btn.addEventListener('click', async () => {
