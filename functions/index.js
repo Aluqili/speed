@@ -1245,8 +1245,12 @@ function evaluatePromocode(promo, context, userId) {
     return { ok: false, reason: 'expired' };
   }
 
+  const promoRestaurantIds = Array.isArray(promo.restaurantIds)
+    ? Array.from(new Set(promo.restaurantIds.map((id) => String(id || '').trim()).filter(Boolean)))
+    : [];
   const promoRestaurantId = String(promo.restaurantId || '').trim();
-  if (promoRestaurantId && promoRestaurantId !== context.restaurantId) {
+  if ((promoRestaurantIds.length && !promoRestaurantIds.includes(context.restaurantId))
+    || (!promoRestaurantIds.length && promoRestaurantId && promoRestaurantId !== context.restaurantId)) {
     return { ok: false, reason: 'restaurant-mismatch' };
   }
 
@@ -1259,6 +1263,15 @@ function evaluatePromocode(promo, context, userId) {
   const usedCount = Math.max(0, Math.floor(toSafeNumber(promo.usedCount)));
   if (maxUsage > 0 && usedCount >= maxUsage) {
     return { ok: false, reason: 'max-usage' };
+  }
+
+  const maxUsagePerRestaurant = Math.max(0, Math.floor(toSafeNumber(promo.maxUsagePerRestaurant)));
+  const restaurantUsage = promo.restaurantUsage && typeof promo.restaurantUsage === 'object'
+    ? promo.restaurantUsage
+    : {};
+  const restaurantUsedCount = Math.max(0, Math.floor(toSafeNumber(restaurantUsage[context.restaurantId])));
+  if (maxUsagePerRestaurant > 0 && restaurantUsedCount >= maxUsagePerRestaurant) {
+    return { ok: false, reason: 'max-usage-per-restaurant' };
   }
 
   const usersUsed = promo.usersUsed && typeof promo.usersUsed === 'object' ? promo.usersUsed : {};
@@ -1324,7 +1337,9 @@ function evaluatePromocode(promo, context, userId) {
       discountValue,
       maxDiscount: maxDiscount || null,
       minOrder: minOrder || null,
+      restaurantIds: promoRestaurantIds,
       restaurantId: promoRestaurantId || null,
+      maxUsagePerRestaurant: maxUsagePerRestaurant || null,
       itemName: itemName || null,
       onlyForNewOrders: promo.onlyForNewOrders === true,
       promoId: String(promo.id || ''),
@@ -2225,9 +2240,13 @@ exports.adminUpdatePromocode = onCall({ region: REGION }, async (request) => {
   const discountValue = Math.max(0, toSafeNumber(promoInput.discountValue));
   const minOrder = Math.max(0, toSafeNumber(promoInput.minOrder));
   const maxUsage = Math.max(0, Math.floor(toSafeNumber(promoInput.maxUsage)));
+  const maxUsagePerRestaurant = Math.max(0, Math.floor(toSafeNumber(promoInput.maxUsagePerRestaurant)));
   const maxUsagePerUser = Math.max(0, Math.floor(toSafeNumber(promoInput.maxUsagePerUser)));
   const maxDiscount = Math.max(0, toSafeNumber(promoInput.maxDiscount));
   const expiryMillis = Math.round(toSafeNumber(promoInput.expiryMillis));
+  const restaurantIds = Array.isArray(promoInput.restaurantIds)
+    ? Array.from(new Set(promoInput.restaurantIds.map((id) => String(id || '').trim()).filter(Boolean)))
+    : [];
 
   if (!code || code.length > 80) {
     throw new HttpsError('invalid-argument', 'A valid promocode is required');
@@ -2240,6 +2259,9 @@ exports.adminUpdatePromocode = onCall({ region: REGION }, async (request) => {
   }
   if (!Number.isFinite(expiryMillis) || expiryMillis <= Date.now()) {
     throw new HttpsError('invalid-argument', 'A future expiry date is required');
+  }
+  if (restaurantIds.length > 500) {
+    throw new HttpsError('invalid-argument', 'Too many restaurants selected');
   }
 
   const sourceRef = sourceCode ? db.collection('promocodes').doc(sourceCode) : null;
@@ -2271,12 +2293,14 @@ exports.adminUpdatePromocode = onCall({ region: REGION }, async (request) => {
       discountValue,
       isActive: promoInput.isActive === true,
       onlyForNewOrders: promoInput.onlyForNewOrders === true,
-      restaurantId: String(promoInput.restaurantId || '').trim(),
+      restaurantIds,
+      restaurantId: restaurantIds.length === 1 ? restaurantIds[0] : '',
       itemName: discountScope === 'delivery_fee'
         ? ''
         : String(promoInput.itemName || '').trim(),
       minOrder: minOrder || null,
       maxUsage: maxUsage || null,
+      maxUsagePerRestaurant: maxUsagePerRestaurant || null,
       maxUsagePerUser: maxUsagePerUser || null,
       maxDiscount: maxDiscount || null,
       expiryDate: admin.firestore.Timestamp.fromMillis(expiryMillis),
@@ -2286,6 +2310,7 @@ exports.adminUpdatePromocode = onCall({ region: REGION }, async (request) => {
 
     if (!sourceRef) {
       patch.usedCount = 0;
+      patch.restaurantUsage = {};
       patch.usersUsed = {};
       patch.createdAt = admin.firestore.FieldValue.serverTimestamp();
       patch.createdBy = request.auth.uid;
@@ -2394,10 +2419,18 @@ exports.redeemPromocodeForClientOrder = onCall({ region: REGION }, async (reques
       ? { ...promo.usersUsed }
       : {};
     usersUsed[uid] = Math.max(0, Math.floor(toSafeNumber(usersUsed[uid]))) + 1;
+    const restaurantUsage = promo.restaurantUsage && typeof promo.restaurantUsage === 'object'
+      ? { ...promo.restaurantUsage }
+      : {};
+    restaurantUsage[context.restaurantId] = Math.max(
+      0,
+      Math.floor(toSafeNumber(restaurantUsage[context.restaurantId]))
+    ) + 1;
 
     tx.update(promoRef, {
       usedCount: admin.firestore.FieldValue.increment(1),
       usersUsed,
+      restaurantUsage,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedBy: uid,
     });

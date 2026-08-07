@@ -293,9 +293,12 @@ const discountType = document.getElementById('discountType');
 const discountValue = document.getElementById('discountValue');
 const discountMinOrder = document.getElementById('discountMinOrder');
 const discountMaxUsage = document.getElementById('discountMaxUsage');
+const discountMaxUsagePerRestaurant = document.getElementById('discountMaxUsagePerRestaurant');
 const discountMaxUsagePerUser = document.getElementById('discountMaxUsagePerUser');
 const discountMaxDiscount = document.getElementById('discountMaxDiscount');
-const discountRestaurantId = document.getElementById('discountRestaurantId');
+const discountRestaurantScope = document.getElementById('discountRestaurantScope');
+const discountRestaurantIds = document.getElementById('discountRestaurantIds');
+const discountRestaurantsField = document.getElementById('discountRestaurantsField');
 const discountItemName = document.getElementById('discountItemName');
 const discountExpiryDate = document.getElementById('discountExpiryDate');
 const discountIsActive = document.getElementById('discountIsActive');
@@ -10151,6 +10154,16 @@ function mountDiscountCodes() {
   };
   let editingDiscountCode = '';
 
+  const syncDiscountRestaurantField = () => {
+    const isSelectedScope = discountRestaurantScope?.value === 'selected';
+    if (discountRestaurantsField) discountRestaurantsField.hidden = !isSelectedScope;
+    if (discountRestaurantIds) discountRestaurantIds.required = isSelectedScope;
+  };
+
+  const selectedDiscountRestaurantIds = () => Array.from(discountRestaurantIds?.selectedOptions || [])
+    .map((option) => String(option.value || '').trim())
+    .filter(Boolean);
+
   const formatDateTimeInput = (value) => {
     if (!value || typeof value.toDate !== 'function') return '';
     const date = value.toDate();
@@ -10163,6 +10176,9 @@ function mountDiscountCodes() {
     discountForm.reset();
     if (discountIsActive) discountIsActive.checked = true;
     if (discountScope) discountScope.value = 'order_total';
+    if (discountRestaurantScope) discountRestaurantScope.value = 'all';
+    if (discountRestaurantIds) Array.from(discountRestaurantIds.options).forEach((option) => { option.selected = false; });
+    syncDiscountRestaurantField();
     if (discountSaveBtn) discountSaveBtn.textContent = 'حفظ الكود';
     if (discountCancelEditBtn) discountCancelEditBtn.hidden = true;
   };
@@ -10175,9 +10191,19 @@ function mountDiscountCodes() {
     if (discountValue) discountValue.value = String(data.discountValue ?? '');
     if (discountMinOrder) discountMinOrder.value = String(data.minOrder ?? '');
     if (discountMaxUsage) discountMaxUsage.value = String(data.maxUsage ?? '');
+    if (discountMaxUsagePerRestaurant) discountMaxUsagePerRestaurant.value = String(data.maxUsagePerRestaurant ?? '');
     if (discountMaxUsagePerUser) discountMaxUsagePerUser.value = String(data.maxUsagePerUser ?? '');
     if (discountMaxDiscount) discountMaxDiscount.value = String(data.maxDiscount ?? '');
-    if (discountRestaurantId) discountRestaurantId.value = String(data.restaurantId || '');
+    const restaurantIds = Array.isArray(data.restaurantIds)
+      ? data.restaurantIds.map((id) => String(id || '').trim()).filter(Boolean)
+      : (data.restaurantId ? [String(data.restaurantId).trim()] : []);
+    if (discountRestaurantScope) discountRestaurantScope.value = restaurantIds.length ? 'selected' : 'all';
+    if (discountRestaurantIds) {
+      Array.from(discountRestaurantIds.options).forEach((option) => {
+        option.selected = restaurantIds.includes(option.value);
+      });
+    }
+    syncDiscountRestaurantField();
     if (discountItemName) discountItemName.value = String(data.itemName || '');
     if (discountExpiryDate) discountExpiryDate.value = formatDateTimeInput(data.expiryDate);
     if (discountIsActive) discountIsActive.checked = data.isActive === true;
@@ -10203,6 +10229,7 @@ function mountDiscountCodes() {
   };
 
   if (!discountFormBound) {
+    discountRestaurantScope?.addEventListener('change', syncDiscountRestaurantField);
     discountCancelEditBtn?.addEventListener('click', () => {
       resetDiscountEditor();
       if (discountResult) discountResult.textContent = 'تم إلغاء التعديل.';
@@ -10215,6 +10242,8 @@ function mountDiscountCodes() {
       const value = parseNumberOrNull(discountValue?.value);
       const expiryRaw = String(discountExpiryDate?.value || '').trim();
       const expiryMillis = Date.parse(expiryRaw);
+      const restaurantScope = String(discountRestaurantScope?.value || 'all');
+      const restaurantIds = restaurantScope === 'selected' ? selectedDiscountRestaurantIds() : [];
 
       if (!code) {
         if (discountResult) discountResult.textContent = 'يرجى إدخال كود الخصم.';
@@ -10236,6 +10265,10 @@ function mountDiscountCodes() {
         if (discountResult) discountResult.textContent = 'يرجى إدخال تاريخ انتهاء صحيح.';
         return;
       }
+      if (restaurantScope === 'selected' && restaurantIds.length === 0) {
+        if (discountResult) discountResult.textContent = 'اختر مطعمًا واحدًا على الأقل أو غيّر النطاق إلى كل المطاعم.';
+        return;
+      }
 
       const payload = {
         code,
@@ -10244,10 +10277,11 @@ function mountDiscountCodes() {
         discountValue: value,
         isActive: discountIsActive?.checked === true,
         onlyForNewOrders: discountOnlyNewOrders?.checked === true,
-        restaurantId: String(discountRestaurantId?.value || '').trim(),
+        restaurantIds,
         itemName: scope === 'delivery_fee' ? '' : String(discountItemName?.value || '').trim(),
         minOrder: parseNumberOrNull(discountMinOrder?.value),
         maxUsage: parseNumberOrNull(discountMaxUsage?.value),
+        maxUsagePerRestaurant: parseNumberOrNull(discountMaxUsagePerRestaurant?.value),
         maxUsagePerUser: parseNumberOrNull(discountMaxUsagePerUser?.value),
         maxDiscount: parseNumberOrNull(discountMaxDiscount?.value),
         expiryDate: new Date(expiryMillis),
@@ -10291,6 +10325,26 @@ function mountDiscountCodes() {
     discountFormBound = true;
   }
 
+  syncDiscountRestaurantField();
+  unsubscribers.push(
+    onSnapshot(query(collection(db, 'restaurants'), limit(500)), (snap) => {
+      if (!discountRestaurantIds) return;
+      const selected = new Set(selectedDiscountRestaurantIds());
+      const restaurants = snap.docs
+        .map((docSnap) => ({ id: docSnap.id, data: docSnap.data() || {} }))
+        .filter((item) => {
+          const status = String(item.data.approvalStatus || '').trim().toLowerCase();
+          return !status || status === 'approved' || item.data.active === true;
+        })
+        .sort((a, b) => String(a.data.name || a.id).localeCompare(String(b.data.name || b.id), 'ar'));
+      discountRestaurantIds.innerHTML = restaurants.map((item) => {
+        const name = String(item.data.name || item.data.restaurantName || item.id).trim();
+        const isSelected = selected.has(item.id) ? ' selected' : '';
+        return `<option value="${escapeHtml(item.id)}"${isSelected}>${escapeHtml(name)}</option>`;
+      }).join('');
+    })
+  );
+
   unsubscribers.push(
     onSnapshot(query(collection(db, 'promocodes'), limit(200)), (snap) => {
       const docs = snap.docs.slice().sort((a, b) => {
@@ -10305,6 +10359,7 @@ function mountDiscountCodes() {
         const active = data.isActive === true;
         const usedCount = Number(data.usedCount || 0);
         const maxUsage = Number(data.maxUsage || 0);
+        const maxUsagePerRestaurant = Number(data.maxUsagePerRestaurant || 0);
         const capText = Number(data.maxDiscount || 0) > 0 ? ` (سقف ${Number(data.maxDiscount)})` : '';
         const scopeLabel = DISCOUNT_SCOPE_LABELS[String(data.discountScope || 'order_total').trim().toLowerCase()] || 'إجمالي الطلب';
 
@@ -10314,6 +10369,7 @@ function mountDiscountCodes() {
           <td>${escapeHtml(String(data.discountType || '-'))}</td>
           <td>${Number(data.discountValue || 0)}${capText}</td>
           <td>${usedCount}${maxUsage > 0 ? ` / ${maxUsage}` : ''}</td>
+          <td>${Array.isArray(data.restaurantIds) && data.restaurantIds.length ? `${data.restaurantIds.length} مطاعم` : 'كل المطاعم'}${maxUsagePerRestaurant > 0 ? ` · ${maxUsagePerRestaurant} لكل مطعم` : ''}</td>
           <td>${formatDateTimeLocal(data.expiryDate)}</td>
           <td><span class="badge ${active ? 'closed' : 'open'}">${active ? 'مفعل' : 'موقوف'}</span></td>
           <td>
@@ -10324,7 +10380,7 @@ function mountDiscountCodes() {
         </tr>`;
       });
 
-      setHtml(discountsTable, table(['الكود', 'النطاق', 'النوع', 'القيمة', 'الاستخدام', 'ينتهي في', 'الحالة', 'إجراء'], rows));
+      setHtml(discountsTable, table(['الكود', 'النطاق', 'النوع', 'القيمة', 'الاستخدام', 'المطاعم', 'ينتهي في', 'الحالة', 'إجراء'], rows));
 
       discountsTable.querySelectorAll('[data-edit-discount]').forEach((btn) => {
         btn.addEventListener('click', () => {
