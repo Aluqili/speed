@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:getwidget/getwidget.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'store_order_details_screen.dart';
 
@@ -11,6 +13,75 @@ class StoreNotificationsScreen extends StatelessWidget {
     super.key,
     required this.restaurantId,
   });
+
+  String _extractFirstUrl(String text) {
+    final match =
+        RegExp(r'https?:\/\/[^\s]+', caseSensitive: false).firstMatch(text);
+    if (match == null) return '';
+    return match.group(0)?.replaceAll(RegExp(r'[\]\[\)\(>,،؛!؟.,]+$'), '') ??
+        '';
+  }
+
+  Future<void> _openUrl(BuildContext context, String url) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return;
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر فتح الرابط.')),
+      );
+    }
+  }
+
+  Future<void> _copyUrl(BuildContext context, String url) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم نسخ الرابط.')),
+    );
+  }
+
+  String _notificationImageUrl(Map<String, dynamic> data) {
+    for (final key in ['imageUrl', 'receiptUrl', 'proofImageUrl']) {
+      final value = (data[key] ?? '').toString().trim();
+      if (Uri.tryParse(value)?.hasScheme == true) return value;
+    }
+    return '';
+  }
+
+  Future<void> _openImagePreview(BuildContext context, String imageUrl) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        insetPadding: const EdgeInsets.all(18),
+        child: Stack(
+          children: [
+            InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 4,
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const SizedBox(
+                  height: 180,
+                  child: Center(child: Text('تعذر تحميل الصورة')),
+                ),
+              ),
+            ),
+            PositionedDirectional(
+              top: 6,
+              end: 6,
+              child: IconButton.filled(
+                tooltip: 'إغلاق',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _openNotification(
     BuildContext context,
@@ -51,6 +122,12 @@ class StoreNotificationsScreen extends StatelessWidget {
     }
 
     if (!context.mounted) return;
+    final body = (data['body'] ?? 'لا توجد تفاصيل إضافية').toString();
+    final receiptUrl = (data['receiptUrl'] ?? '').toString().trim();
+    final detectedUrl =
+        receiptUrl.isNotEmpty ? receiptUrl : _extractFirstUrl(body);
+    final imageUrl = _notificationImageUrl(data);
+
     await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
@@ -59,7 +136,34 @@ class StoreNotificationsScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text((data['body'] ?? 'لا توجد تفاصيل إضافية').toString()),
+            if (imageUrl.isNotEmpty) ...[
+              InkWell(
+                onTap: () => _openImagePreview(context, imageUrl),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    imageUrl,
+                    height: 120,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+            SelectableText(body),
+            if (detectedUrl.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              SelectableText(
+                detectedUrl,
+                style: const TextStyle(
+                  color: Colors.blue,
+                  fontSize: 13,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Text(
               _formatDate(data['createdAt']),
@@ -68,6 +172,18 @@ class StoreNotificationsScreen extends StatelessWidget {
           ],
         ),
         actions: [
+          if (detectedUrl.isNotEmpty)
+            TextButton.icon(
+              onPressed: () => _copyUrl(context, detectedUrl),
+              icon: const Icon(Icons.copy_rounded),
+              label: const Text('نسخ الرابط'),
+            ),
+          if (detectedUrl.isNotEmpty)
+            TextButton.icon(
+              onPressed: () => _openUrl(context, detectedUrl),
+              icon: const Icon(Icons.open_in_new_rounded),
+              label: const Text('فتح الرابط'),
+            ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('إغلاق'),
@@ -172,7 +288,8 @@ class StoreNotificationsScreen extends StatelessWidget {
                     SizedBox(height: 12),
                     Text(
                       'لا توجد إشعارات جديدة.',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                     ),
                   ],
                 ),
@@ -225,14 +342,18 @@ class StoreNotificationsScreen extends StatelessWidget {
                     const SizedBox(height: 6),
                     const Text(
                       'تابع الطلبات والتحديثات المهمة أولاً بأول.',
-                      style: TextStyle(color: Colors.white70, fontFamily: 'Tajawal'),
+                      style: TextStyle(
+                          color: Colors.white70, fontFamily: 'Tajawal'),
                     ),
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        Expanded(child: _summaryBox('الإجمالي', '${notifications.length}')),
+                        Expanded(
+                            child: _summaryBox(
+                                'الإجمالي', '${notifications.length}')),
                         const SizedBox(width: 10),
-                        Expanded(child: _summaryBox('غير المقروء', '$unreadCount')),
+                        Expanded(
+                            child: _summaryBox('غير المقروء', '$unreadCount')),
                       ],
                     ),
                   ],
@@ -241,7 +362,9 @@ class StoreNotificationsScreen extends StatelessWidget {
               ...notifications.map((doc) {
                 final data = doc.data();
                 final isRead = data['read'] == true || data['isRead'] == true;
-                final hasOrder = (data['orderId'] ?? '').toString().trim().isNotEmpty;
+                final hasOrder =
+                    (data['orderId'] ?? '').toString().trim().isNotEmpty;
+                final imageUrl = _notificationImageUrl(data);
 
                 return InkWell(
                   borderRadius: BorderRadius.circular(20),
@@ -255,7 +378,8 @@ class StoreNotificationsScreen extends StatelessWidget {
                       border: Border.all(
                         color: isRead
                             ? Colors.black12
-                            : AppThemeArabic.storePrimary.withValues(alpha: 0.28),
+                            : AppThemeArabic.storePrimary
+                                .withValues(alpha: 0.28),
                       ),
                       boxShadow: [
                         BoxShadow(
@@ -269,14 +393,35 @@ class StoreNotificationsScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         GFAvatar(
-                          backgroundColor:
-                              hasOrder ? AppThemeArabic.storePrimary : Colors.blueGrey,
+                          backgroundColor: hasOrder
+                              ? AppThemeArabic.storePrimary
+                              : Colors.blueGrey,
                           child: Icon(
-                            hasOrder ? Icons.receipt_long : Icons.notifications_active,
+                            hasOrder
+                                ? Icons.receipt_long
+                                : Icons.notifications_active,
                             color: Colors.white,
                           ),
                         ),
                         const SizedBox(width: 12),
+                        if (imageUrl.isNotEmpty) ...[
+                          InkWell(
+                            onTap: () => _openImagePreview(context, imageUrl),
+                            borderRadius: BorderRadius.circular(8),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(
+                                imageUrl,
+                                width: 54,
+                                height: 54,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    const SizedBox.shrink(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -285,9 +430,12 @@ class StoreNotificationsScreen extends StatelessWidget {
                                 children: [
                                   Expanded(
                                     child: Text(
-                                      (data['title'] ?? 'إشعار بدون عنوان').toString(),
+                                      (data['title'] ?? 'إشعار بدون عنوان')
+                                          .toString(),
                                       style: TextStyle(
-                                        fontWeight: isRead ? FontWeight.w600 : FontWeight.w800,
+                                        fontWeight: isRead
+                                            ? FontWeight.w600
+                                            : FontWeight.w800,
                                         fontFamily: 'Tajawal',
                                       ),
                                     ),
@@ -381,7 +529,8 @@ class StoreNotificationsScreen extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             label,
-            style: const TextStyle(color: Colors.white70, fontFamily: 'Tajawal'),
+            style:
+                const TextStyle(color: Colors.white70, fontFamily: 'Tajawal'),
           ),
         ],
       ),

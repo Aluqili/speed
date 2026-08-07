@@ -12,6 +12,7 @@ import '../الثيم/client_theme.dart';
 import 'package:speedstar_core/speedstar_core.dart' show LoginScreenArabic;
 
 import '../الخدمات/guest_location_service.dart';
+import '../الخدمات/promocode_service.dart';
 import '../الخدمات/route_estimate_service.dart';
 import 'address_selection_screen.dart';
 import 'cart_provider.dart';
@@ -255,6 +256,15 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
     }
 
     return totalFee;
+  }
+
+  int? _estimatePrepTimeMinutes(String raw) {
+    final digits = RegExp(r'\d+').allMatches(raw).map((match) {
+      return int.tryParse(match.group(0) ?? '');
+    }).whereType<int>().toList();
+    if (digits.isEmpty) return null;
+    if (digits.length == 1) return digits.first;
+    return ((digits.first + digits.last) / 2).round();
   }
 
   @override
@@ -776,6 +786,28 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
     final generatedOrderCode = 'ORD-${Random().nextInt(1000000)}';
     final currentLargeOrderFee = _largeOrderFee;
+    final prepTimeText = (restData['deliveryTime'] ??
+        restData['estimatedDeliveryTime'] ??
+        '')
+      .toString()
+      .trim();
+    final prepTimeMinutes = _estimatePrepTimeMinutes(prepTimeText);
+    final estimatedDeliveryMinutes =
+      (prepTimeMinutes ?? 0) + route.durationMinutes;
+
+    final autoOfferPreview = await StoreOfferService().previewAutoOffer(
+      subtotal: cart.totalPrice,
+      deliveryFee: _deliveryFee,
+      largeOrderFee: currentLargeOrderFee,
+      restaurantId: restaurantId,
+      items: items,
+    );
+    if (!mounted) {
+      return;
+    }
+    final autoOfferDiscountAmount =
+        (autoOfferPreview?['discountAmount'] as num?)?.toDouble() ?? 0.0;
+    final autoOffer = autoOfferPreview?['offer'] as Map?;
 
     final draftOrderData = {
       'orderId': generatedOrderCode,
@@ -802,6 +834,9 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       'distanceKm': distanceKm,
       'routeDistanceKm': distanceKm,
       'routeDurationMinutes': route.durationMinutes,
+      'prepTimeText': prepTimeText,
+      'prepTimeMinutes': prepTimeMinutes,
+      'estimatedDeliveryMinutes': estimatedDeliveryMinutes,
       'routeIsRoadRoute': route.isRoadRoute,
       'routePolyline': route.encodedPolyline,
       'clientLocation': GeoPoint(clientLat, clientLng),
@@ -814,6 +849,12 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
           cart.totalPrice + _deliveryFee + currentLargeOrderFee,
       'totalWithDelivery':
           cart.totalPrice + _deliveryFee + currentLargeOrderFee,
+      if (autoOfferDiscountAmount > 0) ...{
+        'autoOfferDiscountAmount': autoOfferDiscountAmount,
+        'autoOfferId': (autoOffer?['offerId'] ?? '').toString(),
+        'autoOfferTitle': (autoOffer?['title'] ?? '').toString(),
+        'autoOfferSummary': (autoOffer?['summaryText'] ?? '').toString(),
+      },
     };
 
     Navigator.pushReplacement(

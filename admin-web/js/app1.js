@@ -1108,7 +1108,7 @@ function setToCsv(setValues) {
 
 function syncEnvUi() {
   if (envBadge) {
-    envBadge.textContent = `ENV: PROD | ${firebaseConfig.projectId}`;
+    envBadge.textContent = 'ENV: PROD';
   }
 }
 
@@ -1629,12 +1629,12 @@ let leafletClusterReadyPromise = null;
 const CLOUDINARY_CLOUD_NAME = 'dvnzloec6';
 const CLOUDINARY_UPLOAD_PRESET = 'flutter_unsigned';
 
-async function uploadImageToCloudinary(file) {
+async function uploadImageToCloudinary(file, fileName = file?.name || 'upload.jpg') {
   if (!file) return null;
   try {
     const formData = new FormData();
     formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-    formData.append('file', file);
+    formData.append('file', file, fileName || 'upload.jpg');
 
     const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
       method: 'POST',
@@ -1701,6 +1701,49 @@ function pickSingleImageFile() {
     };
     input.click();
   });
+}
+
+async function downloadImageToDevice(url, suggestedName = 'image') {
+  const value = String(url || '').trim();
+  if (!value) throw new Error('رابط الصورة غير متاح.');
+
+  const extFromUrl = (() => {
+    try {
+      const pathname = new URL(value).pathname || '';
+      const raw = pathname.split('.').pop() || '';
+      const cleaned = String(raw).toLowerCase().replace(/[^a-z0-9]/g, '');
+      return cleaned || 'jpg';
+    } catch (_) {
+      return 'jpg';
+    }
+  })();
+
+  const baseName = String(suggestedName || 'image').trim().replace(/[^\u0600-\u06FFa-zA-Z0-9._-]/g, '_') || 'image';
+  const finalName = baseName.includes('.') ? baseName : `${baseName}.${extFromUrl}`;
+
+  try {
+    const response = await fetch(value, { mode: 'cors' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = finalName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+    return;
+  } catch (_) {
+    const link = document.createElement('a');
+    link.href = value;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.download = finalName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
 }
 
 function loadExternalStyle(href) {
@@ -2825,9 +2868,53 @@ function mountFinance() {
     return { method, accountNumber, accountName };
   };
 
+  const currentAdminUid = String(auth.currentUser?.uid || '').trim();
+  const shiftAccountDocRef = currentAdminUid
+    ? doc(db, 'paymentSettings', `shift_account_${currentAdminUid}`)
+    : null;
+
+  const applyPaymentSettingsToForm = (data = {}) => {
+    const methods = Array.isArray(data.enabledMethods) ? data.enabledMethods : [];
+
+    if (enableBankk) enableBankk.checked = methods.includes('bankk');
+    if (enableOcash) enableOcash.checked = methods.includes('ocash');
+    if (enableFawry) enableFawry.checked = methods.includes('fawry');
+
+    if (bankkAccountInput) bankkAccountInput.value = String(data.bankkAccount || '');
+    if (ocashAccountInput) ocashAccountInput.value = String(data.ocashAccount || '');
+    if (fawryAccountInput) fawryAccountInput.value = String(data.fawryAccount || '');
+    if (bankkAccountHolderInput) bankkAccountHolderInput.value = String(data.bankkAccountHolder || '');
+    if (ocashAccountHolderInput) ocashAccountHolderInput.value = String(data.ocashAccountHolder || '');
+    if (fawryAccountHolderInput) fawryAccountHolderInput.value = String(data.fawryAccountHolder || '');
+    if (bankkQrUrlInput) bankkQrUrlInput.value = String(data.bankkQrUrl || '');
+    if (ocashQrUrlInput) ocashQrUrlInput.value = String(data.ocashQrUrl || '');
+    if (fawryQrUrlInput) fawryQrUrlInput.value = String(data.fawryQrUrl || '');
+    setQrPreview(bankkQrPreview, String(data.bankkQrUrl || ''));
+    setQrPreview(ocashQrPreview, String(data.ocashQrUrl || ''));
+    setQrPreview(fawryQrPreview, String(data.fawryQrUrl || ''));
+    if (bankkInstructionsInput) bankkInstructionsInput.value = String(data.bankkInstructions || '');
+    if (ocashInstructionsInput) ocashInstructionsInput.value = String(data.ocashInstructions || '');
+    if (fawryInstructionsInput) fawryInstructionsInput.value = String(data.fawryInstructions || '');
+    if (bankkOpenUrlAndroidInput) bankkOpenUrlAndroidInput.value = String(data.bankkOpenUrlAndroid || '');
+    if (ocashOpenUrlAndroidInput) ocashOpenUrlAndroidInput.value = String(data.ocashOpenUrlAndroid || '');
+    if (fawryOpenUrlAndroidInput) fawryOpenUrlAndroidInput.value = String(data.fawryOpenUrlAndroid || '');
+    if (bankkOpenUrlIosInput) bankkOpenUrlIosInput.value = String(data.bankkOpenUrlIos || '');
+    if (ocashOpenUrlIosInput) ocashOpenUrlIosInput.value = String(data.ocashOpenUrlIos || '');
+    if (fawryOpenUrlIosInput) fawryOpenUrlIosInput.value = String(data.fawryOpenUrlIos || '');
+    if (bankkOpenUrlInput) bankkOpenUrlInput.value = String(data.bankkOpenUrl || '');
+    if (ocashOpenUrlInput) ocashOpenUrlInput.value = String(data.ocashOpenUrl || '');
+    if (fawryOpenUrlInput) fawryOpenUrlInput.value = String(data.fawryOpenUrl || '');
+  };
+
   if (paymentSettingsForm && !paymentSettingsFormBound) {
     paymentSettingsForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (!currentAdminUid || !shiftAccountDocRef) {
+        if (paymentSettingsResult) {
+          paymentSettingsResult.textContent = 'تعذر تحديد حساب الأدمن الحالي.';
+        }
+        return;
+      }
 
       const enabledMethods = [];
       if (enableBankk?.checked) enabledMethods.push('bankk');
@@ -2877,11 +2964,12 @@ function mountFinance() {
           ocashOpenUrl: String(ocashOpenUrlInput?.value || '').trim(),
           fawryOpenUrl: String(fawryOpenUrlInput?.value || '').trim(),
           updatedAt: serverTimestamp(),
-          updatedByAdminUid: auth.currentUser?.uid || '',
+          updatedByAdminUid: currentAdminUid,
+          adminUid: currentAdminUid,
         };
 
         if (paymentSettingsResult) paymentSettingsResult.textContent = 'جارٍ حفظ الإعدادات...';
-        await setDoc(doc(db, 'paymentSettings', 'default'), payload, { merge: true });
+        await setDoc(shiftAccountDocRef, payload, { merge: true });
         if (bankkQrUrlInput) bankkQrUrlInput.value = bankkQrUrl;
         if (ocashQrUrlInput) ocashQrUrlInput.value = ocashQrUrl;
         if (fawryQrUrlInput) fawryQrUrlInput.value = fawryQrUrl;
@@ -2892,7 +2980,7 @@ function mountFinance() {
         if (ocashQrFileInput) ocashQrFileInput.value = '';
         if (fawryQrFileInput) fawryQrFileInput.value = '';
         if (paymentSettingsResult) {
-          paymentSettingsResult.textContent = '✅ تم حفظ إعدادات الدفع بنجاح.';
+          paymentSettingsResult.textContent = '✅ تم حفظ إعداداتك الخاصة. يتم نشرها للعملاء فقط عند بدء الدوام من لوحة الإدارة الرئيسية.';
         }
       } catch (err) {
         if (paymentSettingsResult) {
@@ -2907,41 +2995,12 @@ function mountFinance() {
   }
 
   unsubscribers.push(
-    onSnapshot(doc(db, 'paymentSettings', 'default'), (snap) => {
+    onSnapshot(shiftAccountDocRef || doc(db, 'paymentSettings', '__missing_shift_account__'), (snap) => {
       const data = snap.data() || {};
-      const methods = Array.isArray(data.enabledMethods) ? data.enabledMethods : [];
-
-      if (enableBankk) enableBankk.checked = methods.includes('bankk');
-      if (enableOcash) enableOcash.checked = methods.includes('ocash');
-      if (enableFawry) enableFawry.checked = methods.includes('fawry');
-
-      if (bankkAccountInput) bankkAccountInput.value = String(data.bankkAccount || '');
-      if (ocashAccountInput) ocashAccountInput.value = String(data.ocashAccount || '');
-      if (fawryAccountInput) fawryAccountInput.value = String(data.fawryAccount || '');
-      if (bankkAccountHolderInput) bankkAccountHolderInput.value = String(data.bankkAccountHolder || '');
-      if (ocashAccountHolderInput) ocashAccountHolderInput.value = String(data.ocashAccountHolder || '');
-      if (fawryAccountHolderInput) fawryAccountHolderInput.value = String(data.fawryAccountHolder || '');
-      if (bankkQrUrlInput) bankkQrUrlInput.value = String(data.bankkQrUrl || '');
-      if (ocashQrUrlInput) ocashQrUrlInput.value = String(data.ocashQrUrl || '');
-      if (fawryQrUrlInput) fawryQrUrlInput.value = String(data.fawryQrUrl || '');
-      setQrPreview(bankkQrPreview, String(data.bankkQrUrl || ''));
-      setQrPreview(ocashQrPreview, String(data.ocashQrUrl || ''));
-      setQrPreview(fawryQrPreview, String(data.fawryQrUrl || ''));
-      if (bankkInstructionsInput) bankkInstructionsInput.value = String(data.bankkInstructions || '');
-      if (ocashInstructionsInput) ocashInstructionsInput.value = String(data.ocashInstructions || '');
-      if (fawryInstructionsInput) fawryInstructionsInput.value = String(data.fawryInstructions || '');
-      if (bankkOpenUrlAndroidInput) bankkOpenUrlAndroidInput.value = String(data.bankkOpenUrlAndroid || '');
-      if (ocashOpenUrlAndroidInput) ocashOpenUrlAndroidInput.value = String(data.ocashOpenUrlAndroid || '');
-      if (fawryOpenUrlAndroidInput) fawryOpenUrlAndroidInput.value = String(data.fawryOpenUrlAndroid || '');
-      if (bankkOpenUrlIosInput) bankkOpenUrlIosInput.value = String(data.bankkOpenUrlIos || '');
-      if (ocashOpenUrlIosInput) ocashOpenUrlIosInput.value = String(data.ocashOpenUrlIos || '');
-      if (fawryOpenUrlIosInput) fawryOpenUrlIosInput.value = String(data.fawryOpenUrlIos || '');
-      if (bankkOpenUrlInput) bankkOpenUrlInput.value = String(data.bankkOpenUrl || '');
-      if (ocashOpenUrlInput) ocashOpenUrlInput.value = String(data.ocashOpenUrl || '');
-      if (fawryOpenUrlInput) fawryOpenUrlInput.value = String(data.fawryOpenUrl || '');
+      applyPaymentSettingsToForm(data);
 
       if (paymentSettingsResult && !paymentSettingsResult.textContent.includes('✅')) {
-        paymentSettingsResult.textContent = 'الإعدادات الحالية محمّلة من Firebase.';
+        paymentSettingsResult.textContent = 'تم تحميل إعداداتك الخاصة.';
       }
     }, (err) => {
       if (paymentSettingsResult) {
@@ -4103,6 +4162,24 @@ function renderOperationsOrders() {
   }
 }
 
+function getCourierActivityTier(item = {}) {
+  const monthOrders = Number(item.monthOrders || 0);
+  const monthHours = Number(item.monthMs || 0) / (60 * 60 * 1000);
+  const todayOrders = Number(item.todayOrders || 0);
+  const todayHours = Number(item.todayMs || 0) / (60 * 60 * 1000);
+  const activeOrders = Number(item.activeOrders || 0);
+
+  if (monthOrders >= 4 || monthHours >= 20 || todayHours >= 8 || (monthOrders >= 2 && (todayOrders > 0 || activeOrders > 0))) {
+    return { key: 'consistent', label: 'ثابت النشاط', className: 'live' };
+  }
+
+  if (monthOrders >= 1 || monthHours >= 6 || todayOrders > 0 || todayHours > 0 || activeOrders > 0) {
+    return { key: 'average', label: 'متوسط', className: 'soon' };
+  }
+
+  return { key: 'inactive', label: 'غير نشط', className: 'closed' };
+}
+
 function buildCourierActivityRows(drivers = [], orders = []) {
   const nowMs = Date.now();
   const todayStart = new Date();
@@ -4167,6 +4244,15 @@ function buildCourierActivityRows(drivers = [], orders = []) {
 
   return Array.from(driverMap.values())
     .filter((item) => item.approvalStatus === 'approved' || item.todayMs > 0 || item.monthMs > 0 || item.activeOrders > 0)
+    .map((item) => {
+      const tier = getCourierActivityTier(item);
+      return {
+        ...item,
+        activityTier: tier.key,
+        activityTierLabel: tier.label,
+        activityTierClass: tier.className,
+      };
+    })
     .sort((a, b) => {
       if (b.todayMs !== a.todayMs) return b.todayMs - a.todayMs;
       if (b.monthMs !== a.monthMs) return b.monthMs - a.monthMs;
@@ -4181,6 +4267,9 @@ function renderCourierActivityReport() {
   const totalTodayMs = rowsData.reduce((sum, item) => sum + item.todayMs, 0);
   const totalMonthMs = rowsData.reduce((sum, item) => sum + item.monthMs, 0);
   const activeTodayCount = rowsData.filter((item) => item.todayMs > 0 || item.activeOrders > 0).length;
+  const consistentCount = rowsData.filter((item) => item.activityTier === 'consistent').length;
+  const averageCount = rowsData.filter((item) => item.activityTier === 'average').length;
+  const inactiveCount = rowsData.filter((item) => item.activityTier === 'inactive').length;
 
   courierActivitySummary.classList.remove('muted');
   courierActivitySummary.innerHTML = `
@@ -4188,9 +4277,14 @@ function renderCourierActivityReport() {
       <div class="stat"><h4>إجمالي المندوبين</h4><b>${rowsData.length.toLocaleString('ar-EG')}</b></div>
       <div class="stat"><h4>نشطون اليوم</h4><b>${activeTodayCount.toLocaleString('ar-EG')}</b></div>
       <div class="stat"><h4>وقت التوفر اليوم</h4><b>${formatDurationHours(totalTodayMs)}</b></div>
-      <div class="stat"><h4>ساعات الشهر</h4><b>${formatDurationHours(totalMonthMs)}</b></div>
+      <div class="stat"><h4>نشاط الشهر</h4><b>${formatDurationHours(totalMonthMs)}</b></div>
     </div>
-    <div style="margin-top:10px;">وقت اليوم هنا مبني على وقت التوفر الفعلي للمندوب. أما الشهر فيبقى تقديريًا من مدد الطلبات إلى أن نضيف سجل توفر شهري تراكمي.</div>
+    <div class="stats" style="margin-top:8px;">
+      <div class="stat"><h4>ثابتون</h4><b>${consistentCount.toLocaleString('ar-EG')}</b></div>
+      <div class="stat"><h4>متوسطون</h4><b>${averageCount.toLocaleString('ar-EG')}</b></div>
+      <div class="stat"><h4>غير نشطين</h4><b>${inactiveCount.toLocaleString('ar-EG')}</b></div>
+    </div>
+    <div style="margin-top:10px;">يُحسب نشاط الشهر من عدد الطلبات المتوقعة وساعات التقدير المجمعة، مع تصنيف واضح لكل مندوب إلى ثابت النشاط أو متوسط أو غير نشط.</div>
   `;
 
   if (!rowsData.length) {
@@ -4203,17 +4297,17 @@ function renderCourierActivityReport() {
       <td>${escapeHtml(item.name)}</td>
       <td>${escapeHtml(item.phone)}</td>
       <td>${item.available ? 'متاح الآن' : 'غير متاح'}</td>
+      <td><span class="badge ${escapeHtml(item.activityTierClass)}">${escapeHtml(item.activityTierLabel)}</span></td>
       <td>${formatDurationHours(item.todayMs)}</td>
       <td>${item.todayOrders.toLocaleString('ar-EG')}</td>
-      <td>${formatDurationHours(item.monthMs)}</td>
-      <td>${item.monthOrders.toLocaleString('ar-EG')}</td>
+      <td>${escapeHtml(`${item.monthOrders.toLocaleString('ar-EG')} طلب • ${formatDurationHours(item.monthMs)}`)}</td>
       <td>${item.activeOrders.toLocaleString('ar-EG')}</td>
       <td>${escapeHtml(formatDateTimeLabel(item.lastSeenMs))}</td>
       <td><button class="btn ghost" data-open-activity-driver="${escapeHtml(item.id)}">فتح المندوب</button></td>
     </tr>
   `);
 
-  setHtml(courierActivityTable, table(['المندوب', 'الهاتف', 'الحالة الحالية', 'وقت التوفر اليوم', 'طلبات اليوم', 'نشاط الشهر', 'طلبات الشهر', 'طلبات نشطة', 'آخر ظهور', 'إجراء'], rows));
+  setHtml(courierActivityTable, table(['المندوب', 'الهاتف', 'الحالة الحالية', 'التصنيف', 'وقت التوفر اليوم', 'طلبات اليوم', 'نشاط الشهر', 'طلبات نشطة', 'آخر ظهور', 'إجراء'], rows));
   courierActivityTable.querySelectorAll('[data-open-activity-driver]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const driverId = btn.getAttribute('data-open-activity-driver');
@@ -4300,9 +4394,6 @@ function mountManagement() {
           <td>${available ? 'متاح' : 'غير متاح'}</td>
           <td>
             <button class="btn ghost" data-view-driver="${d.id}">تفاصيل</button>
-            <button class="btn ghost" data-approve-driver="${d.id}">قبول</button>
-            <button class="btn danger" data-reject-driver="${d.id}">رفض</button>
-            <button class="btn danger" data-delete-driver="${d.id}">حذف</button>
           </td>
         </tr>`;
       });
@@ -4312,42 +4403,6 @@ function mountManagement() {
         btn.addEventListener('click', async () => {
           const id = btn.getAttribute('data-view-driver');
           await loadCourierDetails(id);
-        });
-      });
-
-      couriersTable.querySelectorAll('[data-approve-driver]').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          const id = btn.getAttribute('data-approve-driver');
-          await updateDoc(doc(db, 'drivers', id), {
-            approvalStatus: 'approved',
-            isApproved: true,
-            updatedAt: serverTimestamp()
-          });
-        });
-      });
-
-      couriersTable.querySelectorAll('[data-reject-driver]').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          const id = btn.getAttribute('data-reject-driver');
-          await updateDoc(doc(db, 'drivers', id), {
-            ...(await buildDriverAvailabilityPatch(id, false)),
-            approvalStatus: 'rejected',
-            isApproved: false,
-            updatedAt: serverTimestamp()
-          });
-        });
-      });
-
-      couriersTable.querySelectorAll('[data-delete-driver]').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          const uid = btn.getAttribute('data-delete-driver');
-          if (!uid) return;
-          const item = courierDirectoryCache.find((entry) => entry.id === uid);
-          await handleManagedUserDeletion({
-            role: 'courier',
-            uid,
-            displayName: item?.data?.name || uid,
-          });
         });
       });
 
@@ -4404,6 +4459,9 @@ async function loadCourierDetails(driverId) {
     const idImage = driver.idImageUrl
       ? `<div class="entity-media-card"><a class="btn ghost" href="${escapeHtml(driver.idImageUrl)}" target="_blank" rel="noopener">فتح صورة الهوية/الرخصة</a></div>`
       : '<div class="entity-media-card muted">لا توجد صورة هوية/رخصة</div>';
+    const courierProfileImage = driver.profileImage
+      ? `<div class="entity-media-card"><a class="btn ghost" href="${escapeHtml(driver.profileImage)}" target="_blank" rel="noopener">فتح شعار/صورة المندوب</a></div>`
+      : '<div class="entity-media-card muted">لا يوجد شعار للمندوب</div>';
 
     courierDetailsPanel.innerHTML = `
       <div class="entity-details-panel">
@@ -4435,7 +4493,7 @@ async function loadCourierDetails(driverId) {
           { label: 'الطلبات النشطة', value: activeOrdersCount },
           { label: 'وقت التوفر اليوم', value: formatDurationHours(todayAvailabilityMs), className: 'entity-fact-highlight' },
         ]), { eyebrow: 'النشاط' })}
-        ${buildEntitySection('الهوية والمرفقات', `${idImage}<div class="entity-actions"><button class="btn ghost" id="driverImageChange-${driverId}">تعديل صورة الهوية/الرخصة</button><button class="btn ghost" id="driverToggleAvailability-${driverId}">${driver.available === true ? 'إيقاف التوفر' : 'تفعيل التوفر'}</button><button class="btn ghost" id="driverApprove-${driverId}">قبول</button><button class="btn danger" id="driverReject-${driverId}">رفض</button><button class="btn danger" id="driverDelete-${driverId}">حذف الحساب</button></div>`, { eyebrow: 'الإجراءات' })}
+        ${buildEntitySection('الهوية والمرفقات', `${idImage}${courierProfileImage}<div class="entity-actions"><button class="btn ghost" id="driverImageChange-${driverId}">تعديل صورة الهوية/الرخصة</button><button class="btn ghost" id="driverProfileImageChange-${driverId}">رفع شعار/صورة المندوب</button><button class="btn ghost" id="driverProfileImageDownload-${driverId}">تنزيل شعار/صورة المندوب</button><button class="btn ghost" id="driverToggleAvailability-${driverId}">${driver.available === true ? 'إيقاف التوفر' : 'تفعيل التوفر'}</button><button class="btn ghost" id="driverApprove-${driverId}">قبول</button><button class="btn danger" id="driverReject-${driverId}">رفض</button><button class="btn danger" id="driverDelete-${driverId}">حذف الحساب</button></div>`, { eyebrow: 'الإجراءات' })}
         ${buildEntitySection('تعديل بيانات المندوب', `
           <div class="entity-form-grid">
             <label>الاسم<input id="driverName-${driverId}" type="text" value="${escapeHtml(driver.name || '')}" /></label>
@@ -4446,6 +4504,7 @@ async function loadCourierDetails(driverId) {
             <label>رقم الهوية/الرخصة<input id="driverNationalId-${driverId}" type="text" value="${escapeHtml(driver.nationalIdNumber || '')}" /></label>
             <label>المنطقة<input id="driverRegion-${driverId}" type="text" value="${escapeHtml(driver.region || '')}" /></label>
             <label>رابط صورة الهوية/الرخصة<input id="driverIdImageUrl-${driverId}" type="text" value="${escapeHtml(driver.idImageUrl || '')}" /></label>
+            <label>رابط شعار/صورة المندوب<input id="driverProfileImage-${driverId}" type="text" value="${escapeHtml(driver.profileImage || '')}" /></label>
           </div>
           <div class="entity-actions">
             <button class="btn primary" id="driverSave-${driverId}">حفظ التعديلات</button>
@@ -4468,6 +4527,7 @@ async function loadCourierDetails(driverId) {
             nationalIdNumber: (document.getElementById(`driverNationalId-${driverId}`)?.value || '').trim(),
             region: (document.getElementById(`driverRegion-${driverId}`)?.value || '').trim(),
             idImageUrl: (document.getElementById(`driverIdImageUrl-${driverId}`)?.value || '').trim(),
+            profileImage: (document.getElementById(`driverProfileImage-${driverId}`)?.value || '').trim(),
           },
         });
         alert('تم حفظ بيانات المندوب بنجاح');
@@ -4543,6 +4603,45 @@ async function loadCourierDetails(driverId) {
         alert(`تعذر تحديث الصورة: ${err.message || err}`);
       }
     });
+
+    document.getElementById(`driverProfileImageChange-${driverId}`)?.addEventListener('click', async () => {
+      const pickedFile = await pickSingleImageFile();
+      if (!pickedFile) {
+        alert('لم يتم اختيار صورة');
+        return;
+      }
+      const uploaded = await uploadImageToCloudinary(pickedFile, pickedFile.name || `courier-profile-${driverId}.jpg`);
+      if (!uploaded) {
+        alert('تعذر رفع شعار/صورة المندوب');
+        return;
+      }
+
+      try {
+        await updateManagedUserProfile({
+          role: 'courier',
+          uid: driverId,
+          fields: {
+            profileImage: uploaded,
+          },
+        });
+        await loadCourierDetails(driverId);
+      } catch (err) {
+        alert(`تعذر تحديث شعار المندوب: ${err.message || err}`);
+      }
+    });
+
+    document.getElementById(`driverProfileImageDownload-${driverId}`)?.addEventListener('click', async () => {
+      const value = (document.getElementById(`driverProfileImage-${driverId}`)?.value || '').trim();
+      if (!value) {
+        alert('لا يوجد شعار/صورة للمندوب لتنزيلها.');
+        return;
+      }
+      try {
+        await downloadImageToDevice(value, `courier-profile-${driverId}`);
+      } catch (err) {
+        alert(`تعذر تنزيل الصورة: ${err.message || err}`);
+      }
+    });
   } catch (err) {
     courierDetailsPanel.innerHTML = `<span class="muted">تعذر تحميل التفاصيل: ${escapeHtml(err.message || err)}</span>`;
   }
@@ -4574,6 +4673,9 @@ async function loadStoreDetails(storeId) {
     const image = store.commercialRecordImageUrl
       ? `<div style="margin-top:8px"><a class="btn ghost" href="${escapeHtml(store.commercialRecordImageUrl)}" target="_blank" rel="noopener">فتح صورة السجل</a></div>`
       : '';
+    const storeLogoMedia = store.logoImageUrl
+      ? `<div style="margin-top:8px"><a class="btn ghost" href="${escapeHtml(store.logoImageUrl)}" target="_blank" rel="noopener">فتح شعار المتجر الأصلي</a></div>`
+      : '<div class="entity-media-card muted">لا يوجد شعار مرفوع للمتجر</div>';
 
     const storeOpenState = store.temporarilyClosed === true ? 'مغلق' : 'مفتوح';
 
@@ -4610,7 +4712,7 @@ async function loadStoreDetails(storeId) {
           { label: 'أقسام المنيو', value: menuDocsSnap.docs.length },
           { label: 'عناصر full_menu', value: fullMenuDocsSnap.docs.length, className: 'entity-fact-highlight' },
         ]), { eyebrow: 'النشاط' })}
-        ${buildEntitySection('الوثائق والميديا', `${image || '<div class="entity-media-card muted">لا توجد صورة سجل تجاري</div>'}`, { eyebrow: 'المرفقات' })}
+        ${buildEntitySection('الوثائق والميديا', `${image || '<div class="entity-media-card muted">لا توجد صورة سجل تجاري</div>'}${storeLogoMedia}`, { eyebrow: 'المرفقات' })}
         ${buildEntitySection('تعديل بيانات المتجر', `
           <div class="entity-form-grid">
             <label>الاسم<input id="storeName-${storeId}" type="text" value="${escapeHtml(store.name || '')}" /></label>
@@ -4625,6 +4727,7 @@ async function loadStoreDetails(storeId) {
           <div class="entity-actions">
             <button class="btn ghost" id="storeUploadCover-${storeId}">رفع صورة غلاف</button>
             <button class="btn ghost" id="storeUploadLogo-${storeId}">رفع شعار</button>
+            <button class="btn ghost" id="storeDownloadLogo-${storeId}">تنزيل شعار المتجر</button>
             <button class="btn primary" id="storeSaveProfile-${storeId}">حفظ بيانات المتجر</button>
           </div>
         `, { eyebrow: 'التحرير' })}
@@ -4668,6 +4771,19 @@ async function loadStoreDetails(storeId) {
       }
       const input = document.getElementById(`storeLogoImageUrl-${storeId}`);
       if (input) input.value = uploaded;
+    });
+
+    document.getElementById(`storeDownloadLogo-${storeId}`)?.addEventListener('click', async () => {
+      const value = (document.getElementById(`storeLogoImageUrl-${storeId}`)?.value || '').trim();
+      if (!value) {
+        alert('لا يوجد شعار لتنزيله حالياً.');
+        return;
+      }
+      try {
+        await downloadImageToDevice(value, `store-logo-${storeId}`);
+      } catch (err) {
+        alert(`تعذر تنزيل الشعار: ${err.message || err}`);
+      }
     });
 
     document.getElementById(`storeSaveProfile-${storeId}`)?.addEventListener('click', async () => {

@@ -35,9 +35,17 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
   String? _activeOrderId;
 
   static const _activeStatuses = {
-    'payment_review', 'store_pending', 'courier_searching',
-    'courier_offer_pending', 'courier_assigned', 'pickup_ready', 'picked_up',
-    'arrived_to_client', 'قيد المراجعة', 'قيد التجهيز', 'قيد التوصيل',
+    'payment_review',
+    'store_pending',
+    'courier_searching',
+    'courier_offer_pending',
+    'courier_assigned',
+    'pickup_ready',
+    'picked_up',
+    'arrived_to_client',
+    'قيد المراجعة',
+    'قيد التجهيز',
+    'قيد التوصيل',
   };
 
   bool get _isGuest => widget.clientId.trim().isEmpty;
@@ -66,19 +74,22 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
       if (!mounted) return;
       final active = snap.docs.where((doc) {
         final s = (doc.data()['orderStatus'] as String? ??
-            doc.data()['status'] as String? ?? '');
+            doc.data()['status'] as String? ??
+            '');
         return _activeStatuses.contains(s);
       }).toList()
         ..sort((a, b) {
-          final at = (a.data()['createdAt'] as Timestamp?)
-                  ?.millisecondsSinceEpoch ?? 0;
-          final bt = (b.data()['createdAt'] as Timestamp?)
-                  ?.millisecondsSinceEpoch ?? 0;
+          final at =
+              (a.data()['createdAt'] as Timestamp?)?.millisecondsSinceEpoch ??
+                  0;
+          final bt =
+              (b.data()['createdAt'] as Timestamp?)?.millisecondsSinceEpoch ??
+                  0;
           return bt.compareTo(at);
         });
       setState(() {
         _activeOrderId = active.isEmpty ? null : active.first.id;
-        _activeOrder   = active.isEmpty ? null : active.first.data();
+        _activeOrder = active.isEmpty ? null : active.first.data();
       });
     });
   }
@@ -148,10 +159,15 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                         orderData: _activeOrder!,
                         onTap: () {
                           final s = _activeOrder!['orderStatus'] as String? ??
-                              _activeOrder!['status'] as String? ?? '';
-                          final canTrack = {'courier_assigned',
-                              'pickup_ready', 'picked_up', 'arrived_to_client',
-                              'قيد التوصيل'}.contains(s);
+                              _activeOrder!['status'] as String? ??
+                              '';
+                          final canTrack = {
+                            'courier_assigned',
+                            'pickup_ready',
+                            'picked_up',
+                            'arrived_to_client',
+                            'قيد التوصيل'
+                          }.contains(s);
                           if (canTrack) {
                             Navigator.push(
                               context,
@@ -170,7 +186,6 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                 ],
               ),
             ),
-
             bottomNavigationBar: _GlassBottomNav(
               selectedIndex: _selectedIndex,
               clientId: widget.clientId,
@@ -203,91 +218,116 @@ class _GlassBottomNav extends StatelessWidget {
   final VoidCallback onCartTap;
 
   static const _items = [
-    (icon: Icons.home_outlined,          activeIcon: Icons.home_rounded,           label: 'الرئيسية'),
-    (icon: Icons.receipt_long_outlined,  activeIcon: Icons.receipt_long_rounded,   label: 'طلباتي'),
-    (icon: Icons.star_border_rounded,    activeIcon: Icons.star_rounded,           label: 'مكافآت'),
-    (icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded,         label: 'حسابي'),
+    (
+      icon: Icons.home_outlined,
+      activeIcon: Icons.home_rounded,
+      label: 'الرئيسية'
+    ),
+    (
+      icon: Icons.receipt_long_outlined,
+      activeIcon: Icons.receipt_long_rounded,
+      label: 'طلباتي'
+    ),
+    (
+      icon: Icons.star_border_rounded,
+      activeIcon: Icons.star_rounded,
+      label: 'مكافآت'
+    ),
+    (
+      icon: Icons.person_outline_rounded,
+      activeIcon: Icons.person_rounded,
+      label: 'حسابي'
+    ),
   ];
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF161616) : Colors.white,
-        border: Border(
-          top: BorderSide(
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF161616) : Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
             color: isDark ? const Color(0x22FF6B00) : const Color(0x14000000),
           ),
+          boxShadow: isDark
+              ? const []
+              : const [
+                  BoxShadow(
+                    color: Color(0x16000000),
+                    blurRadius: 18,
+                    offset: Offset(0, 5),
+                  ),
+                ],
         ),
-        boxShadow: isDark
-            ? const []
-            : const [
-                BoxShadow(
-                  color: Color(0x10000000),
-                  blurRadius: 12,
-                  offset: Offset(0, -2),
-                ),
-              ],
-      ),
-      child: SafeArea(
-        top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(6, 8, 6, 6),
+          padding: const EdgeInsets.fromLTRB(6, 8, 6, 7),
           child: Row(
-                  children: [
-                    Expanded(child: _item(context, _items[0], 0, isDark: isDark)),
-                    Expanded(child: _item(context, _items[1], 1, isDark: isDark)),
-                    // زر السلة في المنتصف
-                    Consumer<CartProvider>(
-                      builder: (_, cart, __) => GestureDetector(
-                        onTap: onCartTap,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: badges.Badge(
-                            position:
-                                badges.BadgePosition.topEnd(top: -6, end: -6),
-                            showBadge: cart.cartItems.isNotEmpty,
-                            badgeContent: Text(
-                              '${cart.cartItems.length}',
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800),
-                            ),
-                            badgeStyle: const badges.BadgeStyle(
-                              badgeColor: ClientColors.error,
-                              padding: EdgeInsets.all(4),
-                            ),
-                            child: Container(
-                              width: 50,
-                              height: 50,
-                              decoration: BoxDecoration(
-                                color: ClientColors.primary,
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: ClientColors.glowShadow(
-                                    opacity: 0.45, blur: 16),
-                              ),
-                              child: const Icon(Icons.shopping_basket_rounded,
-                                  color: Colors.white, size: 24),
-                            ),
-                          ),
+            children: [
+              Expanded(child: _item(context, _items[0], 0, isDark: isDark)),
+              Expanded(child: _item(context, _items[1], 1, isDark: isDark)),
+              // زر السلة في المنتصف
+              Consumer<CartProvider>(
+                builder: (_, cart, __) => GestureDetector(
+                  onTap: onCartTap,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: badges.Badge(
+                      position: badges.BadgePosition.topEnd(top: -6, end: -6),
+                      showBadge: cart.cartItems.isNotEmpty,
+                      badgeContent: Text(
+                        '${cart.cartItems.length}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800),
+                      ),
+                      badgeStyle: const badges.BadgeStyle(
+                        badgeColor: ClientColors.error,
+                        padding: EdgeInsets.all(4),
+                      ),
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: ClientColors.primary,
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow:
+                              ClientColors.glowShadow(opacity: 0.45, blur: 16),
+                        ),
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.shopping_bag_rounded,
+                                color: Colors.white, size: 22),
+                            SizedBox(height: 1),
+                            Text('السلة',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800)),
+                          ],
                         ),
                       ),
                     ),
-                    Expanded(child: _item(context, _items[2], 2, isDark: isDark)),
-                    Expanded(
-                      child: StreamBuilder<int>(
-                        stream: clientId.isNotEmpty
-                            ? UnreadMessagesService.unreadSupportStream(
-                                clientId)
-                            : Stream.value(0),
-                        builder: (_, snap) =>
-                            _item(context, _items[3], 3, badge: snap.data ?? 0, isDark: isDark),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
+              ),
+              Expanded(child: _item(context, _items[2], 2, isDark: isDark)),
+              Expanded(
+                child: StreamBuilder<int>(
+                  stream: clientId.isNotEmpty
+                      ? UnreadMessagesService.unreadSupportStream(clientId)
+                      : Stream.value(0),
+                  builder: (_, snap) => _item(context, _items[3], 3,
+                      badge: snap.data ?? 0, isDark: isDark),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -301,9 +341,8 @@ class _GlassBottomNav extends StatelessWidget {
     required bool isDark,
   }) {
     final active = selectedIndex == index;
-    final inactiveColor = isDark
-        ? Colors.white.withValues(alpha: 0.45)
-        : const Color(0xFF7A7A7A);
+    final inactiveColor =
+        isDark ? Colors.white.withValues(alpha: 0.45) : const Color(0xFF7A7A7A);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => onTap(index),
@@ -335,9 +374,7 @@ class _GlassBottomNav extends StatelessWidget {
                 child: Icon(
                   active ? item.activeIcon : item.icon,
                   size: 22,
-                  color: active
-                      ? ClientColors.primary
-                      : inactiveColor,
+                  color: active ? ClientColors.primary : inactiveColor,
                 ),
               ),
               if (badge > 0)
@@ -345,8 +382,8 @@ class _GlassBottomNav extends StatelessWidget {
                   top: -4,
                   right: 4,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 4, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     decoration: BoxDecoration(
                       color: ClientColors.error,
                       borderRadius: BorderRadius.circular(8),
@@ -369,9 +406,7 @@ class _GlassBottomNav extends StatelessWidget {
             style: TextStyle(
               fontSize: 10,
               fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-              color: active
-                  ? ClientColors.primary
-                  : inactiveColor,
+              color: active ? ClientColors.primary : inactiveColor,
             ),
             child: Text(item.label),
           ),
@@ -511,32 +546,34 @@ class _ActiveOrderBannerState extends State<_ActiveOrderBanner>
   late final Animation<double> _pulseAnim;
 
   static const _steps = [
-    (label: 'دفع',     icon: Icons.payment_rounded),
-    (label: 'تجهيز',   icon: Icons.restaurant_rounded),
-    (label: 'مندوب',   icon: Icons.person_search_rounded),
-    (label: 'توصيل',   icon: Icons.delivery_dining_rounded),
-    (label: 'وصل',     icon: Icons.location_on_rounded),
+    (label: 'دفع', icon: Icons.payment_rounded),
+    (label: 'تجهيز', icon: Icons.restaurant_rounded),
+    (label: 'مندوب', icon: Icons.person_search_rounded),
+    (label: 'توصيل', icon: Icons.delivery_dining_rounded),
+    (label: 'وصل', icon: Icons.location_on_rounded),
   ];
 
   static const _statusLabels = {
-    'payment_review':    'قيد مراجعة الدفع',
-    'store_pending':     'جاري التجهيز',
+    'payment_review': 'قيد مراجعة الدفع',
+    'store_pending': 'جاري التجهيز',
     'courier_searching': 'نبحث عن مندوب',
     'courier_offer_pending': 'بانتظار رد المندوب',
-    'courier_assigned':  'المندوب في الطريق',
-    'pickup_ready':      'الطلب جاهز للاستلام',
-    'picked_up':         'المندوب يحمل طلبك',
+    'courier_assigned': 'المندوب في الطريق',
+    'pickup_ready': 'الطلب جاهز للاستلام',
+    'picked_up': 'المندوب يحمل طلبك',
     'arrived_to_client': 'المندوب وصل إليك',
-    'قيد المراجعة':     'قيد المراجعة',
-    'قيد التجهيز':      'جاري التجهيز',
-    'قيد التوصيل':      'في الطريق إليك',
+    'قيد المراجعة': 'قيد المراجعة',
+    'قيد التجهيز': 'جاري التجهيز',
+    'قيد التوصيل': 'في الطريق إليك',
   };
 
   int _stepIndex(String s) {
     if (s == 'payment_review') return 0;
-    if (s == 'store_pending' || s == 'قيد المراجعة' || s == 'قيد التجهيز') return 1;
+    if (s == 'store_pending' || s == 'قيد المراجعة' || s == 'قيد التجهيز')
+      return 1;
     if (s == 'courier_searching' || s == 'courier_offer_pending') return 2;
-    if ({'courier_assigned', 'pickup_ready', 'picked_up', 'قيد التوصيل'}.contains(s)) return 3;
+    if ({'courier_assigned', 'pickup_ready', 'picked_up', 'قيد التوصيل'}
+        .contains(s)) return 3;
     if (s == 'arrived_to_client') return 4;
     return 1;
   }
@@ -562,8 +599,10 @@ class _ActiveOrderBannerState extends State<_ActiveOrderBanner>
   @override
   Widget build(BuildContext context) {
     final status = widget.orderData['orderStatus'] as String? ??
-        widget.orderData['status'] as String? ?? '';
-    final restaurant = (widget.orderData['restaurantName'] ?? 'مطعم').toString();
+        widget.orderData['status'] as String? ??
+        '';
+    final restaurant =
+        (widget.orderData['restaurantName'] ?? 'مطعم').toString();
     final stepIdx = _stepIndex(status);
     final label = _statusLabels[status] ?? status;
 
@@ -631,8 +670,8 @@ class _ActiveOrderBannerState extends State<_ActiveOrderBanner>
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.28),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.50)),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.50)),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
@@ -723,8 +762,7 @@ class _ActiveOrderBannerState extends State<_ActiveOrderBanner>
                           ? Colors.white
                           : Colors.white.withValues(alpha: 0.55),
                       fontSize: 9,
-                      fontWeight:
-                          active ? FontWeight.w700 : FontWeight.normal,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.normal,
                     ),
                   ),
                 );

@@ -33,7 +33,8 @@ class ChatService {
           .add(msg);
     } else {
       // دعم: كل رسالة تظهر لجميع الأدمن
-      if (supportChatId == null) throw Exception('supportChatId required for support chat');
+      if (supportChatId == null)
+        throw Exception('supportChatId required for support chat');
       await _firestore
           .collection('supportChats')
           .doc(supportChatId)
@@ -57,7 +58,8 @@ class ChatService {
           .orderBy('timestamp')
           .snapshots();
     } else {
-      if (supportChatId == null) throw Exception('supportChatId required for support chat');
+      if (supportChatId == null)
+        throw Exception('supportChatId required for support chat');
       return _firestore
           .collection('supportChats')
           .doc(supportChatId)
@@ -68,10 +70,10 @@ class ChatService {
   }
 
   /// إنشاء أو جلب معرف دردشة خاصة (بين مستخدمين)
-  String getPrivateChatId(String userA, String userB) {
+  String getPrivateChatId(String userA, String userB, String orderId) {
     // ترتيب ثابت لضمان نفس المعرف
     final sorted = [userA, userB]..sort();
-    return '${sorted[0]}_${sorted[1]}';
+    return '${sorted[0]}_${orderId}_${sorted[1]}';
   }
 
   /// إنشاء أو جلب معرف دردشة دعم (لكل مستخدم دردشة دعم واحدة مع كل الأدمن)

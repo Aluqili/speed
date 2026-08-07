@@ -2,26 +2,26 @@ import 'package:flutter/material.dart';
 
 /// ألوان وثيم تطبيق العميل - تصميم Glassmorphism برتقالي
 class ClientColors {
-  static const primary      = Color(0xFFFF6B00);
+  static const primary = Color(0xFFFF6B00);
   static const primaryLight = Color(0xFFFF8E3C);
-  static const primaryGlow  = Color(0xFFFFB06A);
-  static const accent       = Color(0xFFFFA65A);
-  static const background   = Color(0xFF0F0F0F);
-  static const surface      = Color(0xFF1A1A1A);
-  static const surfaceCard  = Color(0x1AFFFFFF);
-  static const glassBorder  = Color(0x4DFF6B00);
-  static const textPrimary  = Colors.white;
+  static const primaryGlow = Color(0xFFFFB06A);
+  static const accent = Color(0xFFFFA65A);
+  static const background = Color(0xFF0F0F0F);
+  static const surface = Color(0xFF1A1A1A);
+  static const surfaceCard = Color(0x1AFFFFFF);
+  static const glassBorder = Color(0x4DFF6B00);
+  static const textPrimary = Colors.white;
   static const textSecondary = Color(0xA6FFFFFF);
-  static const success      = Color(0xFF00E676);
-  static const error        = Color(0xFFFF5252);
-  static const warning      = Color(0xFFFFDE59);
+  static const success = Color(0xFF00E676);
+  static const error = Color(0xFFFF5252);
+  static const warning = Color(0xFFFFDE59);
 
   // ألوان الثيم الفاتح
-  static const lightBackground   = Color(0xFFFFFFFF);
-  static const lightSurface      = Color(0xFFFFFFFF);
-  static const lightSurfaceCard  = Color(0xFFFFFFFF);
-  static const lightGlassBorder  = Color(0x33FF6B00);
-  static const lightTextPrimary  = Color(0xFF1A1A1A);
+  static const lightBackground = Color(0xFFFFFFFF);
+  static const lightSurface = Color(0xFFFFFFFF);
+  static const lightSurfaceCard = Color(0xFFFFFFFF);
+  static const lightGlassBorder = Color(0x33FF6B00);
+  static const lightTextPrimary = Color(0xFF1A1A1A);
   static const lightTextSecondary = Color(0xFF6B6B6B);
 
   static const primaryGradient = LinearGradient(
@@ -37,13 +37,15 @@ class ClientColors {
   );
 
   // ظل برتقالي
-  static List<BoxShadow> glowShadow({double opacity = 0.35, double blur = 20}) => [
-    BoxShadow(
-      color: primary.withValues(alpha: opacity),
-      blurRadius: blur,
-      offset: const Offset(0, 8),
-    ),
-  ];
+  static List<BoxShadow> glowShadow(
+          {double opacity = 0.35, double blur = 20}) =>
+      [
+        BoxShadow(
+          color: primary.withValues(alpha: opacity),
+          blurRadius: blur,
+          offset: const Offset(0, 8),
+        ),
+      ];
 
   static List<BoxShadow> softCardShadow({
     bool dark = false,
@@ -53,7 +55,8 @@ class ClientColors {
   }) =>
       [
         BoxShadow(
-          color: Colors.black.withValues(alpha: dark ? opacity + 0.06 : opacity),
+          color:
+              Colors.black.withValues(alpha: dark ? opacity + 0.06 : opacity),
           blurRadius: blur,
           offset: offset,
         ),
@@ -61,7 +64,7 @@ class ClientColors {
 }
 
 class ClientAppTheme {
-  static const _fontFamily = 'Cairo';
+  static const _fontFamily = 'Tajawal';
 
   // ─── الثيم الفاتح (الافتراضي) ───────────────────────────────────────────
   static ThemeData get light {
@@ -106,21 +109,73 @@ class ClientAppTheme {
     );
 
     final textTheme = base.textTheme.copyWith(
-      displayLarge:   const TextStyle(fontWeight: FontWeight.w900, fontSize: 34, letterSpacing: -0.5, color: ClientColors.lightTextPrimary),
-      displayMedium:  const TextStyle(fontWeight: FontWeight.w800, fontSize: 28, letterSpacing: -0.3, color: ClientColors.lightTextPrimary),
-      displaySmall:   const TextStyle(fontWeight: FontWeight.w800, fontSize: 24, color: ClientColors.lightTextPrimary),
-      headlineLarge:  const TextStyle(fontWeight: FontWeight.w800, fontSize: 22, color: ClientColors.lightTextPrimary),
-      headlineMedium: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20, color: ClientColors.lightTextPrimary),
-      headlineSmall:  const TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: ClientColors.lightTextPrimary),
-      titleLarge:     const TextStyle(fontWeight: FontWeight.w700, fontSize: 17, color: ClientColors.lightTextPrimary),
-      titleMedium:    const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: ClientColors.lightTextPrimary),
-      titleSmall:     const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: ClientColors.lightTextPrimary),
-      bodyLarge:      const TextStyle(fontWeight: FontWeight.w400, fontSize: 16, height: 1.5, color: ClientColors.lightTextPrimary),
-      bodyMedium:     const TextStyle(fontWeight: FontWeight.w400, fontSize: 14, height: 1.5, color: ClientColors.lightTextPrimary),
-      bodySmall:      const TextStyle(fontWeight: FontWeight.w400, fontSize: 12, height: 1.4, color: ClientColors.lightTextSecondary),
-      labelLarge:     const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, letterSpacing: 0.1, color: ClientColors.lightTextPrimary),
-      labelMedium:    const TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: ClientColors.lightTextSecondary),
-      labelSmall:     const TextStyle(fontWeight: FontWeight.w500, fontSize: 11, letterSpacing: 0.5, color: ClientColors.lightTextSecondary),
+      displayLarge: const TextStyle(
+          fontWeight: FontWeight.w900,
+          fontSize: 34,
+          letterSpacing: -0.5,
+          color: ClientColors.lightTextPrimary),
+      displayMedium: const TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 28,
+          letterSpacing: -0.3,
+          color: ClientColors.lightTextPrimary),
+      displaySmall: const TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 24,
+          color: ClientColors.lightTextPrimary),
+      headlineLarge: const TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 22,
+          color: ClientColors.lightTextPrimary),
+      headlineMedium: const TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 20,
+          color: ClientColors.lightTextPrimary),
+      headlineSmall: const TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 18,
+          color: ClientColors.lightTextPrimary),
+      titleLarge: const TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 17,
+          color: ClientColors.lightTextPrimary),
+      titleMedium: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 15,
+          color: ClientColors.lightTextPrimary),
+      titleSmall: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+          color: ClientColors.lightTextPrimary),
+      bodyLarge: const TextStyle(
+          fontWeight: FontWeight.w400,
+          fontSize: 16,
+          height: 1.5,
+          color: ClientColors.lightTextPrimary),
+      bodyMedium: const TextStyle(
+          fontWeight: FontWeight.w400,
+          fontSize: 14,
+          height: 1.5,
+          color: ClientColors.lightTextPrimary),
+      bodySmall: const TextStyle(
+          fontWeight: FontWeight.w400,
+          fontSize: 12,
+          height: 1.4,
+          color: ClientColors.lightTextSecondary),
+      labelLarge: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+          letterSpacing: 0.1,
+          color: ClientColors.lightTextPrimary),
+      labelMedium: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+          color: ClientColors.lightTextSecondary),
+      labelSmall: const TextStyle(
+          fontWeight: FontWeight.w500,
+          fontSize: 11,
+          letterSpacing: 0.5,
+          color: ClientColors.lightTextSecondary),
     );
 
     return base.copyWith(
@@ -157,7 +212,8 @@ class ClientAppTheme {
           foregroundColor: Colors.white,
           elevation: 0,
           minimumSize: const Size(64, 50),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           textStyle: const TextStyle(
             fontFamily: _fontFamily,
             fontWeight: FontWeight.w700,
@@ -170,7 +226,8 @@ class ClientAppTheme {
           backgroundColor: primary,
           foregroundColor: Colors.white,
           minimumSize: const Size(64, 50),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           textStyle: const TextStyle(
             fontFamily: _fontFamily,
             fontWeight: FontWeight.w700,
@@ -194,7 +251,7 @@ class ClientAppTheme {
           borderSide: const BorderSide(color: ClientColors.primary, width: 1.5),
         ),
         labelStyle: const TextStyle(color: ClientColors.lightTextSecondary),
-        hintStyle:  const TextStyle(color: Color(0xFF9E9E9E)),
+        hintStyle: const TextStyle(color: Color(0xFF9E9E9E)),
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: Colors.white,
@@ -263,26 +320,43 @@ class ClientAppTheme {
       fontFamily: _fontFamily,
     );
 
-    final textTheme = base.textTheme.copyWith(
-      displayLarge:   const TextStyle(fontWeight: FontWeight.w900, fontSize: 34, letterSpacing: -0.5),
-      displayMedium:  const TextStyle(fontWeight: FontWeight.w800, fontSize: 28, letterSpacing: -0.3),
-      displaySmall:   const TextStyle(fontWeight: FontWeight.w800, fontSize: 24),
-      headlineLarge:  const TextStyle(fontWeight: FontWeight.w800, fontSize: 22),
-      headlineMedium: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
-      headlineSmall:  const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-      titleLarge:     const TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
-      titleMedium:    const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-      titleSmall:     const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-      bodyLarge:      const TextStyle(fontWeight: FontWeight.w400, fontSize: 16, height: 1.5),
-      bodyMedium:     const TextStyle(fontWeight: FontWeight.w400, fontSize: 14, height: 1.5),
-      bodySmall:      const TextStyle(fontWeight: FontWeight.w400, fontSize: 12, height: 1.4),
-      labelLarge:     const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, letterSpacing: 0.1),
-      labelMedium:    const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-      labelSmall:     const TextStyle(fontWeight: FontWeight.w500, fontSize: 11, letterSpacing: 0.5),
-    ).apply(
-      bodyColor:    Colors.white,
-      displayColor: Colors.white,
-    );
+    final textTheme = base.textTheme
+        .copyWith(
+          displayLarge: const TextStyle(
+              fontWeight: FontWeight.w900, fontSize: 34, letterSpacing: -0.5),
+          displayMedium: const TextStyle(
+              fontWeight: FontWeight.w800, fontSize: 28, letterSpacing: -0.3),
+          displaySmall:
+              const TextStyle(fontWeight: FontWeight.w800, fontSize: 24),
+          headlineLarge:
+              const TextStyle(fontWeight: FontWeight.w800, fontSize: 22),
+          headlineMedium:
+              const TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
+          headlineSmall:
+              const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+          titleLarge:
+              const TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
+          titleMedium:
+              const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          titleSmall:
+              const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          bodyLarge: const TextStyle(
+              fontWeight: FontWeight.w400, fontSize: 16, height: 1.5),
+          bodyMedium: const TextStyle(
+              fontWeight: FontWeight.w400, fontSize: 14, height: 1.5),
+          bodySmall: const TextStyle(
+              fontWeight: FontWeight.w400, fontSize: 12, height: 1.4),
+          labelLarge: const TextStyle(
+              fontWeight: FontWeight.w600, fontSize: 14, letterSpacing: 0.1),
+          labelMedium:
+              const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+          labelSmall: const TextStyle(
+              fontWeight: FontWeight.w500, fontSize: 11, letterSpacing: 0.5),
+        )
+        .apply(
+          bodyColor: Colors.white,
+          displayColor: Colors.white,
+        );
 
     return base.copyWith(
       primaryColor: primary,
@@ -318,7 +392,8 @@ class ClientAppTheme {
           foregroundColor: Colors.white,
           elevation: 0,
           minimumSize: const Size(64, 50),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           textStyle: const TextStyle(
             fontFamily: _fontFamily,
             fontWeight: FontWeight.w700,
@@ -331,7 +406,8 @@ class ClientAppTheme {
           backgroundColor: primary,
           foregroundColor: Colors.white,
           minimumSize: const Size(64, 50),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           textStyle: const TextStyle(
             fontFamily: _fontFamily,
             fontWeight: FontWeight.w700,
@@ -355,7 +431,7 @@ class ClientAppTheme {
           borderSide: const BorderSide(color: ClientColors.primary, width: 1.5),
         ),
         labelStyle: const TextStyle(color: ClientColors.textSecondary),
-        hintStyle:  const TextStyle(color: ClientColors.textSecondary),
+        hintStyle: const TextStyle(color: ClientColors.textSecondary),
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: Colors.transparent,

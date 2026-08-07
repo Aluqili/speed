@@ -184,7 +184,8 @@ class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
                     child: FilterChip(
                       selected: _availableOnly,
                       label: const Text('عرض الأصناف المتاحة فقط'),
-                      onSelected: (value) => setState(() => _availableOnly = value),
+                      onSelected: (value) =>
+                          setState(() => _availableOnly = value),
                     ),
                   ),
                 ],
@@ -210,30 +211,35 @@ class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
                                   children: [
                                     ClipRRect(
                                       borderRadius: BorderRadius.circular(16),
-                                      child: item.imageUrl != null && item.imageUrl!.isNotEmpty
+                                      child: item.imageUrl != null &&
+                                              item.imageUrl!.isNotEmpty
                                           ? Image.network(
                                               item.imageUrl!,
                                               width: 84,
                                               height: 84,
                                               fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) => Container(
+                                              errorBuilder: (_, __, ___) =>
+                                                  Container(
                                                 width: 84,
                                                 height: 84,
                                                 color: Colors.grey.shade200,
-                                                child: const Icon(Icons.broken_image),
+                                                child: const Icon(
+                                                    Icons.broken_image),
                                               ),
                                             )
                                           : Container(
                                               width: 84,
                                               height: 84,
                                               color: Colors.grey.shade200,
-                                              child: const Icon(Icons.fastfood, color: Colors.grey),
+                                              child: const Icon(Icons.fastfood,
+                                                  color: Colors.grey),
                                             ),
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             item.name,
@@ -248,20 +254,43 @@ class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
                                             runSpacing: 8,
                                             children: [
                                               Chip(
-                                                label: Text(item.category ?? 'غير محدد'),
+                                                label: Text(item.category ??
+                                                    'غير محدد'),
                                               ),
                                               Chip(
-                                                backgroundColor: item.isAvailable
-                                                    ? Colors.green.withValues(alpha: 0.12)
-                                                    : Colors.orange.withValues(alpha: 0.12),
+                                                backgroundColor: item
+                                                        .isAvailable
+                                                    ? Colors.green
+                                                        .withValues(alpha: 0.12)
+                                                    : Colors.orange.withValues(
+                                                        alpha: 0.12),
                                                 label: Text(
-                                                  item.isAvailable ? 'متاح' : 'مخفي',
+                                                  item.isAvailable
+                                                      ? 'متاح'
+                                                      : 'مخفي',
                                                   style: TextStyle(
-                                                    color: item.isAvailable ? Colors.green : Colors.orange,
+                                                    color: item.isAvailable
+                                                        ? Colors.green
+                                                        : Colors.orange,
                                                     fontWeight: FontWeight.w700,
                                                   ),
                                                 ),
                                               ),
+                                              if ((item.sku ?? '').isNotEmpty)
+                                                Chip(
+                                                    label: Text(
+                                                        'SKU: ${item.sku}')),
+                                              if (item.stockQuantity != null)
+                                                Chip(
+                                                    label: Text(
+                                                        'المخزون: ${item.stockQuantity}')),
+                                              if (item.requiresPrescription)
+                                                const Chip(
+                                                  avatar: Icon(
+                                                      Icons.medication_outlined,
+                                                      size: 16),
+                                                  label: Text('يتطلب روشتة'),
+                                                ),
                                             ],
                                           ),
                                           const SizedBox(height: 8),
@@ -270,7 +299,8 @@ class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
                                                 ? _sizesSummary(item.sizes)
                                                 : '${item.price.toStringAsFixed(2)} ج.س',
                                             style: TextStyle(
-                                              color: AppThemeArabic.storePrimary,
+                                              color:
+                                                  AppThemeArabic.storePrimary,
                                               fontWeight: FontWeight.w700,
                                             ),
                                           ),
@@ -288,15 +318,22 @@ class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
                                           await Navigator.push(
                                             context,
                                             MaterialPageRoute(
-                                              builder: (_) => StoreAddMenuItemScreen(
-                                                restaurantId: widget.restaurantId,
+                                              builder: (_) =>
+                                                  StoreAddMenuItemScreen(
+                                                restaurantId:
+                                                    widget.restaurantId,
                                                 itemId: item.id,
                                                 initialName: item.name,
-                                                initialPrice: item.hasSizes ? null : item.price,
-                                                initialSizes: item.hasSizes ? item.sizes : null,
+                                                initialPrice: item.hasSizes
+                                                    ? null
+                                                    : item.price,
+                                                initialSizes: item.hasSizes
+                                                    ? item.sizes
+                                                    : null,
                                                 initialCategory: item.category,
                                                 initialImageUrl: item.imageUrl,
-                                                initialAvailable: item.isAvailable,
+                                                initialAvailable:
+                                                    item.isAvailable,
                                               ),
                                             ),
                                           );
@@ -308,24 +345,32 @@ class _StoreFullMenuScreenState extends State<StoreFullMenuScreen> {
                                     const SizedBox(width: 8),
                                     IconButton.filledTonal(
                                       onPressed: () async {
-                                        await controller.updateAvailability(item.id, !item.isAvailable);
+                                        await controller.updateAvailability(
+                                            item.id, !item.isAvailable);
                                       },
-                                      icon: Icon(item.isAvailable ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                                      icon: Icon(item.isAvailable
+                                          ? Icons.visibility_outlined
+                                          : Icons.visibility_off_outlined),
                                     ),
                                     const SizedBox(width: 4),
                                     IconButton.filledTonal(
                                       onPressed: () async {
-                                        await controller.deleteMenuItem(item.id);
+                                        await controller
+                                            .deleteMenuItem(item.id);
                                         if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            const SnackBar(content: Text('تم حذف الصنف')),
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                                content: Text('تم حذف الصنف')),
                                           );
                                         }
                                       },
                                       style: IconButton.styleFrom(
-                                        backgroundColor: Colors.red.withValues(alpha: 0.12),
+                                        backgroundColor:
+                                            Colors.red.withValues(alpha: 0.12),
                                       ),
-                                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                      icon: const Icon(Icons.delete_outline,
+                                          color: Colors.red),
                                     ),
                                   ],
                                 ),

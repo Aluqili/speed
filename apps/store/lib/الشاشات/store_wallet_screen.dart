@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class StoreWalletScreen extends StatefulWidget {
   final String restaurantId;
@@ -68,6 +70,33 @@ class _StoreWalletScreenState extends State<StoreWalletScreen> {
     }
   }
 
+  String _extractFirstUrl(String text) {
+    final match =
+        RegExp(r'https?:\/\/[^\s]+', caseSensitive: false).firstMatch(text);
+    if (match == null) return '';
+    return match.group(0)?.replaceAll(RegExp(r'[\]\[\)\(>,،؛!؟.,]+$'), '') ??
+        '';
+  }
+
+  Future<void> _openUrl(BuildContext context, String url) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return;
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر فتح الرابط.')),
+      );
+    }
+  }
+
+  Future<void> _copyUrl(BuildContext context, String url) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم نسخ الرابط.')),
+    );
+  }
+
   Widget _walletMetric(
     String label,
     String value,
@@ -79,7 +108,7 @@ class _StoreWalletScreenState extends State<StoreWalletScreen> {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -194,7 +223,7 @@ class _StoreWalletScreenState extends State<StoreWalletScreen> {
               children: [
                 Card(
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                      borderRadius: BorderRadius.circular(8)),
                   child: Padding(
                     padding: const EdgeInsets.all(18),
                     child: Column(
@@ -208,15 +237,8 @@ class _StoreWalletScreenState extends State<StoreWalletScreen> {
                           width: double.infinity,
                           padding: const EdgeInsets.all(18),
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [
-                                AppThemeArabic.storePrimary,
-                                Color(0xFF16A085)
-                              ],
-                              begin: Alignment.topRight,
-                              end: Alignment.bottomLeft,
-                            ),
-                            borderRadius: BorderRadius.circular(22),
+                            color: AppThemeArabic.storePrimary,
+                            borderRadius: BorderRadius.circular(8),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -264,7 +286,7 @@ class _StoreWalletScreenState extends State<StoreWalletScreen> {
                 const SizedBox(height: 12),
                 Card(
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                      borderRadius: BorderRadius.circular(8)),
                   child: Padding(
                     padding: const EdgeInsets.all(14),
                     child: Form(
@@ -388,6 +410,12 @@ class _StoreWalletScreenState extends State<StoreWalletScreen> {
                                     _normalizeMethod(tx['accountMethod']);
                                 final accountNumber =
                                     (tx['accountNumber'] ?? '').toString();
+                                final note = (tx['note'] ?? '').toString();
+                                final directReceiptUrl =
+                                    (tx['receiptUrl'] ?? '').toString().trim();
+                                final receiptUrl = directReceiptUrl.isNotEmpty
+                                    ? directReceiptUrl
+                                    : _extractFirstUrl(note);
                                 final ts = tx['createdAt'];
                                 final dateText = ts is Timestamp
                                     ? ts
@@ -425,6 +453,55 @@ class _StoreWalletScreenState extends State<StoreWalletScreen> {
                                                 '${_methodLabel(method)} - $accountNumber',
                                                 style: const TextStyle(
                                                     color: Colors.grey)),
+                                            if (receiptUrl.isNotEmpty)
+                                              Wrap(
+                                                spacing: 4,
+                                                runSpacing: 0,
+                                                children: [
+                                                  TextButton.icon(
+                                                    onPressed: () => _openUrl(
+                                                        context, receiptUrl),
+                                                    icon: const Icon(
+                                                        Icons
+                                                            .open_in_new_rounded,
+                                                        size: 16),
+                                                    label: const Text(
+                                                        'فتح الرابط'),
+                                                    style: TextButton.styleFrom(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 6),
+                                                      minimumSize:
+                                                          const Size(0, 30),
+                                                      tapTargetSize:
+                                                          MaterialTapTargetSize
+                                                              .shrinkWrap,
+                                                      visualDensity:
+                                                          VisualDensity.compact,
+                                                    ),
+                                                  ),
+                                                  TextButton.icon(
+                                                    onPressed: () => _copyUrl(
+                                                        context, receiptUrl),
+                                                    icon: const Icon(
+                                                        Icons.copy_rounded,
+                                                        size: 16),
+                                                    label: const Text('نسخ'),
+                                                    style: TextButton.styleFrom(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 6),
+                                                      minimumSize:
+                                                          const Size(0, 30),
+                                                      tapTargetSize:
+                                                          MaterialTapTargetSize
+                                                              .shrinkWrap,
+                                                      visualDensity:
+                                                          VisualDensity.compact,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
                                           ],
                                         ),
                                       ),

@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'courier_ui.dart';
 
@@ -51,6 +53,33 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
       default:
         return method;
     }
+  }
+
+  String _extractFirstUrl(String text) {
+    final match =
+        RegExp(r'https?:\/\/[^\s]+', caseSensitive: false).firstMatch(text);
+    if (match == null) return '';
+    return match.group(0)?.replaceAll(RegExp(r'[\]\[\)\(>,،؛!؟.,]+$'), '') ??
+        '';
+  }
+
+  Future<void> _openUrl(BuildContext context, String url) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return;
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر فتح الرابط.')),
+      );
+    }
+  }
+
+  Future<void> _copyUrl(BuildContext context, String url) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم نسخ الرابط.')),
+    );
   }
 
   Future<void> _savePayoutAccount() async {
@@ -104,8 +133,8 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
             }
 
             final data = snap.data!.data() ?? <String, dynamic>{};
-            final payout =
-                (data['payoutAccount'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+            final payout = (data['payoutAccount'] as Map<String, dynamic>?) ??
+                <String, dynamic>{};
 
             final pendingBalance =
                 ((data['walletPendingBalance'] ?? 0) as num).toDouble();
@@ -116,8 +145,8 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
             final deliveredOrdersCount =
                 ((data['walletDeliveredOrdersCount'] ?? 0) as num).toInt();
 
-            final method =
-                (payout['method'] ?? data['payoutMethod'] ?? 'bankk').toString();
+            final method = (payout['method'] ?? data['payoutMethod'] ?? 'bankk')
+                .toString();
             final accountNumber =
                 (payout['accountNumber'] ?? data['payoutAccountNumber'] ?? '')
                     .toString();
@@ -125,7 +154,8 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
                 (payout['accountName'] ?? data['payoutAccountName'] ?? '')
                     .toString();
 
-            if (_accountNumberController.text.isEmpty && accountNumber.isNotEmpty) {
+            if (_accountNumberController.text.isEmpty &&
+                accountNumber.isNotEmpty) {
               _accountNumberController.text = accountNumber;
             }
             if (_accountNameController.text.isEmpty && accountName.isNotEmpty) {
@@ -164,17 +194,20 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
 
                   effectiveLifetimeEarnings = derivedLifetimeEarnings;
                   effectiveDeliveredOrdersCount = derivedDeliveredOrdersCount;
-                  effectivePendingBalance = math.max(
-                    0,
-                    effectiveLifetimeEarnings - transferredTotal,
-                  ).toDouble();
+                  effectivePendingBalance = math
+                      .max(
+                        0,
+                        effectiveLifetimeEarnings - transferredTotal,
+                      )
+                      .toDouble();
                 }
 
                 return ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
                     CourierHeroCard(
-                      title: '${effectivePendingBalance.toStringAsFixed(2)} ج.س',
+                      title:
+                          '${effectivePendingBalance.toStringAsFixed(2)} ج.س',
                       subtitle: 'الرصيد المتبقي بانتظار التحويل من الإدارة.',
                       icon: Icons.account_balance_wallet_rounded,
                     ),
@@ -206,7 +239,8 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
                         children: [
                           const CourierSectionTitle(
                             title: 'بيانات الاستلام',
-                            subtitle: 'الحساب الذي ستُرسل إليه التحويلات المالية.',
+                            subtitle:
+                                'الحساب الذي ستُرسل إليه التحويلات المالية.',
                           ),
                           const SizedBox(height: 16),
                           Form(
@@ -231,10 +265,11 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
                                       ? null
                                       : (value) {
                                           if (value == null) return;
-                                          setState(() => _selectedMethod = value);
+                                          setState(
+                                              () => _selectedMethod = value);
                                         },
-                                  decoration:
-                                      const InputDecoration(labelText: 'طريقة الدفع'),
+                                  decoration: const InputDecoration(
+                                      labelText: 'طريقة الدفع'),
                                 ),
                                 const SizedBox(height: 12),
                                 TextFormField(
@@ -260,7 +295,8 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
                                 SizedBox(
                                   width: double.infinity,
                                   child: ElevatedButton.icon(
-                                    onPressed: _saving ? null : _savePayoutAccount,
+                                    onPressed:
+                                        _saving ? null : _savePayoutAccount,
                                     icon: _saving
                                         ? const SizedBox(
                                             width: 18,
@@ -350,6 +386,14 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
                                       (tx['accountMethod'] ?? '').toString();
                                   final txNumber =
                                       (tx['accountNumber'] ?? '').toString();
+                                  final note = (tx['note'] ?? '').toString();
+                                  final directReceiptUrl =
+                                      (tx['receiptUrl'] ?? '')
+                                          .toString()
+                                          .trim();
+                                  final receiptUrl = directReceiptUrl.isNotEmpty
+                                      ? directReceiptUrl
+                                      : _extractFirstUrl(note);
                                   final ts = tx['createdAt'];
                                   final dateText = ts is Timestamp
                                       ? ts
@@ -394,6 +438,66 @@ class _CourierWalletScreenState extends State<CourierWalletScreen> {
                                                     fontWeight: FontWeight.w600,
                                                   ),
                                                 ),
+                                                if (receiptUrl.isNotEmpty)
+                                                  Wrap(
+                                                    spacing: 4,
+                                                    runSpacing: 0,
+                                                    children: [
+                                                      TextButton.icon(
+                                                        onPressed: () =>
+                                                            _openUrl(context,
+                                                                receiptUrl),
+                                                        icon: const Icon(
+                                                            Icons
+                                                                .open_in_new_rounded,
+                                                            size: 16),
+                                                        label: const Text(
+                                                            'فتح الرابط'),
+                                                        style: TextButton
+                                                            .styleFrom(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                  horizontal:
+                                                                      6),
+                                                          minimumSize:
+                                                              const Size(0, 30),
+                                                          tapTargetSize:
+                                                              MaterialTapTargetSize
+                                                                  .shrinkWrap,
+                                                          visualDensity:
+                                                              VisualDensity
+                                                                  .compact,
+                                                        ),
+                                                      ),
+                                                      TextButton.icon(
+                                                        onPressed: () =>
+                                                            _copyUrl(context,
+                                                                receiptUrl),
+                                                        icon: const Icon(
+                                                            Icons.copy_rounded,
+                                                            size: 16),
+                                                        label:
+                                                            const Text('نسخ'),
+                                                        style: TextButton
+                                                            .styleFrom(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                  horizontal:
+                                                                      6),
+                                                          minimumSize:
+                                                              const Size(0, 30),
+                                                          tapTargetSize:
+                                                              MaterialTapTargetSize
+                                                                  .shrinkWrap,
+                                                          visualDensity:
+                                                              VisualDensity
+                                                                  .compact,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
                                               ],
                                             ),
                                           ),

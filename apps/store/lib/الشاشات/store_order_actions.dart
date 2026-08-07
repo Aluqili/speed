@@ -15,7 +15,8 @@ class StoreOrderActions extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('إجراءات المطعم', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('إجراءات المطعم',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             GFButton(
               onPressed: () async {
@@ -34,8 +35,8 @@ class StoreOrderActions extends StatelessWidget {
                   }
                 }
               },
-              text: 'بدء التجهيز',
-              color: GFColors.PRIMARY,
+              text: 'ابدأ تجهيز الطلب الآن',
+              color: GFColors.WARNING,
             ),
           ],
         ),

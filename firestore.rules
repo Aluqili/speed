@@ -8,8 +8,9 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn()
         && (
-          request.auth.token.email == 'admin@speedstar.com'
-          || request.auth.token.email == 'speedstarapp0@gmail.com'
+          request.auth.token.get('email', '') == 'admin@speedstar.com'
+          || request.auth.token.get('email', '') == 'speedstarapp0@gmail.com'
+          || request.auth.token.get('email', '') == 'aluqili7@gmail.com'
           || (
             exists(/databases/$(database)/documents/admins/$(request.auth.uid))
             && (
@@ -75,9 +76,160 @@ service cloud.firestore {
         );
     }
 
+    function isClientOwner(clientId) {
+      return isSignedIn() && request.auth.uid == clientId;
+    }
+
+    function isOrderClient(data) {
+      return isSignedIn() && ('clientId' in data) && data.clientId == request.auth.uid;
+    }
+
+    function isOrderRestaurantOwner(data) {
+      return ('restaurantId' in data) && data.restaurantId is string && isRestaurantOwner(data.restaurantId);
+    }
+
+    function isOrderDriver(data) {
+      return isSignedIn()
+        && (
+          (('assignedDriverId' in data) && data.assignedDriverId == request.auth.uid)
+          || (('assignedDriverId' in data) && data.assignedDriverId is string && isDriverOwner(data.assignedDriverId))
+          || (('offerDriverIds' in data) && request.auth.uid in data.offerDriverIds)
+          || (
+            ((('orderStatus' in data) && data.orderStatus == 'courier_offer_pending') || (('status' in data) && data.status == 'courier_offer_pending'))
+            && ('offerDriverOwnerUids' in data)
+            && request.auth.uid in data.offerDriverOwnerUids
+          )
+        );
+    }
+
+    function canReadOrder(data) {
+      return isAdmin()
+        || isOrderClient(data)
+        || isOrderRestaurantOwner(data)
+        || isOrderDriver(data);
+    }
+
+    function canCreateClientOrder() {
+      return isSignedIn()
+        && request.resource.data.clientId == request.auth.uid
+        && request.resource.data.restaurantId is string
+        && request.resource.data.orderStatus in ['store_pending', 'payment_review'];
+    }
+
+    function canSubmitOwnParcelPayment() {
+      return isOrderClient(resource.data)
+        && resource.data.orderSource == 'client_parcel_delivery'
+        && request.resource.data.clientId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'orderStatus', 'paymentStatus', 'paymentMethod',
+          'proofImageUrl', 'transactionReference', 'paymentReviewDecision',
+          'paymentReviewRequired', 'paymentReviewReason', 'walletAutoConfirmedAt',
+          'paidAt', 'walletRequestedAmount', 'walletBalanceBeforePayment',
+          'walletBalanceAfterPreview', 'amountDueAfterWallet', 'externalPaidAmount',
+          'totalBeforeWallet', 'walletSettledAt', 'walletUsedAmount',
+          'walletBalanceBeforeDebit', 'walletBalanceAfterDebit', 'updatedAt'
+        ]);
+    }
+
+    function canUpdateAssignedDriverLocation() {
+      return isSignedIn()
+        && resource.data.assignedDriverId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'driverLocation',
+          'driverCurrentLocation',
+          'driverLat',
+          'driverLng',
+          'driverLocationUpdatedAt',
+          'lastLocationUpdate'
+        ]);
+    }
+
+    function hasNoProtectedClientFields(data) {
+      return !data.keys().hasAny([
+        'wallet',
+        'walletBalance',
+        'balance',
+        'points',
+        'rewards',
+        'role',
+        'isAdmin',
+        'permissions'
+      ]);
+    }
+
+    function canUpdateOwnClient(clientId) {
+      return isClientOwner(clientId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'wallet',
+          'walletBalance',
+          'balance',
+          'points',
+          'rewards',
+          'role',
+          'isAdmin',
+          'permissions'
+        ]);
+    }
+
+    function canUpdateOwnDriver(driverId) {
+      return isDriverOwner(driverId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'wallet',
+          'walletBalance',
+          'balance',
+          'activeOrderId',
+          'approvalStatus',
+          'isApproved',
+          'role',
+          'isAdmin',
+          'permissions',
+          'ownerUid',
+          'ownerId',
+          'userId',
+          'uid'
+        ]);
+    }
+
+    // Allows a signed-in driver to self-link their auth uid to a legacy driver
+    // profile exactly once (only when ownerUid isn't already claimed by someone else).
+    function canClaimDriverOwnerUid(driverId) {
+      return isDriverOwner(driverId)
+        && (!('ownerUid' in resource.data) || resource.data.ownerUid == '')
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ownerUid']);
+    }
+
     match /admins/{uid} {
       allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
       allow create, update, delete: if isAdmin();
+    }
+
+    match /managementProjects/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /managementTasks/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /managementEmployees/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /managementApprovals/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /managementFinances/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /managementAudit/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /managementFollowups/{docId} {
+      allow read, write: if isAdmin();
     }
 
     match /supportTickets/{ticketId} {
@@ -157,11 +309,21 @@ service cloud.firestore {
 
     match /paymentSettings/{settingsId} {
       allow read: if isSignedIn() || settingsId == 'default';
+      allow create, update: if isAdmin()
+        && (
+          settingsId == ('shift_account_' + request.auth.uid)
+          || settingsId == 'default'
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /clientHomeSettings/{settingsId} {
+      allow read: if true;
       allow create, update, delete: if isAdmin();
     }
 
     match /restaurantApplications/{applicationId} {
-      allow create: if isSignedIn() && request.auth.uid == applicationId;
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
       allow update: if isSignedIn();
       allow read: if isSignedIn();
       allow delete: if isAdmin();
@@ -180,9 +342,14 @@ service cloud.firestore {
     }
 
     match /orders/{orderId} {
-      allow read, write: if isSignedIn();
+      allow read: if canReadOrder(resource.data);
+      allow create: if isAdmin() || canCreateClientOrder();
+      allow update: if isAdmin() || canUpdateAssignedDriverLocation() || canSubmitOwnParcelPayment();
+      allow delete: if isAdmin();
       match /payments/{paymentId} {
-        allow read, write: if isSignedIn();
+        allow read: if canReadOrder(get(/databases/$(database)/documents/orders/$(orderId)).data);
+        allow create: if isOrderClient(get(/databases/$(database)/documents/orders/$(orderId)).data);
+        allow update, delete: if isAdmin();
       }
     }
 
@@ -226,17 +393,20 @@ service cloud.firestore {
             || request.resource.data.email == request.auth.token.email
           )
         );
-      allow update: if isAdmin() || isDriverOwner(driverId) || (isSignedIn() && request.auth.uid == driverId);
+      allow update: if isAdmin() || canUpdateOwnDriver(driverId) || canClaimDriverOwnerUid(driverId);
       allow delete: if isAdmin();
       match /{document=**} {
-        allow read, write: if isSignedIn();
+        allow read, write: if isAdmin() || isDriverOwner(driverId);
       }
     }
 
     match /clients/{clientId} {
-      allow read, write: if isSignedIn();
+      allow read: if isAdmin() || isClientOwner(clientId);
+      allow create: if isAdmin() || (isClientOwner(clientId) && hasNoProtectedClientFields(request.resource.data));
+      allow update: if isAdmin() || canUpdateOwnClient(clientId);
+      allow delete: if isAdmin();
       match /{document=**} {
-        allow read, write: if isSignedIn();
+        allow read, write: if isAdmin() || isClientOwner(clientId);
       }
     }
 
@@ -267,7 +437,9 @@ service cloud.firestore {
 
     match /storeOffers/{offerId} {
       allow read: if isAdmin()
-        || (isSignedIn() && resource.data.restaurantId == request.auth.uid)
+        || (isSignedIn() && resource.data.ownerUid == request.auth.uid)
+        || (isSignedIn() && ('restaurantId' in resource.data)
+          && isRestaurantOwner(resource.data.restaurantId))
         || (isSignedIn() && resource.data.status == 'approved' && resource.data.isActive == true);
       allow create, update, delete: if isAdmin();
     }

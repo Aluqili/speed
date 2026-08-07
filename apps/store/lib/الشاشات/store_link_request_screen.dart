@@ -23,17 +23,32 @@ class StoreLinkRequestScreen extends StatefulWidget {
 }
 
 class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
+  static const _businessTypes = <String, String>{
+    'restaurant': 'مطعم',
+    'brand': 'براند',
+    'ecommerce': 'متجر إلكتروني',
+    'grocery': 'بقالة',
+    'pharmacy': 'صيدلية',
+  };
+
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _recordNumberController = TextEditingController();
+  final _pharmacyLicenseController = TextEditingController();
+  final _returnPolicyDaysController = TextEditingController(text: '14');
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   File? _recordImage;
+  File? _pharmacyLicenseImage;
   bool _submitting = false;
+  String _businessType = 'restaurant';
 
   bool get _isAuthenticatedSubmit => (widget.userId ?? '').isNotEmpty;
+  bool get _isPharmacy => _businessType == 'pharmacy';
+  bool get _requiresReturnPolicy =>
+      _businessType == 'brand' || _businessType == 'ecommerce';
 
   @override
   void initState() {
@@ -48,6 +63,8 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
     _nameController.dispose();
     _phoneController.dispose();
     _recordNumberController.dispose();
+    _pharmacyLicenseController.dispose();
+    _returnPolicyDaysController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -61,6 +78,17 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
     );
     if (picked != null) {
       setState(() => _recordImage = File(picked.path));
+    }
+  }
+
+  Future<void> _pickPharmacyLicenseImage() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 1500,
+    );
+    if (picked != null) {
+      setState(() => _pharmacyLicenseImage = File(picked.path));
     }
   }
 
@@ -91,6 +119,14 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
       );
       return;
     }
+    if (_isPharmacy &&
+        (_pharmacyLicenseController.text.trim().isEmpty ||
+            _pharmacyLicenseImage == null)) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('أدخل رقم ترخيص الصيدلية وارفع صورته')),
+      );
+      return;
+    }
 
     setState(() => _submitting = true);
 
@@ -103,12 +139,31 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
         );
         return;
       }
+      String pharmacyLicenseImageUrl = '';
+      if (_isPharmacy) {
+        pharmacyLicenseImageUrl =
+            await _uploadImageToCloudinary(_pharmacyLicenseImage!) ?? '';
+        if (pharmacyLicenseImageUrl.isEmpty) {
+          setState(() => _submitting = false);
+          messenger.showSnackBar(
+            const SnackBar(content: Text('فشل رفع صورة ترخيص الصيدلية')),
+          );
+          return;
+        }
+      }
 
-      final payload = {
+      final payload = <String, dynamic>{
         'name': _nameController.text.trim(),
+        'businessType': _businessType,
+        'businessTypeLabel': _businessTypes[_businessType],
         'phone': _phoneController.text.trim(),
         'commercialRecordNumber': _recordNumberController.text.trim(),
         'commercialRecordImageUrl': recordImageUrl,
+        'pharmacyLicenseNumber': _pharmacyLicenseController.text.trim(),
+        'pharmacyLicenseImageUrl': pharmacyLicenseImageUrl,
+        'returnPolicyDays': _requiresReturnPolicy
+            ? int.tryParse(_returnPolicyDaysController.text.trim()) ?? 14
+            : null,
         'email': '',
         'ownerUid': '',
         'approvalStatus': 'pending',
@@ -117,40 +172,15 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      String ownerUid;
-      String ownerEmail;
-      if (_isAuthenticatedSubmit) {
-        ownerUid = widget.userId!;
-        ownerEmail = _emailController.text.trim().toLowerCase();
-      } else {
-        final email = _emailController.text.trim().toLowerCase();
-        if (email.isEmpty) {
-          setState(() => _submitting = false);
-          messenger.showSnackBar(
-            const SnackBar(
-              content: Text('أدخل بريدًا إلكترونيًا صحيحًا'),
-            ),
-          );
-          return;
-        }
-        ownerUid = '';
-        ownerEmail = email;
+      final ownerEmail = _emailController.text.trim().toLowerCase();
+      if (ownerEmail.isEmpty) {
+        setState(() => _submitting = false);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('أدخل بريدًا إلكترونيًا صحيحًا')),
+        );
+        return;
       }
-
-      payload['email'] = ownerEmail;
-      payload['ownerUid'] = ownerUid;
-
-      if (_isAuthenticatedSubmit) {
-        await FirebaseFirestore.instance
-            .collection('restaurantApplications')
-            .doc(ownerUid)
-            .set({
-          ...payload,
-          'restaurantId': ownerUid,
-          'status': 'pending',
-          'submittedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      } else {
+      if (!_isAuthenticatedSubmit) {
         final password = _passwordController.text;
         if (password.length < 6) {
           setState(() => _submitting = false);
@@ -161,18 +191,21 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
           );
           return;
         }
-
-        final callable = FirebaseFunctions.instanceFor(region: 'me-central1')
-            .httpsCallable('submitRestaurantApplication');
-        await callable.call({
-          'email': ownerEmail,
-          'password': password,
-          'name': payload['name'],
-          'phone': payload['phone'],
-          'commercialRecordNumber': payload['commercialRecordNumber'],
-          'commercialRecordImageUrl': payload['commercialRecordImageUrl'],
-        });
       }
+      final callable = FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('submitRestaurantApplication');
+      await callable.call({
+        'email': ownerEmail,
+        if (!_isAuthenticatedSubmit) 'password': _passwordController.text,
+        'name': payload['name'],
+        'businessType': payload['businessType'],
+        'phone': payload['phone'],
+        'commercialRecordNumber': payload['commercialRecordNumber'],
+        'commercialRecordImageUrl': payload['commercialRecordImageUrl'],
+        'pharmacyLicenseNumber': payload['pharmacyLicenseNumber'],
+        'pharmacyLicenseImageUrl': payload['pharmacyLicenseImageUrl'],
+        'returnPolicyDays': payload['returnPolicyDays'],
+      });
 
       if (!mounted) return;
       setState(() => _submitting = false);
@@ -231,17 +264,87 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
               children: [
                 TextFormField(
                   controller: _nameController,
-                  decoration: const InputDecoration(labelText: 'اسم المطعم'),
+                  decoration: const InputDecoration(labelText: 'اسم المنشأة'),
                   validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'الرجاء إدخال اسم المطعم'
+                      ? 'الرجاء إدخال اسم المنشأة'
                       : null,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'اختر نوع قسمك',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'سنجهز لك أدوات الإدارة المناسبة لطبيعة نشاطك.',
+                  style: TextStyle(color: Colors.black54),
+                ),
+                const SizedBox(height: 12),
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  childAspectRatio: 1.8,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  children: _businessTypes.entries.map((entry) {
+                    final selected = _businessType == entry.key;
+                    final icon = switch (entry.key) {
+                      'restaurant' => Icons.restaurant_rounded,
+                      'grocery' => Icons.shopping_basket_rounded,
+                      'pharmacy' => Icons.medication_rounded,
+                      'brand' => Icons.sell_rounded,
+                      _ => Icons.storefront_rounded,
+                    };
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: _submitting
+                          ? null
+                          : () => setState(() => _businessType = entry.key),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? Theme.of(context).colorScheme.primaryContainer
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: selected
+                                ? Theme.of(context).colorScheme.primary
+                                : Colors.black12,
+                            width: selected ? 2 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(icon,
+                                color: selected
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Colors.black54),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(entry.value,
+                                  style: TextStyle(
+                                      fontWeight: selected
+                                          ? FontWeight.w800
+                                          : FontWeight.w600)),
+                            ),
+                            if (selected)
+                              Icon(Icons.check_circle_rounded,
+                                  color: Theme.of(context).colorScheme.primary),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   decoration:
-                      const InputDecoration(labelText: 'رقم جوال المطعم'),
+                      const InputDecoration(labelText: 'رقم جوال المنشأة'),
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'الرجاء إدخال رقم الجوال'
                       : null,
@@ -255,6 +358,48 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
                       ? 'الرجاء إدخال رقم السجل التجاري'
                       : null,
                 ),
+                if (_isPharmacy) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _pharmacyLicenseController,
+                    decoration:
+                        const InputDecoration(labelText: 'رقم ترخيص الصيدلية'),
+                    validator: (value) =>
+                        _isPharmacy && (value == null || value.trim().isEmpty)
+                            ? 'الرجاء إدخال رقم ترخيص الصيدلية'
+                            : null,
+                  ),
+                  const SizedBox(height: 8),
+                  _pharmacyLicenseImage == null
+                      ? const Text('لم يتم رفع صورة ترخيص الصيدلية بعد')
+                      : ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.file(_pharmacyLicenseImage!,
+                              height: 130, fit: BoxFit.cover),
+                        ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _pickPharmacyLicenseImage,
+                    icon: const Icon(Icons.medical_information_outlined),
+                    label: const Text('رفع صورة ترخيص الصيدلية'),
+                  ),
+                ],
+                if (_requiresReturnPolicy) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _returnPolicyDaysController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: 'مدة الاسترجاع بالأيام'),
+                    validator: (value) {
+                      if (!_requiresReturnPolicy) return null;
+                      final days = int.tryParse((value ?? '').trim());
+                      return days == null || days < 0 || days > 365
+                          ? 'أدخل مدة بين 0 و365 يومًا'
+                          : null;
+                    },
+                  ),
+                ],
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _emailController,

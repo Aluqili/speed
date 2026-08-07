@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
@@ -99,7 +100,9 @@ List<String> _itemNotesSummary(Map<String, dynamic> data) {
         final name = _itemName(item);
         final quantity = _itemQuantity(item);
         final notes = _itemSpecialNotes(item);
-        return notes.isEmpty ? '' : '${_formatAmount(quantity)} × $name: $notes';
+        return notes.isEmpty
+            ? ''
+            : '${_formatAmount(quantity)} × $name: $notes';
       })
       .where((entry) => entry.isNotEmpty)
       .toList();
@@ -109,7 +112,8 @@ List<String> _itemSummaryLines(Map<String, dynamic> data) {
   final items = data['items'];
   if (items is! List) return const [];
   return items
-      .map((item) => '${_formatAmount(_itemQuantity(item))} × ${_itemName(item)}')
+      .map((item) =>
+          '${_formatAmount(_itemQuantity(item))} × ${_itemName(item)}')
       .take(3)
       .toList();
 }
@@ -128,11 +132,12 @@ class StorePreparingOrdersScreen extends StatelessWidget {
   const StorePreparingOrdersScreen({super.key, required this.restaurantId});
 
   Future<void> _markReady(String orderId, bool hasAssignedDriver) async {
-    await FirebaseFirestore.instance.collection('orders').doc(orderId).update({
-      'readyByRestaurant': true,
-      'orderStatus': hasAssignedDriver ? 'pickup_ready' : 'courier_searching',
-      'status': hasAssignedDriver ? 'pickup_ready' : 'courier_searching',
-      'updatedAt': FieldValue.serverTimestamp(),
+    await FirebaseFunctions.instanceFor(region: 'me-central1')
+        .httpsCallable('storeUpdateOrderStage')
+        .call({
+      'orderId': orderId,
+      'restaurantId': restaurantId,
+      'stage': 'ready',
     });
   }
 
@@ -406,11 +411,7 @@ class StorePreparingOrdersScreen extends StatelessWidget {
                             );
                           },
                           icon: const Icon(Icons.check_circle_outline_rounded),
-                          label: Text(
-                            hasAssignedDriver
-                                ? 'تأكيد الجاهزية للاستلام'
-                                : 'جاهز ومتابعة البحث عن مندوب',
-                          ),
+                          label: const Text('جاهز'),
                         ),
                       ),
                     ],

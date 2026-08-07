@@ -1,25 +1,116 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:speedstar_core/speedstar_core.dart'
-    show OrderStatusPalette, formatUnifiedOrderCode;
+import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
+import '../helpers/courier_runtime_helpers.dart';
 
+import 'courier_go_to_restaurant_screen.dart';
 import 'courier_order_details_screen.dart';
 import 'courier_ui.dart';
 
-class CourierNewOrdersScreen extends StatelessWidget {
+class CourierNewOrdersScreen extends StatefulWidget {
   final String driverId;
 
   const CourierNewOrdersScreen({super.key, required this.driverId});
 
   @override
+  State<CourierNewOrdersScreen> createState() => _CourierNewOrdersScreenState();
+}
+
+class _CourierNewOrdersScreenState extends State<CourierNewOrdersScreen> {
+  final Set<String> _processingOrderIds = <String>{};
+
+  String get _courierAuthUid =>
+      FirebaseAuth.instance.currentUser?.uid ?? widget.driverId;
+
+  bool _isProcessing(String orderId) => _processingOrderIds.contains(orderId);
+
+  double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
+  int _toInt(dynamic value) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _distanceText(Map<String, dynamic> data) {
+    final roadKm = _toDouble(data['routeDistanceKm']);
+    final km = roadKm > 0 ? roadKm : _toDouble(data['distanceKm']);
+    if (km <= 0) return 'غير متاح';
+    if (km < 1) return '${(km * 1000).round()} م';
+    return '${km.toStringAsFixed(1)} كم';
+  }
+
+  String _etaText(Map<String, dynamic> data) {
+    final eta = _toInt(data['estimatedDeliveryMinutes']);
+    if (eta > 0) return '$eta دقيقة';
+    final route = _toInt(data['routeDurationMinutes']);
+    if (route > 0) return '$route دقيقة';
+    return 'غير متاح';
+  }
+
+  Future<void> _acceptOffer(String orderId) async {
+    if (_isProcessing(orderId)) return;
+    setState(() {
+      _processingOrderIds.add(orderId);
+    });
+    try {
+      await courierInvokeCallable(
+        'courierRespondToOffer',
+        {
+          'orderId': orderId,
+          'driverId': widget.driverId,
+          'decision': 'accept',
+        },
+        timeout: const Duration(seconds: 12),
+        maxAttempts: 2,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم قبول العرض بنجاح')),
+      );
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => CourierGoToRestaurantScreen(
+            orderId: orderId,
+            driverId: widget.driverId,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            courierFriendlyFunctionsError(
+              e,
+              fallback: 'تعذر قبول العرض الآن. حاول مرة أخرى.',
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _processingOrderIds.remove(orderId);
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: buildCourierAppBar('العروض الجديدة'),
+      appBar: buildCourierAppBar('العروض المتاحة'),
       body: CourierPageBackground(
         child: StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('orders')
-              .where('offerDriverIds', arrayContains: driverId)
+              .where('offerDriverOwnerUids', arrayContains: _courierAuthUid)
+              .where('orderStatus', isEqualTo: 'courier_offer_pending')
               .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -28,8 +119,8 @@ class CourierNewOrdersScreen extends StatelessWidget {
 
             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
               return const CourierEmptyState(
-                title: 'لا توجد عروض متاحة الآن',
-                message: 'ستظهر هنا الطلبات الجديدة القريبة منك عند توفرها.',
+                title: 'حسابك نشط بانتظار ظهور الطلبات',
+                message: 'ستظهر هنا الطلبات الجديدة القريبة منك فور توفرها.',
                 icon: Icons.local_shipping_outlined,
               );
             }
@@ -38,12 +129,26 @@ class CourierNewOrdersScreen extends StatelessWidget {
               final m = d.data() as Map<String, dynamic>;
               final status = (m['orderStatus'] ?? m['status'] ?? '').toString();
               return status == 'courier_offer_pending';
-            }).toList();
+            }).toList()
+              ..sort((a, b) {
+                final aData = a.data() as Map<String, dynamic>;
+                final bData = b.data() as Map<String, dynamic>;
+                final aTs = aData['createdAt'];
+                final bTs = bData['createdAt'];
+                final aMs = aTs is Timestamp
+                    ? aTs.millisecondsSinceEpoch
+                    : (aTs is num ? aTs.toInt() : 0);
+                final bMs = bTs is Timestamp
+                    ? bTs.millisecondsSinceEpoch
+                    : (bTs is num ? bTs.toInt() : 0);
+                return bMs.compareTo(aMs);
+              });
 
             if (orders.isEmpty) {
               return const CourierEmptyState(
-                title: 'لا توجد عروض متاحة الآن',
-                message: 'كل العروض الحالية إما انتهت أو تم استلامها من مندوب آخر.',
+                title: 'حسابك نشط بانتظار ظهور الطلبات',
+                message:
+                    'كل العروض الحالية إما انتهت أو تم استلامها من مندوب آخر.',
                 icon: Icons.hourglass_empty_rounded,
               );
             }
@@ -53,14 +158,13 @@ class CourierNewOrdersScreen extends StatelessWidget {
               children: [
                 CourierHeroCard(
                   title: '${orders.length} عرض متاح',
-                  subtitle: 'راجع التفاصيل بسرعة واقبل العرض المناسب قبل انتهاء المهلة.',
+                  subtitle:
+                      'يعرض الطلب لجميع المندوبين. أول قبول ناجح يحجز الطلب فورًا.',
                   icon: Icons.notifications_active_rounded,
                 ),
                 const SizedBox(height: 16),
                 ...orders.map((doc) {
                   final data = doc.data() as Map<String, dynamic>;
-                  final status =
-                      (data['orderStatus'] ?? data['status'] ?? '').toString();
                   final orderCode = formatUnifiedOrderCode(
                     orderNumber: data['orderNumber'],
                     orderId: data['orderId'],
@@ -68,79 +172,199 @@ class CourierNewOrdersScreen extends StatelessWidget {
                   );
                   final restaurantName =
                       (data['restaurantName'] ?? 'غير معروف').toString();
+                  final isDirectDelivery =
+                      data['orderSource'] == 'store_direct_delivery';
+                  final itemsCount = (data['items'] as List?)?.length ?? 0;
+                  final isProcessing = _isProcessing(doc.id);
+                  final total =
+                      (data['totalWithDelivery'] ?? data['total'] ?? 0)
+                          .toString();
+                  final courierEarnings =
+                      (data['deliveryFeeForDriver'] ?? data['driverShare'] ?? 0)
+                          .toString();
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: CourierSectionCard(
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.zero,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  orderCode,
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w900,
-                                  ),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 11,
+                            ),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFFFF1E8),
+                              border: Border(
+                                right: BorderSide(
+                                  color: AppThemeArabic.courierAccent,
+                                  width: 4,
                                 ),
                               ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.flash_on_rounded,
+                                  color: AppThemeArabic.courierAccent,
+                                  size: 19,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: OrderStatusPalette.backgroundForStatus(
-                                      status),
-                                  borderRadius: BorderRadius.circular(999),
+                                const SizedBox(width: 7),
+                                Expanded(
+                                  child: Text(
+                                    orderCode,
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppThemeArabic.courierTextPrimary,
+                                    ),
+                                  ),
                                 ),
-                                child: Text(
-                                  OrderStatusPalette.displayText(status),
-                                  style: TextStyle(
-                                    color: OrderStatusPalette.colorForStatus(
-                                        status),
+                                Text(
+                                  isDirectDelivery
+                                      ? 'توصيل مباشر من متجر'
+                                      : 'عرض جديد',
+                                  style: const TextStyle(
+                                    color: AppThemeArabic.courierAccent,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  restaurantName,
+                                  style: const TextStyle(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppThemeArabic.courierTextPrimary,
+                                  ),
+                                ),
+                                if (isDirectDelivery) ...[
+                                  const SizedBox(height: 5),
+                                  const Text(
+                                    'الاستلام من نقطة المتجر والتسليم للعميل',
+                                    style: TextStyle(
+                                      color: AppThemeArabic.courierPrimary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  'العميل: ${(data['clientName'] ?? 'غير معروف').toString()}',
+                                  style: const TextStyle(
+                                    color: AppThemeArabic.courierTextSecondary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _OfferMetric(
+                                        icon: Icons.payments_outlined,
+                                        label: isDirectDelivery
+                                            ? 'أجرك'
+                                            : 'الإجمالي',
+                                        value:
+                                            '${isDirectDelivery ? courierEarnings : total} ج.س',
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: _OfferMetric(
+                                        icon: Icons.route_outlined,
+                                        label: 'المسافة',
+                                        value: _distanceText(data),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: _OfferMetric(
+                                        icon: Icons.schedule_rounded,
+                                        label: 'الزمن',
+                                        value: _etaText(data),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  isDirectDelivery
+                                      ? (data['packageDescription']
+                                                  ?.toString()
+                                                  .trim()
+                                                  .isNotEmpty ==
+                                              true
+                                          ? 'الإرسالية: ${data['packageDescription']}'
+                                          : 'إرسالية توصيل مباشر')
+                                      : '$itemsCount عناصر في الطلب',
+                                  style: const TextStyle(
+                                    color: AppThemeArabic.courierTextSecondary,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          _OfferRow(
-                            label: 'العميل',
-                            value:
-                                (data['clientName'] ?? 'غير معروف').toString(),
-                          ),
-                          const SizedBox(height: 8),
-                          _OfferRow(
-                            label: 'المطعم',
-                            value: restaurantName,
-                          ),
-                          const SizedBox(height: 8),
-                          _OfferRow(
-                            label: 'الإجمالي',
-                            value: '${data['totalWithDelivery'] ?? data['total'] ?? 0} ج.س',
-                          ),
-                          const SizedBox(height: 14),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => CourierOrderDetailsScreen(
-                                      orderId: doc.id,
-                                      driverId: driverId,
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: isProcessing
+                                            ? null
+                                            : () {
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        CourierOrderDetailsScreen(
+                                                      orderId: doc.id,
+                                                      driverId: widget.driverId,
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                        icon: const Icon(
+                                            Icons.visibility_outlined),
+                                        label: const Text('التفاصيل'),
+                                      ),
                                     ),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.visibility_outlined),
-                              label: const Text('عرض التفاصيل'),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: isProcessing
+                                            ? null
+                                            : () => _acceptOffer(doc.id),
+                                        icon: isProcessing
+                                            ? const SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Colors.white,
+                                                ),
+                                              )
+                                            : const Icon(Icons.check_rounded),
+                                        label: Text(
+                                          isProcessing
+                                              ? 'جاري الحجز...'
+                                              : 'قبول الطلب',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -157,36 +381,51 @@ class CourierNewOrdersScreen extends StatelessWidget {
   }
 }
 
-class _OfferRow extends StatelessWidget {
-  const _OfferRow({
+class _OfferMetric extends StatelessWidget {
+  const _OfferMetric({
+    required this.icon,
     required this.label,
     required this.value,
   });
 
+  final IconData icon;
   final String label;
   final String value;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 80,
-          child: Text(
-            label,
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F6F3),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 17, color: AppThemeArabic.courierPrimary),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Color(0xFF7A6857),
-              fontWeight: FontWeight.w700,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              color: AppThemeArabic.courierTextPrimary,
             ),
           ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w700),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppThemeArabic.courierTextSecondary,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

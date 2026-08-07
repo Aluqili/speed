@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@400;500;600;700;800&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./css/styles.css?v=20260505-v7-kpi" />
+    <link rel="stylesheet" href="./css/styles.css?v=20260802-notification-media" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   </head>
   <body>
@@ -181,7 +181,7 @@
 
               <!-- Global Search (shown above content) -->
               <div class="portal-strip card">
-                <nav class="tabs" aria-label="بوابات الأدمن" style="display:none"></nav>
+                <nav class="tabs tabs--hidden" aria-label="بوابات الأدمن"></nav>
                 <section class="admin-search-inline">
                   <div class="admin-workbar-col grow">
                     <label for="adminGlobalSearch">بحث موحد</label>
@@ -248,11 +248,11 @@
                             <div class="map-search-box">
                               <label for="mapStyleSelect">نمط الخريطة</label>
                               <select id="mapStyleSelect">
+                                <option value="osm">مدن وشوارع (مشابه لقوقل)</option>
                                 <option value="voyager">تشغيلي حديث</option>
                                 <option value="positron">فاتح وهادئ</option>
                                 <option value="imagery">أقمار صناعية</option>
                                 <option value="topo">تضاريس</option>
-                                <option value="osm">كلاسيكي</option>
                               </select>
                             </div>
                           </div>
@@ -404,8 +404,8 @@
                         <h2>تقرير المالية — SpeedStar</h2>
                         <p id="financePrintDate"></p>
                       </div>
-                      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
-                        <h3 style="margin:0">ملخص المدفوعات</h3>
+                      <div class="finance-summary-bar">
+                        <h3 class="finance-summary-title">ملخص المدفوعات</h3>
                         <button id="financePrintBtn" class="btn ghost" onclick="document.getElementById('financePrintDate').textContent='تاريخ الطباعة: '+new Date().toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'}); window.print();">🖨 طباعة التقرير</button>
                       </div>
                       <div class="finance-filter-row">
@@ -485,6 +485,23 @@
                         <button id="savePaymentSettingsBtn" type="submit" class="btn primary">حفظ إعدادات الدفع</button>
                       </form>
                       <div id="paymentSettingsResult" class="muted normalize-result">جاري تحميل الإعدادات...</div>
+
+                      <div class="card finance-subcard">
+                        <h3>دوام موظفي الدفع</h3>
+                        <p class="muted">استخدم نفس الحقول أعلاه (الحسابات + الباركود + الروابط) ثم احفظ حسابك أو فعّله للدوام.</p>
+                        <form id="shiftAccountForm" class="grid">
+                          <label>اسم الموظف الظاهر في الدوام<input id="shiftEmployeeDisplayName" type="text" placeholder="مثال: أحمد - دوام صباحي" /></label>
+
+                          <div class="modal-actions">
+                            <button id="saveShiftAccountBtn" type="submit" class="btn ghost">حفظ حسابي</button>
+                            <button id="activateShiftAccountBtn" type="button" class="btn primary">بدء الدوام بحسابي</button>
+                            <button id="endShiftAccountBtn" type="button" class="btn danger">إنهاء الدوام</button>
+                          </div>
+                        </form>
+                        <div id="activeShiftOwnerLabel" class="management-details muted">الحسابات المفعلة الآن تخص: -</div>
+                        <div id="shiftIncomeSummary" class="management-details muted">دخل الدوام الحالي: - | دخل الشهر: -</div>
+                        <div id="shiftAccountResult" class="muted normalize-result"></div>
+                      </div>
                     </div>
                   </div>
 
@@ -506,6 +523,7 @@
                         <label><input id="discountIsActive" type="checkbox" checked /> مفعل</label>
                         <label><input id="discountOnlyNewOrders" type="checkbox" /> للطلبات الجديدة فقط</label>
                         <button id="discountSaveBtn" type="submit" class="btn primary">حفظ الكود</button>
+                        <button id="discountCancelEditBtn" type="button" class="btn ghost" hidden>إلغاء التعديل</button>
                       </form>
                       <div id="discountResult" class="muted normalize-result"></div>
                       <div id="discountsTable"></div>
@@ -540,11 +558,50 @@
                               <option value="specific_items">وجبات محددة</option>
                             </select>
                           </label>
+                          <label>نوع العرض
+                            <select id="adminOfferKind">
+                              <option value="discount">خصم مباشر</option>
+                              <option value="buy_x_get_y">اشترِ X وخذ Y مجانًا</option>
+                              <option value="bundle_price">باقة بسعر ثابت</option>
+                              <option value="nth_item_percent">خصم على كل قطعة رقم N</option>
+                              <option value="spend_x_get_percent">خصم عند تجاوز مبلغ شراء</option>
+                            </select>
+                          </label>
                           <label>نوع الخصم
                             <select id="adminOfferDiscountType" required>
                               <option value="percent">نسبة مئوية</option>
                               <option value="fixed">مبلغ ثابت</option>
                             </select>
+                          </label>
+                          <label>اشترِ كمية (X)
+                            <input id="adminOfferBuyQty" type="number" min="1" step="1" placeholder="3" />
+                          </label>
+                          <label>كمية مجانية (Y)
+                            <input id="adminOfferFreeQty" type="number" min="1" step="1" placeholder="1" />
+                          </label>
+                          <label>تطبيق المجاني على
+                            <select id="adminOfferApplyOn">
+                              <option value="same_item">نفس الصنف</option>
+                              <option value="cheapest_any">أرخص صنف مؤهل</option>
+                            </select>
+                          </label>
+                          <label>عدد قطع الباقة
+                            <input id="adminOfferBundleQty" type="number" min="2" step="1" placeholder="2" />
+                          </label>
+                          <label>سعر الباقة (ج.س)
+                            <input id="adminOfferBundlePrice" type="number" min="0" step="0.01" placeholder="0" />
+                          </label>
+                          <label>كل قطعة رقم N
+                            <input id="adminOfferNthQty" type="number" min="2" step="1" placeholder="2" />
+                          </label>
+                          <label>نسبة خصم القطعة N (%)
+                            <input id="adminOfferNthPercent" type="number" min="1" max="100" step="0.01" placeholder="50" />
+                          </label>
+                          <label>حد الشراء لتفعيل العرض (ج.س)
+                            <input id="adminOfferMinSpend" type="number" min="0" step="0.01" placeholder="0" />
+                          </label>
+                          <label>نسبة الخصم عند تجاوز الحد (%)
+                            <input id="adminOfferSpendPercent" type="number" min="1" max="100" step="0.01" placeholder="10" />
                           </label>
                           <label>قيمة الخصم<input id="adminOfferDiscountValue" type="number" min="0" step="0.01" required placeholder="20" /></label>
                           <label>سقف الخصم<input id="adminOfferMaxDiscount" type="number" min="0" step="0.01" placeholder="اختياري" /></label>
@@ -576,45 +633,102 @@
                   <div class="portal-header card">
                     <div>
                       <span class="eyebrow">مكتب الطلبات</span>
-                      <h3>متابعة الطلبات والربط بين كل الأطراف</h3>
-                      <p class="muted">تقسيم واضح للحالات، تفاصيل زمنية، وروابط مباشرة إلى الخريطة والعميل والمندوب.</p>
+                      <h3>مركز متابعة الطلب من البداية للنهاية</h3>
+                      <p class="muted">كل ما تحتاجه للتشغيل اليومي داخل تبويب الطلبات: فلترة، متابعة مباشرة، وتحكم سريع بدون تنقلات كثيرة.</p>
                     </div>
                   </div>
-                  <div class="card orders-workspace-card">
-                    <div class="orders-toolbar">
-                      <div class="orders-segments" id="ordersSegments">
-                        <button class="portal-chip active" type="button" data-orders-segment="active">نشطة</button>
-                        <button class="portal-chip" type="button" data-orders-segment="review">قيد المراجعة</button>
-                        <button class="portal-chip" type="button" data-orders-segment="cancelled">ملغاة</button>
-                        <button class="portal-chip" type="button" data-orders-segment="courier">مرتبطة بمندوب</button>
-                        <button class="portal-chip" type="button" data-orders-segment="all">الكل</button>
+                  <div class="orders-cockpit">
+                    <div class="card orders-sidebar-card">
+                      <div class="orders-toolbar">
+                        <div class="orders-segments" id="ordersSegments">
+                          <button class="portal-chip active" type="button" data-orders-segment="active">نشطة</button>
+                          <button class="portal-chip" type="button" data-orders-segment="completed">مكتملة</button>
+                          <button class="portal-chip" type="button" data-orders-segment="review">قيد المراجعة</button>
+                          <button class="portal-chip" type="button" data-orders-segment="cancelled">ملغاة</button>
+                          <button class="portal-chip" type="button" data-orders-segment="courier">مرتبطة بمندوب</button>
+                          <button class="portal-chip" type="button" data-orders-segment="all">الكل</button>
+                        </div>
+                        <div class="finance-filter-row compact">
+                          <label for="orderStatusFilter">الحالة:</label>
+                          <select id="orderStatusFilter">
+                            <option value="active">النشطة</option>
+                            <option value="completed">المكتملة</option>
+                            <option value="review">قيد المراجعة</option>
+                            <option value="cancelled">الملغاة</option>
+                            <option value="courier">مرتبطة بمندوب</option>
+                            <option value="all">الكل</option>
+                          </select>
+                          <label for="orderSearchInput">بحث:</label>
+                          <input id="orderSearchInput" type="text" placeholder="رقم الطلب، العميل، المطعم، المندوب..." />
+                        </div>
                       </div>
-                      <div class="finance-filter-row compact">
-                        <label for="orderStatusFilter">الحالة:</label>
-                        <select id="orderStatusFilter">
-                          <option value="active">النشطة</option>
-                          <option value="review">قيد المراجعة</option>
-                          <option value="cancelled">الملغاة</option>
-                          <option value="courier">مرتبطة بمندوب</option>
-                          <option value="all">الكل</option>
-                        </select>
-                        <label for="orderSearchInput">بحث:</label>
-                        <input id="orderSearchInput" type="text" placeholder="رقم الطلب، العميل، المطعم، المندوب..." />
+                      <div id="operationsOrderSummary" class="management-details muted">جاري تحميل الطلبات...</div>
+                      <div id="operationsOrdersTable"></div>
+                    </div>
+
+                    <div class="card orders-detail-card-shell">
+                      <div class="orders-detail-titlebar">
+                        <h3>لوحة متابعة الطلب المحدد</h3>
+                        <p class="muted">اختر أي طلب من القائمة اليسرى ليظهر مساره الكامل وإجراءاته الفورية هنا.</p>
                       </div>
+                      <div id="operationsOrderDetails" class="management-details muted">اختر طلبًا لعرض التسلسل الزمني والتحكم الكامل.</div>
+
+                      <details class="orders-tools-disclosure">
+                        <summary>أدوات إضافية (اختياري)</summary>
+                        <div class="management-details mock-order-box">
+                          <h3 class="mock-order-title">إنشاء طلب تجريبي للمندوبين</h3>
+                          <p class="muted mock-order-note">مخصص للاختبار الداخلي. يمكنك استهداف كل المندوبين المتاحين أو اختيار مجموعة محددة.</p>
+                          <form id="mockOrderForm" class="grid mock-order-form">
+                            <div class="finance-filter-row compact mock-order-row">
+                              <label for="mockOrderMode">طريقة الاستهداف:</label>
+                              <select id="mockOrderMode">
+                                <option value="all">كل المندوبين المتاحين</option>
+                                <option value="specific">مندوبون محددون</option>
+                              </select>
+
+                              <label for="mockOrderPaymentMethod">طريقة الدفع:</label>
+                              <select id="mockOrderPaymentMethod">
+                                <option value="cash">نقدًا</option>
+                                <option value="wallet">محفظة</option>
+                                <option value="bankk">بنكي</option>
+                                <option value="ocash">أوكاش</option>
+                                <option value="fawry">فوري</option>
+                              </select>
+                            </div>
+
+                            <div class="finance-filter-row compact mock-order-row">
+                              <label class="mock-order-field-sm">
+                                اسم العميل
+                                <input id="mockOrderClientName" type="text" placeholder="عميل تجريبي" />
+                              </label>
+                              <label class="mock-order-field-sm">
+                                هاتف العميل
+                                <input id="mockOrderClientPhone" type="text" placeholder="09XXXXXXXX" />
+                              </label>
+                              <label class="mock-order-field-sm">
+                                اسم المتجر
+                                <input id="mockOrderStoreName" type="text" placeholder="متجر تجريبي" />
+                              </label>
+                            </div>
+
+                            <label>
+                              عنوان التوصيل
+                              <input id="mockOrderAddress" type="text" placeholder="الخرطوم - حي تجريبي" />
+                            </label>
+
+                            <label>
+                              المندوبون المستهدفون (عند اختيار وضع محدد)
+                              <select id="mockOrderCourierIds" multiple size="6"></select>
+                            </label>
+
+                            <div class="order-actions-row mock-order-actions-row">
+                              <button class="btn primary" id="mockOrderCreateBtn" type="submit">إنشاء الطلب التجريبي</button>
+                            </div>
+                            <div id="mockOrderResult" class="muted">جاهز لإنشاء طلب تجريبي.</div>
+                          </form>
+                        </div>
+                      </details>
                     </div>
-                    <div id="operationsOrderSummary" class="management-details muted">جاري تحميل الطلبات...</div>
-                    <div id="operationsOrdersTable"></div>
-                    <div id="operationsOrderDetails" class="management-details muted">اختر طلبًا لعرض التسلسل الزمني والتحكم الكامل.</div>
-                  </div>
-                  <div class="card orders-workspace-card">
-                    <h3>آخر العملاء</h3>
-                    <p class="muted">رؤية سريعة لبيانات العملاء والمحفظة وآخر النشاط.</p>
-                    <div class="table-search-bar">
-                      <input id="clientSearchInput" type="text" placeholder="ابحث بالاسم أو الهاتف أو البريد..." />
-                      <span class="table-search-count" id="clientSearchCount"></span>
-                    </div>
-                    <div id="clientsTable"></div>
-                    <div id="clientDetailsPanel" class="management-details muted">اختر عميلًا لعرض التفاصيل.</div>
                   </div>
                 </section>
 
@@ -715,6 +829,7 @@
                             <label class="admin-permission-option"><input type="checkbox" name="adminPermission" value="admins" checked />إدارة المسؤولين</label>
                           </div>
                         </fieldset>
+                        <label class="admin-permission-option"><input id="adminCanDeleteRestaurantsInput" type="checkbox" />منح صلاحية حذف المطاعم نهائيًا (صلاحية حساسة)</label>
                         <button type="submit" class="btn primary">حفظ صلاحيات المسؤول</button>
                       </form>
                       <p class="muted">المستخدم يجب أن يكون موجودًا في Firebase Auth.</p>
@@ -822,9 +937,9 @@
                     </div>
 
                     <div class="card">
-                      <h3>محرر Remote Config المبسط</h3>
+                      <h3>مركز التحكم في إعدادات التطبيقات</h3>
                       <form id="remoteConfigBulkForm" class="grid">
-                        <label>بحث عن مفتاح<input id="remoteConfigFilterInput" type="text" placeholder="مثال: client_ أو pricing_" /></label>
+                        <label>ابحث بالاسم أو الوظيفة<input id="remoteConfigFilterInput" type="search" placeholder="مثال: الإشعارات، العميل، الأسعار، أو اسم المفتاح" /></label>
                         <div id="remoteConfigTable" class="remote-table-wrap"></div>
                         <div class="rollout-actions-row">
                           <button id="reloadRemoteConfigBulkBtn" type="button" class="btn ghost">إعادة تحميل المفاتيح</button>
@@ -832,6 +947,44 @@
                         </div>
                       </form>
                       <div id="remoteConfigBulkResult" class="muted normalize-result">جاري تحميل مفاتيح Remote Config...</div>
+                    </div>
+
+                    <div class="card">
+                      <h3>إعدادات منشأة مختارة</h3>
+                      <p class="muted">مفاتيح Remote Config عامة لكل التطبيق. اختر هنا منشأة واحدة لتعديل ظهورها فقط، دون التأثير على بقية المنشآت.</p>
+                      <form id="storeHomeConfigForm" class="grid pricing-config-grid">
+                        <label>المنشأة<select id="storeHomeConfigTarget" required><option value="">اختر منشأة</option></select></label>
+                        <label class="payment-method-row"><input id="storeHomeFeaturedInput" type="checkbox" />إظهار كمنشأة مميزة في الرئيسية</label>
+                        <label class="payment-method-row"><input id="storeHomeOffersInput" type="checkbox" />إظهار ضمن قسم العروض</label>
+                        <button type="submit" class="btn primary">حفظ إعدادات المنشأة المختارة</button>
+                      </form>
+                      <div id="storeHomeConfigResult" class="muted normalize-result"></div>
+                    </div>
+
+                    <div class="card">
+                      <h3>صور أقسام تطبيق العميل</h3>
+                      <p class="muted">ارفع صورة لكل قسم لتظهر بجانب اسمه في فلتر الصفحة الرئيسية.</p>
+                      <form id="clientHomeImagesForm" class="grid pricing-config-grid">
+                        <label>المطاعم<input data-business-image="restaurant" type="file" accept="image/*" /></label>
+                        <label>البقالات<input data-business-image="grocery" type="file" accept="image/*" /></label>
+                        <label>الصيدليات<input data-business-image="pharmacy" type="file" accept="image/*" /></label>
+                        <label>البراندات<input data-business-image="brand" type="file" accept="image/*" /></label>
+                        <label>المتاجر الإلكترونية<input data-business-image="ecommerce" type="file" accept="image/*" /></label>
+                        <button type="submit" class="btn primary">رفع وحفظ صور الأقسام</button>
+                      </form>
+                      <div id="clientHomeImagesResult" class="muted normalize-result"></div>
+                    </div>
+
+                    <div class="card">
+                      <h3>برنامج مكافآت العميل</h3>
+                      <p class="muted">تُمنح النقاط تلقائياً بعد تأكيد تسليم الطلب. لا تُمنح النقاط لطلب واحد أكثر من مرة.</p>
+                      <form id="rewardsConfigForm" class="grid pricing-config-grid">
+                        <label class="payment-method-row"><input id="rewardsEnabledInput" type="checkbox" />تفعيل برنامج المكافآت</label>
+                        <label>كل مبلغ مقابل نقطة واحدة<input id="rewardsAmountPerPointInput" type="number" min="1" step="1" value="100" /></label>
+                        <label>الحد الأدنى لعرض الاستبدال<input id="rewardsMinRedeemPointsInput" type="number" min="1" step="1" value="100" /></label>
+                        <button type="submit" class="btn primary">حفظ إعدادات المكافآت</button>
+                      </form>
+                      <div id="rewardsConfigResult" class="muted normalize-result"></div>
                     </div>
                   </div>
                 </section>
@@ -863,6 +1016,15 @@
                       <label>UID المستخدم<input id="notificationUserId" type="text" placeholder="مثال: eY8..." /></label>
                       <label>العنوان<input id="notificationTitle" type="text" required placeholder="عنوان الإشعار" /></label>
                       <label>الرسالة<textarea id="notificationBody" rows="3" required placeholder="اكتب نص الإشعار"></textarea></label>
+                      <div class="notification-attachment">
+                        <input id="notificationImageInput" type="file" accept="image/*" hidden />
+                        <div id="notificationImagePreview" class="notification-image-preview" hidden>
+                          <img id="notificationImagePreviewImg" alt="معاينة الصورة المرفقة" />
+                          <button id="notificationRemoveImageBtn" type="button" class="btn ghost">إزالة الصورة</button>
+                        </div>
+                        <button id="notificationAttachImageBtn" type="button" class="btn ghost">إرفاق صورة</button>
+                        <span class="field-hint">اختياري، حتى 10MB. سيظهر الإشعار مختصراً ثم تُفتح التفاصيل والصورة.</span>
+                      </div>
                       <button id="notificationSendBtn" type="submit" class="btn primary">إرسال الإشعار</button>
                     </form>
                     <div id="notificationResult" class="muted normalize-result"></div>
@@ -882,7 +1044,7 @@
                       <p class="muted">فلترة، تتبع، وردود مباشرة على محادثات العملاء والمندوبين والمتاجر.</p>
                     </div>
                   </div>
-                  <div class="card">
+                  <div class="card support-workspace-card">
                     <div id="supportRoot" class="support-root">
                       <aside class="support-sidebar">
                         <div class="support-filters">
@@ -947,6 +1109,11 @@
                     <div id="pendingTable"></div>
                   </div>
                   <div class="card">
+                    <h3>إحصاءات المحليات والمناطق المعتمدة</h3>
+                    <div id="pendingGeoStatsSummary" class="stats"></div>
+                    <div id="pendingGeoStatsTables" class="approval-geo-stats"></div>
+                  </div>
+                  <div class="card">
                     <h3>طلبات اعتماد القوائم</h3>
                     <div id="pendingMenuTable"></div>
                   </div>
@@ -963,22 +1130,8 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script type="module" src="./js/app.js?v=20260508-offer-upload"></script>
+    <script type="module" src="./js/app.js?v=20260802-notification-media"></script>
     <script>
-      // Sidebar toggle (mobile)
-      const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
-      const appSidebar = document.getElementById('appSidebar');
-      if (sidebarToggleBtn && appSidebar) {
-        sidebarToggleBtn.addEventListener('click', () => {
-          appSidebar.classList.toggle('open');
-        });
-        document.addEventListener('click', (e) => {
-          if (!appSidebar.contains(e.target) && !sidebarToggleBtn.contains(e.target)) {
-            appSidebar.classList.remove('open');
-          }
-        });
-      }
-
       // Toast helper (global)
       window.showToast = function(message, type = 'info', duration = 3500) {
         const container = document.getElementById('toastContainer');

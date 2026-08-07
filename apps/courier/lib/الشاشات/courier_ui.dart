@@ -29,12 +29,12 @@ class CourierPageBackground extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
           colors: [
-            Color(0xFFFDF8F2),
-            Color(0xFFFBF7F1),
-            Color(0xFFF5EFE7),
+            Color(0xFFF8FBF9),
+            Color(0xFFF1F6F3),
+            Color(0xFFE9F1ED),
           ],
         ),
       ),
@@ -62,21 +62,16 @@ class CourierHeroCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: [
-            AppThemeArabic.courierPrimary,
-            Color(0xFFA77443),
-            AppThemeArabic.courierAccent,
-          ],
+        borderRadius: BorderRadius.circular(8),
+        color: const Color(0xFF18352B),
+        border: const Border(
+          right: BorderSide(color: AppThemeArabic.courierAccent, width: 4),
         ),
         boxShadow: [
           BoxShadow(
-            color: AppThemeArabic.courierPrimary.withValues(alpha: 0.18),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
+            color: const Color(0xFF18352B).withValues(alpha: 0.16),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -87,7 +82,7 @@ class CourierHeroCard extends StatelessWidget {
             height: 54,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, color: Colors.white, size: 28),
           ),
@@ -100,7 +95,7 @@ class CourierHeroCard extends StatelessWidget {
                   title,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 20,
+                    fontSize: 19,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -143,13 +138,13 @@ class CourierSectionCard extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE9DDCF)),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFD7E4DD)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 18,
-            offset: Offset(0, 8),
+            color: Color(0x0F17352B),
+            blurRadius: 12,
+            offset: Offset(0, 4),
           ),
         ],
       ),
@@ -217,7 +212,7 @@ class CourierMetricCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: tone.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: tone.withValues(alpha: 0.16)),
       ),
       child: Column(
@@ -329,14 +324,14 @@ class CourierMenuTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(8),
       onTap: onTap,
       child: Ink(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE9DDCF)),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFD7E4DD)),
         ),
         child: Row(
           children: [

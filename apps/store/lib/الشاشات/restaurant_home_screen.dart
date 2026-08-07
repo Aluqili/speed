@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:speedstar_core/src/config/ops_runtime_config.dart';
@@ -22,6 +23,7 @@ import 'store_current_orders_screen.dart';
 import 'store_notifications_screen.dart';
 import 'store_order_details_screen.dart';
 import 'store_promocode_screen.dart';
+import 'store_request_courier_screen.dart';
 import 'chat_screen.dart';
 import '../الخدمات/push_notification_service.dart';
 
@@ -84,6 +86,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
   }
 
   bool temporarilyClosed = false;
+  bool _updatingTemporaryClosure = false;
   bool autoAcceptOrders = false;
   bool _ringtoneEnabled = true;
   double _ringtoneVolume = 1.0;
@@ -96,6 +99,15 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
 
   String? restaurantName;
   String? logoUrl;
+  String _businessType = 'restaurant';
+
+  String get _businessTypeLabel => switch (_businessType) {
+        'grocery' => 'بقالة',
+        'pharmacy' => 'صيدلية',
+        'brand' => 'براند',
+        'ecommerce' => 'متجر إلكتروني',
+        _ => 'مطعم',
+      };
 
   void _showErrorMessage(String message) {
     if (!mounted) return;
@@ -240,21 +252,38 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     return receivable < 0 ? 0 : receivable;
   }
 
-  Future<void> _setOrderStatus(String orderId, String status,
-      {Map<String, dynamic>? extra}) async {
+  Future<void> _setOrderStatus(String orderId, String status) async {
     try {
-      await FirebaseFirestore.instance
-          .collection('orders')
-          .doc(orderId)
-          .update({
-        'orderStatus': status,
-        'status': status,
-        'updatedAt': FieldValue.serverTimestamp(),
-        ...?extra,
+      final stage = switch (status) {
+        'courier_searching' => 'accept',
+        'store_rejected' => 'reject',
+        _ => throw ArgumentError.value(
+            status, 'status', 'Unsupported store order status'),
+      };
+      await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('storeUpdateOrderStage')
+          .call({
+        'orderId': orderId,
+        'restaurantId': widget.restaurantId,
+        'stage': stage,
       });
     } on FirebaseException catch (e) {
       _showErrorMessage('تعذر تحديث حالة الطلب: ${e.message ?? e.code}');
       rethrow;
+    }
+  }
+
+  Future<void> _startPreparation(String orderId) async {
+    try {
+      await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('storeUpdateOrderStage')
+          .call({
+        'orderId': orderId,
+        'restaurantId': widget.restaurantId,
+        'stage': 'start_preparing',
+      });
+    } on FirebaseException catch (e) {
+      _showErrorMessage('تعذر بدء التجهيز: ${e.message ?? e.code}');
     }
   }
 
@@ -313,18 +342,28 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
   }
 
   Future<void> _toggleTemporaryClosure(bool value) async {
+    if (_updatingTemporaryClosure) return;
     final previous = temporarilyClosed;
-    setState(() => temporarilyClosed = value);
+    setState(() {
+      temporarilyClosed = value;
+      _updatingTemporaryClosure = true;
+    });
     try {
       await FirebaseFirestore.instance
           .collection('restaurants')
           .doc(widget.restaurantId)
-          .update({'temporarilyClosed': value});
+          .set({
+        'temporarilyClosed': value,
+        'temporarilyClosedUpdatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     } on FirebaseException catch (e) {
       if (!mounted) return;
       setState(() => temporarilyClosed = previous);
       _showErrorMessage(
           'لا تملك صلاحية تعديل حالة الإغلاق: ${e.message ?? e.code}');
+    } finally {
+      if (mounted) setState(() => _updatingTemporaryClosure = false);
     }
   }
 
@@ -348,6 +387,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
         final liveData = doc.data() ?? {};
         setState(() {
           autoAcceptOrders = liveData['autoAcceptOrders'] == true;
+          temporarilyClosed = liveData['temporarilyClosed'] == true;
         });
       }, onError: (error) {
         if (error is FirebaseException) {
@@ -373,6 +413,10 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
         setState(() {
           restaurantName = (data['name'] ?? '').toString();
           logoUrl = (data['logoImageUrl'] ?? '').toString();
+          _businessType = (data['businessType'] ?? 'restaurant')
+              .toString()
+              .trim()
+              .toLowerCase();
         });
       }
     } on FirebaseException catch (e) {
@@ -450,6 +494,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
         final data = doc.data();
         return _isStorePendingStatus(_getOrderStatus(data));
       }).toList();
+
+      _updateStoreRingtoneLoop(pendingDocs.isNotEmpty);
 
       for (final doc in pendingDocs) {
         final orderId = doc.id;
@@ -782,9 +828,20 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   iconColor: Colors.deepOrange,
                   text: 'العروض والخصومات',
                   onTap: () async {
-                    Navigator.pop(context);
-                    await _openPage(StorePromocodeScreen(
-                        restaurantId: widget.restaurantId));
+                    Navigator.of(context).pop();
+                    await Future<void>.delayed(
+                      const Duration(milliseconds: 250),
+                    );
+                    if (!mounted) return;
+                    try {
+                      await _openPage(
+                        StorePromocodeScreen(
+                          restaurantId: widget.restaurantId,
+                        ),
+                      );
+                    } catch (error) {
+                      _showErrorMessage('تعذر فتح صفحة العروض: $error');
+                    }
                   },
                 ),
                 Card(
@@ -799,13 +856,15 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                     title: const Text('إيقاف مؤقت لاستقبال الطلبات',
                         style: TextStyle(fontFamily: 'Tajawal')),
                     value: temporarilyClosed,
-                    onChanged: _toggleTemporaryClosure,
+                    onChanged: _updatingTemporaryClosure
+                        ? null
+                        : _toggleTemporaryClosure,
                     secondary: const Icon(Icons.pause_circle_filled,
                         color: Colors.red),
                     activeColor: primaryColor,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 10),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18)),
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -1052,15 +1111,15 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     }) {
       return Expanded(
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 7),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(12),
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
             children: [
               Icon(icon, color: color, size: 18),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text(
                 '$value',
                 style: TextStyle(
@@ -1069,7 +1128,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   fontSize: 16,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               Text(
                 label,
                 textAlign: TextAlign.center,
@@ -1082,38 +1141,26 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
       );
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: primaryColor.withOpacity(0.12)),
-      ),
-      child: Row(
-        children: [
-          statItem(
+    return Row(
+      children: [
+        statItem(
             icon: Icons.receipt_long_rounded,
-            label: 'إجمالي الطلبات',
+            label: 'الكل',
             value: totalCount,
-            color: primaryColor,
-          ),
-          const SizedBox(width: 8),
-          statItem(
+            color: primaryColor),
+        const SizedBox(width: 8),
+        statItem(
             icon: Icons.fiber_new_rounded,
-            label: 'طلبات جديدة',
+            label: 'جديد',
             value: newCount,
-            color: Colors.orange,
-          ),
-          const SizedBox(width: 8),
-          statItem(
+            color: Colors.orange),
+        const SizedBox(width: 8),
+        statItem(
             icon: Icons.check_circle_rounded,
-            label: 'منتهية',
+            label: 'مكتمل',
             value: finishedCount,
-            color: Colors.green,
-          ),
-        ],
-      ),
+            color: Colors.green),
+      ],
     );
   }
 
@@ -1124,14 +1171,11 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
     required int finishedCount,
   }) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppThemeArabic.storePrimary, Color(0xFF14B8A6)],
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-        ),
-        borderRadius: BorderRadius.circular(26),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFDDE6E2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1139,12 +1183,14 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
           Row(
             children: [
               CircleAvatar(
-                radius: 28,
-                backgroundColor: Colors.white.withOpacity(0.16),
+                radius: 24,
+                backgroundColor:
+                    AppThemeArabic.storePrimary.withValues(alpha: 0.10),
                 backgroundImage:
                     (logoUrl ?? '').isNotEmpty ? NetworkImage(logoUrl!) : null,
                 child: (logoUrl ?? '').isEmpty
-                    ? const Icon(Icons.storefront_rounded, color: Colors.white)
+                    ? const Icon(Icons.storefront_rounded,
+                        color: AppThemeArabic.storePrimary)
                     : null,
               ),
               const SizedBox(width: 12),
@@ -1157,24 +1203,37 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                           ? 'لوحة المطعم'
                           : restaurantName!.trim(),
                       style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
+                        color: AppThemeArabic.storeTextPrimary,
+                        fontSize: 19,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       temporarilyClosed
-                          ? 'استقبال الطلبات متوقف مؤقتًا'
-                          : 'جاهز لمتابعة الطلبات والعمليات اليومية',
-                      style: const TextStyle(color: Colors.white70),
+                          ? 'الاستقبال متوقف مؤقتاً'
+                          : 'يستقبل الطلبات الآن',
+                      style: TextStyle(
+                        color: temporarilyClosed
+                            ? Colors.red
+                            : AppThemeArabic.storePrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
+                    if (_businessType != 'restaurant') ...[
+                      const SizedBox(height: 6),
+                      Chip(
+                        visualDensity: VisualDensity.compact,
+                        avatar: const Icon(Icons.category_outlined, size: 16),
+                        label: Text(_businessTypeLabel),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           _buildDashboardStatsCard(
             totalCount: totalCount,
             newCount: newCount,
@@ -1186,78 +1245,15 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
   }
 
   Widget _buildQuickActionsPanel() {
-    Widget quickAction({
-      required String label,
-      required IconData icon,
-      required VoidCallback onTap,
-      Color? color,
-    }) {
-      final resolvedColor = color ?? AppThemeArabic.storePrimary;
-      return Expanded(
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-            decoration: BoxDecoration(
-              color: resolvedColor.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Column(
-              children: [
-                Icon(icon, color: resolvedColor),
-                const SizedBox(height: 8),
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: () => _openPage(
+          StoreRequestCourierScreen(restaurantId: widget.restaurantId),
         ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle('إجراءات سريعة', Icons.dashboard_customize_outlined),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            quickAction(
-              label: 'إضافة صنف',
-              icon: Icons.add_box_outlined,
-              onTap: () => _openPage(
-                  StoreAddMenuItemScreen(restaurantId: widget.restaurantId)),
-            ),
-            const SizedBox(width: 10),
-            quickAction(
-              label: 'القائمة الكاملة',
-              icon: Icons.menu_book_outlined,
-              onTap: () => _openPage(
-                  StoreFullMenuScreen(restaurantId: widget.restaurantId)),
-            ),
-            const SizedBox(width: 10),
-            quickAction(
-              label: 'الطلبات',
-              icon: Icons.receipt_long_outlined,
-              onTap: () => _openPage(
-                  StoreCurrentOrdersScreen(restaurantId: widget.restaurantId)),
-            ),
-            const SizedBox(width: 10),
-            quickAction(
-              label: 'المحفظة',
-              icon: Icons.account_balance_wallet_outlined,
-              onTap: () => _openPage(
-                  StoreWalletScreen(restaurantId: widget.restaurantId)),
-              color: Colors.orange,
-            ),
-          ],
-        ),
-      ],
+        icon: const Icon(Icons.local_shipping_outlined),
+        label: const Text('اطلب مندوباً لتوصيل مباشر'),
+      ),
     );
   }
 
@@ -1268,8 +1264,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
           width: 38,
           height: 38,
           decoration: BoxDecoration(
-            color: AppThemeArabic.storePrimary.withOpacity(0.10),
-            borderRadius: BorderRadius.circular(12),
+            color: AppThemeArabic.storePrimary.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(icon, color: AppThemeArabic.storePrimary),
         ),
@@ -1301,28 +1297,25 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
             .fold<num>(0, (sum, item) => sum + _itemQuantity(item))
         : 0;
     final statusColor = _orderStatusColor(status);
-    final isAwaitingStoreDecision =
-        status == 'store_pending' || status == 'قيد المراجعة';
     final hasStoreDiscount = _hasStoreAppliedDiscount(data);
     final hasNotes = _hasItemNotes(data);
+    final canStartPreparation = (status == 'courier_searching' ||
+            status == 'courier_offer_pending' ||
+            status == 'courier_assigned') &&
+        data['orderSource'] != 'store_direct_delivery' &&
+        data['preparationStarted'] != true;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border:
-            Border.all(color: statusColor.withOpacity(highlight ? 0.24 : 0.12)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: statusColor.withValues(alpha: highlight ? 0.32 : 0.16),
+        ),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(8),
         onTap: () => _openOrderDetails(docId, data),
         child: Padding(
           padding: const EdgeInsets.all(14),
@@ -1335,8 +1328,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(14),
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
                       highlight
@@ -1370,8 +1363,8 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(999),
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       _displayOrderStatus(status),
@@ -1385,8 +1378,7 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
               Row(
                 children: [
                   Expanded(
-                      child: _buildOrderMetaChip(
-                          Icons.shopping_bag_outlined,
+                      child: _buildOrderMetaChip(Icons.shopping_bag_outlined,
                           '$itemCount أصناف / ${_formatAmount(totalQuantity)} قطعة')),
                   const SizedBox(width: 8),
                   Expanded(
@@ -1401,58 +1393,17 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
                   'يوجد ملاحظات على الأصناف',
                 ),
               ],
-              if (isAwaitingStoreDecision) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.06),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () async {
-                            await _setOrderStatus(docId, 'courier_searching',
-                                extra: {
-                                  'assignedDriverId': null,
-                                  'candidateDrivers': [],
-                                  'driverResponded': false,
-                                  'driverResponseTime': null,
-                                });
-                          },
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF0F9D58),
-                            minimumSize: const Size.fromHeight(50),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          icon: const Icon(Icons.check_circle_outline_rounded),
-                          label: const Text('قبول'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () async {
-                            await _setOrderStatus(docId, 'store_rejected');
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red.shade700,
-                            backgroundColor: Colors.red.shade50,
-                            side: BorderSide(color: Colors.red.shade200),
-                            minimumSize: const Size.fromHeight(50),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          icon: const Icon(Icons.close_rounded),
-                          label: const Text('رفض'),
-                        ),
-                      ),
-                    ],
+              if (canStartPreparation) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => _startPreparation(docId),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.orange.shade800,
+                    ),
+                    icon: const Icon(Icons.play_circle_outline_rounded),
+                    label: const Text('ابدأ تجهيز الطلب الآن'),
                   ),
                 ),
               ],

@@ -60,3 +60,36 @@ class PromocodeService {
     return Map<String, dynamic>.from(response.data as Map);
   }
 }
+
+/// يعرض للعميل خصم عروض المتجر التلقائية (اشترِ واحصل على، حزمة، إلخ)
+/// قبل الدفع حتى يظهر ويُحصَّل المبلغ الصحيح بعد الخصم.
+class StoreOfferService {
+  StoreOfferService()
+      : _previewCallable = FirebaseFunctions.instanceFor(region: 'me-central1')
+            .httpsCallable('previewAutoStoreOffer');
+
+  final HttpsCallable _previewCallable;
+
+  Future<Map<String, dynamic>?> previewAutoOffer({
+    required num subtotal,
+    required num deliveryFee,
+    required num largeOrderFee,
+    required String restaurantId,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    try {
+      final response = await _previewCallable.call(<String, dynamic>{
+        'order': {
+          'subtotal': subtotal,
+          'deliveryFee': deliveryFee,
+          'largeOrderFee': largeOrderFee,
+          'restaurantId': restaurantId,
+          'items': items,
+        },
+      });
+      return Map<String, dynamic>.from(response.data as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+}

@@ -10,12 +10,14 @@ class CourierClientContactCard extends StatefulWidget {
   const CourierClientContactCard({
     super.key,
     required this.orderData,
+    required this.orderId,
     required this.driverId,
     this.compact = false,
     this.showPhone = false,
   });
 
   final Map<String, dynamic> orderData;
+  final String orderId;
   final String driverId;
   final bool compact;
   final bool showPhone;
@@ -38,8 +40,7 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
     super.initState();
     _clientName = _resolveClientName(widget.orderData);
     _clientPhone = _resolveClientPhone(widget.orderData);
-    if ((_clientName.isEmpty ||
-            (widget.showPhone && _clientPhone.isEmpty)) &&
+    if ((_clientName.isEmpty || (widget.showPhone && _clientPhone.isEmpty)) &&
         _clientId.isNotEmpty) {
       _loadClientProfile();
     }
@@ -52,8 +53,7 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
         oldWidget.showPhone != widget.showPhone) {
       _clientName = _resolveClientName(widget.orderData);
       _clientPhone = _resolveClientPhone(widget.orderData);
-      if ((_clientName.isEmpty ||
-              (widget.showPhone && _clientPhone.isEmpty)) &&
+      if ((_clientName.isEmpty || (widget.showPhone && _clientPhone.isEmpty)) &&
           _clientId.isNotEmpty) {
         _loadClientProfile();
       }
@@ -94,7 +94,8 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
 
   Future<DocumentSnapshot<Map<String, dynamic>>?> _findClientDoc() async {
     final firestore = FirebaseFirestore.instance;
-    final directDoc = await firestore.collection('clients').doc(_clientId).get();
+    final directDoc =
+        await firestore.collection('clients').doc(_clientId).get();
     if (directDoc.exists) return directDoc;
 
     for (final field in const ['ownerUid', 'uid', 'userId']) {
@@ -138,7 +139,7 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
 
   String _generateChatId(String user1, String user2) {
     final ids = [user1, user2]..sort();
-    return ids.join('_');
+    return '${ids[0]}_${widget.orderId}_${ids[1]}';
   }
 
   Future<void> _openChat() async {
@@ -155,10 +156,9 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
         .collection('drivers')
         .doc(widget.driverId)
         .get();
-    final driverName = (driverDoc.data()?['name'] ??
-            driverDoc.data()?['fullName'] ??
-            'مندوب')
-        .toString();
+    final driverName =
+        (driverDoc.data()?['name'] ?? driverDoc.data()?['fullName'] ?? 'مندوب')
+            .toString();
 
     if (!mounted) return;
     Navigator.push(

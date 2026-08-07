@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@400;500;600;700;800&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./css/styles.css?v=20260502-admin-premium-ui-v3" />
+    <link rel="stylesheet" href="./css/styles.css?v=20260731-admin-priority-polish" />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -176,11 +176,11 @@
                         <div class="map-search-box">
                           <label for="mapStyleSelect">نمط الخريطة</label>
                           <select id="mapStyleSelect">
+                            <option value="osm">مدن وشوارع (مشابه لقوقل)</option>
                             <option value="voyager">تشغيلي حديث</option>
                             <option value="positron">فاتح وهادئ</option>
                             <option value="imagery">أقمار صناعية</option>
                             <option value="topo">تضاريس</option>
-                            <option value="osm">كلاسيكي</option>
                           </select>
                         </div>
                       </div>
@@ -254,7 +254,7 @@
 
             <section id="dashboard" class="tab-panel portal-panel active">
           <div id="opsPriorityGrid" class="stats"></div>
-          <div class="card">
+          <div class="card support-workspace-card">
             <h3>مركز التنبيهات التشغيلية</h3>
             <p class="muted">تنبيهات حيّة للإيصالات الجديدة، شحن المحافظ، الدعم الفني، وأي عناصر تحتاج تدخلك فورًا.</p>
             <div class="ops-alert-controls">
@@ -486,6 +486,23 @@
                     <button id="savePaymentSettingsBtn" type="submit" class="btn primary">حفظ إعدادات الدفع</button>
                   </form>
                   <div id="paymentSettingsResult" class="muted normalize-result">جاري تحميل الإعدادات...</div>
+
+                  <div class="card finance-subcard">
+                    <h3>دوام موظفي الدفع</h3>
+                    <p class="muted">استخدم نفس الحقول أعلاه (الحسابات + الباركود + الروابط) ثم احفظ حسابك أو فعّله للدوام.</p>
+                    <form id="shiftAccountForm" class="grid">
+                      <label>اسم الموظف الظاهر في الدوام<input id="shiftEmployeeDisplayName" type="text" placeholder="مثال: أحمد - دوام صباحي" /></label>
+
+                      <div class="modal-actions">
+                        <button id="saveShiftAccountBtn" type="submit" class="btn ghost">حفظ حسابي</button>
+                        <button id="activateShiftAccountBtn" type="button" class="btn primary">بدء الدوام بحسابي</button>
+                        <button id="endShiftAccountBtn" type="button" class="btn danger">إنهاء الدوام</button>
+                      </div>
+                    </form>
+                    <div id="activeShiftOwnerLabel" class="management-details muted">الحسابات المفعلة الآن تخص: -</div>
+                    <div id="shiftIncomeSummary" class="management-details muted">دخل الدوام الحالي: - | دخل الشهر: -</div>
+                    <div id="shiftAccountResult" class="muted normalize-result"></div>
+                  </div>
                 </div>
               </div>
 
@@ -552,6 +569,7 @@
                       للطلبات الجديدة فقط
                     </label>
                     <button id="discountSaveBtn" type="submit" class="btn primary">حفظ الكود</button>
+                    <button id="discountCancelEditBtn" type="button" class="btn ghost" hidden>إلغاء التعديل</button>
                   </form>
                   <div id="discountResult" class="muted normalize-result"></div>
                   <div id="discountsTable"></div>
@@ -1099,6 +1117,6 @@
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     ></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-    <script type="module" src="./js/app.js?v=20260418-courier-activity-report"></script>
+    <script type="module" src="./js/app.js?v=20260731-order-driver-assignment-fix"></script>
   </body>
 </html>

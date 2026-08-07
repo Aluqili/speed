@@ -83,7 +83,24 @@ class PushNotificationService {
     if (initialMessage != null) {
       _handleRemoteMessageTap(initialMessage);
     }
+    await _consumeNativeOrderAlertTap();
     _initialized = true;
+  }
+
+  Future<void> _consumeNativeOrderAlertTap() async {
+    if (!_supportsPersistentOrderAlert) return;
+    try {
+      final rawPayload = await _alertServiceChannel
+          .invokeMethod<Map<Object?, Object?>>('consumeOrderAlertTap');
+      if (rawPayload == null || rawPayload.isEmpty) return;
+      _emitTapPayload(
+        rawPayload.map(
+          (key, value) => MapEntry(key.toString(), value),
+        ),
+      );
+    } catch (_) {
+      // The normal FCM tap paths remain available if native retrieval fails.
+    }
   }
 
   Future<NotificationSettings> requestPermission() {
@@ -119,6 +136,16 @@ class PushNotificationService {
             }
           : null,
     );
+    _alertServiceChannel.setMethodCallHandler((call) async {
+      if (call.method != 'orderAlertTapped') return;
+      final rawPayload = call.arguments;
+      if (rawPayload is! Map) return;
+      _emitTapPayload(
+        rawPayload.map(
+          (key, value) => MapEntry(key.toString(), value),
+        ),
+      );
+    });
 
     if (_localNotificationsReady) {
       return;
@@ -220,8 +247,8 @@ class PushNotificationService {
 
   Future<void> showRemoteMessageAsLocal(RemoteMessage message) async {
     final payload = _payloadFromRemoteMessage(message);
-    _emitOrderAlert(payload);
     if (_isUrgentAlert(payload)) {
+      _emitOrderAlert(payload);
       await startPersistentOrderAlert(
         title: payload['title']?.toString(),
         body: payload['body']?.toString(),
@@ -237,8 +264,8 @@ class PushNotificationService {
 
   Future<void> _showForegroundAlert(RemoteMessage message) async {
     final payload = _payloadFromRemoteMessage(message);
-    _emitOrderAlert(payload);
     if (_isUrgentAlert(payload)) {
+      _emitOrderAlert(payload);
       await startPersistentOrderAlert(
         title: payload['title']?.toString(),
         body: payload['body']?.toString(),
@@ -314,6 +341,11 @@ class PushNotificationService {
         priority: Priority.max,
         playSound: true,
         enableVibration: true,
+        visibility: NotificationVisibility.public,
+        styleInformation: BigTextStyleInformation(
+          body,
+          contentTitle: title,
+        ),
         sound: isOrderAlert
             ? const RawResourceAndroidNotificationSound('incoming_order')
             : null,

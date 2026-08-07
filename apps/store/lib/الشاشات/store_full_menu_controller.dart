@@ -91,7 +91,7 @@ class StoreFullMenuController extends GetxController {
             .collection('restaurants')
             .doc(restaurantId)
             .collection('menu')
-          .doc(_categoryDocId(category))
+            .doc(_categoryDocId(category))
             .collection('items')
             .doc(item.id)
             .get();
@@ -110,8 +110,7 @@ class StoreFullMenuController extends GetxController {
           'imageUrl': recoveredImage,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
-      } catch (_) {
-      }
+      } catch (_) {}
     }
   }
 
@@ -158,6 +157,9 @@ class StoreFullMenuController extends GetxController {
           description: old.description,
           category: old.category,
           isAvailable: old.isAvailable,
+          sku: old.sku,
+          stockQuantity: old.stockQuantity,
+          requiresPrescription: old.requiresPrescription,
           createdAt: old.createdAt,
         );
         menuItems.refresh();
@@ -218,6 +220,11 @@ class StoreFullMenuController extends GetxController {
         description: data['description'] as String? ?? '',
         category: _extractCategory(data),
         isAvailable: data['available'] as bool? ?? true,
+        sku: (data['sku'] ?? '').toString().trim(),
+        stockQuantity: data['stockQuantity'] is num
+            ? (data['stockQuantity'] as num).toInt()
+            : int.tryParse('${data['stockQuantity'] ?? ''}'),
+        requiresPrescription: data['requiresPrescription'] == true,
         createdAt: ts?.toDate(),
       );
     }).toList()
@@ -270,6 +277,9 @@ class StoreFullMenuController extends GetxController {
           description: old.description,
           category: old.category,
           isAvailable: available,
+          sku: old.sku,
+          stockQuantity: old.stockQuantity,
+          requiresPrescription: old.requiresPrescription,
           createdAt: old.createdAt,
         );
         menuItems.refresh();
@@ -390,7 +400,7 @@ class StoreFullMenuController extends GetxController {
               .collection('restaurants')
               .doc(restaurantId)
               .collection('menu')
-            .doc(_categoryDocId(old.category!))
+              .doc(_categoryDocId(old.category!))
               .collection('items')
               .doc(itemId)
               .delete();

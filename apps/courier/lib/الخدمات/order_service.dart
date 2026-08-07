@@ -1,4 +1,4 @@
-import 'package:cloud_functions/cloud_functions.dart';
+import '../helpers/courier_runtime_helpers.dart';
 
 class OrderService {
   OrderService._();
@@ -10,24 +10,30 @@ class OrderService {
   }
 
   static Future<void> driverGoToClient(String orderId, String driverId) async {
-    await FirebaseFunctions.instanceFor(region: 'me-central1')
-        .httpsCallable('courierUpdateOrderStage')
-        .call({
-      'orderId': orderId,
-      'driverId': driverId,
-      'stage': 'picked_up',
-    });
+    await courierInvokeCallable(
+      'courierUpdateOrderStage',
+      {
+        'orderId': orderId,
+        'driverId': driverId,
+        'stage': 'picked_up',
+      },
+      timeout: const Duration(seconds: 10),
+      maxAttempts: 2,
+    );
   }
 
   static Future<void> driverArrivedToClient(
       String orderId, String driverId) async {
-    await FirebaseFunctions.instanceFor(region: 'me-central1')
-        .httpsCallable('courierUpdateOrderStage')
-        .call({
-      'orderId': orderId,
-      'driverId': driverId,
-      'stage': 'arrived_to_client',
-    });
+    await courierInvokeCallable(
+      'courierUpdateOrderStage',
+      {
+        'orderId': orderId,
+        'driverId': driverId,
+        'stage': 'arrived_to_client',
+      },
+      timeout: const Duration(seconds: 10),
+      maxAttempts: 2,
+    );
   }
 
   static Future<void> driverCompleteDelivery(
@@ -35,14 +41,17 @@ class OrderService {
     String driverId, {
     required String proofImageUrl,
   }) async {
-    await FirebaseFunctions.instanceFor(region: 'me-central1')
-        .httpsCallable('courierUpdateOrderStage')
-        .call({
-      'orderId': orderId,
-      'driverId': driverId,
-      'stage': 'delivered',
-      'proofImageUrl': proofImageUrl,
-    });
+    await courierInvokeCallable(
+      'courierUpdateOrderStage',
+      {
+        'orderId': orderId,
+        'driverId': driverId,
+        'stage': 'delivered',
+        'proofImageUrl': proofImageUrl,
+      },
+      timeout: const Duration(seconds: 12),
+      maxAttempts: 2,
+    );
   }
 
   static Future<void> cancelOrder(String orderId, {String? reason}) async {

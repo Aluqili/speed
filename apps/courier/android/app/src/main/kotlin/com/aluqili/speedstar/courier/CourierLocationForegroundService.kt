@@ -86,8 +86,8 @@ class CourierLocationForegroundService : Service() {
         if (locationCallback != null) return
 
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000L)
-            .setMinUpdateDistanceMeters(5f)
-            .setMinUpdateIntervalMillis(2500L)
+            .setMinUpdateDistanceMeters(20f)
+            .setMinUpdateIntervalMillis(20_000L)
             .build()
 
         locationCallback = object : LocationCallback() {
@@ -146,7 +146,7 @@ class CourierLocationForegroundService : Service() {
         if (previousLat != null && previousLng != null) {
             val result = FloatArray(1)
             Location.distanceBetween(previousLat, previousLng, lat, lng, result)
-            if (result[0] < 5f && nowMs - lastWriteMs < 10000L) return
+            if (result[0] < 20f && nowMs - lastWriteMs < 20_000L) return
         }
 
         val point = GeoPoint(lat, lng)

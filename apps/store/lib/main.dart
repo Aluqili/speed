@@ -9,6 +9,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speedstar_core/speedstar_core.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -147,10 +148,10 @@ class _InitGateState extends State<_InitGate> {
     Object? lastError;
     for (var attempt = 0; attempt < 3; attempt += 1) {
       try {
-        final activated = await rc
-            .fetchAndActivate()
-            .timeout(const Duration(seconds: 12));
-        if (activated || rc.lastFetchStatus == RemoteConfigFetchStatus.success) {
+        final activated =
+            await rc.fetchAndActivate().timeout(const Duration(seconds: 12));
+        if (activated ||
+            rc.lastFetchStatus == RemoteConfigFetchStatus.success) {
           return;
         }
         lastError = 'Remote Config fetch status: ${rc.lastFetchStatus.name}';
@@ -571,12 +572,7 @@ class _StoreUnauthenticatedScreen extends StatelessWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const LoginScreenArabic(
-                              allowRegister: false,
-                              allowGoogleSignIn: false,
-                              allowPhoneSignIn: false,
-                              allowGuestSignIn: false,
-                            ),
+                            builder: (_) => const _StoreLoginRoute(),
                           ),
                         );
                       },
@@ -610,8 +606,47 @@ class _StoreUnauthenticatedScreen extends StatelessWidget {
   }
 }
 
+class _StoreLoginRoute extends StatefulWidget {
+  const _StoreLoginRoute();
+
+  @override
+  State<_StoreLoginRoute> createState() => _StoreLoginRouteState();
+}
+
+class _StoreLoginRouteState extends State<_StoreLoginRoute> {
+  StreamSubscription<User?>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user == null || !mounted) return;
+      Navigator.of(context).pop();
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const LoginScreenArabic(
+      allowRegister: false,
+      allowGoogleSignIn: false,
+      allowPhoneSignIn: false,
+      allowGuestSignIn: false,
+    );
+  }
+}
+
 class _StoreHomeByAuthUser extends StatelessWidget {
   const _StoreHomeByAuthUser();
+
+  String _selectedStorePreferenceKey(String userId) =>
+      'selected_store_id_$userId';
 
   Map<String, dynamic> _resolvedPayload(
     DocumentSnapshot<Map<String, dynamic>> doc,
@@ -621,6 +656,8 @@ class _StoreHomeByAuthUser extends StatelessWidget {
     final isApproved = data['isApproved'] == true;
     return {
       'id': doc.id,
+      'name': (data['name'] ?? '').toString(),
+      'businessType': (data['businessType'] ?? 'restaurant').toString(),
       'approvalStatus': status,
       'isApproved': isApproved,
     };
@@ -638,26 +675,18 @@ class _StoreHomeByAuthUser extends StatelessWidget {
     return _resolvedPayload(doc);
   }
 
-  Future<Map<String, dynamic>?> _resolveRestaurant(User user) async {
+  Future<List<Map<String, dynamic>>> _resolveRestaurants(User user) async {
     final restaurants = FirebaseFirestore.instance.collection('restaurants');
     final applications =
         FirebaseFirestore.instance.collection('restaurantApplications');
+    final found = <String, Map<String, dynamic>>{};
+
+    void addRestaurant(DocumentSnapshot<Map<String, dynamic>> doc) {
+      if (doc.exists) found[doc.id] = _resolvedPayload(doc);
+    }
 
     final direct = await restaurants.doc(user.uid).get();
-    if (direct.exists) {
-      return _resolvedPayload(direct);
-    }
-
-    final appDoc = await applications.doc(user.uid).get();
-    if (appDoc.exists) {
-      final appData = appDoc.data() ?? {};
-      final appRestaurantId =
-          (appData['restaurantId'] ?? appData['ownerUid'] ?? '').toString();
-      final fromApp = await _resolveRestaurantById(appRestaurantId);
-      if (fromApp != null) {
-        return fromApp;
-      }
-    }
+    addRestaurant(direct);
 
     final candidates = <MapEntry<String, dynamic>>[
       MapEntry('ownerUid', user.uid),
@@ -671,29 +700,40 @@ class _StoreHomeByAuthUser extends StatelessWidget {
       final query = await restaurants
           .where(candidate.key, isEqualTo: candidate.value)
           .get();
-      if (query.docs.length == 1) {
-        return _resolvedPayload(query.docs.first);
+      for (final doc in query.docs) {
+        addRestaurant(doc);
       }
-      if (query.docs.length > 1) {
-        final exactById =
-            query.docs.where((doc) => doc.id == user.uid).toList();
-        if (exactById.length == 1) {
-          return _resolvedPayload(exactById.first);
+    }
+
+    final applicationQuery =
+        await applications.where('ownerUid', isEqualTo: user.uid).get();
+    for (final app in applicationQuery.docs) {
+      final data = app.data();
+      final restaurantId = (data['restaurantId'] ?? '').toString().trim();
+      if (restaurantId.isNotEmpty && !found.containsKey(restaurantId)) {
+        final restaurant = await _resolveRestaurantById(restaurantId);
+        if (restaurant != null) {
+          found[restaurantId] = restaurant;
+        } else {
+          found[app.id] = {
+            'id': restaurantId,
+            'name': (data['name'] ?? '').toString(),
+            'businessType': (data['businessType'] ?? 'restaurant').toString(),
+            'approvalStatus':
+                data['approvalStatus'] ?? data['status'] ?? 'pending',
+            'isApproved': data['isApproved'] == true,
+          };
         }
-        return null;
       }
     }
-
-    if (appDoc.exists) {
-      final data = appDoc.data() ?? {};
-      return {
-        'id': user.uid,
-        'approvalStatus': data['approvalStatus'] ?? data['status'] ?? 'pending',
-        'isApproved': false,
-      };
+    final businesses = found.values.toList();
+    final prefs = await SharedPreferences.getInstance();
+    final selectedStoreId =
+        prefs.getString(_selectedStorePreferenceKey(user.uid))?.trim() ?? '';
+    for (final business in businesses) {
+      business['isSavedSelection'] = business['id'] == selectedStoreId;
     }
-
-    return null;
+    return businesses;
   }
 
   @override
@@ -703,8 +743,8 @@ class _StoreHomeByAuthUser extends StatelessWidget {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return FutureBuilder<Map<String, dynamic>?>(
-      future: _resolveRestaurant(user),
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _resolveRestaurants(user),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -721,16 +761,40 @@ class _StoreHomeByAuthUser extends StatelessWidget {
           );
         }
 
-        final resolved = snapshot.data;
-        if (resolved == null) {
+        final businesses = snapshot.data ?? const <Map<String, dynamic>>[];
+        final approvedBusinesses = businesses
+            .where((business) =>
+                business['approvalStatus'] == 'approved' ||
+                business['isApproved'] == true)
+            .toList();
+        final savedBusiness = approvedBusinesses.where(
+          (business) => business['isSavedSelection'] == true,
+        );
+        if (savedBusiness.length == 1) {
+          final storeId = (savedBusiness.first['id'] ?? '').toString();
+          unawaited(PushNotificationService.instance.bindStore(storeId));
+          return _StoreSignedInShell(storeId: storeId);
+        }
+        if (approvedBusinesses.length > 1) {
+          return _StoreBusinessPickerScreen(
+            user: user,
+            businesses: approvedBusinesses,
+          );
+        }
+        if (approvedBusinesses.length == 1) {
+          final storeId = (approvedBusinesses.first['id'] ?? '').toString();
+          unawaited(PushNotificationService.instance.bindStore(storeId));
+          return _StoreSignedInShell(storeId: storeId);
+        }
+        if (businesses.isEmpty) {
           return _MissingRestaurantScreen(
             user: user,
             title: 'تعذر تحديد المتجر المرتبط بالحساب',
-            message:
-                'لم يتم العثور على ربط واضح لمتجر واحد فقط مع هذا الحساب.\nتأكد من أن لكل حساب متجر واحد محدد بمعرّف واضح (restaurantId/ownerUid) لتجنب فتح بيانات متجر آخر.',
+            message: 'لم يتم العثور على أي قسم مرتبط بالحساب.',
           );
         }
 
+        final resolved = businesses.first;
         final approvalStatus = (resolved['approvalStatus'] ?? '').toString();
         final isApproved = resolved['isApproved'] == true;
         if (approvalStatus == 'pending') {
@@ -759,10 +823,105 @@ class _StoreHomeByAuthUser extends StatelessWidget {
           );
         }
 
-        final storeId = (resolved['id'] ?? '').toString();
-        unawaited(PushNotificationService.instance.bindStore(storeId));
-        return _StoreSignedInShell(storeId: storeId);
+        return _MissingRestaurantScreen(
+          user: user,
+          title: 'حساب المتجر غير مفعل بعد',
+          message: 'لا يمكن دخول لوحة المتجر قبل موافقة الإدارة على الطلب.',
+          showApplyButton: false,
+        );
       },
+    );
+  }
+}
+
+class _StoreBusinessPickerScreen extends StatelessWidget {
+  const _StoreBusinessPickerScreen(
+      {required this.user, required this.businesses});
+
+  final User user;
+  final List<Map<String, dynamic>> businesses;
+
+  IconData _iconForType(String type) => switch (type) {
+        'grocery' => Icons.shopping_basket_rounded,
+        'pharmacy' => Icons.medication_rounded,
+        'brand' => Icons.sell_rounded,
+        'ecommerce' => Icons.storefront_rounded,
+        _ => Icons.restaurant_rounded,
+      };
+
+  String _labelForType(String type) => switch (type) {
+        'grocery' => 'بقالة',
+        'pharmacy' => 'صيدلية',
+        'brand' => 'براند',
+        'ecommerce' => 'متجر إلكتروني',
+        _ => 'مطعم',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('اختر القسم')),
+        body: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            const Text('إلى أي قسم تريد الدخول؟',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            const Text('يمكن للحساب الواحد إدارة أكثر من قسم مستقل.'),
+            const SizedBox(height: 18),
+            ...businesses.map((business) {
+              final type =
+                  (business['businessType'] ?? 'restaurant').toString();
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.all(14),
+                  leading: CircleAvatar(child: Icon(_iconForType(type))),
+                  title: Text((business['name'] ?? '').toString(),
+                      style: const TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text(_labelForType(type)),
+                  trailing:
+                      const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+                  onTap: () async {
+                    final storeId = (business['id'] ?? '').toString();
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setString(
+                      'selected_store_id_${user.uid}',
+                      storeId,
+                    );
+                    if (!context.mounted) return;
+                    unawaited(
+                        PushNotificationService.instance.bindStore(storeId));
+                    Navigator.of(context).pushReplacement(MaterialPageRoute(
+                      builder: (_) => _StoreSignedInShell(storeId: storeId),
+                    ));
+                  },
+                ),
+              );
+            }),
+            const SizedBox(height: 6),
+            OutlinedButton.icon(
+              onPressed: () async {
+                await Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => StoreLinkRequestScreen(
+                    userId: user.uid,
+                    email: user.email ?? '',
+                  ),
+                ));
+                if (context.mounted) {
+                  Navigator.of(context).pushReplacement(MaterialPageRoute(
+                    builder: (_) => const _StoreHomeByAuthUser(),
+                  ));
+                }
+              },
+              icon: const Icon(Icons.add_business_rounded),
+              label: const Text('إضافة قسم جديد'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

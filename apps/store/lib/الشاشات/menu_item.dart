@@ -7,6 +7,9 @@ class MenuItem {
   final String? description;
   final String? category;
   final bool isAvailable;
+  final String? sku;
+  final int? stockQuantity;
+  final bool requiresPrescription;
   final DateTime? createdAt;
 
   MenuItem({
@@ -18,6 +21,9 @@ class MenuItem {
     this.description,
     this.category,
     this.isAvailable = true,
+    this.sku,
+    this.stockQuantity,
+    this.requiresPrescription = false,
     this.createdAt,
   });
 

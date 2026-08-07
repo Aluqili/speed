@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -19,6 +20,8 @@ class LocationService {
   double? _lastLat;
   double? _lastLng;
   DateTime? _lastWriteAt;
+  static const double _minimumWriteDistanceMeters = 20;
+  static const Duration _minimumWriteInterval = Duration(seconds: 20);
 
   static const Set<String> _activeStatuses = {
     'courier_assigned',
@@ -42,34 +45,42 @@ class LocationService {
     if (!ok) return;
 
     _listenForActiveOrder(id);
-    unawaited(_startNativeForegroundService(id));
+    final usesNativeTracking = !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        await _startNativeForegroundService(id);
 
     try {
       final current = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
-      await _writePosition(current, force: true);
+      if (!usesNativeTracking) {
+        await _writePosition(current, force: true);
+      }
     } catch (_) {
       // Stream updates will retry when a fix is available.
     }
 
+    if (usesNativeTracking) return;
+
     _positionSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
+        distanceFilter: 20,
       ),
     ).listen((position) {
       unawaited(_writePosition(position));
     });
   }
 
-  Future<void> _startNativeForegroundService(String driverId) async {
+  Future<bool> _startNativeForegroundService(String driverId) async {
     try {
       await _nativeChannel.invokeMethod('startForegroundTracking', {
         'driverId': driverId,
       });
+      return true;
     } catch (_) {
       // Flutter stream remains active when the native service is unavailable.
+      return false;
     }
   }
 
@@ -138,10 +149,12 @@ class LocationService {
         lat,
         lng,
       );
-      final elapsedMs = now
-          .difference(_lastWriteAt ?? DateTime(1970))
-          .inMilliseconds;
-      if (movedMeters < 5 && elapsedMs < 10000) return;
+      final elapsedMs =
+          now.difference(_lastWriteAt ?? DateTime(1970)).inMilliseconds;
+      if (movedMeters < _minimumWriteDistanceMeters &&
+          elapsedMs < _minimumWriteInterval.inMilliseconds) {
+        return;
+      }
     }
 
     final point = GeoPoint(lat, lng);
@@ -164,7 +177,6 @@ class LocationService {
       'lastLocationUpdate': FieldValue.serverTimestamp(),
       'lastUpdated': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
-      if (_activeOrderId != null) 'activeOrderId': _activeOrderId,
     };
 
     await _firestore.collection('drivers').doc(id).set(

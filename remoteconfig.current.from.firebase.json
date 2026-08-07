@@ -1,106 +1,78 @@
 ﻿{
   "parameters": {
-    "ops_force_update_enabled": {
-      "defaultValue": {
-        "value": "true"
-      },
-      "valueType": "BOOLEAN"
-    },
-    "ops_min_build_android": {
-      "defaultValue": {
-        "value": "0"
-      },
-      "valueType": "NUMBER"
-    },
-    "ops_update_message": {
-      "defaultValue": {
-        "value": "???? ????? ???? ??? ?????? ??????. ?????? ??????? ????."
-      },
-      "valueType": "STRING"
-    },
-    "ops_update_url_android": {
-      "defaultValue": {
-        "value": "``"
-      },
-      "valueType": "STRING"
-    },
-    "client_force_update_enabled": {
-      "defaultValue": {
-        "value": "true"
-      },
-      "valueType": "BOOLEAN"
-    },
     "client_min_build_android": {
       "defaultValue": {
         "value": "16"
       },
+      "description": "أقل رقم بناء مسموح لتطبيق العميل على أندرويد.",
       "valueType": "NUMBER"
     },
-    "client_update_message": {
+    "store_min_build_android": {
       "defaultValue": {
-        "value": "??? ?????? ????? ????? ????? ?????? ??? ????? 14 ????????."
+        "value": "7"
       },
+      "description": "أقل رقم بناء مسموح لتطبيق المتجر على أندرويد.",
+      "valueType": "NUMBER"
+    },
+    "courier_min_build_android": {
+      "defaultValue": {
+        "value": "8"
+      },
+      "description": "أقل رقم بناء مسموح لتطبيق المندوب على أندرويد.",
+      "valueType": "NUMBER"
+    },
+    "ops_update_message": {
+      "defaultValue": {
+        "value": "يرجى تحديث التطبيق للمتابعة والاستفادة من آخر التحسينات."
+      },
+      "description": "Ø§Ù„Ø±Ø³Ø§Ù„Ø© Ø§Ù„Ø¹Ø§Ù…Ø© Ø§Ù„ØªÙŠ ØªØ¸Ù‡Ø± Ø¹Ù†Ø¯ Ø·Ù„Ø¨ Ø§Ù„ØªØ\u00adØ¯ÙŠØ«.",
       "valueType": "STRING"
     },
-    "client_update_url_android": {
-      "defaultValue": {
-        "value": "https://play.google.com/store/apps/details?id=com.aluqili.speedstar.client"
-      },
-      "valueType": "STRING"
-    },
-    "courier_force_update_enabled": {
+    "client_state_rollout_enabled": {
       "defaultValue": {
         "value": "true"
       },
+      "valueType": "BOOLEAN"
+    },
+    "store_maintenance_mode": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "Maintenance mode for store app.",
+      "valueType": "BOOLEAN"
+    },
+    "ops_force_update_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "description": "Enable global force update gate. Per-app minimum build numbers control which app is blocked.",
       "valueType": "BOOLEAN"
     },
     "store_force_update_enabled": {
       "defaultValue": {
         "value": "true"
       },
+      "description": "Force update for store app.",
       "valueType": "BOOLEAN"
     },
-    "store_min_build_android": {
+    "courier_maintenance_message": {
       "defaultValue": {
-        "value": "4"
-      },
-      "valueType": "NUMBER"
-    },
-    "store_update_message": {
-      "defaultValue": {
-        "value": "???? ????? ????? ?????? ?????????."
+        "value": "اختبار اتصال الإعدادات: تطبيق المندوب يقرأ Remote Config الآن. سنعيد الخدمة بعد الفحص."
       },
       "valueType": "STRING"
     },
-    "store_update_url_android": {
+    "client_maintenance_message": {
       "defaultValue": {
-        "value": "https://speedstarapp.web.app/downloads/store-android.apk"
+        "value": "اختبار اتصال الإعدادات: التطبيق يقرأ Remote Config الآن. سنعيد الخدمة بعد الفحص."
       },
       "valueType": "STRING"
     },
-    "courier_force_update_enabled": {
+    "courier_maintenance_mode": {
       "defaultValue": {
         "value": "false"
       },
+      "description": "Maintenance mode for courier app.",
       "valueType": "BOOLEAN"
-    },
-    "courier_min_build_android": {
-      "defaultValue": {
-        "value": "1"
-      },
-      "valueType": "NUMBER"
-    },
-    "courier_update_message": {
-      "defaultValue": {
-        "value": "???? ????? ????? ??????? ?????????."
-      },
-      "valueType": "STRING"
-    },
-    "courier_update_url_android": {
-      "defaultValue": {
-        "value": "https://github.com/Aluqili/speed/releases/download/android-v20260314-195221/SpeedStar-corier.apk"
-      },
-      "valueType": "STRING"
     },
     "client_root_url": {
       "defaultValue": {
@@ -108,15 +80,78 @@
       },
       "valueType": "STRING"
     },
-    "store_root_url": {
+    "courier_update_url_android": {
       "defaultValue": {
-        "value": "https://speedstar-prod-4c7c5.web.app/sdui/courier/index.json"
+        "value": "https://speedstarapp.web.app/downloads/courier-android.apk"
+      },
+      "description": "Ø±Ø§Ø¨Ø· ØªÙ†Ø²ÙŠÙ„ Ø¢Ø®Ø± APK Ø£Ùˆ ØµÙ\u0081Ø\u00adØ© Ø§Ù„ØªØ\u00adØ¯ÙŠØ« Ù„ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ù…Ù†Ø¯ÙˆØ¨.",
+      "valueType": "STRING"
+    },
+    "ops_update_url_android": {
+      "defaultValue": {
+        "value": "https://speedstarapp.web.app"
+      },
+      "description": "Ø±Ø§Ø¨Ø· Ø¨Ø¯ÙŠÙ„ Ø¹Ø§Ù… Ù„ØªØ\u00adÙ…ÙŠÙ„ Ø¢Ø®Ø± Ø¥ØµØ¯Ø§Ø± Ø¹Ù„Ù‰ Ø£Ù†Ø¯Ø±ÙˆÙŠØ¯.",
+      "valueType": "STRING"
+    },
+    "client_maintenance_mode": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "Maintenance mode for client app.",
+      "valueType": "BOOLEAN"
+    },
+    "pricing_driver_delivery_extra_per_km": {
+      "defaultValue": {
+        "value": "1000"
+      },
+      "description": "Ø£Ø¬Ø± ÙƒÙ„ ÙƒÙŠÙ„ÙˆÙ…ØªØ± Ø²Ø§Ø¦Ø¯ Ø¨Ø¹Ø¯ Ø§Ù„Ù…Ø³Ø§Ù\u0081Ø© Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ© Ù„Ù„Ù…Ù†Ø¯ÙˆØ¨.",
+      "valueType": "NUMBER"
+    },
+    "pricing_large_item_fee_enabled": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "ØªØ´ØºÙŠÙ„ Ø£Ùˆ Ø¥ÙŠÙ‚Ø§Ù\u0081 Ø±Ø³ÙˆÙ… Ø§Ù„Ø·Ù„Ø¨Ø§Øª Ø§Ù„ÙƒØ¨ÙŠØ±Ø©.",
+      "valueType": "BOOLEAN"
+    },
+    "pricing_large_item_step_amount": {
+      "defaultValue": {
+        "value": "5001"
+      },
+      "description": "Ù…Ù‚Ø¯Ø§Ø± Ø§Ù„Ø²ÙŠØ§Ø¯Ø© Ù\u0081ÙŠ Ø³Ø¹Ø± Ø§Ù„ÙˆØ¬Ø¨Ø© Ù„ÙƒÙ„ Ø´Ø±ÙŠØ\u00adØ© Ø¥Ø¶Ø§Ù\u0081ÙŠØ©.",
+      "valueType": "NUMBER"
+    },
+    "pricing_client_delivery_base_distance_km": {
+      "defaultValue": {
+        "value": "3"
+      },
+      "description": "Ø¹Ø¯Ø¯ Ø§Ù„ÙƒÙŠÙ„ÙˆÙ…ØªØ±Ø§Øª Ø§Ù„Ù…Ø´Ù…ÙˆÙ„Ø© Ù\u0081ÙŠ Ø§Ù„Ø³Ø¹Ø± Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ Ù„Ù„Ø¹Ù…ÙŠÙ„.",
+      "valueType": "NUMBER"
+    },
+    "store_maintenance_message": {
+      "defaultValue": {
+        "value": "اختبار اتصال الإعدادات: تطبيق المتجر يقرأ Remote Config الآن. سنعيد الخدمة بعد الفحص."
       },
       "valueType": "STRING"
     },
-    "courier_root_url": {
+    "courier_force_update_enabled": {
       "defaultValue": {
-        "value": "https://speedstar-prod-4c7c5.web.app/sdui/courier/index.json"
+        "value": "true"
+      },
+      "description": "Force update for courier app.",
+      "valueType": "BOOLEAN"
+    },
+    "client_force_update_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "description": "Force update for client app.",
+      "valueType": "BOOLEAN"
+    },
+    "client_enabled_states_csv": {
+      "defaultValue": {
+        "value": "khartoum"
       },
       "valueType": "STRING"
     },
@@ -126,74 +161,130 @@
       },
       "valueType": "NUMBER"
     },
-    "client_state_rollout_enabled": {
+    "pricing_large_item_fee_cap_per_unit": {
       "defaultValue": {
-        "value": "true"
+        "value": "0"
       },
-      "valueType": "BOOLEAN"
+      "description": "Ø§Ù„Ø\u00adØ¯ Ø§Ù„Ø£Ù‚ØµÙ‰ Ù„Ù„Ø±Ø³Ù… Ù„ÙƒÙ„ ÙˆØ¬Ø¨Ø©.",
+      "valueType": "NUMBER"
     },
-    "client_enabled_states_csv": {
+    "store_root_url": {
       "defaultValue": {
-        "value": "khartoum"
-      },
-      "valueType": "STRING"
-    },
-    "client_home_show_offers_section": {
-      "defaultValue": {
-        "value": "true"
-      },
-      "valueType": "BOOLEAN"
-    },
-    "client_state_rollout_block_message": {
-      "defaultValue": {
-        "value": "??? ?? ?????? ?? ??????? ?? ????\n?????? ??? ????? ??????? ???? ???? ?????? ????\n?????? ??????.. ????????!"
+        "value": "https://speedstar-prod-4c7c5.web.app/sdui/store/index.json"
       },
       "valueType": "STRING"
     },
     "pricing_client_delivery_base_fee": {
       "defaultValue": {
-        "value": "5000"
+        "value": "4500"
       },
+      "description": "Ø³Ø¹Ø± Ø§Ù„ØªÙˆØµÙŠÙ„ Ù„Ù„Ø¹Ù…ÙŠÙ„ Ø\u00adØªÙ‰ Ø§Ù„Ù…Ø³Ø§Ù\u0081Ø© Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ©.",
       "valueType": "NUMBER"
     },
-    "pricing_client_delivery_base_distance_km": {
+    "pricing_driver_delivery_base_distance_km": {
       "defaultValue": {
-        "value": "6"
+        "value": "3"
       },
+      "description": "Ø¹Ø¯Ø¯ Ø§Ù„ÙƒÙŠÙ„ÙˆÙ…ØªØ±Ø§Øª Ø§Ù„Ù…Ø´Ù…ÙˆÙ„Ø© Ù\u0081ÙŠ Ø£Ø¬Ø± Ø§Ù„Ù…Ù†Ø¯ÙˆØ¨ Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ.",
       "valueType": "NUMBER"
     },
-    "pricing_client_delivery_extra_per_km": {
+    "pricing_large_item_threshold": {
       "defaultValue": {
-        "value": "700"
+        "value": "0"
       },
+      "description": "Ø§Ù„Ø³Ø¹Ø± Ø§Ù„Ø°ÙŠ ØªØ¨Ø¯Ø£ Ø¨Ø¹Ø¯Ù‡ Ø±Ø³ÙˆÙ… Ø§Ù„Ø·Ù„Ø¨Ø§Øª Ø§Ù„ÙƒØ¨ÙŠØ±Ø©.",
+      "valueType": "NUMBER"
+    },
+    "store_update_message": {
+      "defaultValue": {
+        "value": "يتوفر تحديث جديد لتطبيق المتجر. يرجى التحديث للمتابعة."
+      },
+      "description": "Ø§Ù„Ø±Ø³Ø§Ù„Ø© Ø§Ù„ØªÙŠ ØªØ¸Ù‡Ø± Ù„ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ù…ØªØ¬Ø± Ø¹Ù†Ø¯ Ø§Ù„ØªØ\u00adØ¯ÙŠØ« Ø§Ù„Ø¥Ø¬Ø¨Ø§Ø±ÙŠ.",
+      "valueType": "STRING"
+    },
+    "client_update_url_android": {
+      "defaultValue": {
+        "value": "https://speedstarapp.web.app/downloads/client-android.apk"
+      },
+      "valueType": "STRING"
+    },
+    "ops_min_build_android": {
+      "defaultValue": {
+        "value": "5"
+      },
+      "description": "أقل رقم بناء يُسمح به قبل إجبار المستخدم على التحديث.",
       "valueType": "NUMBER"
     },
     "pricing_driver_delivery_base_fee": {
       "defaultValue": {
         "value": "4000"
       },
+      "description": "Ø£Ø¬Ø± Ø§Ù„Ù…Ù†Ø¯ÙˆØ¨ Ø\u00adØªÙ‰ Ø§Ù„Ù…Ø³Ø§Ù\u0081Ø© Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ©.",
       "valueType": "NUMBER"
     },
-    "pricing_driver_delivery_base_distance_km": {
+    "store_update_url_android": {
       "defaultValue": {
-        "value": "6"
+        "value": "https://speedstarapp.web.app/downloads/store-android.apk"
       },
+      "valueType": "STRING"
+    },
+    "pricing_large_item_step_fee": {
+      "defaultValue": {
+        "value": "0"
+      },
+      "description": "Ø§Ù„Ø²ÙŠØ§Ø¯Ø© Ù\u0081ÙŠ Ø§Ù„Ø±Ø³Ù… Ù„ÙƒÙ„ Ø´Ø±ÙŠØ\u00adØ© Ø¥Ø¶Ø§Ù\u0081ÙŠØ©.",
       "valueType": "NUMBER"
     },
-    "pricing_driver_delivery_extra_per_km": {
+    "pricing_large_item_fee_base": {
       "defaultValue": {
-        "value": "500"
+        "value": "0"
       },
+      "description": "Ø§Ù„Ø±Ø³Ù… Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ Ù„ÙƒÙ„ ÙˆØ¬Ø¨Ø© ØªØªØ¬Ø§ÙˆØ² Ø§Ù„Ø\u00adØ¯.",
+      "valueType": "NUMBER"
+    },
+    "client_state_rollout_block_message": {
+      "defaultValue": {
+        "value": "لسه ما جيناكم لكن قريييب✨ خليكم متابعين"
+      },
+      "description": "Ø§Ù„Ø±Ø³Ø§Ù„Ø© Ø§Ù„ØªÙŠ ØªØ¸Ù‡Ø± Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø®Ø§Ø±Ø¬ Ø§Ù„Ù†Ø·Ø§Ù‚ Ø§Ù„Ù…Ù\u0081Ø¹Ù‘Ù„.",
+      "valueType": "STRING"
+    },
+    "courier_root_url": {
+      "defaultValue": {
+        "value": "https://speedstar-prod-4c7c5.web.app/sdui/courier/index.json"
+      },
+      "valueType": "STRING"
+    },
+    "client_update_message": {
+      "defaultValue": {
+        "value": "يتوفر تحديث جديد لتطبيق العميل. يرجى التحديث للمتابعة."
+      },
+      "description": "Ø§Ù„Ø±Ø³Ø§Ù„Ø© Ø§Ù„ØªÙŠ ØªØ¸Ù‡Ø± Ù„ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø¹Ù†Ø¯ Ø§Ù„ØªØ\u00adØ¯ÙŠØ« Ø§Ù„Ø¥Ø¬Ø¨Ø§Ø±ÙŠ.",
+      "valueType": "STRING"
+    },
+    "courier_update_message": {
+      "defaultValue": {
+        "value": "يتوفر تحديث جديد لتطبيق المندوب. يرجى التحديث للمتابعة."
+      },
+      "description": "Ø§Ù„Ø±Ø³Ø§Ù„Ø© Ø§Ù„ØªÙŠ ØªØ¸Ù‡Ø± Ù„ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ù…Ù†Ø¯ÙˆØ¨ Ø¹Ù†Ø¯ Ø§Ù„ØªØ\u00adØ¯ÙŠØ« Ø§Ù„Ø¥Ø¬Ø¨Ø§Ø±ÙŠ.",
+      "valueType": "STRING"
+    },
+    "pricing_client_delivery_extra_per_km": {
+      "defaultValue": {
+        "value": "1200"
+      },
+      "description": "Ø§Ù„Ø±Ø³Ù… Ø§Ù„Ø¥Ø¶Ø§Ù\u0081ÙŠ Ù„ÙƒÙ„ ÙƒÙŠÙ„ÙˆÙ…ØªØ± Ø²Ø§Ø¦Ø¯ Ø¨Ø¹Ø¯ Ø§Ù„Ù…Ø³Ø§Ù\u0081Ø© Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ© Ù„Ù„Ø¹Ù…ÙŠÙ„.",
       "valueType": "NUMBER"
     }
   },
   "version": {
-    "versionNumber": "30",
-    "updateTime": "2026-04-17T13:00:21.820784Z",
+    "versionNumber": "70",
+    "updateTime": "2026-06-11T15:39:17.121384Z",
     "updateUser": {
-      "email": "aluqili7@gmail.com"
+      "email": "1092982695441-compute@developer.gserviceaccount.com"
     },
-    "updateOrigin": "REST_API",
+    "updateOrigin": "ADMIN_SDK_NODE",
     "updateType": "FORCED_UPDATE"
   }
 }
+

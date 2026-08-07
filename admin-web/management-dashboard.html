@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpeedStar OS - إدارة المشروع</title>
+    <link rel="stylesheet" href="./css/management-dashboard.css" />
+  </head>
+  <body>
+    <div class="bg-layer"></div>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-icon">S</div>
+          <div>
+            <h1>SpeedStar OS</h1>
+            <p>منصة تشغيل المشروع</p>
+          </div>
+        </div>
+
+        <nav class="nav-links" id="navLinks">
+          <a href="#executive" class="active">لوحة تنفيذية</a>
+          <a href="#field-ops">المتابعة الميدانية</a>
+          <a href="#tasks">المهام</a>
+          <a href="#portfolio">المشاريع</a>
+          <a href="#approvals">الموافقات</a>
+          <a href="#finance">المالية</a>
+          <a href="#employees">الموظفون</a>
+          <a href="#admins-panel">المسؤولون</a>
+          <a href="#reports">التقارير</a>
+          <a href="#activity">السجل التشغيلي</a>
+        </nav>
+
+        <div class="sidebar-card">
+          <h3>هدف اليوم</h3>
+          <p>ربط القرارات التنفيذية بالمهام اليومية والمالية والموارد البشرية في شاشة واحدة.</p>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">SpeedStar Project Control</p>
+            <h2>مركز القيادة</h2>
+            <div class="topbar-meta">
+              <span id="sessionUserLabel">المستخدم: -</span>
+              <span id="sessionRoleLabel">الدور: -</span>
+              <span id="sessionLastActionLabel">آخر إجراء: -</span>
+            </div>
+          </div>
+          <div class="topbar-actions">
+            <div id="adminBadge" class="auth-badge">تسجيل الدخول مطلوب</div>
+            <button id="logoutBtn" class="ghost-btn" type="button">تسجيل الخروج</button>
+            <button id="openTaskQuickBtn" class="ghost-btn" type="button">مهمة سريعة</button>
+            <button id="openProjectQuickBtn" class="ghost-btn" type="button">مشروع سريع</button>
+            <button id="exportAllBtn" class="primary-btn" type="button">تصدير Excel</button>
+          </div>
+        </header>
+
+        <section id="executive" class="section-grid tab-panel is-active">
+          <article class="hero-card">
+            <h3>لوحة الرئيس التنفيذي - عبادة</h3>
+            <p>عرض فوري لحالة الشركة: تقدم المشاريع، الحمل التشغيلي، التزامات الموافقات، والأداء المالي.</p>
+            <div class="hero-footer">
+              <span id="todayLabel">-</span>
+              <div class="hero-tags">
+                <span class="pill">قرارات سريعة</span>
+                <span class="pill">متابعة مباشرة</span>
+              </div>
+            </div>
+          </article>
+
+          <div class="stat-grid" id="kpiCards"></div>
+
+          <article class="section-card">
+            <div class="section-header">
+              <h3>صحة المشاريع</h3>
+            </div>
+            <div id="projectHealth" class="health-grid"></div>
+          </article>
+        </section>
+
+        <section class="section-card tab-panel" id="portfolio">
+          <div class="section-header">
+            <h3>محفظة المشاريع</h3>
+            <div class="section-actions">
+              <button class="ghost-btn small export-scope-btn" type="button" data-export-scope="projects">تصدير المشاريع</button>
+              <button id="addProjectBtn" class="primary-btn small" type="button">إضافة مشروع</button>
+            </div>
+          </div>
+          <form id="projectForm" class="compact-form">
+            <input id="projectName" placeholder="اسم المشروع" required />
+            <input id="projectOwner" placeholder="المالك" required />
+            <select id="projectStatus" title="الحالة">
+              <option value="planning">تخطيط</option>
+              <option value="active">نشط</option>
+              <option value="risk">مخاطر</option>
+              <option value="done">مكتمل</option>
+            </select>
+            <input id="projectBudget" type="number" min="0" placeholder="الميزانية" required />
+            <input id="projectDueDate" type="date" title="تاريخ التسليم" required />
+            <button class="primary-btn small" type="submit">حفظ</button>
+          </form>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>المشروع</th>
+                  <th>المالك</th>
+                  <th>الحالة</th>
+                  <th>التقدم</th>
+                  <th>الميزانية</th>
+                  <th>التسليم</th>
+                  <th>آخر تعديل</th>
+                  <th>إجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="projectTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section-grid two-col tab-panel" id="tasks">
+          <article class="section-card">
+            <div class="section-header">
+              <h3>إضافة مهمة</h3>
+            </div>
+            <form id="taskForm" class="stack-form">
+              <input id="taskTitle" placeholder="عنوان المهمة" required />
+              <select id="taskProject" title="المشروع"></select>
+              <select id="taskAssignee" title="المسؤول"></select>
+              <select id="taskPriority" title="الأولوية">
+                <option value="critical">حرجة</option>
+                <option value="high">عالية</option>
+                <option value="medium">متوسطة</option>
+                <option value="low">منخفضة</option>
+              </select>
+              <input id="taskDueDate" type="date" title="الاستحقاق" required />
+              <textarea id="taskDescription" rows="3" placeholder="وصف مختصر للمهمة"></textarea>
+              <button class="primary-btn" type="submit">حفظ المهمة</button>
+            </form>
+          </article>
+
+          <article class="section-card">
+            <div class="section-header">
+              <h3>تصفية المهام</h3>
+              <button class="ghost-btn small export-scope-btn" type="button" data-export-scope="tasks">تصدير المهام</button>
+            </div>
+            <div class="filters-grid">
+              <select id="taskFilterProject" title="فلترة حسب المشروع"></select>
+              <select id="taskFilterAssignee" title="فلترة حسب الموظف"></select>
+              <select id="taskFilterStatus" title="فلترة حسب الحالة">
+                <option value="all">كل الحالات</option>
+                <option value="todo">To Do</option>
+                <option value="in_progress">In Progress</option>
+                <option value="review">Review</option>
+                <option value="done">Done</option>
+              </select>
+            </div>
+            <div class="kanban-grid" id="taskKanban"></div>
+          </article>
+        </section>
+
+        <section class="section-grid two-col tab-panel" id="employees">
+          <article class="section-card">
+            <div class="section-header">
+              <h3>فريق العمل</h3>
+              <button class="ghost-btn small export-scope-btn" type="button" data-export-scope="employees">تصدير الموظفين</button>
+            </div>
+            <div id="employeeCards" class="employee-grid"></div>
+          </article>
+
+          <article class="section-card">
+            <div class="section-header">
+              <h3>إضافة/تعديل موظف (للرئيس التنفيذي فقط)</h3>
+            </div>
+            <form id="employeeForm" class="stack-form">
+              <input id="employeeId" type="hidden" />
+              <input id="employeeName" placeholder="اسم الموظف" required />
+              <select id="employeeRolePreset" title="اختيار وظيفة جاهزة">
+                <option value="">اختر وظيفة جاهزة (اختياري)</option>
+                <option value="الرئيس التنفيذي">الرئيس التنفيذي</option>
+                <option value="نائب الرئيس التنفيذي">نائب الرئيس التنفيذي</option>
+                <option value="مدير العمليات">مدير العمليات</option>
+                <option value="مدير المشاريع">مدير المشاريع</option>
+                <option value="مدير المنتج">مدير المنتج</option>
+                <option value="مدير تقنية المعلومات">مدير تقنية المعلومات</option>
+                <option value="مهندس برمجيات">مهندس برمجيات</option>
+                <option value="مهندس جودة">مهندس جودة</option>
+                <option value="مصمم واجهات">مصمم واجهات</option>
+                <option value="محلل بيانات">محلل بيانات</option>
+                <option value="مدير مالي">مدير مالي</option>
+                <option value="محاسب">محاسب</option>
+                <option value="مدير مشتريات">مدير مشتريات</option>
+                <option value="مسؤول مخزون">مسؤول مخزون</option>
+                <option value="مدير الموارد البشرية">مدير الموارد البشرية</option>
+                <option value="أخصائي توظيف">أخصائي توظيف</option>
+                <option value="مسؤول شؤون موظفين">مسؤول شؤون موظفين</option>
+                <option value="مدير التسويق">مدير التسويق</option>
+                <option value="أخصائي تسويق رقمي">أخصائي تسويق رقمي</option>
+                <option value="مدير المبيعات">مدير المبيعات</option>
+                <option value="مندوب مبيعات">مندوب مبيعات</option>
+                <option value="مدير خدمة العملاء">مدير خدمة العملاء</option>
+                <option value="ممثل خدمة عملاء">ممثل خدمة عملاء</option>
+                <option value="مسؤول دعم فني">مسؤول دعم فني</option>
+                <option value="مدير الجودة">مدير الجودة</option>
+                <option value="مسؤول التزام">مسؤول التزام</option>
+                <option value="مشرف ميداني">مشرف ميداني</option>
+                <option value="منسق عمليات">منسق عمليات</option>
+                <option value="أمين مستودع">أمين مستودع</option>
+                <option value="مسؤول لوجستيات">مسؤول لوجستيات</option>
+              </select>
+              <input id="employeeRole" list="employeeRolesList" placeholder="الدور الوظيفي" required />
+              <datalist id="employeeRolesList">
+                <option value="الرئيس التنفيذي"></option>
+                <option value="نائب الرئيس التنفيذي"></option>
+                <option value="مدير العمليات"></option>
+                <option value="مدير المشاريع"></option>
+                <option value="مدير المنتج"></option>
+                <option value="مدير تقنية المعلومات"></option>
+                <option value="مهندس برمجيات"></option>
+                <option value="مهندس جودة"></option>
+                <option value="مصمم واجهات"></option>
+                <option value="محلل بيانات"></option>
+                <option value="مدير مالي"></option>
+                <option value="محاسب"></option>
+                <option value="مدير مشتريات"></option>
+                <option value="مسؤول مخزون"></option>
+                <option value="مدير الموارد البشرية"></option>
+                <option value="أخصائي توظيف"></option>
+                <option value="مسؤول شؤون موظفين"></option>
+                <option value="مدير التسويق"></option>
+                <option value="أخصائي تسويق رقمي"></option>
+                <option value="مدير المبيعات"></option>
+                <option value="مندوب مبيعات"></option>
+                <option value="مدير خدمة العملاء"></option>
+                <option value="ممثل خدمة عملاء"></option>
+                <option value="مسؤول دعم فني"></option>
+                <option value="مدير الجودة"></option>
+                <option value="مسؤول التزام"></option>
+                <option value="مشرف ميداني"></option>
+                <option value="منسق عمليات"></option>
+                <option value="أمين مستودع"></option>
+                <option value="مسؤول لوجستيات"></option>
+              </datalist>
+              <select id="employeeSystemRole" title="دور النظام" required>
+                <option value="viewer">مشاهدة فقط</option>
+                <option value="hr">موارد بشرية</option>
+                <option value="finance">مالية</option>
+                <option value="ops">عمليات</option>
+                <option value="ceo">رئيس تنفيذي</option>
+              </select>
+              <input id="employeeDepartment" placeholder="القسم" required />
+              <input id="employeeKpi" placeholder="مؤشر الأداء KPI" required />
+              <input id="employeeWorkload" type="number" min="0" max="10" placeholder="الحمل (0-10)" required />
+              <div class="modal-actions">
+                <button id="employeeSubmitBtn" class="primary-btn" type="submit">حفظ الموظف</button>
+                <button id="employeeCancelEditBtn" class="ghost-btn" type="button">إلغاء التعديل</button>
+              </div>
+            </form>
+          </article>
+        </section>
+
+        <section class="section-grid two-col tab-panel" id="admins-panel">
+          <article class="section-card">
+            <div class="section-header">
+              <h3>إدارة صلاحيات الأدمن (للرئيس التنفيذي فقط)</h3>
+            </div>
+            <form id="adminForm" class="stack-form">
+              <input id="adminUid" placeholder="UID المستخدم" required />
+              <input id="adminEmail" type="email" placeholder="البريد الإلكتروني" required />
+              <select id="adminRole" title="الدور">
+                <option value="admin">admin</option>
+                <option value="viewer">viewer</option>
+              </select>
+              <label><input id="adminActive" type="checkbox" checked /> مفعل</label>
+              <div id="adminPermissionsGrid" class="employee-grid"></div>
+              <div class="modal-actions">
+                <button id="adminSubmitBtn" class="primary-btn" type="submit">حفظ بيانات الأدمن</button>
+                <button id="adminResetBtn" class="ghost-btn" type="button">مسح النموذج</button>
+              </div>
+              <p id="adminFormFeedback" class="auth-feedback"></p>
+            </form>
+          </article>
+
+          <article class="section-card">
+            <div class="section-header">
+              <h3>قائمة الأدمن الحالية</h3>
+              <button id="refreshAdminsBtn" class="ghost-btn small" type="button">تحديث</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>البريد</th>
+                    <th>UID</th>
+                    <th>الدور</th>
+                    <th>الصلاحيات</th>
+                    <th>الحالة</th>
+                    <th>إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody id="adminsTableBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="section-grid two-col tab-panel" id="approvals">
+          <article class="section-card">
+            <div class="section-header">
+              <h3>طلب موافقة جديد</h3>
+            </div>
+            <form id="approvalForm" class="stack-form">
+              <select id="approvalType" title="نوع الطلب">
+                <option value="budget">موافقة ميزانية</option>
+                <option value="hire">موافقة توظيف</option>
+                <option value="vendor">موافقة مورد</option>
+                <option value="policy">موافقة سياسة</option>
+              </select>
+              <input id="approvalTitle" placeholder="عنوان الطلب" required />
+              <textarea id="approvalNotes" rows="3" placeholder="تفاصيل الطلب"></textarea>
+              <button class="primary-btn" type="submit">إرسال للموافقة</button>
+            </form>
+          </article>
+
+          <article class="section-card">
+            <div class="section-header">
+              <h3>لوحة الموافقات</h3>
+              <button class="ghost-btn small export-scope-btn" type="button" data-export-scope="approvals">تصدير الموافقات</button>
+            </div>
+            <div id="approvalList" class="list-stack"></div>
+          </article>
+        </section>
+
+        <section class="section-grid two-col tab-panel" id="finance">
+          <article class="section-card">
+            <div class="section-header">
+              <h3>حركة مالية</h3>
+            </div>
+            <form id="financeForm" class="stack-form">
+              <select id="financeType" title="النوع">
+                <option value="income">إيراد</option>
+                <option value="expense">مصروف</option>
+              </select>
+              <input id="financeTitle" placeholder="العنوان" required />
+              <input id="financeAmount" type="number" min="0" placeholder="المبلغ" required />
+              <select id="financeProject" title="المشروع"></select>
+              <input id="financeDate" type="date" title="تاريخ العملية" required />
+              <textarea id="financeNotes" rows="3" placeholder="ملاحظات"></textarea>
+              <button class="primary-btn" type="submit">حفظ العملية</button>
+            </form>
+          </article>
+
+          <article class="section-card">
+            <div class="section-header">
+              <h3>ملخص مالي</h3>
+              <button class="ghost-btn small export-scope-btn" type="button" data-export-scope="finance">تصدير المالية</button>
+            </div>
+            <div class="accounting-summary" id="financeSummary"></div>
+            <div id="financeList" class="list-stack"></div>
+          </article>
+        </section>
+
+        <section class="section-grid tab-panel" id="field-ops">
+          <article class="section-card">
+            <div class="section-header">
+              <h3>مركز متابعة المطاعم والمندوبين</h3>
+              <div class="section-actions">
+                <button class="ghost-btn small export-scope-btn" type="button" data-export-scope="restaurants_pipeline">تصدير المطاعم</button>
+                <button class="ghost-btn small export-scope-btn" type="button" data-export-scope="couriers_pipeline">تصدير المندوبين</button>
+              </div>
+            </div>
+            <div id="fieldOpsSummary" class="stat-grid"></div>
+          </article>
+
+          <article class="section-card">
+            <div class="section-header">
+              <h3>إضافة/تحديث متابعة</h3>
+            </div>
+            <form id="fieldOpsForm" class="stack-form">
+              <input id="fieldOpsRecordId" type="hidden" />
+              <select id="fieldOpsEntityType" title="نوع الجهة" required>
+                <option value="restaurant">مطعم</option>
+                <option value="courier">مندوب</option>
+              </select>
+              <input id="fieldOpsEntityId" placeholder="المعرّف (UID أو رقم الطلب)" required />
+              <input id="fieldOpsEntityName" placeholder="اسم الجهة" required />
+              <input id="fieldOpsAssignedTo" placeholder="المكلّف بالمتابعة" />
+              <select id="fieldOpsStage" title="المرحلة الحالية">
+                <option value="lead_contact">بدء تواصل</option>
+                <option value="visit_scheduled">زيارة مجدولة</option>
+                <option value="visited">تمت الزيارة</option>
+                <option value="docs_pending">نواقص مستندات</option>
+                <option value="approved">معتمد</option>
+                <option value="rejected">مرفوض</option>
+                <option value="onboarded">مفعّل تشغيليًا</option>
+                <option value="stalled">متوقف</option>
+              </select>
+              <select id="fieldOpsVisitStatus" title="حالة الزيارة">
+                <option value="unknown">غير محدد</option>
+                <option value="pending">بانتظار الزيارة</option>
+                <option value="completed">تمت الزيارة</option>
+                <option value="not_done">لم تتم</option>
+              </select>
+              <select id="fieldOpsDecision" title="قرار الاعتماد">
+                <option value="pending">معلق</option>
+                <option value="approved">مقبول</option>
+                <option value="rejected">مرفوض</option>
+              </select>
+              <input id="fieldOpsNextStep" placeholder="الخطوة التالية" />
+              <textarea id="fieldOpsDecisionReason" rows="2" placeholder="سبب الرفض/القبول (اختياري)"></textarea>
+              <textarea id="fieldOpsNotes" rows="3" placeholder="ملاحظات المتابعة"></textarea>
+              <div class="modal-actions">
+                <button id="fieldOpsSubmitBtn" class="primary-btn" type="submit">حفظ المتابعة</button>
+                <button id="fieldOpsResetBtn" class="ghost-btn" type="button">مسح النموذج</button>
+              </div>
+            </form>
+          </article>
+
+          <article class="section-card">
+            <div class="section-header">
+              <h3>متابعة المطاعم</h3>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>المطعم</th>
+                    <th>المعرّف</th>
+                    <th>وضع التسجيل</th>
+                    <th>الزيارة</th>
+                    <th>القرار</th>
+                    <th>المرحلة</th>
+                    <th>الخطوة التالية</th>
+                    <th>المكلّف</th>
+                    <th>آخر تعديل</th>
+                    <th>إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody id="restaurantsPipelineBody"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="section-card">
+            <div class="section-header">
+              <h3>متابعة المندوبين</h3>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>المندوب</th>
+                    <th>المعرّف</th>
+                    <th>وضع التسجيل</th>
+                    <th>الزيارة</th>
+                    <th>القرار</th>
+                    <th>المرحلة</th>
+                    <th>الخطوة التالية</th>
+                    <th>المكلّف</th>
+                    <th>آخر تعديل</th>
+                    <th>إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody id="couriersPipelineBody"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="section-card">
+            <div class="section-header">
+              <h3>السجل المكتمل</h3>
+              <div class="section-actions">
+                <button class="ghost-btn small export-scope-btn" type="button" data-export-scope="completed_pipeline">تصدير المكتمل</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>النوع</th>
+                    <th>الاسم</th>
+                    <th>المعرّف</th>
+                    <th>القرار</th>
+                    <th>المرحلة الختامية</th>
+                    <th>المكلّف</th>
+                    <th>آخر تعديل</th>
+                    <th>إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody id="completedPipelineBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="section-card tab-panel" id="reports">
+          <div class="section-header">
+            <h3>التقارير الذكية</h3>
+            <div class="section-actions">
+              <button class="ghost-btn small" id="exportWeeklyBtn" type="button">تقرير أسبوعي</button>
+              <button class="ghost-btn small" id="exportMonthlyBtn" type="button">تقرير شهري</button>
+            </div>
+          </div>
+          <div class="report-grid" id="reportCards"></div>
+        </section>
+
+        <section class="section-card tab-panel" id="activity">
+          <div class="section-header">
+            <h3>السجل التشغيلي</h3>
+            <button class="ghost-btn small export-scope-btn" type="button" data-export-scope="audit">تصدير السجل</button>
+          </div>
+          <div id="auditLogList" class="list-stack"></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="authModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card auth-card">
+        <div class="modal-header">
+          <h3>دخول المنصة</h3>
+        </div>
+        <form id="authForm" class="stack-form">
+          <input id="authUsername" type="email" placeholder="البريد الإلكتروني" required />
+          <input id="authPassword" type="password" placeholder="كلمة المرور" required />
+          <p class="auth-help">نفس حسابات دخول موقع الادمن الرئيسي (Firebase Auth).</p>
+          <p id="authFeedback" class="auth-feedback"></p>
+          <div class="modal-actions">
+            <button class="primary-btn" type="submit">دخول</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script type="module" src="./js/management-dashboard.js"></script>
+  </body>
+</html>

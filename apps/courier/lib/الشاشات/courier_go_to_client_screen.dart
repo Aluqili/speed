@@ -12,7 +12,6 @@ import 'package:flutter/gestures.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import '../helpers/courier_runtime_helpers.dart';
-import '../helpers/smart_location_tracker.dart';
 import 'courier_client_contact_card.dart';
 import 'courier_confirm_delivery_screen.dart';
 import 'courier_ui.dart';
@@ -35,7 +34,6 @@ class CourierGoToClientScreen extends StatefulWidget {
 }
 
 class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
-  SmartLocationTracker? tracker;
   GoogleMapController? _mapController;
   CourierMarkerIcons? _markerIcons;
   List<LatLng> _routePoints = const [];
@@ -57,20 +55,11 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
       'orderId': widget.orderId,
       'stage': 'going_to_client',
     });
-    if (widget.clientLocation != null) {
-      tracker = SmartLocationTracker(
-        driverId: widget.driverId,
-        orderId: widget.orderId,
-        clientLocation: widget.clientLocation!,
-      );
-      tracker!.startTracking();
-    }
   }
 
   @override
   void dispose() {
     _mapController?.dispose();
-    tracker?.stopTracking();
     super.dispose();
   }
 
@@ -465,323 +454,325 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
       appBar: buildCourierAppBar('الذهاب إلى العميل'),
       body: CourierPageBackground(
         child: FutureBuilder<Map<String, dynamic>?>(
-        future: _fetchOrderData(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          future: _fetchOrderData(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (!snapshot.hasData || snapshot.data == null) {
-            return const Center(
-              child: Text(
-                'الطلب غير موجود أو تعذر تحميل بياناته',
-                style: TextStyle(color: Colors.black87),
-              ),
-            );
-          }
-
-          final orderData = snapshot.data!;
-          final String clientName = orderData['clientName'] ?? 'عميل غير معروف';
-          final clientLocation = _resolvePoint(
-                orderData,
-                rawKey: 'clientLocation',
-                latKey: 'clientLat',
-                lngKey: 'clientLng',
-              ) ??
-              widget.clientLocation;
-          final restaurantLocation = _resolvePoint(
-            orderData,
-            rawKey: 'restaurantLocation',
-            latKey: 'restaurantLat',
-            lngKey: 'restaurantLng',
-          );
-          final driverLocation = _resolvePoint(
-            orderData,
-            rawKey: 'driverLocation',
-            latKey: 'driverLat',
-            lngKey: 'driverLng',
-          );
-          final driverToClientKm =
-              (driverLocation != null && clientLocation != null)
-                  ? courierHaversineKm(driverLocation, clientLocation)
-                  : null;
-          final restaurantToClientKm =
-              (restaurantLocation != null && clientLocation != null)
-                  ? courierHaversineKm(restaurantLocation, clientLocation)
-                  : null;
-          final driverFee = courierToDouble(
-            orderData['deliveryFeeForDriver'] ?? orderData['deliveryFee'],
-          );
-          if (restaurantLocation != null && clientLocation != null) {
-            Future.microtask(
-                () => _ensureRoute(restaurantLocation, clientLocation));
-          }
-          final routePoints = _routePoints.length >= 2
-              ? _routePoints
-              : [
-                  if (restaurantLocation != null) restaurantLocation,
-                  if (clientLocation != null) clientLocation,
-                ];
-
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _buildJourneyHeader(
-                title: 'المرحلة 2 من 3 · التوجه للعميل',
-                subtitle: 'تابع الملاحة حتى تصل، ثم أكّد الوصول للعميل',
-                icon: Icons.home_work_outlined,
-              ),
-              const SizedBox(height: 12),
-              _buildOrderDetails(orderData),
-              const SizedBox(height: 12),
-              CourierClientContactCard(
-                orderData: orderData,
-                driverId: widget.driverId,
-                showPhone: true,
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppThemeArabic.courierSurface,
-                  borderRadius: BorderRadius.circular(12),
+            if (!snapshot.hasData || snapshot.data == null) {
+              return const Center(
+                child: Text(
+                  'الطلب غير موجود أو تعذر تحميل بياناته',
+                  style: TextStyle(color: Colors.black87),
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.person,
-                        color: AppThemeArabic.courierPrimary, size: 28),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        clientName,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+              );
+            }
+
+            final orderData = snapshot.data!;
+            final String clientName =
+                orderData['clientName'] ?? 'عميل غير معروف';
+            final clientLocation = _resolvePoint(
+                  orderData,
+                  rawKey: 'clientLocation',
+                  latKey: 'clientLat',
+                  lngKey: 'clientLng',
+                ) ??
+                widget.clientLocation;
+            final restaurantLocation = _resolvePoint(
+              orderData,
+              rawKey: 'restaurantLocation',
+              latKey: 'restaurantLat',
+              lngKey: 'restaurantLng',
+            );
+            final driverLocation = _resolvePoint(
+              orderData,
+              rawKey: 'driverLocation',
+              latKey: 'driverLat',
+              lngKey: 'driverLng',
+            );
+            final driverToClientKm =
+                (driverLocation != null && clientLocation != null)
+                    ? courierHaversineKm(driverLocation, clientLocation)
+                    : null;
+            final restaurantToClientKm =
+                (restaurantLocation != null && clientLocation != null)
+                    ? courierHaversineKm(restaurantLocation, clientLocation)
+                    : null;
+            final driverFee = courierToDouble(
+              orderData['deliveryFeeForDriver'] ?? orderData['deliveryFee'],
+            );
+            if (restaurantLocation != null && clientLocation != null) {
+              Future.microtask(
+                  () => _ensureRoute(restaurantLocation, clientLocation));
+            }
+            final routePoints = _routePoints.length >= 2
+                ? _routePoints
+                : [
+                    if (restaurantLocation != null) restaurantLocation,
+                    if (clientLocation != null) clientLocation,
+                  ];
+
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _buildJourneyHeader(
+                  title: 'المرحلة 2 من 3 · التوجه للعميل',
+                  subtitle: 'تابع الملاحة حتى تصل، ثم أكّد الوصول للعميل',
+                  icon: Icons.home_work_outlined,
+                ),
+                const SizedBox(height: 12),
+                _buildOrderDetails(orderData),
+                const SizedBox(height: 12),
+                CourierClientContactCard(
+                  orderData: orderData,
+                  orderId: widget.orderId,
+                  driverId: widget.driverId,
+                  showPhone: true,
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppThemeArabic.courierSurface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.person,
+                          color: AppThemeArabic.courierPrimary, size: 28),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          clientName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (driverToClientKm != null)
+                      Chip(
+                        label: Text(
+                          'يبعد العميل عنك: ${courierFormatDistance(driverToClientKm)}',
+                        ),
+                      ),
+                    if (restaurantToClientKm != null)
+                      Chip(
+                        label: Text(
+                          'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
+                        ),
+                      ),
+                    if (driverFee > 0)
+                      Chip(
+                        label: Text(
+                          'رسوم التوصيل: ${courierFormatMoney(driverFee)} ج.س',
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (clientLocation != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                      height: 260,
+                      child: GoogleMap(
+                        initialCameraPosition: CameraPosition(
+                          target: clientLocation,
+                          zoom: restaurantLocation == null ? 15 : 12,
+                        ),
+                        markers: buildCourierTripMarkers(
+                          restaurantLocation: restaurantLocation,
+                          clientLocation: clientLocation,
+                          icons: _markerIcons,
+                        ),
+                        polylines: restaurantLocation == null
+                            ? const {}
+                            : {
+                                Polyline(
+                                  polylineId:
+                                      const PolylineId('restaurant_client'),
+                                  points: routePoints,
+                                  color: AppThemeArabic.courierPrimary,
+                                  width: 6,
+                                  jointType: JointType.round,
+                                  startCap: Cap.roundCap,
+                                  endCap: Cap.roundCap,
+                                ),
+                              },
+                        onMapCreated: (controller) {
+                          _mapController = controller;
+                          final points = <LatLng>[
+                            clientLocation,
+                            if (restaurantLocation != null) restaurantLocation,
+                          ];
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _fitCameraToPoints(points);
+                          });
+                        },
+                        zoomControlsEnabled: true,
+                        myLocationEnabled: true,
+                        myLocationButtonEnabled: true,
+                        compassEnabled: true,
+                        rotateGesturesEnabled: true,
+                        tiltGesturesEnabled: true,
+                        mapToolbarEnabled: false,
+                        gestureRecognizers: <Factory<
+                            OneSequenceGestureRecognizer>>{
+                          Factory<OneSequenceGestureRecognizer>(
+                              () => EagerGestureRecognizer()),
+                        },
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Text(
+                      'لا توجد إحداثيات لموقع العميل في هذا الطلب، يمكنك المتابعة يدويًا.',
+                      style: TextStyle(color: Colors.black87),
+                    ),
+                  ),
+                const SizedBox(height: 20),
+                Align(
+                  alignment: Alignment.center,
+                  child: Material(
+                    color: AppThemeArabic.courierPrimary,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _openGoogleMaps,
+                      child: const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Icon(
+                          Icons.navigation_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppThemeArabic.courierPrimary
+                            .withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.storefront_rounded, size: 16),
+                          SizedBox(width: 6),
+                          Text('المطعم'),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppThemeArabic.courierAccent
+                            .withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.person_rounded, size: 16),
+                          SizedBox(width: 6),
+                          Text('العميل'),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (driverToClientKm != null)
-                    Chip(
-                      label: Text(
-                        'يبعد العميل عنك: ${courierFormatDistance(driverToClientKm)}',
-                      ),
-                    ),
-                  if (restaurantToClientKm != null)
-                    Chip(
-                      label: Text(
-                        'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
-                      ),
-                    ),
-                  if (driverFee > 0)
-                    Chip(
-                      label: Text(
-                        'رسوم التوصيل: ${courierFormatMoney(driverFee)} ج.س',
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (clientLocation != null)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: SizedBox(
-                    height: 260,
-                    child: GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: clientLocation,
-                        zoom: restaurantLocation == null ? 15 : 12,
-                      ),
-                      markers: buildCourierTripMarkers(
-                        restaurantLocation: restaurantLocation,
-                        clientLocation: clientLocation,
-                        icons: _markerIcons,
-                      ),
-                      polylines: restaurantLocation == null
-                          ? const {}
-                          : {
-                              Polyline(
-                                polylineId:
-                                    const PolylineId('restaurant_client'),
-                                points: routePoints,
-                                color: AppThemeArabic.courierPrimary,
-                                width: 6,
-                                jointType: JointType.round,
-                                startCap: Cap.roundCap,
-                                endCap: Cap.roundCap,
-                              ),
-                            },
-                      onMapCreated: (controller) {
-                        _mapController = controller;
-                        final points = <LatLng>[
-                          clientLocation,
-                          if (restaurantLocation != null) restaurantLocation,
-                        ];
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          _fitCameraToPoints(points);
-                        });
-                      },
-                      zoomControlsEnabled: true,
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: true,
-                      compassEnabled: true,
-                      rotateGesturesEnabled: true,
-                      tiltGesturesEnabled: true,
-                      mapToolbarEnabled: false,
-                      gestureRecognizers: <Factory<
-                          OneSequenceGestureRecognizer>>{
-                        Factory<OneSequenceGestureRecognizer>(
-                            () => EagerGestureRecognizer()),
-                      },
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text(
-                    'لا توجد إحداثيات لموقع العميل في هذا الطلب، يمكنك المتابعة يدويًا.',
-                    style: TextStyle(color: Colors.black87),
-                  ),
-                ),
-              const SizedBox(height: 20),
-              Align(
-                alignment: Alignment.center,
-                child: Material(
-                  color: AppThemeArabic.courierPrimary,
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: _openGoogleMaps,
-                    child: const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Icon(
-                        Icons.navigation_rounded,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color:
-                          AppThemeArabic.courierPrimary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.storefront_rounded, size: 16),
-                        SizedBox(width: 6),
-                        Text('المطعم'),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color:
-                          AppThemeArabic.courierAccent.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.person_rounded, size: 16),
-                        SizedBox(width: 6),
-                        Text('العميل'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              GFButton(
-                onPressed: () async {
-                  if (_confirmingArrival) return;
-                  setState(() => _confirmingArrival = true);
-                  try {
-                    await FirebaseFunctions.instanceFor(region: 'me-central1')
-                        .httpsCallable('courierUpdateOrderStage')
-                        .call({
-                      'orderId': widget.orderId,
-                      'driverId': widget.driverId,
-                      'stage': 'arrived_to_client',
-                    });
+                const SizedBox(height: 20),
+                GFButton(
+                  onPressed: () async {
+                    if (_confirmingArrival) return;
+                    setState(() => _confirmingArrival = true);
+                    try {
+                      await FirebaseFunctions.instanceFor(region: 'me-central1')
+                          .httpsCallable('courierUpdateOrderStage')
+                          .call({
+                        'orderId': widget.orderId,
+                        'driverId': widget.driverId,
+                        'stage': 'arrived_to_client',
+                      });
 
-                    final box = GetStorage();
-                    box.write('current_order', {
-                      'orderId': widget.orderId,
-                      'stage': 'arrived_to_client',
-                    });
+                      final box = GetStorage();
+                      box.write('current_order', {
+                        'orderId': widget.orderId,
+                        'stage': 'arrived_to_client',
+                      });
 
-                    if (!context.mounted) return;
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(
-                        builder: (_) => CourierConfirmDeliveryScreen(
-                          orderId: widget.orderId,
-                          driverId: widget.driverId,
+                      if (!context.mounted) return;
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                          builder: (_) => CourierConfirmDeliveryScreen(
+                            orderId: widget.orderId,
+                            driverId: widget.driverId,
+                          ),
                         ),
-                      ),
-                    );
-                  } catch (e) {
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('تعذر تأكيد الوصول للعميل: $e'),
-                      ),
-                    );
-                  } finally {
-                    if (mounted) setState(() => _confirmingArrival = false);
-                  }
-                },
-                text: _confirmingArrival ? 'جاري التأكيد...' : 'تأكيد الوصول للعميل',
-                icon: _confirmingArrival
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
+                      );
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('تعذر تأكيد الوصول للعميل: $e'),
                         ),
-                      )
-                    : const Icon(Icons.check_circle),
-                color: AppThemeArabic.courierAccent,
-                shape: GFButtonShape.pills,
-                fullWidthButton: true,
-                size: GFSize.LARGE,
-                textStyle:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-              ),
-            ],
-          );
-        },
-      ),
+                      );
+                    } finally {
+                      if (mounted) setState(() => _confirmingArrival = false);
+                    }
+                  },
+                  text: _confirmingArrival
+                      ? 'جاري التأكيد...'
+                      : 'تأكيد الوصول للعميل',
+                  icon: _confirmingArrival
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.check_circle),
+                  color: AppThemeArabic.courierAccent,
+                  shape: GFButtonShape.pills,
+                  fullWidthButton: true,
+                  size: GFSize.LARGE,
+                  textStyle: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 17),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
 }
-
-

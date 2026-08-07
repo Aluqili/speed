@@ -36,14 +36,19 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   static const Color openColor = ClientColors.success;
 
   bool _isDark = false;
-  Color get _bg => _isDark ? ClientColors.background : ClientColors.lightBackground;
+  Color get _bg =>
+      _isDark ? ClientColors.background : ClientColors.lightBackground;
   Color get _cardBg => _isDark ? ClientColors.surface : Colors.white;
   Color get _softSurface =>
       _isDark ? const Color(0xFF24140A) : const Color(0xFFFFF8F3);
-  Color get _textPrimary => _isDark ? Colors.white : ClientColors.lightTextPrimary;
-  Color get _textSecondary => _isDark ? ClientColors.textSecondary : ClientColors.lightTextSecondary;
-  Color get _chipBg => _isDark ? const Color(0x1AFFFFFF) : const Color(0xFFFFF8F3);
-  Color get _chipBorder => _isDark ? const Color(0x33FF6B00) : const Color(0x33FF6B00);
+  Color get _textPrimary =>
+      _isDark ? Colors.white : ClientColors.lightTextPrimary;
+  Color get _textSecondary =>
+      _isDark ? ClientColors.textSecondary : ClientColors.lightTextSecondary;
+  Color get _chipBg =>
+      _isDark ? const Color(0x1AFFFFFF) : const Color(0xFFFFF8F3);
+  Color get _chipBorder =>
+      _isDark ? const Color(0x33FF6B00) : const Color(0x33FF6B00);
 
   static const List<String> _globalCategoryOrder = [
     'كل الأصناف',
@@ -130,15 +135,18 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
           .whereType<Map>()
           .map((entry) => Map<String, dynamic>.from(entry))
           .toList();
-      final firstOfferImage =
-          highlights.isEmpty ? '' : _cleanImageUrl(highlights.first['imageUrl']);
+      final firstOfferImage = highlights.isEmpty
+          ? ''
+          : _cleanImageUrl(highlights.first['imageUrl']);
       final resolvedImage = [
         data['coverImage'],
         data['logoImageUrl'],
         data['imageUrl'],
         data['image'],
         firstOfferImage,
-      ].map(_cleanImageUrl).firstWhere((url) => url.isNotEmpty, orElse: () => '');
+      ]
+          .map(_cleanImageUrl)
+          .firstWhere((url) => url.isNotEmpty, orElse: () => '');
 
       setState(() {
         isClosed = resolved['isClosed'] as bool;
@@ -304,7 +312,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                       width: 88,
                       height: 88,
                       fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => const Icon(Icons.fastfood_rounded, size: 40),
+                      errorWidget: (_, __, ___) =>
+                          const Icon(Icons.fastfood_rounded, size: 40),
                     ),
                   ),
                 if (imageUrl.isNotEmpty) const SizedBox(width: 12),
@@ -587,24 +596,50 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         return 'وسط';
       case 'large':
         return 'كبير';
+      case 'family':
+        return 'عائلي';
+      case 'jumbo':
+        return 'جامبو';
       default:
-        return sizeKey;
+        final normalized =
+            sizeKey.replaceAll('_', ' ').replaceAll('-', ' ').trim();
+        if (normalized.isEmpty) return sizeKey;
+        return normalized[0].toUpperCase() + normalized.substring(1);
     }
   }
 
+  List<MapEntry<String, double>> _orderedSizeEntries(
+      Map<String, double> sizes) {
+    const preferredOrder = ['small', 'medium', 'large', 'family', 'jumbo'];
+    final entries = <MapEntry<String, double>>[];
+
+    for (final key in preferredOrder) {
+      final value = sizes[key];
+      if (value != null) {
+        entries.add(MapEntry(key, value));
+      }
+    }
+
+    final otherKeys = sizes.keys
+        .where((key) => !preferredOrder.contains(key))
+        .toList()
+      ..sort();
+    for (final key in otherKeys) {
+      final value = sizes[key];
+      if (value != null) {
+        entries.add(MapEntry(key, value));
+      }
+    }
+
+    return entries;
+  }
+
   String _sizesSummary(Map<String, double> sizes) {
-    final small = sizes['small'];
-    final medium = sizes['medium'];
-    final large = sizes['large'];
     final parts = <String>[];
-    if (small != null) {
-      parts.add('صغير ${NumberFormat.decimalPattern().format(small)} ج.س');
-    }
-    if (medium != null) {
-      parts.add('وسط ${NumberFormat.decimalPattern().format(medium)} ج.س');
-    }
-    if (large != null) {
-      parts.add('كبير ${NumberFormat.decimalPattern().format(large)} ج.س');
+    for (final entry in _orderedSizeEntries(sizes)) {
+      parts.add(
+        '${_sizeLabel(entry.key)} ${NumberFormat.decimalPattern().format(entry.value)} ج.س',
+      );
     }
     return parts.join(' • ');
   }
@@ -769,8 +804,9 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       }
       if (q.isNotEmpty) {
         final name = (data['name'] ?? '').toString().toLowerCase();
-        final desc =
-            (data['description'] ?? data['details'] ?? '').toString().toLowerCase();
+        final desc = (data['description'] ?? data['details'] ?? '')
+            .toString()
+            .toLowerCase();
         if (!name.contains(q) && !desc.contains(q)) continue;
       }
       grouped.putIfAbsent(category, () => <QueryDocumentSnapshot>[]).add(doc);
@@ -871,15 +907,14 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
           color: enabled ? primaryColor.withValues(alpha: 0.08) : _chipBg,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: enabled
-                ? primaryColor.withValues(alpha: 0.3)
-                : _chipBorder,
+            color: enabled ? primaryColor.withValues(alpha: 0.3) : _chipBorder,
           ),
         ),
         child: Icon(
           icon,
           size: 18,
-          color: enabled ? primaryColor : _textSecondary.withValues(alpha: 0.55),
+          color:
+              enabled ? primaryColor : _textSecondary.withValues(alpha: 0.55),
         ),
       ),
     );
@@ -903,7 +938,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     final quantity = hasSizes
         ? cartProvider.getQuantityByMenuItem(widget.restaurantId, doc.id)
         : cartProvider.getQuantity(itemId);
-    final imageProvider = itemImage.isNotEmpty ? CachedNetworkImageProvider(itemImage) : null;
+    final imageProvider =
+        itemImage.isNotEmpty ? CachedNetworkImageProvider(itemImage) : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -942,8 +978,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                           width: 104,
                           height: 104,
                           color: _softSurface,
-                          child:
-                              Icon(Icons.fastfood, color: primaryColor, size: 34),
+                          child: Icon(Icons.fastfood,
+                              color: primaryColor, size: 34),
                         ),
                       )
                     : Container(
@@ -1018,25 +1054,24 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                             ),
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _chipBg,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: _chipBorder),
-                          ),
-                          child: Text(
-                            hasSizes
-                                ? _sizesSummary(sizes)
-                                : '${NumberFormat.decimalPattern().format(itemPrice)} ج.س',
-                            style: TextStyle(
-                              color: _textSecondary,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
+                        if (!hasSizes)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _chipBg,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: _chipBorder),
+                            ),
+                            child: Text(
+                              '${NumberFormat.decimalPattern().format(itemPrice)} ج.س',
+                              style: TextStyle(
+                                color: _textSecondary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                     if (itemDescription.isNotEmpty) ...[
@@ -1112,9 +1147,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                           child: Text(
                             quantity > 0 ? 'في السلة: $quantity' : 'أضف للسلة',
                             style: TextStyle(
-                              color: quantity > 0
-                                  ? primaryColor
-                                  : _textSecondary,
+                              color:
+                                  quantity > 0 ? primaryColor : _textSecondary,
                               fontWeight: FontWeight.w700,
                               fontSize: 12,
                             ),
@@ -1271,8 +1305,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('ملاحظات خاصة (اختياري)',
-                  style:
-                      TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
               TextField(
                 controller: notesController,
@@ -1284,8 +1317,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                   hintStyle: const TextStyle(fontSize: 13),
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10)),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
               ),
             ],
@@ -1328,46 +1361,123 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     required String itemName,
     required Map<String, double> sizes,
   }) async {
-    final orderedKeys = ['small', 'medium', 'large']
-        .where((key) => sizes.containsKey(key))
-        .toList();
+    final orderedKeys =
+        _orderedSizeEntries(sizes).map((entry) => entry.key).toList();
     if (orderedKeys.isEmpty) return;
 
     String selected =
         orderedKeys.contains('medium') ? 'medium' : orderedKeys.first;
     final notesController = TextEditingController();
 
-    final picked = await showDialog<String>(
+    final picked = await showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) => Directionality(
         textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: Text('أضف $itemName للسلة'),
-          content: StatefulBuilder(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          decoration: BoxDecoration(
+            color: _cardBg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: StatefulBuilder(
             builder: (context, setInnerState) {
               return SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    ...orderedKeys.map(
-                      (key) => RadioListTile<String>(
-                        value: key,
-                        groupValue: selected,
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setInnerState(() => selected = value);
-                        },
-                        title: Text(_sizeLabel(key)),
-                        subtitle: Text(
-                          '${NumberFormat.decimalPattern().format(sizes[key])} ج.س',
+                    Center(
+                      child: Container(
+                        width: 48,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: _chipBorder,
+                          borderRadius: BorderRadius.circular(99),
                         ),
                       ),
                     ),
-                    const Divider(height: 20),
-                    const Text('ملاحظات خاصة (اختياري)',
+                    const SizedBox(height: 18),
+                    Text('اختر حجم $itemName',
+                        textAlign: TextAlign.right,
                         style: TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.bold)),
+                          color: _textPrimary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        )),
+                    const SizedBox(height: 6),
+                    Text('اختر السعر المناسب ثم أضف الصنف للسلة',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(color: _textSecondary)),
+                    const SizedBox(height: 16),
+                    ...orderedKeys.map((key) {
+                      final isSelected = selected == key;
+                      final price = sizes[key] ?? 0;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () => setInnerState(() => selected = key),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? primaryColor.withValues(alpha: 0.12)
+                                  : _softSurface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isSelected ? primaryColor : _chipBorder,
+                                width: isSelected ? 2 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isSelected
+                                      ? Icons.check_circle_rounded
+                                      : Icons.radio_button_unchecked_rounded,
+                                  color: isSelected
+                                      ? primaryColor
+                                      : _textSecondary,
+                                ),
+                                const Spacer(),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(_sizeLabel(key),
+                                        style: TextStyle(
+                                          color: _textPrimary,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 16,
+                                        )),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '${NumberFormat.decimalPattern().format(price)} ج.س',
+                                      style: const TextStyle(
+                                        color: primaryColor,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 8),
+                    Text('ملاحظات خاصة (اختياري)',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                            color: _textPrimary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold)),
                     const SizedBox(height: 6),
                     TextField(
                       controller: notesController,
@@ -1382,24 +1492,22 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                             horizontal: 12, vertical: 8),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: () => Navigator.pop(context, selected),
+                      icon: const Icon(Icons.add_shopping_cart_rounded),
+                      label: Text(
+                        'إضافة ${_sizeLabel(selected)} - ${NumberFormat.decimalPattern().format(sizes[selected] ?? 0)} ج.س',
+                      ),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                      ),
+                    ),
                   ],
                 ),
               );
             },
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                notesController.dispose();
-                Navigator.pop(context);
-              },
-              child: const Text('إلغاء'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, selected),
-              child: const Text('إضافة للسلة'),
-            ),
-          ],
         ),
       ),
     );
@@ -1730,12 +1838,11 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
             ? GestureDetector(
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                      builder: (_) => const ClientCartScreen()),
+                  MaterialPageRoute(builder: (_) => const ClientCartScreen()),
                 ),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                   decoration: BoxDecoration(
                     color: primaryColor,
                     borderRadius: BorderRadius.circular(18),

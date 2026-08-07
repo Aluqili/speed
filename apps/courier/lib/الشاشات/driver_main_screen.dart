@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:get_storage/get_storage.dart';
@@ -19,7 +20,7 @@ import '../الخدمات/location_service.dart';
 import 'courier_order_history_screen.dart';
 import 'courier_account_tab.dart';
 import 'courier_earnings_screen.dart';
-import 'courier_order_details_screen.dart';
+import 'courier_new_orders_screen.dart';
 import 'courier_order_process_screen.dart';
 import 'courier_wallet_screen.dart';
 import 'chat_screen.dart';
@@ -37,7 +38,8 @@ class CourierDashboardScreen extends StatefulWidget {
   State<CourierDashboardScreen> createState() => _CourierDashboardScreenState();
 }
 
-class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
+class _CourierDashboardScreenState extends State<CourierDashboardScreen>
+    with WidgetsBindingObserver {
   static const Set<String> _activeOrderStatuses = {
     'courier_assigned',
     'pickup_ready',
@@ -52,19 +54,28 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
   LatLng _currentLocation = const LatLng(15.5007, 32.5599);
   bool _mapCreated = false;
   bool isAvailable = false;
-  bool acceptsLongDistance = false;
+  int _offerRadiusKm = 5;
   StreamSubscription<Position>? _locationSubscription;
   StreamSubscription<QuerySnapshot>? _ordersListener;
-  String? _lastOfferOrderId;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+      _restaurantHeatOrdersListener;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+      _openRestaurantsListener;
+  Timer? _restaurantHeatRefreshTimer;
   bool _ringtoneEnabled = true;
   double _ringtoneVolume = 1.0;
-  Timer? _offerRingtoneTimer;
+  bool _isOfferRingtoneLooping = false;
   bool _hasPendingOffer = false;
+  int _pendingOfferCount = 0;
+  Timer? _emptyOffersGraceTimer;
+  Timer? _ringtoneWatchdogTimer;
   final Set<String> _notifiedOfferOrderIds = <String>{};
   final AudioPlayer _ringtonePlayer = AudioPlayer();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   DateTime? _lastBackPressed;
-  Set<Circle> _restaurantCircles = {};
+  Set<Circle> _restaurantHeatCircles = const <Circle>{};
+  Map<String, LatLng> _openRestaurantLocations = const <String, LatLng>{};
+  Map<String, int> _recentRestaurantOrderCounts = const <String, int>{};
 
   String _todayAvailabilityKey([DateTime? value]) {
     final now = value ?? DateTime.now();
@@ -80,12 +91,15 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     return 0;
   }
 
-  Map<String, dynamic> _buildAvailabilityPatch(Map<String, dynamic> data, bool nextAvailable) {
+  Map<String, dynamic> _buildAvailabilityPatch(
+      Map<String, dynamic> data, bool nextAvailable) {
     final now = DateTime.now();
     final todayKey = _todayAvailabilityKey(now);
-    final todayStartMs = DateTime(now.year, now.month, now.day).millisecondsSinceEpoch;
+    final todayStartMs =
+        DateTime(now.year, now.month, now.day).millisecondsSinceEpoch;
     final currentDayKey = (data['availabilityDayKey'] ?? '').toString();
-    final currentStartedMs = _timestampMillis(data['availabilityCurrentStartedAt']);
+    final currentStartedMs =
+        _timestampMillis(data['availabilityCurrentStartedAt']);
     var totalTodayMs = currentDayKey == todayKey
         ? ((data['availabilityTodayMs'] as num?)?.round() ?? 0)
         : 0;
@@ -97,8 +111,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
 
     return {
       'available': nextAvailable,
-      if (!nextAvailable) 'acceptsLongDistance': false,
-      if (!nextAvailable) 'longDistanceEnabledAt': null,
+      'offerRadiusKm': _offerRadiusKm,
       'availabilityDayKey': todayKey,
       'availabilityTodayMs': totalTodayMs < 0 ? 0 : totalTodayMs,
       'availabilityCurrentStartedAt': nextAvailable ? Timestamp.now() : null,
@@ -106,8 +119,10 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     };
   }
 
-  Future<void> _ensureAvailabilityTrackingSeed(Map<String, dynamic> data) async {
-    if (data['available'] == true && data['availabilityCurrentStartedAt'] == null) {
+  Future<void> _ensureAvailabilityTrackingSeed(
+      Map<String, dynamic> data) async {
+    if (data['available'] == true &&
+        data['availabilityCurrentStartedAt'] == null) {
       await FirebaseFirestore.instance
           .collection('drivers')
           .doc(widget.driverId)
@@ -118,14 +133,23 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(LocationService.instance.startLocationUpdates(widget.driverId));
     _initLocation();
     _loadAvailability();
     _saveFcmToken();
     _loadOpsRuntimeConfig();
     _listenForOrders();
+    _startRestaurantHeatMap();
     _checkCurrentOrder();
-    _loadAllLocations();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _hasPendingOffer) {
+      _isOfferRingtoneLooping = false;
+      _startOfferRingtoneLoop();
+    }
   }
 
   Future<void> _loadOpsRuntimeConfig() async {
@@ -150,9 +174,20 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     if (!_ringtoneEnabled) return;
     try {
       await _ringtonePlayer.setVolume(_ringtoneVolume);
-      await _ringtonePlayer.setPlayerMode(PlayerMode.lowLatency);
+      await _ringtonePlayer.setPlayerMode(PlayerMode.mediaPlayer);
+      await _ringtonePlayer.setAudioContext(
+        AudioContext(
+          android: const AudioContextAndroid(
+            contentType: AndroidContentType.sonification,
+            usageType: AndroidUsageType.notificationRingtone,
+            audioFocus: AndroidAudioFocus.gain,
+            stayAwake: true,
+          ),
+        ),
+      );
+      await _ringtonePlayer.setReleaseMode(ReleaseMode.loop);
       await _ringtonePlayer.play(
-        AssetSource('sounds/incoming_order.mp3'),
+        AssetSource('sounds/incoming_order.mp3.mpeg'),
         volume: _ringtoneVolume,
       );
       return;
@@ -168,17 +203,35 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
   }
 
   void _startOfferRingtoneLoop() {
-    if (!_ringtoneEnabled) return;
-    _offerRingtoneTimer ??= Timer.periodic(const Duration(seconds: 6), (_) {
-      if (!_hasPendingOffer || !_ringtoneEnabled) return;
-      _playIncomingOfferTone();
-    });
+    _startRingtoneWatchdog();
+    if (!_ringtoneEnabled || _isOfferRingtoneLooping) return;
+    _isOfferRingtoneLooping = true;
+    _playIncomingOfferTone();
   }
 
   void _stopOfferRingtoneLoop() {
-    _offerRingtoneTimer?.cancel();
-    _offerRingtoneTimer = null;
+    _isOfferRingtoneLooping = false;
+    _stopRingtoneWatchdog();
     _ringtonePlayer.stop();
+  }
+
+  // يعيد تشغيل الصوت تلقائيًا إذا توقف (فقدان تركيز الصوت عند سحب الستارة مثلًا)
+  // طالما لا يزال هناك عرض معلّق لم يُقبل أو يُرفض بعد.
+  void _startRingtoneWatchdog() {
+    _ringtoneWatchdogTimer?.cancel();
+    _ringtoneWatchdogTimer =
+        Timer.periodic(const Duration(seconds: 2), (_) async {
+      if (!_hasPendingOffer || !_ringtoneEnabled) return;
+      final state = _ringtonePlayer.state;
+      if (state != PlayerState.playing) {
+        await _playIncomingOfferTone();
+      }
+    });
+  }
+
+  void _stopRingtoneWatchdog() {
+    _ringtoneWatchdogTimer?.cancel();
+    _ringtoneWatchdogTimer = null;
   }
 
   void _updateOfferRingtoneLoop(bool hasPendingOffer) {
@@ -188,6 +241,126 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     } else {
       _stopOfferRingtoneLoop();
     }
+  }
+
+  LatLng? _restaurantLocationFromProfile(Map<String, dynamic> data) {
+    final rawLocation = data['location'];
+    if (rawLocation is GeoPoint) {
+      return LatLng(rawLocation.latitude, rawLocation.longitude);
+    }
+    if (rawLocation is Map<String, dynamic>) {
+      final lat = (rawLocation['lat'] as num?)?.toDouble() ??
+          (rawLocation['latitude'] as num?)?.toDouble();
+      final lng = (rawLocation['lng'] as num?)?.toDouble() ??
+          (rawLocation['longitude'] as num?)?.toDouble();
+      if (lat != null && lng != null) return LatLng(lat, lng);
+    }
+
+    final lat = (data['lat'] as num?)?.toDouble() ??
+        (data['latitude'] as num?)?.toDouble() ??
+        (data['restaurantLat'] as num?)?.toDouble();
+    final lng = (data['lng'] as num?)?.toDouble() ??
+        (data['longitude'] as num?)?.toDouble() ??
+        (data['restaurantLng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return null;
+    return LatLng(lat, lng);
+  }
+
+  bool _isRestaurantOpen(Map<String, dynamic> data) {
+    final approvalStatus = (data['approvalStatus'] ?? '').toString().trim();
+    return data['temporarilyClosed'] != true &&
+        data['active'] != false &&
+        (approvalStatus.isEmpty || approvalStatus == 'approved');
+  }
+
+  void _startRestaurantHeatMap() {
+    _restaurantHeatRefreshTimer?.cancel();
+    _restaurantHeatRefreshTimer = Timer.periodic(
+      const Duration(minutes: 30),
+      (_) => _listenToRecentRestaurantOrders(),
+    );
+    _listenForOpenRestaurants();
+    _listenToRecentRestaurantOrders();
+  }
+
+  void _listenForOpenRestaurants() {
+    _openRestaurantsListener?.cancel();
+    _openRestaurantsListener = FirebaseFirestore.instance
+        .collection('restaurants')
+        .snapshots()
+        .listen((snapshot) {
+      final locations = <String, LatLng>{};
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        if (!_isRestaurantOpen(data)) continue;
+        final location = _restaurantLocationFromProfile(data);
+        if (location != null) locations[doc.id] = location;
+      }
+      if (!mounted) return;
+      setState(() {
+        _openRestaurantLocations = locations;
+        _rebuildRestaurantHeatCircles();
+      });
+    }, onError: (_) {
+      if (mounted) setState(() => _openRestaurantLocations = const {});
+    });
+  }
+
+  void _rebuildRestaurantHeatCircles() {
+    _restaurantHeatCircles = _openRestaurantLocations.entries.map((entry) {
+      final intensity =
+          (_recentRestaurantOrderCounts[entry.key] ?? 0).clamp(0, 6).toDouble();
+      return Circle(
+        circleId: CircleId('restaurant_heat_${entry.key}'),
+        center: entry.value,
+        radius: 125 + (intensity * 28),
+        fillColor: Colors.red.withValues(
+          alpha: intensity == 0 ? 0.055 : 0.10 + (intensity * 0.10),
+        ),
+        strokeColor: Colors.red.withValues(
+          alpha: intensity == 0 ? 0.18 : 0.36 + (intensity * 0.09),
+        ),
+        strokeWidth: intensity >= 4 ? 3 : 2,
+      );
+    }).toSet();
+  }
+
+  void _listenToRecentRestaurantOrders() {
+    _restaurantHeatOrdersListener?.cancel();
+    final cutoff = Timestamp.fromDate(
+      DateTime.now().subtract(const Duration(minutes: 30)),
+    );
+    _restaurantHeatOrdersListener = FirebaseFirestore.instance
+        .collection('orders')
+        .where('createdAt', isGreaterThanOrEqualTo: cutoff)
+        .snapshots()
+        .listen((snapshot) {
+      final demandByRestaurant = <String, int>{};
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        if (!_isActiveOrderStatus(data)) continue;
+
+        final restaurantId = (data['restaurantId'] ?? '').toString().trim();
+        if (restaurantId.isEmpty) continue;
+        demandByRestaurant.update(
+          restaurantId,
+          (currentCount) => currentCount + 1,
+          ifAbsent: () => 1,
+        );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _recentRestaurantOrderCounts = demandByRestaurant;
+        _rebuildRestaurantHeatCircles();
+      });
+    }, onError: (_) {
+      if (!mounted) return;
+      setState(() {
+        _recentRestaurantOrderCounts = const {};
+        _rebuildRestaurantHeatCircles();
+      });
+    });
   }
 
   Future<void> _checkCurrentOrder() async {
@@ -274,9 +447,16 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
 
   void _listenForOrders() {
     _ordersListener?.cancel();
+    _restaurantHeatOrdersListener?.cancel();
+    _openRestaurantsListener?.cancel();
+    _restaurantHeatRefreshTimer?.cancel();
+    _restaurantHeatOrdersListener?.cancel();
+    _restaurantHeatRefreshTimer?.cancel();
+    final courierAuthUid =
+        FirebaseAuth.instance.currentUser?.uid ?? widget.driverId;
     _ordersListener = FirebaseFirestore.instance
         .collection('orders')
-        .where('offerDriverIds', arrayContains: widget.driverId)
+        .where('offerDriverOwnerUids', arrayContains: courierAuthUid)
         .snapshots()
         .listen((snapshot) {
       final offerDocs = snapshot.docs.where((doc) {
@@ -286,35 +466,28 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
       }).toList();
 
       if (offerDocs.isEmpty) {
-        _lastOfferOrderId = null;
-        _updateOfferRingtoneLoop(false);
+        _emptyOffersGraceTimer?.cancel();
+        _emptyOffersGraceTimer = Timer(const Duration(seconds: 3), () {
+          if (!mounted || _pendingOfferCount == 0) return;
+          setState(() => _pendingOfferCount = 0);
+          _updateOfferRingtoneLoop(false);
+        });
         return;
       }
 
+      _emptyOffersGraceTimer?.cancel();
+      if (mounted) setState(() => _pendingOfferCount = offerDocs.length);
       _updateOfferRingtoneLoop(true);
       for (final doc in offerDocs) {
         if (_notifiedOfferOrderIds.contains(doc.id)) continue;
         _notifiedOfferOrderIds.add(doc.id);
-        _playIncomingOfferTone();
       }
-
-      final doc = offerDocs.first;
-      final orderId = doc.id;
-      if (_lastOfferOrderId == orderId) return;
-      _lastOfferOrderId = orderId;
-
-      if (!mounted) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => CourierOrderDetailsScreen(
-              orderId: orderId,
-              driverId: widget.driverId,
-            ),
-          ),
-        );
-      });
+    }, onError: (_, __) {
+      _emptyOffersGraceTimer?.cancel();
+      if (mounted) {
+        setState(() => _pendingOfferCount = 0);
+      }
+      _updateOfferRingtoneLoop(false);
     });
   }
 
@@ -353,7 +526,10 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
       _handleGpsLocation(pos);
     } catch (_) {}
     _locationSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 20,
+      ),
     ).listen(_handleGpsLocation);
   }
 
@@ -363,24 +539,6 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     if (_mapCreated) {
       _mapController?.animateCamera(CameraUpdate.newLatLng(_currentLocation));
     }
-    FirebaseFirestore.instance.collection('drivers').doc(widget.driverId).set({
-      'location': GeoPoint(position.latitude, position.longitude),
-      'currentLocation': {
-        'lat': position.latitude,
-        'lng': position.longitude,
-        'latitude': position.latitude,
-        'longitude': position.longitude,
-        'accuracy': position.accuracy,
-        'heading': position.heading,
-        'speed': position.speed,
-      },
-      'lastLocation': GeoPoint(position.latitude, position.longitude),
-      'latitude': position.latitude,
-      'longitude': position.longitude,
-      'lastLocationUpdate': FieldValue.serverTimestamp(),
-      'lastUpdated': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
   }
 
   Future<void> _showLocationDialog() async {
@@ -405,6 +563,12 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
   }
 
   Future<void> _loadAvailability() async {
+    try {
+      await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('reconcileCourierOrderLock')
+          .call({'driverId': widget.driverId});
+    } catch (_) {}
+
     final doc = await FirebaseFirestore.instance
         .collection('drivers')
         .doc(widget.driverId)
@@ -414,8 +578,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
       _ensureAvailabilityTrackingSeed(data);
       setState(() {
         isAvailable = (data['available'] as bool?) ?? false;
-        acceptsLongDistance =
-            isAvailable && ((data['acceptsLongDistance'] as bool?) ?? false);
+        final savedRadius = (data['offerRadiusKm'] as num?)?.round() ?? 5;
+        _offerRadiusKm = [5, 10, 15].contains(savedRadius) ? savedRadius : 5;
       });
     }
   }
@@ -423,9 +587,9 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
   Future<void> _toggleAvailability(bool v) async {
     setState(() {
       isAvailable = v;
-      if (!v) acceptsLongDistance = false;
     });
-    final driverRef = FirebaseFirestore.instance.collection('drivers').doc(widget.driverId);
+    final driverRef =
+        FirebaseFirestore.instance.collection('drivers').doc(widget.driverId);
     final snapshot = await driverRef.get();
     final data = snapshot.data() ?? <String, dynamic>{};
     final patch = _buildAvailabilityPatch(data, v);
@@ -435,12 +599,14 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     await driverRef.set(patch, SetOptions(merge: true));
   }
 
-  Future<void> _toggleLongDistance(bool value) async {
-    if (!isAvailable && value) return;
-    setState(() => acceptsLongDistance = value);
-    await FirebaseFirestore.instance.collection('drivers').doc(widget.driverId).set({
-      'acceptsLongDistance': value,
-      'longDistanceEnabledAt': value ? FieldValue.serverTimestamp() : null,
+  Future<void> _setOfferRadius(int radiusKm) async {
+    if (!isAvailable) return;
+    setState(() => _offerRadiusKm = radiusKm);
+    await FirebaseFirestore.instance
+        .collection('drivers')
+        .doc(widget.driverId)
+        .set({
+      'offerRadiusKm': radiusKm,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
@@ -532,15 +698,27 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                SwitchListTile(
-                  value: acceptsLongDistance,
-                  onChanged: isAvailable ? _toggleLongDistance : null,
-                  secondary: const Icon(Icons.alt_route_rounded),
-                  title: const Text('توصيل المسافات البعيدة'),
+                ListTile(
+                  enabled: isAvailable,
+                  leading: const Icon(Icons.radar_rounded),
+                  title: const Text('نطاق وصول الطلبات'),
                   subtitle: Text(
                     isAvailable
-                        ? 'فعّلها إذا كنت مستعدًا لطلبات خارج النطاق القريب.'
-                        : 'فعّل التوفر أولًا حتى يظهر هذا الخيار للأدمن.',
+                        ? 'تصل إليك طلبات يكون موقع استلامها ضمن هذا النطاق.'
+                        : 'فعّل التوفر أولًا لاختيار النطاق.',
+                  ),
+                  trailing: DropdownButton<int>(
+                    value: _offerRadiusKm,
+                    onChanged: isAvailable
+                        ? (value) {
+                            if (value != null) _setOfferRadius(value);
+                          }
+                        : null,
+                    items: const [
+                      DropdownMenuItem(value: 5, child: Text('5 كم')),
+                      DropdownMenuItem(value: 10, child: Text('10 كم')),
+                      DropdownMenuItem(value: 15, child: Text('15 كم')),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -561,8 +739,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) =>
-                                CourierOrderHistoryScreen(driverId: widget.driverId),
+                            builder: (_) => CourierOrderHistoryScreen(
+                                driverId: widget.driverId),
                           ),
                         ),
                       ),
@@ -588,8 +766,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) =>
-                                CourierEarningsScreen(driverId: widget.driverId),
+                            builder: (_) => CourierEarningsScreen(
+                                driverId: widget.driverId),
                           ),
                         ),
                       ),
@@ -623,7 +801,9 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                                     : AppThemeArabic.clientError)
                                 .withValues(alpha: 0.14),
                             child: Icon(
-                              isAvailable ? Icons.check_circle : Icons.pause_circle,
+                              isAvailable
+                                  ? Icons.check_circle
+                                  : Icons.pause_circle,
                               color: isAvailable
                                   ? AppThemeArabic.courierAccent
                                   : AppThemeArabic.clientError,
@@ -632,7 +812,9 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              isAvailable ? 'متاح للطلبات الآن' : 'غير متاح حاليًا',
+                              isAvailable
+                                  ? 'متاح للطلبات الآن'
+                                  : 'غير متاح حاليًا',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 color: AppThemeArabic.courierTextPrimary,
@@ -717,47 +899,38 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: CourierSectionTitle(
-                  title: isAvailable ? 'جاهز للاستقبال' : 'وضع التوقف',
-                  subtitle: _hasPendingOffer
-                      ? 'هناك عرض طلب قيد الانتظار الآن.'
-                      : 'أدر توفرك وارجع سريعًا للطلبات الجارية.',
+          FilledButton.icon(
+            onPressed: () {
+              setState(() => _pendingOfferCount = 0);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CourierNewOrdersScreen(
+                    driverId: widget.driverId,
+                  ),
                 ),
-              ),
-              Switch(
-                value: isAvailable,
-                onChanged: _toggleAvailability,
-                activeColor: AppThemeArabic.courierAccent,
-              ),
-            ],
+              ).whenComplete(_listenForOrders);
+            },
+            icon: Icon(
+              _hasPendingOffer
+                  ? Icons.notifications_active_rounded
+                  : Icons.local_shipping_outlined,
+            ),
+            label: Text(
+              _pendingOfferCount == 1
+                  ? 'لديك عرض جديد - افتح العرض الآن'
+                  : _pendingOfferCount > 1
+                      ? 'لديك $_pendingOfferCount عروض جديدة - افتح العروض'
+                      : 'العروض المتاحة',
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: _hasPendingOffer
+                  ? AppThemeArabic.courierAccent
+                  : AppThemeArabic.courierPrimary,
+              minimumSize: const Size.fromHeight(52),
+            ),
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: CourierMetricCard(
-                  label: 'مطاعم ظاهرة',
-                  value: _restaurantCircles.length.toString(),
-                  icon: Icons.storefront_rounded,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: CourierMetricCard(
-                  label: 'عروض بانتظارك',
-                  value: _hasPendingOffer ? '1+' : '0',
-                  icon: Icons.notifications_active_rounded,
-                  tone: _hasPendingOffer
-                      ? AppThemeArabic.courierAccent
-                      : AppThemeArabic.courierPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
@@ -774,8 +947,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) =>
-                            CourierOrderHistoryScreen(driverId: widget.driverId),
+                        builder: (_) => CourierOrderHistoryScreen(
+                            driverId: widget.driverId),
                       ),
                     );
                   },
@@ -793,7 +966,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
     try {
-      final driverRef = FirebaseFirestore.instance.collection('drivers').doc(widget.driverId);
+      final driverRef =
+          FirebaseFirestore.instance.collection('drivers').doc(widget.driverId);
       final snapshot = await driverRef.get();
       final data = snapshot.data() ?? <String, dynamic>{};
       final patch = _buildAvailabilityPatch(data, false);
@@ -846,129 +1020,17 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
     return true;
   }
 
-  LatLng? _extractMapLocation(Map<String, dynamic> data) {
-    final rawLocation = data['location'];
-    if (rawLocation is GeoPoint) {
-      return LatLng(rawLocation.latitude, rawLocation.longitude);
-    }
-    if (rawLocation is Map<String, dynamic>) {
-      final lat = (rawLocation['lat'] as num?)?.toDouble() ??
-          (rawLocation['latitude'] as num?)?.toDouble();
-      final lng = (rawLocation['lng'] as num?)?.toDouble() ??
-          (rawLocation['longitude'] as num?)?.toDouble();
-      if (lat != null && lng != null) return LatLng(lat, lng);
-    }
-
-    final lat = (data['lat'] as num?)?.toDouble() ??
-        (data['latitude'] as num?)?.toDouble() ??
-        (data['restaurantLat'] as num?)?.toDouble();
-    final lng = (data['lng'] as num?)?.toDouble() ??
-        (data['longitude'] as num?)?.toDouble() ??
-        (data['restaurantLng'] as num?)?.toDouble();
-
-    if (lat == null || lng == null) return null;
-    return LatLng(lat, lng);
-  }
-
-  bool _isRestaurantOpen(Map<String, dynamic> data) {
-    final temporarilyClosed = data['temporarilyClosed'] == true;
-    final approvalStatus = (data['approvalStatus'] ?? '').toString().trim();
-    final isActive = data['active'] != false;
-    return !temporarilyClosed &&
-        isActive &&
-        (approvalStatus.isEmpty || approvalStatus == 'approved');
-  }
-
-  Future<Map<String, int>> _loadRestaurantDemandMap() async {
-    QuerySnapshot<Map<String, dynamic>> ordersSnapshot;
-    try {
-      ordersSnapshot = await FirebaseFirestore.instance
-          .collection('orders')
-          .orderBy('createdAt', descending: true)
-          .limit(250)
-          .get();
-    } catch (_) {
-      ordersSnapshot = await FirebaseFirestore.instance
-          .collection('orders')
-          .limit(250)
-          .get();
-    }
-
-    final counts = <String, int>{};
-    for (final doc in ordersSnapshot.docs) {
-      final data = doc.data();
-      final restaurantId = (data['restaurantId'] ?? '').toString().trim();
-      final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
-      if (restaurantId.isEmpty || status == 'cancelled' || status == 'ملغي') {
-        continue;
-      }
-      counts.update(restaurantId, (value) => value + 1, ifAbsent: () => 1);
-    }
-    return counts;
-  }
-
-  Future<void> _loadAllLocations() async {
-    try {
-      final restaurantsSnapshot =
-          await FirebaseFirestore.instance.collection('restaurants').get();
-      final demandMap = await _loadRestaurantDemandMap();
-
-      final circles = <Circle>{};
-
-      final maxDemand =
-          demandMap.values.isEmpty ? 0 : demandMap.values.reduce(math.max);
-      final popularThreshold =
-          maxDemand <= 0 ? 999999 : math.max(3, (maxDemand * 0.5).ceil());
-
-      for (final doc in restaurantsSnapshot.docs) {
-        final data = doc.data();
-        if (!_isRestaurantOpen(data)) continue;
-
-        final position = _extractMapLocation(data);
-        if (position == null) continue;
-
-        final restaurantId = doc.id;
-        final demandCount = demandMap[restaurantId] ?? 0;
-        final isPopular = demandCount >= popularThreshold;
-
-        circles.add(
-          Circle(
-            circleId: CircleId('restaurant_open_$restaurantId'),
-            center: position,
-            radius: isPopular ? 240 : 180,
-            fillColor: (isPopular
-                    ? AppThemeArabic.courierPrimary
-                    : AppThemeArabic.courierAccent)
-                .withValues(alpha: isPopular ? 0.28 : 0.14),
-            strokeColor: (isPopular
-                    ? AppThemeArabic.courierPrimary
-                    : AppThemeArabic.courierAccent)
-                .withValues(alpha: isPopular ? 0.7 : 0.38),
-            strokeWidth: isPopular ? 2 : 1,
-          ),
-        );
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _restaurantCircles = circles;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _restaurantCircles = {};
-      });
-    }
-  }
-
   @override
   void dispose() {
+    _stopRingtoneWatchdog();
+    WidgetsBinding.instance.removeObserver(this);
     _mapController?.dispose();
     _locationSubscription?.cancel();
     unawaited(
       LocationService.instance.stopLocationUpdates(stopNativeService: false),
     );
     _ordersListener?.cancel();
+    _emptyOffersGraceTimer?.cancel();
     _stopOfferRingtoneLoop();
     _ringtonePlayer.dispose();
     super.dispose();
@@ -1033,8 +1095,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   child: ListTile(
                     leading: const Icon(Icons.person,
                         color: AppThemeArabic.courierTextPrimary),
-                    title:
-                        const Text('الحساب', style: TextStyle(fontFamily: 'Tajawal')),
+                    title: const Text('الحساب',
+                        style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -1051,8 +1113,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   child: ListTile(
                     leading: const Icon(Icons.monetization_on,
                         color: AppThemeArabic.courierAccent),
-                    title:
-                        const Text('أرباحي', style: TextStyle(fontFamily: 'Tajawal')),
+                    title: const Text('أرباحي',
+                        style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -1126,8 +1188,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   child: ListTile(
                     leading: const Icon(Icons.account_balance_wallet,
                         color: AppThemeArabic.courierAccent),
-                    title:
-                        const Text('محفظتي', style: TextStyle(fontFamily: 'Tajawal')),
+                    title: const Text('محفظتي',
+                        style: TextStyle(fontFamily: 'Tajawal')),
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -1162,12 +1224,28 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                     ],
                   ),
                 ),
-                SwitchListTile(
-                  value: acceptsLongDistance,
-                  onChanged: isAvailable ? _toggleLongDistance : null,
-                  secondary: const Icon(Icons.route_rounded),
-                  title: const Text('المسافات البعيدة'),
-                  subtitle: const Text('استقبال طلبات خارج النطاق القريب'),
+                ListTile(
+                  enabled: isAvailable,
+                  leading: const Icon(Icons.radar_rounded),
+                  title: const Text('نطاق وصول الطلبات'),
+                  subtitle: Text(
+                    isAvailable
+                        ? 'موقع استلام الطلب ضمن النطاق المحدد.'
+                        : 'فعّل التوفر أولًا لاختيار النطاق.',
+                  ),
+                  trailing: DropdownButton<int>(
+                    value: _offerRadiusKm,
+                    onChanged: isAvailable
+                        ? (value) {
+                            if (value != null) _setOfferRadius(value);
+                          }
+                        : null,
+                    items: const [
+                      DropdownMenuItem(value: 5, child: Text('5 كم')),
+                      DropdownMenuItem(value: 10, child: Text('10 كم')),
+                      DropdownMenuItem(value: 15, child: Text('15 كم')),
+                    ],
+                  ),
                 ),
                 const Divider(),
                 Card(
@@ -1189,27 +1267,49 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
             ),
           ),
           appBar: AppBar(
-            backgroundColor: Colors.white,
-            elevation: 1,
+            backgroundColor: const Color(0xFF18352B),
+            elevation: 0,
             centerTitle: true,
-            iconTheme:
-                const IconThemeData(color: AppThemeArabic.courierPrimary),
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-            ),
+            iconTheme: const IconThemeData(color: Colors.white),
             leading: IconButton(
-                icon: const Icon(Icons.menu,
-                    color: AppThemeArabic.courierPrimary),
+                icon: const Icon(Icons.menu_rounded),
                 onPressed: () => _scaffoldKey.currentState!.openDrawer()),
-            title: Row(children: [
-              const Icon(Icons.delivery_dining,
-                  color: AppThemeArabic.courierPrimary),
-              const SizedBox(width: 8),
-              Text(isAvailable ? 'أنت متاح ✅' : 'غير متاح ',
-                  style: const TextStyle(
-                      color: AppThemeArabic.courierTextPrimary,
-                      fontWeight: FontWeight.bold)),
-            ]),
+            title: Container(
+              padding: const EdgeInsets.only(right: 10, left: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isAvailable
+                        ? Icons.check_circle_rounded
+                        : Icons.pause_circle_filled_rounded,
+                    color: isAvailable
+                        ? const Color(0xFF65D6A8)
+                        : const Color(0xFFFF8A80),
+                    size: 19,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    isAvailable ? 'متاح' : 'غير متاح',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontFamily: 'Tajawal',
+                    ),
+                  ),
+                  Switch.adaptive(
+                    value: isAvailable,
+                    onChanged: _toggleAvailability,
+                    activeColor: AppThemeArabic.courierAccent,
+                  ),
+                ],
+              ),
+            ),
             actions: [
               StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: FirebaseFirestore.instance
@@ -1220,6 +1320,10 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                   final docs = snapshot.data?.docs ?? const [];
                   final unreadCount = docs.where((doc) {
                     final data = doc.data();
+                    if ((data['type'] ?? '').toString().toLowerCase() ==
+                        'courier_offer_pending') {
+                      return false;
+                    }
                     final isRead =
                         data['read'] == true || data['isRead'] == true;
                     return !isRead;
@@ -1231,7 +1335,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                       clipBehavior: Clip.none,
                       children: [
                         const Icon(Icons.notifications_none,
-                            color: AppThemeArabic.courierPrimary),
+                            color: Colors.white),
                         if (unreadCount > 0)
                           Positioned(
                             right: -3,
@@ -1262,6 +1366,10 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                     onPressed: () async {
                       final unreadDocs = docs.where((doc) {
                         final data = doc.data();
+                        if ((data['type'] ?? '').toString().toLowerCase() ==
+                            'courier_offer_pending') {
+                          return false;
+                        }
                         final isRead =
                             data['read'] == true || data['isRead'] == true;
                         return !isRead;
@@ -1293,8 +1401,7 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
                 },
               ),
               IconButton(
-                icon: const Icon(Icons.support_agent,
-                    color: AppThemeArabic.courierPrimary),
+                icon: const Icon(Icons.support_agent, color: Colors.white),
                 tooltip: 'الدعم',
                 onPressed: () async {
                   final doc = await FirebaseFirestore.instance
@@ -1320,105 +1427,26 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen> {
           ),
           body: Stack(
             children: [
-              // خلفية خريطة مع ظل خفيف
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: const [
-                    BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 12,
-                        offset: Offset(0, 4)),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: GoogleMap(
-                    initialCameraPosition:
-                        CameraPosition(target: _currentLocation, zoom: 15),
-                    onMapCreated: (c) => setState(() {
-                      _mapController = c;
-                      _mapCreated = true;
-                    }),
-                    myLocationEnabled: true,
-                    myLocationButtonEnabled: true,
-                    zoomControlsEnabled: true,
-                    compassEnabled: true,
-                    rotateGesturesEnabled: true,
-                    tiltGesturesEnabled: true,
-                    circles: _restaurantCircles,
-                    markers: const <Marker>{},
-                  ),
-                ),
+              GoogleMap(
+                initialCameraPosition:
+                    CameraPosition(target: _currentLocation, zoom: 15),
+                onMapCreated: (c) => setState(() {
+                  _mapController = c;
+                  _mapCreated = true;
+                }),
+                myLocationEnabled: true,
+                myLocationButtonEnabled: true,
+                zoomControlsEnabled: true,
+                compassEnabled: true,
+                rotateGesturesEnabled: true,
+                tiltGesturesEnabled: true,
+                circles: _restaurantHeatCircles,
+                markers: const <Marker>{},
               ),
               Positioned(
-                top: 18,
-                left: 18,
-                right: 18,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.94),
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 14,
-                        offset: Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: AppThemeArabic.courierPrimary
-                                .withValues(alpha: 0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.near_me_rounded,
-                            color: AppThemeArabic.courierPrimary,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'لوحة المندوب',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontFamily: 'Tajawal',
-                                  color: AppThemeArabic.courierTextPrimary,
-                                ),
-                              ),
-                              Text(
-                                'الخريطة تعرض موقعك الحالي وطبقات المطاعم المفتوحة والأكثر نشاطًا.',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontFamily: 'Tajawal',
-                                  color: AppThemeArabic.courierTextSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 18,
-                right: 18,
-                bottom: 18,
+                left: 12,
+                right: 12,
+                bottom: 12,
                 child: SafeArea(
                   top: false,
                   child: _buildBottomMapPanel(),

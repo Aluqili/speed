@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -92,6 +93,79 @@ Set<Marker> buildCourierTripMarkers({
             ),
       ),
   };
+}
+
+bool _isRetryableFunctionsCode(String code) {
+  switch (code) {
+    case 'deadline-exceeded':
+    case 'unavailable':
+    case 'internal':
+    case 'resource-exhausted':
+      return true;
+    default:
+      return false;
+  }
+}
+
+String courierFriendlyFunctionsError(
+  Object error, {
+  String fallback = 'حدث خطأ غير متوقع. حاول مرة أخرى.',
+}) {
+  if (error is FirebaseFunctionsException) {
+    final message = (error.message ?? '').trim();
+    switch (error.code) {
+      case 'deadline-exceeded':
+        return 'انتهت مهلة الاتصال بالخادم. تحقق من الشبكة ثم حاول مرة أخرى.';
+      case 'unavailable':
+        return 'الخدمة غير متاحة مؤقتًا. حاول خلال لحظات.';
+      case 'permission-denied':
+        return 'لا تملك صلاحية تنفيذ هذا الإجراء.';
+      case 'unauthenticated':
+        return 'انتهت الجلسة. سجل الدخول ثم أعد المحاولة.';
+      case 'failed-precondition':
+      case 'already-exists':
+      case 'not-found':
+      case 'aborted':
+        return message.isNotEmpty ? message : fallback;
+      default:
+        return message.isNotEmpty ? message : fallback;
+    }
+  }
+  return fallback;
+}
+
+Future<dynamic> courierInvokeCallable(
+  String name,
+  Map<String, dynamic> payload, {
+  Duration timeout = const Duration(seconds: 10),
+  int maxAttempts = 1,
+  Duration retryDelay = const Duration(milliseconds: 450),
+}) async {
+  final callable =
+      FirebaseFunctions.instanceFor(region: 'me-central1').httpsCallable(name);
+
+  Object? lastError;
+  final attempts = maxAttempts < 1 ? 1 : maxAttempts;
+  for (var attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      final result = await callable.call(payload).timeout(timeout);
+      return result.data;
+    } on FirebaseFunctionsException catch (e) {
+      lastError = e;
+      if (attempt >= attempts || !_isRetryableFunctionsCode(e.code)) {
+        rethrow;
+      }
+    } catch (e) {
+      lastError = e;
+      if (attempt >= attempts) {
+        rethrow;
+      }
+    }
+
+    await Future.delayed(retryDelay * attempt);
+  }
+
+  throw StateError('Callable $name failed after retries: $lastError');
 }
 
 Future<CourierMarkerIcons> loadCourierMarkerIcons() {

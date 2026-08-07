@@ -2,6 +2,7 @@ package com.aluqili.speedstar.store
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Intent
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
@@ -12,15 +13,31 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
 	private val alertServiceChannel = "speedstar/store_alert_service"
+	private var pendingOrderAlertTap: Map<String, String>? = null
+	private var orderAlertMethodChannel: MethodChannel? = null
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
+		captureOrderAlertTap(intent)
 		ensureNotificationChannels()
+	}
+
+	override fun onNewIntent(intent: Intent) {
+		super.onNewIntent(intent)
+		setIntent(intent)
+		captureOrderAlertTap(intent)
+		pendingOrderAlertTap?.let {
+			orderAlertMethodChannel?.invokeMethod("orderAlertTapped", it)
+		}
 	}
 
 	override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
 		super.configureFlutterEngine(flutterEngine)
-		MethodChannel(flutterEngine.dartExecutor.binaryMessenger, alertServiceChannel)
+		orderAlertMethodChannel = MethodChannel(
+			flutterEngine.dartExecutor.binaryMessenger,
+			alertServiceChannel,
+		).also { channel ->
+			channel
 			.setMethodCallHandler { call, result ->
 				when (call.method) {
 					"startOrderAlert" -> {
@@ -36,9 +53,27 @@ class MainActivity : FlutterActivity() {
 						OrderAlertForegroundService.stop(this)
 						result.success(null)
 					}
+					"consumeOrderAlertTap" -> {
+						result.success(pendingOrderAlertTap)
+						pendingOrderAlertTap = null
+					}
 					else -> result.notImplemented()
 				}
 			}
+		}
+	}
+
+	private fun captureOrderAlertTap(intent: Intent?) {
+		val orderId = intent?.getStringExtra(OrderAlertForegroundService.EXTRA_ORDER_ID)
+			?.trim()
+			.orEmpty()
+		if (orderId.isEmpty()) return
+		pendingOrderAlertTap = mapOf(
+			"orderId" to orderId,
+			"type" to "store_new_order",
+			"title" to intent?.getStringExtra(OrderAlertForegroundService.EXTRA_TITLE).orEmpty(),
+			"body" to intent?.getStringExtra(OrderAlertForegroundService.EXTRA_BODY).orEmpty(),
+		)
 	}
 
 	private fun ensureNotificationChannels() {
@@ -63,7 +98,7 @@ class MainActivity : FlutterActivity() {
 		}
 
 		val ordersChannel = NotificationChannel(
-			"speedstar_store_orders_incoming_v6",
+			"speedstar_store_orders_incoming_v7",
 			"SpeedStar Orders",
 			NotificationManager.IMPORTANCE_HIGH,
 		).apply {
@@ -76,12 +111,13 @@ class MainActivity : FlutterActivity() {
 		val serviceChannel = NotificationChannel(
 			OrderAlertForegroundService.SERVICE_CHANNEL_ID,
 			"SpeedStar Active Order Alert",
-			NotificationManager.IMPORTANCE_LOW,
+			NotificationManager.IMPORTANCE_HIGH,
 		).apply {
 			description = "تنبيه مستمر حتى قبول الطلب أو رفضه"
 			setSound(null, null)
 			enableVibration(false)
 			setShowBadge(false)
+			lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
 		}
 
 		manager.createNotificationChannel(alertsChannel)

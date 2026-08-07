@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:speedstar_core/speedstar_core.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
@@ -14,8 +15,18 @@ import 'الشاشات/courier_main_screen.dart';
 import 'الشاشات/courier_ui.dart';
 import 'الخدمات/push_notification_service.dart';
 
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: prod_firebase.DefaultFirebaseOptions.currentPlatform,
+  );
+  await PushNotificationService.instance.showRemoteMessageAsLocal(message);
+}
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   runApp(const CourierApp());
 }
 
@@ -91,7 +102,7 @@ class _InitGateCourierState extends State<_InitGateCourier> {
       final defaults = <String, Object>{
         ...OpsRuntimeConfig.defaultFlagsFor('courier'),
         ...AppUpdateConfig.defaultFlagsFor('courier'),
-        'accent_seed': '8B5E34',
+        'accent_seed': '0F766E',
         'courier_root_url': '',
         'courier_maintenance_mode': false,
         'courier_maintenance_message': 'التطبيق تحت الصيانة. حاول لاحقًا.',
@@ -137,10 +148,10 @@ class _InitGateCourierState extends State<_InitGateCourier> {
     Object? lastError;
     for (var attempt = 0; attempt < 3; attempt += 1) {
       try {
-        final activated = await rc
-            .fetchAndActivate()
-            .timeout(const Duration(seconds: 12));
-        if (activated || rc.lastFetchStatus == RemoteConfigFetchStatus.success) {
+        final activated =
+            await rc.fetchAndActivate().timeout(const Duration(seconds: 12));
+        if (activated ||
+            rc.lastFetchStatus == RemoteConfigFetchStatus.success) {
           return;
         }
         lastError = 'Remote Config fetch status: ${rc.lastFetchStatus.name}';

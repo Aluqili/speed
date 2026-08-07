@@ -1,6 +1,6 @@
 name: speedstar_courier_app
 description: Courier app for SpeedStar
-version: 0.1.2+6
+version: 0.1.2+18
 publish_to: none
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -18,13 +18,10 @@ dependencies:
   firebase_messaging: ^16.0.0
   flutter_local_notifications: ^19.3.0
   shared_preferences: ^2.3.2
-  provider: ^6.1.2
   intl: ^0.19.0
   url_launcher: ^6.3.2
   http: ^1.2.2
-  location: ^6.0.2
   get_storage: ^2.1.1
-  flutter_dotenv: ^5.1.0
   audioplayers: ^6.5.0
   geolocator: ^13.0.2
   google_maps_flutter: ^2.9.0
@@ -33,7 +30,6 @@ dependencies:
   cloudinary_public: ^0.23.1
   get: ^4.6.6
   getwidget: ^7.0.0
-  cupertino_icons: ^1.0.8
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -55,18 +51,18 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: assets/branding/app_icon_courier.png.jpeg
+  image_path: assets/branding/speedstar_logo.jpg
   min_sdk_android: 21
   remove_alpha_ios: true
   web:
     generate: true
-    image_path: assets/branding/app_icon_courier.png.jpeg
+    image_path: assets/branding/speedstar_logo.jpg
     background_color: "#FFFFFF"
     theme_color: "#E85D2A"
   windows:
     generate: true
-    image_path: assets/branding/app_icon_courier.png.jpeg
+    image_path: assets/branding/speedstar_logo.jpg
     icon_size: 256
   macos:
     generate: true
-    image_path: assets/branding/app_icon_courier.png.jpeg
+    image_path: assets/branding/speedstar_logo.jpg

@@ -55,15 +55,29 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
   GoogleMapController? _mapController;
   List<LatLng> _routePoints = const [];
   int? _routeDurationMinutes;
+  int? _prepTimeMinutes;
   int _routeGeneration = 0;
   BitmapDescriptor? _driverMarkerIcon;
   BitmapDescriptor? _clientMarkerIcon;
 
   String get _clientId => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  String _generateChatId(String a, String b) {
+  String _generateChatId(String a, String b, String orderId) {
     final sorted = [a, b]..sort();
-    return '${sorted[0]}_${sorted[1]}';
+    return '${sorted[0]}_${orderId}_${sorted[1]}';
+  }
+
+  int? _estimatePrepTimeMinutes(String raw) {
+    final digits = RegExp(r'\d+')
+        .allMatches(raw)
+        .map((match) {
+          return int.tryParse(match.group(0) ?? '');
+        })
+        .whereType<int>()
+        .toList();
+    if (digits.isEmpty) return null;
+    if (digits.length == 1) return digits.first;
+    return ((digits.first + digits.last) / 2).round();
   }
 
   static const Color _primary = ClientColors.primary;
@@ -158,6 +172,20 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
       if (driverId != null && _driverId != driverId) {
         setState(() => _driverId = driverId);
       }
+
+      final nextPrepMinutes = (data['prepTimeMinutes'] as num?)?.toInt() ??
+          _estimatePrepTimeMinutes(
+            (data['prepTimeText'] ??
+                    data['deliveryTime'] ??
+                    data['estimatedDeliveryTime'] ??
+                    '')
+                .toString()
+                .trim(),
+          );
+      if (_prepTimeMinutes != nextPrepMinutes) {
+        _prepTimeMinutes = nextPrepMinutes;
+      }
+
       if ((status == 'courier_assigned' ||
               status == 'pickup_ready' ||
               status == 'picked_up' ||
@@ -231,8 +259,13 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
   }
 
   String _calculateETA() {
+    final prepMinutes = _prepTimeMinutes ?? 0;
     if (_routeDurationMinutes != null) {
-      return '$_routeDurationMinutes دقيقة';
+      final total = prepMinutes + _routeDurationMinutes!;
+      return total > 0 ? '$total دقيقة' : '$_routeDurationMinutes دقيقة';
+    }
+    if (_prepTimeMinutes != null) {
+      return '$_prepTimeMinutes دقيقة';
     }
     if (_driverLocation == null || _clientLocation == null) return '—';
     const earthRadius = 6371.0;
@@ -274,7 +307,11 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
                         currentUserId: _clientId,
                         otherUserId: _driverId!,
                         currentUserRole: 'client',
-                        chatId: _generateChatId(_clientId, _driverId!),
+                        chatId: _generateChatId(
+                          _clientId,
+                          _driverId!,
+                          widget.orderId,
+                        ),
                         currentUserName: 'العميل',
                       ),
                     ),

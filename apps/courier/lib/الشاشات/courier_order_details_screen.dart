@@ -1,6 +1,5 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'dart:math';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
@@ -32,6 +31,9 @@ class CourierOrderDetailsScreen extends StatefulWidget {
 
 class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   Map<String, dynamic>? orderData;
+  bool _reloadingOrder = false;
+  String? _offerActionInProgress;
+  bool _reportingIssue = false;
   double deliveryFee = 0;
   CourierMarkerIcons? _markerIcons;
   List<LatLng> _driverRestaurantRoute = const [];
@@ -41,6 +43,31 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   String _loadedRouteKey = '';
   bool _fetchingRoutes = false;
   GoogleMapController? _orderMapController;
+
+  double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
+  int _toInt(dynamic value) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _distanceText(double? km) {
+    final value = km ?? 0;
+    if (value <= 0) return 'غير متاح';
+    if (value < 1) return '${(value * 1000).round()} م';
+    return '${value.toStringAsFixed(1)} كم';
+  }
+
+  String _etaText(Map<String, dynamic> data) {
+    final eta = _toInt(data['estimatedDeliveryMinutes']);
+    if (eta > 0) return '$eta دقيقة';
+    final route = _toInt(data['routeDurationMinutes']);
+    if (route > 0) return '$route دقيقة';
+    return 'غير متاح';
+  }
 
   double get _driverBaseFee {
     try {
@@ -87,10 +114,9 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
 
   bool _isOfferForDriver(Map<String, dynamic> data) {
     final offeredDriverId = (data['offeredDriverId'] ?? '').toString();
-    final offerDriverIds = (data['offerDriverIds'] as List?)
-            ?.map((id) => id.toString())
-            .toSet() ??
-        <String>{};
+    final offerDriverIds =
+        (data['offerDriverIds'] as List?)?.map((id) => id.toString()).toSet() ??
+            <String>{};
     return offeredDriverId == widget.driverId ||
         offerDriverIds.contains(widget.driverId);
   }
@@ -108,22 +134,54 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   }
 
   Future<void> _loadOrderData() async {
-    final docSnapshot = await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(widget.orderId)
-        .get();
+    final orderRef =
+        FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
+
+    DocumentSnapshot<Map<String, dynamic>> docSnapshot;
+    try {
+      docSnapshot = await orderRef.get(
+        const GetOptions(source: Source.server),
+      );
+    } catch (_) {
+      docSnapshot = await orderRef.get();
+    }
 
     if (docSnapshot.exists) {
       final data = docSnapshot.data()!;
-      final assignedDriverId = (data['assignedDriverId'] ?? '').toString();
+      final assignedDriverId =
+          (data['assignedDriverId'] ?? '').toString().trim();
       final status = _getOrderStatus(data);
+      final selfDriverId = widget.driverId.trim();
 
       final belongsToAnotherAssigned =
-          assignedDriverId.isNotEmpty && assignedDriverId != widget.driverId;
-      final belongsToAnotherOffer = status == 'courier_offer_pending' &&
-          !_isOfferForDriver(data);
+          assignedDriverId.isNotEmpty && assignedDriverId != selfDriverId;
+      final belongsToAnotherOffer =
+          status == 'courier_offer_pending' && !_isOfferForDriver(data);
 
       if (belongsToAnotherAssigned || belongsToAnotherOffer) {
+        // Recheck from server once before blocking, because local cache can be stale
+        // right after accepting the offer.
+        try {
+          final fresh =
+              await orderRef.get(const GetOptions(source: Source.server));
+          if (fresh.exists) {
+            final freshData = fresh.data()!;
+            final freshAssigned =
+                (freshData['assignedDriverId'] ?? '').toString().trim();
+            final freshStatus = _getOrderStatus(freshData);
+            final stillAnotherAssigned =
+                freshAssigned.isNotEmpty && freshAssigned != selfDriverId;
+            final stillAnotherOffer = freshStatus == 'courier_offer_pending' &&
+                !_isOfferForDriver(freshData);
+            if (!(stillAnotherAssigned || stillAnotherOffer)) {
+              setState(() {
+                orderData = freshData;
+              });
+              return;
+            }
+          }
+        } catch (_) {}
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -168,6 +226,22 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
       setState(() {
         orderData = data;
       });
+    }
+  }
+
+  Future<void> _refreshOrderData() async {
+    if (_reloadingOrder) return;
+    setState(() => _reloadingOrder = true);
+    try {
+      await _loadOrderData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تحديث حالة الطلب')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _reloadingOrder = false);
+      }
     }
   }
 
@@ -224,16 +298,19 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     LatLng destination,
   ) async {
     try {
-      final result = await FirebaseFunctions.instanceFor(region: 'me-central1')
-          .httpsCallable('estimateRoute')
-          .call({
-        'origin': {'lat': origin.latitude, 'lng': origin.longitude},
-        'destination': {
-          'lat': destination.latitude,
-          'lng': destination.longitude,
+      final result = await courierInvokeCallable(
+        'estimateRoute',
+        {
+          'origin': {'lat': origin.latitude, 'lng': origin.longitude},
+          'destination': {
+            'lat': destination.latitude,
+            'lng': destination.longitude,
+          },
         },
-      }).timeout(const Duration(seconds: 5));
-      return Map<String, dynamic>.from(result.data as Map);
+        timeout: const Duration(seconds: 5),
+        maxAttempts: 2,
+      );
+      return Map<String, dynamic>.from(result as Map);
     } catch (_) {
       return null;
     }
@@ -364,6 +441,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
 
   Future<void> _acceptOrder() async {
     if (orderData == null) return;
+    if (_offerActionInProgress != null) return;
 
     final status = _getOrderStatus(orderData!);
     if (status != 'courier_offer_pending' || !_isOfferForDriver(orderData!)) {
@@ -373,22 +451,36 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
       return;
     }
 
-    await FirebaseFunctions.instanceFor(region: 'me-central1')
-        .httpsCallable('courierRespondToOffer')
-        .call({
-      'orderId': widget.orderId,
-      'driverId': widget.driverId,
-      'decision': 'accept',
-    });
-
-    await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(widget.orderId)
-        .update({
-      'deliveryFeeForDriver': deliveryFee,
-      'acceptedAt': Timestamp.now(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    setState(() => _offerActionInProgress = 'accept');
+    try {
+      await courierInvokeCallable(
+        'courierRespondToOffer',
+        {
+          'orderId': widget.orderId,
+          'driverId': widget.driverId,
+          'decision': 'accept',
+        },
+        timeout: const Duration(seconds: 12),
+        maxAttempts: 2,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            courierFriendlyFunctionsError(
+              e,
+              fallback: 'تعذر قبول الطلب الآن. حاول مرة أخرى.',
+            ),
+          ),
+        ),
+      );
+      return;
+    } finally {
+      if (mounted) {
+        setState(() => _offerActionInProgress = null);
+      }
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('تم قبول الطلب')),
@@ -475,18 +567,143 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   }
 
   Future<void> _rejectOffer() async {
-    await FirebaseFunctions.instanceFor(region: 'me-central1')
-        .httpsCallable('courierRespondToOffer')
-        .call({
-      'orderId': widget.orderId,
-      'driverId': widget.driverId,
-      'decision': 'reject',
-    });
+    if (_offerActionInProgress != null) return;
+    setState(() => _offerActionInProgress = 'reject');
+    try {
+      await courierInvokeCallable(
+        'courierRespondToOffer',
+        {
+          'orderId': widget.orderId,
+          'driverId': widget.driverId,
+          'decision': 'reject',
+        },
+        timeout: const Duration(seconds: 10),
+        maxAttempts: 2,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            courierFriendlyFunctionsError(
+              e,
+              fallback: 'تعذر رفض العرض الآن. حاول مرة أخرى.',
+            ),
+          ),
+        ),
+      );
+      return;
+    } finally {
+      if (mounted) {
+        setState(() => _offerActionInProgress = null);
+      }
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('تم رفض العرض وسيتم إرساله لمندوب آخر')),
     );
     Navigator.pop(context);
+  }
+
+  Future<void> _reportOrderIssue() async {
+    if (_reportingIssue) return;
+
+    const reasons = {
+      'client_not_responding': 'العميل لا يرد',
+      'incorrect_address': 'العنوان غير صحيح',
+      'store_closed': 'المطعم مغلق',
+      'cannot_complete_delivery': 'تعذر إتمام التوصيل',
+      'other': 'مشكلة أخرى',
+    };
+    var selectedReason = reasons.keys.first;
+    final noteController = TextEditingController();
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('الإبلاغ عن مشكلة'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: selectedReason,
+                decoration: const InputDecoration(labelText: 'سبب المشكلة'),
+                items: reasons.entries
+                    .map(
+                      (entry) => DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() => selectedReason = value);
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: noteController,
+                maxLength: 500,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'ملاحظة إضافية (اختياري)',
+                  alignLabelWithHint: true,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, {
+                'reason': selectedReason,
+                'note': noteController.text.trim(),
+              }),
+              child: const Text('إرسال البلاغ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    noteController.dispose();
+    if (result == null || !mounted) return;
+
+    setState(() => _reportingIssue = true);
+    try {
+      await courierInvokeCallable(
+        'courierReportOrderIssue',
+        {
+          'orderId': widget.orderId,
+          'driverId': widget.driverId,
+          ...result,
+        },
+        timeout: const Duration(seconds: 12),
+        maxAttempts: 2,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إرسال البلاغ إلى فريق العمليات')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            courierFriendlyFunctionsError(
+              error,
+              fallback: 'تعذر إرسال البلاغ الآن. حاول مرة أخرى.',
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _reportingIssue = false);
+    }
   }
 
   bool _isOrderFinished(String status) {
@@ -502,312 +719,510 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   Widget build(BuildContext context) {
     final data = orderData;
     return Scaffold(
-      appBar: buildCourierAppBar('تفاصيل الطلب'),
+      appBar: buildCourierAppBar(
+        'تفاصيل الطلب',
+        actions: [
+          IconButton(
+            tooltip: 'تحديث',
+            onPressed: _reloadingOrder ? null : _refreshOrderData,
+            icon: _reloadingOrder
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2.2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
       backgroundColor: Colors.transparent,
       body: CourierPageBackground(
         child: data == null
-          ? const Center(child: CircularProgressIndicator())
-          : Builder(builder: (context) {
-              final status = _getOrderStatus(data);
-              final isFinished = _isOrderFinished(status);
-              final isOfferForMe =
-                  status == 'courier_offer_pending' && _isOfferForDriver(data);
-              final isAssignedToMe =
-                  (data['assignedDriverId'] ?? '').toString() == widget.driverId;
+            ? const Center(child: CircularProgressIndicator())
+            : Builder(builder: (context) {
+                final status = _getOrderStatus(data);
+                final accepting = _offerActionInProgress == 'accept';
+                final rejecting = _offerActionInProgress == 'reject';
+                final offerBusy = _offerActionInProgress != null;
+                final isFinished = _isOrderFinished(status);
+                final isOfferForMe = status == 'courier_offer_pending' &&
+                    _isOfferForDriver(data);
+                final isAssignedToMe =
+                    (data['assignedDriverId'] ?? '').toString() ==
+                        widget.driverId;
+                final executionLabel =
+                    status == 'picked_up' || status == 'قيد التوصيل'
+                        ? 'الذهاب إلى العميل'
+                        : status == 'arrived_to_client' ||
+                                status == 'وصل إلى العميل'
+                            ? 'تأكيد تسليم الطلب'
+                            : 'الذهاب إلى المطعم';
+                final courierIssue = data['courierIssue'];
+                final issueResolved = courierIssue is Map &&
+                    (courierIssue['status'] ?? '').toString() == 'resolved';
+                final issueResolutionNote =
+                    (data['courierIssueResolutionNote'] ?? '')
+                        .toString()
+                        .trim();
 
-              final restaurantLocation = _resolvePoint(
-                data,
-                rawKey: 'restaurantLocation',
-                latKey: 'restaurantLat',
-                lngKey: 'restaurantLng',
-              );
-              final clientLocation = _resolvePoint(
-                data,
-                rawKey: 'clientLocation',
-                latKey: 'clientLat',
-                lngKey: 'clientLng',
-              );
-              final driverLocation = _resolvePoint(
-                data,
-                rawKey: 'driverLocation',
-                latKey: 'driverLat',
-                lngKey: 'driverLng',
-              );
-
-              final restaurantToClientKm =
-                  _restaurantClientRoadKm ??
-                  (restaurantLocation != null && clientLocation != null
-                      ? courierHaversineKm(restaurantLocation, clientLocation)
-                      : null);
-
-              final driverToRestaurantKm =
-                  _driverRestaurantRoadKm ??
-                  (driverLocation != null && restaurantLocation != null
-                      ? courierHaversineKm(driverLocation, restaurantLocation)
-                      : null);
-
-              if (restaurantLocation != null && clientLocation != null) {
-                Future.microtask(
-                  () => _loadRoadRoutes(
-                    driverLocation: driverLocation,
-                    restaurantLocation: restaurantLocation,
-                    clientLocation: clientLocation,
-                  ),
+                final restaurantLocation = _resolvePoint(
+                  data,
+                  rawKey: 'restaurantLocation',
+                  latKey: 'restaurantLat',
+                  lngKey: 'restaurantLng',
                 );
-              }
+                final clientLocation = _resolvePoint(
+                  data,
+                  rawKey: 'clientLocation',
+                  latKey: 'clientLat',
+                  lngKey: 'clientLng',
+                );
+                final driverLocation = _resolvePoint(
+                  data,
+                  rawKey: 'driverLocation',
+                  latKey: 'driverLat',
+                  lngKey: 'driverLng',
+                );
 
-              final markers = buildCourierTripMarkers(
-                restaurantLocation: restaurantLocation,
-                clientLocation: clientLocation,
-                driverLocation: driverLocation,
-                showDriverMarker: true,
-                icons: _markerIcons,
-              );
+                final restaurantToClientKm = _restaurantClientRoadKm ??
+                    (restaurantLocation != null && clientLocation != null
+                        ? courierHaversineKm(restaurantLocation, clientLocation)
+                        : null);
 
-              final polylines = <Polyline>{
-                if (driverLocation != null && restaurantLocation != null)
-                  Polyline(
-                    polylineId: const PolylineId('driver_restaurant'),
-                    points: _driverRestaurantRoute.length >= 2
-                        ? _driverRestaurantRoute
-                        : [driverLocation, restaurantLocation],
-                    color: AppThemeArabic.courierAccent,
-                    width: 5,
-                    startCap: Cap.roundCap,
-                    endCap: Cap.roundCap,
-                    jointType: JointType.round,
-                  ),
-                if (restaurantLocation != null && clientLocation != null)
-                  Polyline(
-                    polylineId: const PolylineId('restaurant_client'),
-                    points: _restaurantClientRoute.length >= 2
-                        ? _restaurantClientRoute
-                        : [restaurantLocation, clientLocation],
-                    color: AppThemeArabic.courierPrimary,
-                    width: 5,
-                    startCap: Cap.roundCap,
-                    endCap: Cap.roundCap,
-                    jointType: JointType.round,
-                  ),
-              };
+                final driverToRestaurantKm = _driverRestaurantRoadKm ??
+                    (driverLocation != null && restaurantLocation != null
+                        ? courierHaversineKm(driverLocation, restaurantLocation)
+                        : null);
 
-              return ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.black12),
+                if (restaurantLocation != null && clientLocation != null) {
+                  Future.microtask(
+                    () => _loadRoadRoutes(
+                      driverLocation: driverLocation,
+                      restaurantLocation: restaurantLocation,
+                      clientLocation: clientLocation,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          formatUnifiedOrderCode(
-                            orderNumber: data['orderNumber'],
-                            orderId: data['orderId'],
-                            docId: widget.orderId,
-                          ),
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                            color: AppThemeArabic.courierPrimary,
-                            fontFamily: 'Tajawal',
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'العميل: ${data['clientName'] ?? 'غير متوفر'}',
-                          style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              fontFamily: 'Tajawal'),
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color:
-                                OrderStatusPalette.backgroundForStatus(status),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            'الحالة: ${OrderStatusPalette.displayText(status)}',
-                            style: TextStyle(
-                              color: OrderStatusPalette.colorForStatus(status),
-                              fontWeight: FontWeight.w700,
+                  );
+                }
+
+                final markers = buildCourierTripMarkers(
+                  restaurantLocation: restaurantLocation,
+                  clientLocation: clientLocation,
+                  driverLocation: driverLocation,
+                  showDriverMarker: true,
+                  icons: _markerIcons,
+                );
+
+                final total = (data['totalWithDelivery'] ?? data['total'] ?? 0)
+                    .toString();
+                final itemsCount = (data['items'] as List?)?.length ?? 0;
+                final restaurantName =
+                    (data['restaurantName'] ?? 'غير معروف').toString();
+                final isDirectDelivery =
+                    data['orderSource'] == 'store_direct_delivery';
+                final packageDescription =
+                    (data['packageDescription'] ?? '').toString().trim();
+                final courierEarnings =
+                    (data['deliveryFeeForDriver'] ?? data['driverShare'] ?? 0)
+                        .toString();
+                final routeDistanceKm = _toDouble(data['routeDistanceKm']) > 0
+                    ? _toDouble(data['routeDistanceKm'])
+                    : restaurantToClientKm;
+
+                final polylines = <Polyline>{
+                  if (driverLocation != null && restaurantLocation != null)
+                    Polyline(
+                      polylineId: const PolylineId('driver_restaurant'),
+                      points: _driverRestaurantRoute.length >= 2
+                          ? _driverRestaurantRoute
+                          : [driverLocation, restaurantLocation],
+                      color: AppThemeArabic.courierAccent,
+                      width: 5,
+                      startCap: Cap.roundCap,
+                      endCap: Cap.roundCap,
+                      jointType: JointType.round,
+                    ),
+                  if (restaurantLocation != null && clientLocation != null)
+                    Polyline(
+                      polylineId: const PolylineId('restaurant_client'),
+                      points: _restaurantClientRoute.length >= 2
+                          ? _restaurantClientRoute
+                          : [restaurantLocation, clientLocation],
+                      color: AppThemeArabic.courierPrimary,
+                      width: 5,
+                      startCap: Cap.roundCap,
+                      endCap: Cap.roundCap,
+                      jointType: JointType.round,
+                    ),
+                };
+
+                return ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.black12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            formatUnifiedOrderCode(
+                              orderNumber: data['orderNumber'],
+                              orderId: data['orderId'],
+                              docId: widget.orderId,
+                            ),
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: AppThemeArabic.courierPrimary,
+                              fontFamily: 'Tajawal',
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 10),
-                        if (restaurantLocation != null ||
-                            clientLocation != null)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(14),
-                            child: SizedBox(
-                              height: 280,
-                              child: GoogleMap(
-                                initialCameraPosition: CameraPosition(
-                                  target: restaurantLocation ?? clientLocation!,
-                                  zoom: 12.5,
-                                ),
-                                onMapCreated: (controller) {
-                                  _orderMapController = controller;
-                                  Future.delayed(
-                                    const Duration(milliseconds: 300),
-                                    () => _fitOrderMapBounds(
-                                      driverLocation: driverLocation,
-                                      restaurantLocation: restaurantLocation,
-                                      clientLocation: clientLocation,
-                                    ),
-                                  );
-                                },
-                                markers: markers,
-                                polylines: polylines,
-                                zoomControlsEnabled: true,
-                                myLocationEnabled: true,
-                                myLocationButtonEnabled: true,
-                                compassEnabled: true,
-                                rotateGesturesEnabled: true,
-                                tiltGesturesEnabled: true,
-                                mapToolbarEnabled: false,
+                          const SizedBox(height: 6),
+                          Text(
+                            'العميل: ${data['clientName'] ?? 'غير متوفر'}',
+                            style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                fontFamily: 'Tajawal'),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: OrderStatusPalette.backgroundForStatus(
+                                  status),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'الحالة: ${OrderStatusPalette.displayText(status)}',
+                              style: TextStyle(
+                                color:
+                                    OrderStatusPalette.colorForStatus(status),
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                          )
-                        else
-                          const Text('لا توجد بيانات موقع كافية لعرض الخريطة'),
-                        const SizedBox(height: 12),
-                        if (restaurantLocation != null ||
-                            clientLocation != null)
+                          ),
+                          const SizedBox(height: 10),
+                          const Divider(height: 1),
+                          const SizedBox(height: 10),
+                          _OrderInfoRow(
+                            label:
+                                isDirectDelivery ? 'نقطة الاستلام' : 'المطعم',
+                            value: restaurantName,
+                          ),
+                          const SizedBox(height: 8),
+                          _OrderInfoRow(
+                            label:
+                                isDirectDelivery ? 'أجرك المتوقع' : 'الإجمالي',
+                            value:
+                                '${isDirectDelivery ? courierEarnings : total} ج.س',
+                          ),
+                          const SizedBox(height: 8),
+                          _OrderInfoRow(
+                            label: isDirectDelivery ? 'الإرسالية' : 'العناصر',
+                            value: isDirectDelivery
+                                ? (packageDescription.isEmpty
+                                    ? 'إرسالية توصيل مباشر'
+                                    : packageDescription)
+                                : '$itemsCount',
+                          ),
+                          const SizedBox(height: 8),
+                          _OrderInfoRow(
+                            label: 'المسافة',
+                            value: _distanceText(routeDistanceKm),
+                          ),
+                          const SizedBox(height: 8),
+                          _OrderInfoRow(
+                            label: 'الزمن',
+                            value: _etaText(data),
+                          ),
+                          const SizedBox(height: 10),
+                          if (restaurantLocation != null ||
+                              clientLocation != null)
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: SizedBox(
+                                height: 280,
+                                child: GoogleMap(
+                                  initialCameraPosition: CameraPosition(
+                                    target:
+                                        restaurantLocation ?? clientLocation!,
+                                    zoom: 12.5,
+                                  ),
+                                  onMapCreated: (controller) {
+                                    _orderMapController = controller;
+                                    Future.delayed(
+                                      const Duration(milliseconds: 300),
+                                      () => _fitOrderMapBounds(
+                                        driverLocation: driverLocation,
+                                        restaurantLocation: restaurantLocation,
+                                        clientLocation: clientLocation,
+                                      ),
+                                    );
+                                  },
+                                  markers: markers,
+                                  polylines: polylines,
+                                  zoomControlsEnabled: true,
+                                  myLocationEnabled: true,
+                                  myLocationButtonEnabled: true,
+                                  compassEnabled: true,
+                                  rotateGesturesEnabled: true,
+                                  tiltGesturesEnabled: true,
+                                  mapToolbarEnabled: false,
+                                ),
+                              ),
+                            )
+                          else
+                            const Text(
+                                'لا توجد بيانات موقع كافية لعرض الخريطة'),
+                          const SizedBox(height: 12),
+                          if (restaurantLocation != null ||
+                              clientLocation != null)
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: AppThemeArabic.courierPrimary
+                                        .withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.storefront_rounded, size: 16),
+                                      SizedBox(width: 6),
+                                      Text('المطعم'),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: AppThemeArabic.courierAccent
+                                        .withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.person_rounded, size: 16),
+                                      SizedBox(width: 6),
+                                      Text('العميل'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          if (restaurantLocation != null ||
+                              clientLocation != null)
+                            const SizedBox(height: 12),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
                             children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: AppThemeArabic.courierPrimary
-                                      .withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(999),
+                              if (driverToRestaurantKm != null)
+                                Chip(
+                                  label: Text(
+                                    'يبعد المطعم عنك: ${courierFormatDistance(driverToRestaurantKm)}',
+                                  ),
                                 ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.storefront_rounded, size: 16),
-                                    SizedBox(width: 6),
-                                    Text('المطعم'),
-                                  ],
+                              if (restaurantToClientKm != null)
+                                Chip(
+                                  label: Text(
+                                    'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
+                                  ),
                                 ),
+                              Chip(
+                                  label: Text(
+                                      'رسومك: ${courierFormatMoney(deliveryFee)} ج.س')),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (isAssignedToMe) ...[
+                      CourierClientContactCard(
+                        orderData: data,
+                        orderId: widget.orderId,
+                        driverId: widget.driverId,
+                        showPhone: true,
+                      ),
+                      const SizedBox(height: 16),
+                      if (issueResolved) ...[
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: Colors.green.withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.task_alt_rounded,
+                                color: Colors.green,
                               ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: AppThemeArabic.courierAccent
-                                      .withValues(alpha: 0.14),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.person_rounded, size: 16),
-                                    SizedBox(width: 6),
-                                    Text('العميل'),
-                                  ],
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  issueResolutionNote.isNotEmpty
+                                      ? 'تمت معالجة بلاغك: $issueResolutionNote'
+                                      : 'تمت معالجة بلاغك من فريق العمليات.',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'Tajawal',
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                        if (restaurantLocation != null ||
-                            clientLocation != null)
-                          const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            if (driverToRestaurantKm != null)
-                              Chip(
-                                label: Text(
-                                  'يبعد المطعم عنك: ${courierFormatDistance(driverToRestaurantKm)}',
-                                ),
-                              ),
-                            if (restaurantToClientKm != null)
-                              Chip(
-                                label: Text(
-                                  'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
-                                ),
-                              ),
-                            Chip(
-                                label: Text(
-                                    'رسومك: ${courierFormatMoney(deliveryFee)} ج.س')),
-                          ],
                         ),
+                        const SizedBox(height: 16),
                       ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (isAssignedToMe) ...[
-                    CourierClientContactCard(
-                      orderData: data,
-                      driverId: widget.driverId,
-                      showPhone: true,
-                    ),
-                    const SizedBox(height: 16),
+                    ],
+                    if (isOfferForMe) ...[
+                      ElevatedButton.icon(
+                        onPressed: offerBusy ? null : _acceptOrder,
+                        icon: accepting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.check_circle_outline),
+                        label: Text(
+                          accepting
+                              ? 'جاري قبول العرض...'
+                              : 'قبول العرض وبدء الرحلة',
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppThemeArabic.courierAccent,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(52),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: offerBusy ? null : _rejectOffer,
+                        icon: rejecting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.close),
+                        label:
+                            Text(rejecting ? 'جاري رفض العرض...' : 'رفض العرض'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ] else if (isAssignedToMe) ...[
+                      ElevatedButton.icon(
+                        onPressed: _openProfessionalFlow,
+                        icon: const Icon(Icons.navigation_outlined),
+                        label: Text(executionLabel),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppThemeArabic.courierPrimary,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(52),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _reportingIssue ? null : _reportOrderIssue,
+                        icon: _reportingIssue
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.report_problem_outlined),
+                        label: Text(
+                          _reportingIssue
+                              ? 'جاري إرسال البلاغ...'
+                              : 'الإبلاغ عن مشكلة',
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red.shade700,
+                          minimumSize: const Size.fromHeight(52),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ] else
+                      const Center(
+                        child: Text('هذا الطلب تم استلامه بواسطة مندوب آخر.'),
+                      ),
+                    if (!isFinished) const SizedBox(height: 14),
                   ],
-                  if (isOfferForMe) ...[
-                    ElevatedButton.icon(
-                      onPressed: _acceptOrder,
-                      icon: const Icon(Icons.check_circle_outline),
-                      label: const Text('قبول العرض وبدء الرحلة'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppThemeArabic.courierAccent,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(52),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      onPressed: _rejectOffer,
-                      icon: const Icon(Icons.close),
-                      label: const Text('رفض العرض'),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(52),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
-                  ] else if (isAssignedToMe) ...[
-                    ElevatedButton.icon(
-                      onPressed: _openProfessionalFlow,
-                      icon: const Icon(Icons.navigation_outlined),
-                      label: const Text('فتح شاشة التنفيذ الاحترافية'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppThemeArabic.courierPrimary,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(52),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
-                  ] else
-                    const Center(
-                      child: Text('هذا الطلب تم استلامه بواسطة مندوب آخر.'),
-                    ),
-                  if (!isFinished) const SizedBox(height: 14),
-                ],
-              );
-            }),
-        ),
+                );
+              }),
+      ),
     );
   }
 }
 
+class _OrderInfoRow extends StatelessWidget {
+  const _OrderInfoRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 90,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF7A6857),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}

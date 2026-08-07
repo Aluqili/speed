@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:get_storage/get_storage.dart'; // ✅ لإزالة الطلب من التخزين المحلي
@@ -125,8 +124,12 @@ class _CourierConfirmDeliveryScreenState
   }
 
   Future<void> _pickImage() async {
-    final picked = await ImagePicker()
-        .pickImage(source: ImageSource.camera, imageQuality: 75);
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      imageQuality: 70,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
     if (picked != null) {
       setState(() {
         _proofImage = File(picked.path);
@@ -151,14 +154,17 @@ class _CourierConfirmDeliveryScreenState
             resourceType: CloudinaryResourceType.Image),
       );
 
-      await FirebaseFunctions.instanceFor(region: 'me-central1')
-          .httpsCallable('courierUpdateOrderStage')
-          .call({
-        'orderId': widget.orderId,
-        'driverId': widget.driverId,
-        'stage': 'delivered',
-        'proofImageUrl': response.secureUrl,
-      });
+      await courierInvokeCallable(
+        'courierUpdateOrderStage',
+        {
+          'orderId': widget.orderId,
+          'driverId': widget.driverId,
+          'stage': 'delivered',
+          'proofImageUrl': response.secureUrl,
+        },
+        timeout: const Duration(seconds: 15),
+        maxAttempts: 2,
+      );
 
       // ✅ إزالة الطلب من التخزين المحلي
       final box = GetStorage();
@@ -175,7 +181,15 @@ class _CourierConfirmDeliveryScreenState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('فشل إنهاء الطلب: $e')),
+          SnackBar(
+            content: Text(
+              courierFriendlyFunctionsError(
+                e,
+                fallback:
+                    'تعذر رفع إثبات التسليم أو إنهاء الطلب. تحقق من الاتصال ثم أعد المحاولة.',
+              ),
+            ),
+          ),
         );
       }
     } finally {
@@ -185,7 +199,7 @@ class _CourierConfirmDeliveryScreenState
 
   String _generateChatId(String user1, String user2) {
     final sorted = [user1, user2]..sort();
-    return '${sorted[0]}_${sorted[1]}';
+    return '${sorted[0]}_${widget.orderId}_${sorted[1]}';
   }
 
   String _resolveClientPhone(Map<String, dynamic>? orderData) {
@@ -405,214 +419,228 @@ class _CourierConfirmDeliveryScreenState
       appBar: buildCourierAppBar('إثبات التسليم'),
       body: CourierPageBackground(
         child: _orderData == null
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _buildJourneyHeader(),
-                const SizedBox(height: 12),
-                _buildOrderDetails(_orderData!),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.black12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('👤 معلومات العميل:',
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 12),
-                      Row(children: [
-                        const Icon(Icons.person,
-                            color: AppThemeArabic.courierPrimary),
-                        const SizedBox(width: 8),
-                        Text(
-                          clientName,
-                          style: const TextStyle(
-                              fontSize: 16, color: Colors.black87),
-                        ),
-                      ]),
-                      const SizedBox(height: 10),
-                      Row(children: [
-                        const Icon(Icons.phone_rounded,
-                            color: AppThemeArabic.courierPrimary),
-                        const SizedBox(width: 8),
-                        Text(
-                          hasClientPhone
-                              ? normalizedClientPhone
-                              : 'رقم العميل غير متاح',
-                          style: const TextStyle(
-                              fontSize: 16, color: Colors.black87),
-                        ),
-                      ]),
-                      const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          GFButton(
-                            onPressed: hasClientPhone
-                                ? () => launchCourierPhoneCall(
-                                      context,
-                                      clientPhone,
-                                    )
-                                : null,
-                            text: 'اتصال',
-                            icon: const Icon(Icons.call_rounded, size: 18),
-                            size: GFSize.SMALL,
-                            color: AppThemeArabic.courierAccent,
-                            shape: GFButtonShape.pills,
-                          ),
-                          GFButton(
-                            onPressed: hasClientPhone
-                                ? () => _copyClientPhone(clientPhone)
-                                : null,
-                            text: 'نسخ الرقم',
-                            icon: const Icon(Icons.copy_rounded, size: 18),
-                            size: GFSize.SMALL,
-                            color: Colors.grey.shade700,
-                            shape: GFButtonShape.pills,
-                          ),
-                          GFButton(
-                            onPressed: () async {
-                              if (clientId.isEmpty) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content: Text(
-                                          'لا يمكن فتح الدردشة لعدم توفر معرف العميل')),
-                                );
-                                return;
-                              }
-                              final doc = await FirebaseFirestore.instance
-                                  .collection('drivers')
-                                  .doc(widget.driverId)
-                                  .get();
-                              final driverName =
-                                  doc.data()?['name'] ?? 'مندوب';
-                              if (!mounted) return;
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ChatScreen(
-                                    currentUserId: widget.driverId,
-                                    otherUserId: clientId,
-                                    currentUserRole: 'driver',
-                                    chatId:
-                                        _generateChatId(widget.driverId, clientId),
-                                    currentUserName: driverName,
-                                  ),
-                                ),
-                              );
-                            },
-                            text: 'دردشة داخل التطبيق',
-                            icon: const Icon(Icons.chat, size: 18),
-                            size: GFSize.SMALL,
-                            color: AppThemeArabic.courierPrimary,
-                            shape: GFButtonShape.pills,
-                          ),
-                        ],
-                      )
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isPaid ? Colors.green.shade50 : Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    isPaid
-                        ? '✅ حالة الدفع: تم الدفع مسبقًا'
-                        : 'تنبيه: حالة الدفع لم تتم بعد — يجب تحصيل $total ج.س',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color:
-                          isPaid ? Colors.green.shade700 : Colors.red.shade700,
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _buildJourneyHeader(),
+                  const SizedBox(height: 12),
+                  _buildOrderDetails(_orderData!),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.black12),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.black12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '📸 إثبات التسليم',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      _proofImage != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: Image.file(_proofImage!),
-                            )
-                          : const Text(
-                              'لم يتم اختيار صورة بعد',
-                              style: TextStyle(color: Colors.black87),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('👤 معلومات العميل:',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 12),
+                        Row(children: [
+                          const Icon(Icons.person,
+                              color: AppThemeArabic.courierPrimary),
+                          const SizedBox(width: 8),
+                          Text(
+                            clientName,
+                            style: const TextStyle(
+                                fontSize: 16, color: Colors.black87),
+                          ),
+                        ]),
+                        const SizedBox(height: 10),
+                        Row(children: [
+                          const Icon(Icons.phone_rounded,
+                              color: AppThemeArabic.courierPrimary),
+                          const SizedBox(width: 8),
+                          Text(
+                            hasClientPhone
+                                ? normalizedClientPhone
+                                : 'رقم العميل غير متاح',
+                            style: const TextStyle(
+                                fontSize: 16, color: Colors.black87),
+                          ),
+                        ]),
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            GFButton(
+                              onPressed: hasClientPhone
+                                  ? () => launchCourierPhoneCall(
+                                        context,
+                                        clientPhone,
+                                      )
+                                  : null,
+                              text: 'اتصال',
+                              icon: const Icon(Icons.call_rounded, size: 18),
+                              size: GFSize.SMALL,
+                              color: AppThemeArabic.courierAccent,
+                              shape: GFButtonShape.pills,
                             ),
+                            GFButton(
+                              onPressed: hasClientPhone
+                                  ? () => _copyClientPhone(clientPhone)
+                                  : null,
+                              text: 'نسخ الرقم',
+                              icon: const Icon(Icons.copy_rounded, size: 18),
+                              size: GFSize.SMALL,
+                              color: Colors.grey.shade700,
+                              shape: GFButtonShape.pills,
+                            ),
+                            GFButton(
+                              onPressed: () async {
+                                if (clientId.isEmpty) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text(
+                                            'لا يمكن فتح الدردشة لعدم توفر معرف العميل')),
+                                  );
+                                  return;
+                                }
+                                final doc = await FirebaseFirestore.instance
+                                    .collection('drivers')
+                                    .doc(widget.driverId)
+                                    .get();
+                                final driverName =
+                                    doc.data()?['name'] ?? 'مندوب';
+                                if (!mounted) return;
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ChatScreen(
+                                      currentUserId: widget.driverId,
+                                      otherUserId: clientId,
+                                      currentUserRole: 'driver',
+                                      chatId: _generateChatId(
+                                          widget.driverId, clientId),
+                                      currentUserName: driverName,
+                                    ),
+                                  ),
+                                );
+                              },
+                              text: 'دردشة داخل التطبيق',
+                              icon: const Icon(Icons.chat, size: 18),
+                              size: GFSize.SMALL,
+                              color: AppThemeArabic.courierPrimary,
+                              shape: GFButtonShape.pills,
+                            ),
+                          ],
+                        )
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isPaid ? Colors.green.shade50 : Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      isPaid
+                          ? '✅ حالة الدفع: تم الدفع مسبقًا'
+                          : 'تنبيه: حالة الدفع لم تتم بعد — يجب تحصيل $total ج.س',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isPaid
+                            ? Colors.green.shade700
+                            : Colors.red.shade700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.black12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '📸 إثبات التسليم',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _proofImage != null
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: Image.file(
+                                  _proofImage!,
+                                  height: 220,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : const Text(
+                                'لم يتم اختيار صورة بعد',
+                                style: TextStyle(color: Colors.black87),
+                              ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GFButton(
+                          onPressed: _uploading ? null : _pickImage,
+                          text: 'اختيار الصورة',
+                          icon: const Icon(Icons.camera_alt),
+                          color: AppThemeArabic.courierPrimary,
+                          fullWidthButton: true,
+                          shape: GFButtonShape.pills,
+                          size: GFSize.LARGE,
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Tajawal',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: GFButton(
+                          onPressed: _uploading ? null : _uploadAndFinish,
+                          text: _uploading ? 'جاري الرفع...' : 'إنهاء الطلب',
+                          icon: _uploading
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.done),
+                          color: AppThemeArabic.courierAccent,
+                          fullWidthButton: true,
+                          shape: GFButtonShape.pills,
+                          size: GFSize.LARGE,
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Tajawal',
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: GFButton(
-                        onPressed: _uploading ? null : _pickImage,
-                        text: 'اختيار الصورة',
-                        icon: const Icon(Icons.camera_alt),
-                        color: AppThemeArabic.courierPrimary,
-                        fullWidthButton: true,
-                        shape: GFButtonShape.pills,
-                        size: GFSize.LARGE,
-                        textStyle: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'Tajawal',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: GFButton(
-                        onPressed: _uploading ? null : _uploadAndFinish,
-                        text: _uploading ? 'جاري الرفع...' : 'إنهاء الطلب',
-                        icon: const Icon(Icons.done),
-                        color: AppThemeArabic.courierAccent,
-                        fullWidthButton: true,
-                        shape: GFButtonShape.pills,
-                        size: GFSize.LARGE,
-                        textStyle: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'Tajawal',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-        ),
+                ],
+              ),
+      ),
     );
   }
 }
-

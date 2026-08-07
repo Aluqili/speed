@@ -716,6 +716,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
           List<Map<String, dynamic>>.from(orderData['items'] ?? const []);
       final baseTotal = (orderData['totalWithDelivery'] as num?)?.toDouble() ??
           (subtotal + deliveryFee + largeOrderFee);
+      final autoOfferId = (orderData['autoOfferId'] ?? '').toString();
+      final autoOfferTitle = (orderData['autoOfferTitle'] ?? '').toString();
+      final autoOfferSummary =
+          (orderData['autoOfferSummary'] ?? '').toString();
+      // يُحسب فقط للطلب الجديد (غير المنشأ بعد)، فالطلب القائم بالفعل
+      // لديه الخصم مطبقًا بالفعل ضمن totalWithDelivery
+      final autoOfferDiscountAmount = widget.orderId == null
+          ? ((orderData['autoOfferDiscountAmount'] as num?)?.toDouble() ?? 0.0)
+          : 0.0;
 
       String generatedOrderCode = formatUnifiedOrderCode(
         orderNumber: orderData['orderNumber'],
@@ -750,7 +759,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
           ? ((redeemedPromo['totalAfterDiscount'] as num?)?.toDouble() ??
               (baseTotal -
                   ((redeemedPromo['discountAmount'] as num?)?.toDouble() ?? 0)))
-          : baseTotal;
+          : (autoOfferDiscountAmount > 0
+              ? (baseTotal - autoOfferDiscountAmount < 0
+                  ? 0.0
+                  : baseTotal - autoOfferDiscountAmount)
+              : baseTotal);
 
       double walletBalance = 0.0;
       if (clientId.isNotEmpty) {
@@ -834,6 +847,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
           draft['promocode'] = redeemedPromo['promo'];
           draft['totalBeforeDiscount'] = draftBaseTotal;
           draft['totalWithDelivery'] = finalTotal < 0 ? 0 : finalTotal;
+          draft.remove('autoOfferDiscountAmount');
+          draft.remove('autoOfferId');
+          draft.remove('autoOfferTitle');
+          draft.remove('autoOfferSummary');
+        } else if (autoOfferDiscountAmount > 0) {
+          final draftBaseTotal =
+              ((draft['totalWithDelivery'] as num?)?.toDouble() ?? 0);
+          final finalTotal = draftBaseTotal - autoOfferDiscountAmount;
+          draft['discountAmount'] = autoOfferDiscountAmount;
+          draft['autoOfferId'] = autoOfferId;
+          draft['autoOfferTitle'] = autoOfferTitle;
+          draft['autoOfferSummary'] = autoOfferSummary;
+          draft['totalBeforeDiscount'] = draftBaseTotal;
+          draft['totalWithDelivery'] = finalTotal < 0 ? 0 : finalTotal;
         }
         draft.addAll(walletFields);
         draft['createdAt'] = FieldValue.serverTimestamp();
@@ -889,12 +916,29 @@ class _PaymentScreenState extends State<PaymentScreen> {
           'discountAmount': redeemedPromo['discountAmount'],
           'discountCode': redeemedPromo['code'],
           'promocode': redeemedPromo['promo'],
+          'autoOfferId': FieldValue.delete(),
+          'autoOfferTitle': FieldValue.delete(),
+          'autoOfferSummary': FieldValue.delete(),
           'totalBeforeDiscount':
               (orderData['totalWithDelivery'] as num?)?.toDouble() ?? 0,
           'totalWithDelivery': (redeemedPromo['totalAfterDiscount'] as num?)
                   ?.toDouble() ??
               (((orderData['totalWithDelivery'] as num?)?.toDouble() ?? 0) -
                   ((redeemedPromo['discountAmount'] as num?)?.toDouble() ?? 0)),
+        } else if (autoOfferDiscountAmount > 0) ...{
+          'discountAmount': autoOfferDiscountAmount,
+          'autoOfferId': autoOfferId,
+          'autoOfferTitle': autoOfferTitle,
+          'autoOfferSummary': autoOfferSummary,
+          'totalBeforeDiscount':
+              (orderData['totalWithDelivery'] as num?)?.toDouble() ?? 0,
+          'totalWithDelivery':
+              (((orderData['totalWithDelivery'] as num?)?.toDouble() ?? 0) -
+                      autoOfferDiscountAmount) <
+                  0
+              ? 0
+              : (((orderData['totalWithDelivery'] as num?)?.toDouble() ?? 0) -
+                  autoOfferDiscountAmount),
         },
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -971,6 +1015,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     required double largeOrderFee,
     required double totalWithDelivery,
     required num discount,
+    String? discountLabel,
     required double walletRequestedAmount,
     required double walletBalance,
     required double amountDueAfterWallet,
@@ -998,7 +1043,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             _summaryRow('رسوم الخدمة',
                 '${largeOrderFee.toStringAsFixed(2)} ج.س'),
           if (discount > 0)
-            _summaryRow('خصم الرمز الترويجي',
+            _summaryRow(discountLabel ?? 'خصم الرمز الترويجي',
                 '-${discount.toString()} ج.س',
                 valueColor: Colors.green),
           if (walletRequestedAmount > 0)
@@ -1046,9 +1091,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
         final deliveryFee = (data['deliveryFee'] as num).toDouble();
         final largeOrderFee =
             (data['largeOrderFee'] as num?)?.toDouble() ?? 0.0;
+        // خصم العرض يُطبّق فقط قبل إنشاء الطلب (منعًا للخصم المزدوج على طلب محفوظ طبّق الخصم بالفعل)
+        final autoOfferDiscount = widget.orderId != null
+            ? 0.0
+            : ((data['autoOfferDiscountAmount'] as num?)?.toDouble() ?? 0.0);
+        final autoOfferTitle = (data['autoOfferTitle'] ?? '').toString();
+        final effectiveDiscount =
+            _discount > 0 ? _discount : autoOfferDiscount;
         num totalWithDelivery = (data['totalWithDelivery'] as num).toDouble();
-        if (_discount > 0) {
-          totalWithDelivery -= _discount;
+        if (effectiveDiscount > 0) {
+          totalWithDelivery -= effectiveDiscount;
           if (totalWithDelivery < 0) totalWithDelivery = 0;
         }
         final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
@@ -1115,7 +1167,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         deliveryFee: deliveryFee,
                         largeOrderFee: largeOrderFee,
                         totalWithDelivery: totalWithDelivery.toDouble(),
-                        discount: _discount,
+                        discount: effectiveDiscount,
+                        discountLabel: _discount > 0
+                            ? 'خصم الرمز الترويجي'
+                            : (autoOfferTitle.isNotEmpty
+                                ? 'خصم عرض: $autoOfferTitle'
+                                : 'خصم العرض'),
                         walletRequestedAmount: walletRequestedAmount,
                         walletBalance: walletBalance,
                         amountDueAfterWallet: amountDueAfterWallet,

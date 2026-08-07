@@ -11,11 +11,10 @@ const DEPLOY_MARKER_NODE22 = '2026-02-23-node22';
 const REGION = 'me-central1';
 const SCHEDULE_REGION = 'us-central1';
 
-const COURIER_OFFER_TIMEOUT_SECONDS = 40;
 const ASSIGNMENT_CYCLE_RESET_SECONDS = 120;
 const MAX_DRIVER_RESTAURANT_DISTANCE_KM = 20;
-const MAX_COURIER_BROADCAST_DRIVERS = 30;
-const BOOTSTRAP_ADMIN_EMAILS = ['admin@speedstar.com', 'speedstarapp0@gmail.com'];
+const MAX_ASSIGNMENT_DRIVER_SCAN = 500;
+const BOOTSTRAP_ADMIN_EMAILS = ['admin@speedstar.com', 'speedstarapp0@gmail.com', 'aluqili7@gmail.com'];
 const ADMIN_PERMISSION_KEYS = [
   'dashboard',
   'finance',
@@ -65,6 +64,10 @@ const DEFAULT_PRICING_CONFIG = {
 
 let pricingRemoteConfigCache = {
   value: DEFAULT_PRICING_CONFIG,
+  expiresAtMillis: 0,
+};
+let courierDelayReminderConfigCache = {
+  value: null,
   expiresAtMillis: 0,
 };
 
@@ -214,6 +217,48 @@ function createTemporaryPassword() {
   return `${crypto.randomBytes(6).toString('base64url')}Aa1!`;
 }
 
+function normalizeDeliveryTimeValue(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+exports.syncRestaurantDeliveryTimeFields = onDocumentUpdated(
+  {
+    region: REGION,
+    document: 'restaurants/{restaurantId}',
+  },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+    const restaurantRef = event.data?.after?.ref;
+    if (!restaurantRef) return;
+
+    const afterDelivery = normalizeDeliveryTimeValue(after.deliveryTime);
+    const afterEstimated = normalizeDeliveryTimeValue(after.estimatedDeliveryTime);
+    const beforeDelivery = normalizeDeliveryTimeValue(before.deliveryTime);
+    const beforeEstimated = normalizeDeliveryTimeValue(before.estimatedDeliveryTime);
+
+    // Prefer current value from either field; if both got cleared unexpectedly, restore previous known value.
+    const finalValue = afterDelivery || afterEstimated || beforeDelivery || beforeEstimated;
+    if (!finalValue) return;
+
+    const alreadySynced = afterDelivery === finalValue && afterEstimated === finalValue;
+    if (alreadySynced) return;
+
+    await restaurantRef.set(
+      {
+        deliveryTime: finalValue,
+        estimatedDeliveryTime: finalValue,
+      },
+      { merge: true }
+    );
+
+    logger.info('Restaurant delivery time fields synced', {
+      restaurantId: event.params?.restaurantId || '',
+      finalValue,
+    });
+  }
+);
+
 function isStaticAdminEmail(email) {
   return BOOTSTRAP_ADMIN_EMAILS.includes(String(email || '').toLowerCase().trim());
 }
@@ -289,6 +334,7 @@ function buildNotificationPayload({
   type = 'manual',
   source = 'admin-web',
   orderId = null,
+  tone = '',
   extra = {},
 }) {
   return {
@@ -297,6 +343,7 @@ function buildNotificationPayload({
     type,
     source,
     orderId,
+    tone,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     timestamp: admin.firestore.FieldValue.serverTimestamp(),
     ...extra,
@@ -525,13 +572,32 @@ async function sendTelegramPaymentReviewAlert(orderId, after) {
 async function sendTelegramWalletRechargeAlert(rechargeId, data) {
   if (!rechargeId) return;
 
-  await sendTelegramOpsAlert('طلب شحن محفظة جديد', [
-    `رقم الطلب: ${rechargeId}`,
-    `العميل: ${String(data.clientName || data.clientId || 'غير معروف')}`,
-    `المبلغ: ${formatTelegramMoney(data.amount || 0)}`,
-    `طريقة الدفع: ${String(data.method || data.paymentMethod || '-').trim() || '-'}`,
-    'الحالة: الطلب بانتظار المراجعة في القسم المالي.',
-  ], { category: 'finance' });
+  const clientName = String(data.clientName || data.clientId || 'غير معروف').trim();
+  const paymentMethod = String(data.method || data.paymentMethod || '-').trim() || '-';
+  const transactionReference = String(data.transactionReference || data.reference || '-').trim() || '-';
+  const proofImageUrl = String(data.proofImageUrl || data.imageUrl || '').trim();
+
+  const htmlLines = [
+    'تم استلام إيصال شحن محفظة جديد ويحتاج مراجعة مالية من لوحة الأدمن.',
+    '',
+    `<b>رقم الطلب:</b> ${escapeTelegramHtml(rechargeId)}`,
+    `<b>العميل:</b> ${escapeTelegramHtml(clientName)}`,
+    `<b>المبلغ:</b> ${escapeTelegramHtml(formatTelegramMoney(data.amount || 0))}`,
+    `<b>طريقة الدفع:</b> ${escapeTelegramHtml(paymentMethod)}`,
+    `<b>مرجع العملية:</b> ${escapeTelegramHtml(transactionReference)}`,
+    '',
+    'الحالة الحالية: بانتظار المراجعة المالية.',
+  ];
+  const htmlCaption = `<b>تنبيه مراجعة إيصال شحن محفظة</b>\n${htmlLines.join('\n')}`;
+
+  if (proofImageUrl) {
+    const photoResult = await sendTelegramPhotoHtml(proofImageUrl, htmlCaption, { category: 'finance' });
+    if (!photoResult.failed) {
+      return;
+    }
+  }
+
+  await sendTelegramMessageHtml(`${htmlCaption}\n<b>رابط الإيصال:</b> ${escapeTelegramHtml(proofImageUrl || '-')}`, { category: 'finance' });
 }
 
 function roleCollectionRef(normalizedRole) {
@@ -588,18 +654,19 @@ function notificationPayloadToData(payload, role, userId) {
   const notificationType = String(payload?.type || '').trim().toLowerCase();
   const tone = String(payload?.tone || '').trim().toLowerCase();
   const normalizedRole = String(role || '').trim().toLowerCase();
+  const storeOrdersChannelId = 'speedstar_store_orders_incoming_v7';
+  const sharedOrdersChannelId = 'speedstar_orders_incoming_v4';
+  // اعتماد الطلب (courier_assigned) تأكيد وليس عرضًا جديدًا، فلا يُصنَّف كإشعار عاجل.
   const isUrgentNotification =
-    tone === 'urgent' ||
-    (normalizedRole === 'store' && (
-      notificationType === 'store_new_order' ||
-      notificationType === 'store_courier_assigned'
-    )) ||
-    (normalizedRole === 'courier' && notificationType === 'courier_assigned');
+    (tone === 'urgent' ||
+      (normalizedRole === 'store' && notificationType === 'store_new_order') ||
+      (normalizedRole === 'courier' && notificationType === 'courier_offer_pending')) &&
+    notificationType !== 'courier_assigned';
   const androidChannelId = normalizedRole === 'client'
     ? 'speedstar_client_alerts_v3'
-    : isUrgentNotification && normalizedRole === 'store'
-    ? 'speedstar_store_orders_incoming_v6'
-    : 'speedstar_alerts';
+    : isUrgentNotification
+      ? (normalizedRole === 'store' ? storeOrdersChannelId : sharedOrdersChannelId)
+      : 'speedstar_alerts';
 
   return {
     title: String(payload.title || ''),
@@ -611,6 +678,7 @@ function notificationPayloadToData(payload, role, userId) {
     chatId: payload.chatId ? String(payload.chatId) : '',
     senderId: payload.senderId ? String(payload.senderId) : '',
     senderType: payload.senderType ? String(payload.senderType) : '',
+    imageUrl: payload.imageUrl ? String(payload.imageUrl) : '',
     tone,
     audience: String(role || ''),
     userId: String(userId || ''),
@@ -632,16 +700,19 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
 
   const notificationType = String(payload?.type || '').trim().toLowerCase();
   const tone = String(payload?.tone || '').trim().toLowerCase();
+  const hasRichMedia = Boolean(String(payload?.imageUrl || '').trim());
   const isUrgentTone = tone === 'urgent';
   const storeOrdersChannelId = 'speedstar_store_orders_incoming_v7';
-  const sharedOrdersChannelId = 'speedstar_orders_incoming_v2';
+  const sharedOrdersChannelId = 'speedstar_orders_incoming_v4';
+  // اعتماد الطلب (courier_assigned) تأكيد وليس عرضًا جديدًا، فلا يُصنَّف كإشعار عاجل.
   const isUrgentNotification =
-    isUrgentTone ||
-    (normalizedRole === 'store' && (
-      notificationType === 'store_new_order' ||
-      notificationType === 'store_courier_assigned'
-    )) ||
-    (normalizedRole === 'courier' && notificationType === 'courier_assigned');
+    (isUrgentTone ||
+      (normalizedRole === 'store' && notificationType === 'store_new_order') ||
+      (normalizedRole === 'courier' && notificationType === 'courier_offer_pending')) &&
+    notificationType !== 'courier_assigned';
+  const isCourierOffer =
+    normalizedRole === 'courier' &&
+    notificationType === 'courier_offer_pending';
   const androidChannelId = normalizedRole === 'client'
     ? 'speedstar_client_alerts_v3'
     : isUrgentNotification
@@ -653,12 +724,13 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
     data: notificationPayloadToData(payload, normalizedRole, userId),
     android: {
       priority: 'high',
-      ttl: 30000,
+      ttl: isCourierOffer ? 120000 : 30000,
       notification: {
         channelId: androidChannelId,
-        icon: 'ic_notification',
+        icon: 'ic_stat_speedstar',
         color: '#FF6B00',
         clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        ...(hasRichMedia ? { imageUrl: String(payload.imageUrl).trim() } : {}),
       },
     },
     apns: {
@@ -673,19 +745,21 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
           },
           sound: 'default',
           contentAvailable: true,
+          ...(hasRichMedia ? { mutableContent: true } : {}),
         },
       },
+      ...(hasRichMedia ? { fcmOptions: { imageUrl: String(payload.imageUrl).trim() } } : {}),
     },
   };
 
-  if (!(normalizedRole === 'store' && isUrgentNotification)) {
+  if (!hasRichMedia && !(normalizedRole === 'store' && isUrgentNotification)) {
     message.notification = {
       title: String(payload.title || ''),
       body: String(payload.body || ''),
     };
   }
 
-  if (!(normalizedRole === 'store' && isUrgentNotification)) {
+  if (!hasRichMedia && !(normalizedRole === 'store' && isUrgentNotification)) {
     message.android.notification = {
       channelId: androidChannelId,
       visibility: 'public',
@@ -698,6 +772,8 @@ async function sendPushToUser(normalizedRole, userId, userDocData, payload) {
       message.android.notification.sound = 'default';
     } else if (isUrgentNotification) {
       message.android.notification.sound = 'incoming_order';
+      message.android.notification.notificationPriority = 'PRIORITY_MAX';
+      message.android.notification.defaultVibrateTimings = true;
     }
   }
 
@@ -744,7 +820,12 @@ async function sendNotificationToSingleUser(role, userId, payload) {
   if (!roleRef || !writePayload) return 0;
 
   const userDoc = await roleRef.doc(uid).get();
-  await writePayload.ref.set(writePayload.data);
+  const notificationType = String(payload?.type || '').trim().toLowerCase();
+  const isCourierOffer =
+    normalizedRole === 'courier' && notificationType === 'courier_offer_pending';
+  if (!isCourierOffer) {
+    await writePayload.ref.set(writePayload.data);
+  }
   return await sendPushToUser(normalizedRole, uid, userDoc.data() || {}, payload);
 }
 
@@ -1056,6 +1137,12 @@ function normalizeOrderStatusForNotification(raw) {
   };
   return map[status] || status;
 }
+
+function isStoreRejectedStatus(statusValue) {
+  const normalized = String(statusValue || '').trim().toLowerCase();
+  return normalized === 'store_rejected' || normalized === 'rejected_by_store';
+}
+
 function getStatus(order) {
   return String(order.orderStatus || order.status || '').trim();
 }
@@ -1247,7 +1334,16 @@ function evaluatePromocode(promo, context, userId) {
 
 const STORE_OFFER_SCOPE_VALUES = new Set(['order_total', 'delivery_fee', 'specific_items']);
 const STORE_OFFER_TYPE_VALUES = new Set(['percent', 'fixed']);
+const STORE_OFFER_KIND_VALUES = new Set([
+  'discount',
+  'buy_x_get_y',
+  'bundle_price',
+  'nth_item_percent',
+  'spend_x_get_percent',
+]);
 const STORE_OFFER_ADMIN_ACTIONS = new Set(['approve', 'reject', 'activate', 'deactivate']);
+const ACTIVE_STORE_OFFERS_CACHE = new Map();
+const ACTIVE_STORE_OFFERS_CACHE_TTL_MS = 30 * 1000;
 
 function parseOptionalTimestampInput(rawValue, fieldName, { required = false } = {}) {
   if (rawValue == null || rawValue === '') {
@@ -1281,13 +1377,146 @@ function normalizeStoreOfferTargetItems(rawItems) {
     .slice(0, 25);
 }
 
+function normalizeStoreOfferKind(rawKind) {
+  const kind = String(rawKind || '').trim().toLowerCase();
+  if (STORE_OFFER_KIND_VALUES.has(kind)) return kind;
+  return 'discount';
+}
+
+function normalizeStoreOfferRule(rawRule, fallback = {}) {
+  const input = rawRule && typeof rawRule === 'object' ? rawRule : {};
+  const ruleType = normalizeStoreOfferKind(input.type || fallback.kind || 'discount');
+  const buyQty = Math.max(1, Math.floor(toSafeNumber(input.buyQty, 1)));
+  const freeQty = Math.max(1, Math.floor(toSafeNumber(input.freeQty, 1)));
+  const bundleQty = Math.max(2, Math.floor(toSafeNumber(input.bundleQty, 2)));
+  const bundlePrice = Math.max(0, toSafeNumber(input.bundlePrice, 0));
+  const nthQty = Math.max(2, Math.floor(toSafeNumber(input.nthQty, 2)));
+  const percentOff = Math.max(1, Math.min(100, toSafeNumber(input.percentOff, 50)));
+  const minSpend = Math.max(0, toSafeNumber(input.minSpend, 0));
+  const applyOn = String(input.applyOn || fallback.applyOn || 'same_item').trim().toLowerCase();
+
+  return {
+    type: ruleType,
+    applyOn,
+    buyQty,
+    freeQty,
+    bundleQty,
+    bundlePrice,
+    nthQty,
+    percentOff,
+    minSpend,
+  };
+}
+
+function validateStoreOfferInput({
+  offerKind,
+  offerRule,
+  discountScope,
+  discountType,
+  discountValue,
+  targetItems,
+  startsAt,
+  endsAt,
+}) {
+  if (endsAt.toMillis() <= startsAt.toMillis()) {
+    throw new HttpsError('invalid-argument', 'offer.endsAt must be after offer.startsAt');
+  }
+
+  if (offerKind === 'discount') {
+    if (!STORE_OFFER_SCOPE_VALUES.has(discountScope)) {
+      throw new HttpsError('invalid-argument', 'offer.discountScope is invalid');
+    }
+    if (!STORE_OFFER_TYPE_VALUES.has(discountType)) {
+      throw new HttpsError('invalid-argument', 'offer.discountType is invalid');
+    }
+    if (discountValue <= 0) {
+      throw new HttpsError('invalid-argument', 'offer.discountValue must be greater than zero');
+    }
+    if (discountScope === 'specific_items' && targetItems.length === 0) {
+      throw new HttpsError('invalid-argument', 'offer.targetItems is required for specific_items offers');
+    }
+    return;
+  }
+
+  if (offerKind === 'buy_x_get_y') {
+    if (targetItems.length === 0) {
+      throw new HttpsError('invalid-argument', 'offer.targetItems is required for buy_x_get_y');
+    }
+    if (offerRule.buyQty <= 0 || offerRule.freeQty <= 0) {
+      throw new HttpsError('invalid-argument', 'buy_x_get_y requires positive buyQty and freeQty');
+    }
+    return;
+  }
+
+  if (offerKind === 'bundle_price') {
+    if (targetItems.length === 0) {
+      throw new HttpsError('invalid-argument', 'offer.targetItems is required for bundle_price');
+    }
+    if (offerRule.bundleQty < 2) {
+      throw new HttpsError('invalid-argument', 'bundle_price requires bundleQty >= 2');
+    }
+    return;
+  }
+
+  if (offerKind === 'nth_item_percent') {
+    if (targetItems.length === 0) {
+      throw new HttpsError('invalid-argument', 'offer.targetItems is required for nth_item_percent');
+    }
+    if (offerRule.nthQty < 2 || offerRule.percentOff <= 0) {
+      throw new HttpsError('invalid-argument', 'nth_item_percent requires nthQty >= 2 and percentOff > 0');
+    }
+    return;
+  }
+
+  if (offerKind === 'spend_x_get_percent') {
+    if (offerRule.minSpend <= 0 || offerRule.percentOff <= 0) {
+      throw new HttpsError('invalid-argument', 'spend_x_get_percent requires minSpend > 0 and percentOff > 0');
+    }
+    return;
+  }
+
+  throw new HttpsError('invalid-argument', 'offer.offerKind is invalid');
+}
+
 function buildStoreOfferSummaryText(offer) {
+  const offerKind = normalizeStoreOfferKind(offer.offerKind || offer.offerRule?.type || 'discount');
+  const offerRule = normalizeStoreOfferRule(offer.offerRule || offer.rule || {}, {
+    kind: offerKind,
+  });
   const scope = String(offer.discountScope || '').trim();
   const discountType = String(offer.discountType || '').trim();
   const discountValue = Math.max(0, toSafeNumber(offer.discountValue));
   const maxDiscount = Math.max(0, toSafeNumber(offer.maxDiscount));
   const minOrder = Math.max(0, toSafeNumber(offer.minOrder));
   const targetItems = normalizeStoreOfferTargetItems(offer.targetItems || []);
+
+  if (offerKind === 'buy_x_get_y') {
+    const buyQty = Math.max(1, offerRule.buyQty);
+    const freeQty = Math.max(1, offerRule.freeQty);
+    const itemNames = targetItems.map((item) => item.name).filter(Boolean).slice(0, 2);
+    const itemText = itemNames.length > 0 ? ` على ${itemNames.join(' و ')}` : '';
+    return `اشترِ ${buyQty} وخذ ${freeQty} مجانًا${itemText}`;
+  }
+
+  if (offerKind === 'bundle_price') {
+    const bundleQty = Math.max(2, offerRule.bundleQty);
+    const bundlePrice = Math.max(0, Math.round(offerRule.bundlePrice));
+    const itemNames = targetItems.map((item) => item.name).filter(Boolean).slice(0, 2);
+    const itemText = itemNames.length > 0 ? ` (${itemNames.join(' و ')})` : '';
+    return `${bundleQty} بسعر ${bundlePrice} ج.س${itemText}`;
+  }
+
+  if (offerKind === 'nth_item_percent') {
+    const nthQty = Math.max(2, offerRule.nthQty);
+    const percentOff = Math.max(1, Math.min(100, Math.round(offerRule.percentOff)));
+    return `خصم ${percentOff}% على كل قطعة رقم ${nthQty}`;
+  }
+
+  if (offerKind === 'spend_x_get_percent') {
+    const minSpend = Math.max(0, Math.round(offerRule.minSpend));
+    const percentOff = Math.max(1, Math.min(100, Math.round(offerRule.percentOff)));
+    return `خصم ${percentOff}% عند الشراء فوق ${minSpend} ج.س`;
+  }
 
   let discountText = discountType === 'percent'
     ? `خصم ${discountValue}%`
@@ -1352,6 +1581,10 @@ async function syncRestaurantOfferSummary(restaurantId) {
     imageUrl: String(offer.imageUrl || '').trim(),
     badgeText: String(offer.badgeText || '').trim(),
     summaryText: String(offer.summaryText || buildStoreOfferSummaryText(offer)).trim(),
+    offerKind: normalizeStoreOfferKind(offer.offerKind || offer.offerRule?.type || 'discount'),
+    offerRule: normalizeStoreOfferRule(offer.offerRule || offer.rule || {}, {
+      kind: offer.offerKind || offer.offerRule?.type || 'discount',
+    }),
     discountScope: String(offer.discountScope || '').trim(),
     discountType: String(offer.discountType || '').trim(),
     discountValue: toSafeNumber(offer.discountValue),
@@ -1375,99 +1608,346 @@ async function syncRestaurantOfferSummary(restaurantId) {
   }, { merge: true });
 }
 
+function normalizeOfferCartItems(itemsRaw) {
+  if (!Array.isArray(itemsRaw)) return [];
+  return itemsRaw
+    .map((item) => ({
+      // client cart lines carry the real menu doc id as menuItemId (id is only a per-cart-line key)
+      itemId: String(item?.itemId || item?.menuItemId || item?.id || '').trim(),
+      name: String(item?.name || item?.itemName || '').trim(),
+      price: Math.max(0, toSafeNumber(item?.price)),
+      quantity: Math.max(0, Math.floor(toSafeNumber(item?.quantity))),
+    }))
+    .filter((item) => item.quantity > 0 && item.price >= 0);
+}
+
+function isOfferTargetItem(cartItem, targetItems) {
+  if (!targetItems.length) return true;
+  const itemId = String(cartItem.itemId || '').trim();
+  const name = String(cartItem.name || '').trim().toLowerCase();
+  return targetItems.some((target) => {
+    const targetId = String(target.itemId || '').trim();
+    const targetName = String(target.name || '').trim().toLowerCase();
+    return (targetId && itemId && targetId === itemId) || (targetName && name && targetName === name);
+  });
+}
+
+function evaluateStoreOfferDiscountForOrder(offer, orderTotals, orderItems) {
+  const offerKind = normalizeStoreOfferKind(offer.offerKind || offer.offerRule?.type || 'discount');
+  const offerRule = normalizeStoreOfferRule(offer.offerRule || offer.rule || {}, {
+    kind: offerKind,
+  });
+  const targetItems = normalizeStoreOfferTargetItems(offer.targetItems || []);
+
+  const baseTotal = Math.max(0, Math.round(toSafeNumber(orderTotals.baseTotal)));
+  const subtotal = Math.max(0, Math.round(toSafeNumber(orderTotals.subtotal)));
+  const deliveryFee = Math.max(0, Math.round(toSafeNumber(orderTotals.deliveryFee)));
+  const minOrder = Math.max(0, Math.round(toSafeNumber(offer.minOrder)));
+  if (minOrder > 0 && baseTotal < minOrder) return 0;
+
+  if (offerKind === 'discount') {
+    const scope = String(offer.discountScope || 'order_total').trim().toLowerCase();
+    const type = String(offer.discountType || '').trim().toLowerCase();
+    const value = Math.max(0, toSafeNumber(offer.discountValue));
+    const maxDiscount = Math.max(0, Math.round(toSafeNumber(offer.maxDiscount)));
+
+    let discountBase = scope === 'delivery_fee' ? deliveryFee : baseTotal;
+    if (scope === 'specific_items') {
+      const targetSubtotal = orderItems
+        .filter((item) => isOfferTargetItem(item, targetItems))
+        .reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      discountBase = Math.max(0, Math.round(targetSubtotal));
+    } else if (scope !== 'delivery_fee') {
+      discountBase = subtotal > 0 ? baseTotal : discountBase;
+    }
+
+    if (discountBase <= 0) return 0;
+    let discount = type === 'percent'
+      ? Math.round((discountBase * Math.max(0, Math.min(100, value))) / 100)
+      : Math.round(value);
+    if (maxDiscount > 0) discount = Math.min(discount, maxDiscount);
+    return Math.max(0, Math.min(discount, discountBase));
+  }
+
+  if (offerKind === 'buy_x_get_y') {
+    const buyQty = Math.max(1, offerRule.buyQty);
+    const freeQty = Math.max(1, offerRule.freeQty);
+    const candidates = orderItems.filter((item) => isOfferTargetItem(item, targetItems));
+    if (!candidates.length) return 0;
+
+    if (offerRule.applyOn === 'cheapest_any') {
+      const totalQty = candidates.reduce((sum, item) => sum + item.quantity, 0);
+      const freeUnits = Math.floor(totalQty / buyQty) * freeQty;
+      if (freeUnits <= 0) return 0;
+      const cheapest = candidates.reduce((min, item) => Math.min(min, item.price), Number.POSITIVE_INFINITY);
+      if (!Number.isFinite(cheapest) || cheapest <= 0) return 0;
+      return Math.max(0, Math.round(freeUnits * cheapest));
+    }
+
+    let discount = 0;
+    for (const item of candidates) {
+      const freeUnits = Math.floor(item.quantity / buyQty) * freeQty;
+      if (freeUnits > 0 && item.price > 0) {
+        discount += Math.round(freeUnits * item.price);
+      }
+    }
+    return Math.max(0, discount);
+  }
+
+  if (offerKind === 'bundle_price') {
+    const bundleQty = Math.max(2, offerRule.bundleQty);
+    const bundlePrice = Math.max(0, toSafeNumber(offerRule.bundlePrice));
+    const candidates = orderItems.filter((item) => isOfferTargetItem(item, targetItems));
+    if (!candidates.length) return 0;
+    let discount = 0;
+    for (const item of candidates) {
+      const sets = Math.floor(item.quantity / bundleQty);
+      if (sets <= 0) continue;
+      const regular = sets * bundleQty * item.price;
+      const promo = sets * bundlePrice;
+      const itemDiscount = Math.max(0, Math.round(regular - promo));
+      discount += itemDiscount;
+    }
+    return Math.max(0, discount);
+  }
+
+  if (offerKind === 'nth_item_percent') {
+    const nthQty = Math.max(2, offerRule.nthQty);
+    const percentOff = Math.max(1, Math.min(100, toSafeNumber(offerRule.percentOff)));
+    const candidates = orderItems.filter((item) => isOfferTargetItem(item, targetItems));
+    if (!candidates.length) return 0;
+    let discount = 0;
+    for (const item of candidates) {
+      const discountedUnits = Math.floor(item.quantity / nthQty);
+      if (discountedUnits <= 0) continue;
+      discount += Math.round((discountedUnits * item.price * percentOff) / 100);
+    }
+    return Math.max(0, discount);
+  }
+
+  if (offerKind === 'spend_x_get_percent') {
+    const minSpend = Math.max(0, toSafeNumber(offerRule.minSpend));
+    const percentOff = Math.max(1, Math.min(100, toSafeNumber(offerRule.percentOff)));
+    if (baseTotal < minSpend) return 0;
+    const maxDiscount = Math.max(0, Math.round(toSafeNumber(offer.maxDiscount)));
+    let discount = Math.round((baseTotal * percentOff) / 100);
+    if (maxDiscount > 0) discount = Math.min(discount, maxDiscount);
+    return Math.max(0, Math.min(discount, baseTotal));
+  }
+
+  return 0;
+}
+
+async function getActiveStoreOffersForRestaurant(restaurantId) {
+  const rid = String(restaurantId || '').trim();
+  if (!rid) return [];
+  const now = Date.now();
+  const cached = ACTIVE_STORE_OFFERS_CACHE.get(rid);
+  if (cached && now - cached.cachedAtMs < ACTIVE_STORE_OFFERS_CACHE_TTL_MS) {
+    return cached.offers;
+  }
+
+  const snap = await db.collection('storeOffers').where('restaurantId', '==', rid).get();
+  const offers = snap.docs
+    .map((doc) => ({ id: doc.id, ...doc.data() }))
+    .filter((offer) => isStoreOfferVisible(offer, now));
+
+  ACTIVE_STORE_OFFERS_CACHE.set(rid, {
+    cachedAtMs: now,
+    offers,
+  });
+  return offers;
+}
+
+async function resolveBestAutoStoreOffer(orderData, orderTotals) {
+  const restaurantId = String(orderData.restaurantId || '').trim();
+  if (!restaurantId) {
+    return { discountAmount: 0, appliedOffer: null };
+  }
+  const offers = await getActiveStoreOffersForRestaurant(restaurantId);
+  if (!offers.length) {
+    return { discountAmount: 0, appliedOffer: null };
+  }
+
+  const orderItems = normalizeOfferCartItems(orderData.items);
+  let best = { discount: 0, offer: null };
+
+  for (const offer of offers) {
+    const discount = evaluateStoreOfferDiscountForOrder(offer, orderTotals, orderItems);
+    if (discount > best.discount) {
+      best = { discount, offer };
+    }
+  }
+
+  if (!best.offer || best.discount <= 0) {
+    return { discountAmount: 0, appliedOffer: null };
+  }
+
+  return {
+    discountAmount: Math.max(0, Math.round(best.discount)),
+    appliedOffer: {
+      offerId: String(best.offer.id || '').trim(),
+      title: String(best.offer.title || '').trim(),
+      summaryText: String(best.offer.summaryText || buildStoreOfferSummaryText(best.offer)).trim(),
+      offerKind: normalizeStoreOfferKind(best.offer.offerKind || best.offer.offerRule?.type || 'discount'),
+      offerRule: normalizeStoreOfferRule(best.offer.offerRule || best.offer.rule || {}, {
+        kind: best.offer.offerKind || best.offer.offerRule?.type || 'discount',
+      }),
+    },
+  };
+}
+
 exports.submitStoreOfferRequest = onCall({ region: REGION }, async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Authentication is required');
+    }
+
+    const restaurantId = String(request.data?.restaurantId || '').trim();
+    if (!restaurantId) {
+      throw new HttpsError('invalid-argument', 'restaurantId is required');
+    }
+    const restaurantSnap = await db.collection('restaurants').doc(restaurantId).get();
+    if (!restaurantSnap.exists) {
+      throw new HttpsError('not-found', 'Restaurant not found');
+    }
+    const restaurantData = restaurantSnap.data() || {};
+    const restaurantOwnerUid = String(restaurantData.ownerUid || restaurantId).trim();
+    if (restaurantOwnerUid !== request.auth.uid) {
+      throw new HttpsError('permission-denied', 'This store does not belong to the current user');
+    }
+
+    const offer = request.data?.offer || {};
+    const title = String(offer.title || '').trim();
+    const description = String(offer.description || '').trim();
+    const imageUrl = String(offer.imageUrl || '').trim();
+    const badgeText = String(offer.badgeText || '').trim();
+    const offerKind = normalizeStoreOfferKind(offer.offerKind || offer.offerRule?.type || 'discount');
+    const offerRule = normalizeStoreOfferRule(offer.offerRule || offer.rule || {}, {
+      kind: offerKind,
+    });
+    const discountScope = String(offer.discountScope || '').trim();
+    const discountType = String(offer.discountType || '').trim();
+    const discountValue = Math.max(0, toSafeNumber(offer.discountValue));
+    const maxDiscount = Math.max(0, toSafeNumber(offer.maxDiscount));
+    const minOrder = Math.max(0, toSafeNumber(offer.minOrder));
+    const targetItems = normalizeStoreOfferTargetItems(offer.targetItems || []);
+    const merchantReviewNote = String(offer.merchantReviewNote || offer.reviewNote || '').trim();
+    const startsAt = parseOptionalTimestampInput(offer.startsAt, 'offer.startsAt', { required: true });
+    const endsAt = parseOptionalTimestampInput(offer.endsAt, 'offer.endsAt', { required: true });
+
+    if (!title) {
+      throw new HttpsError('invalid-argument', 'offer.title is required');
+    }
+    if (!description) {
+      throw new HttpsError('invalid-argument', 'offer.description is required');
+    }
+    validateStoreOfferInput({
+      offerKind,
+      offerRule,
+      discountScope,
+      discountType,
+      discountValue,
+      targetItems,
+      startsAt,
+      endsAt,
+    });
+
+    const summaryText = buildStoreOfferSummaryText({
+      offerKind,
+      offerRule,
+      discountScope,
+      discountType,
+      discountValue,
+      maxDiscount,
+      minOrder,
+      targetItems,
+    });
+
+    const offerRef = await db.collection('storeOffers').add({
+      restaurantId,
+      restaurantName: String(restaurantData.name || '').trim(),
+      ownerUid: restaurantOwnerUid,
+      title,
+      description,
+      imageUrl,
+      badgeText,
+      offerKind,
+      offerRule,
+      discountScope,
+      discountType,
+      discountValue,
+      maxDiscount: maxDiscount || null,
+      minOrder: minOrder || null,
+      targetItems,
+      summaryText,
+      status: 'pending',
+      isActive: false,
+      merchantReviewNote,
+      startsAt,
+      endsAt,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdByUid: request.auth.uid,
+      reviewedAt: null,
+      reviewedByUid: '',
+      reviewDecision: '',
+    });
+
+    return {
+      ok: true,
+      offerId: offerRef.id,
+    };
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    logger.error('submitStoreOfferRequest failed unexpectedly', {
+      uid: String(request.auth?.uid || ''),
+      restaurantId: String(request.data?.restaurantId || ''),
+      errorMessage: String(error?.message || error || ''),
+      offerKind: String(request.data?.offer?.offerKind || request.data?.offer?.offerRule?.type || 'discount'),
+    });
+    throw new HttpsError('internal', 'تعذر إنشاء العرض الآن. تحقق من حقول العرض وحاول مرة أخرى.');
+  }
+});
+
+exports.repairStoreOfferOwnership = onCall({ region: REGION }, async (request) => {
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Authentication is required');
   }
 
   const restaurantId = String(request.data?.restaurantId || '').trim();
-  if (!restaurantId || request.auth.uid !== restaurantId) {
-    throw new HttpsError('permission-denied', 'restaurantId must match the signed-in store');
-  }
-
-  const offer = request.data?.offer || {};
-  const title = String(offer.title || '').trim();
-  const description = String(offer.description || '').trim();
-  const imageUrl = String(offer.imageUrl || '').trim();
-  const badgeText = String(offer.badgeText || '').trim();
-  const discountScope = String(offer.discountScope || '').trim();
-  const discountType = String(offer.discountType || '').trim();
-  const discountValue = Math.max(0, toSafeNumber(offer.discountValue));
-  const maxDiscount = Math.max(0, toSafeNumber(offer.maxDiscount));
-  const minOrder = Math.max(0, toSafeNumber(offer.minOrder));
-  const targetItems = normalizeStoreOfferTargetItems(offer.targetItems || []);
-  const merchantReviewNote = String(offer.merchantReviewNote || offer.reviewNote || '').trim();
-  const startsAt = parseOptionalTimestampInput(offer.startsAt, 'offer.startsAt', { required: true });
-  const endsAt = parseOptionalTimestampInput(offer.endsAt, 'offer.endsAt', { required: true });
-
-  if (!title) {
-    throw new HttpsError('invalid-argument', 'offer.title is required');
-  }
-  if (!description) {
-    throw new HttpsError('invalid-argument', 'offer.description is required');
-  }
-  if (!STORE_OFFER_SCOPE_VALUES.has(discountScope)) {
-    throw new HttpsError('invalid-argument', 'offer.discountScope is invalid');
-  }
-  if (!STORE_OFFER_TYPE_VALUES.has(discountType)) {
-    throw new HttpsError('invalid-argument', 'offer.discountType is invalid');
-  }
-  if (discountValue <= 0) {
-    throw new HttpsError('invalid-argument', 'offer.discountValue must be greater than zero');
-  }
-  if (endsAt.toMillis() <= startsAt.toMillis()) {
-    throw new HttpsError('invalid-argument', 'offer.endsAt must be after offer.startsAt');
-  }
-  if (discountScope === 'specific_items' && targetItems.length === 0) {
-    throw new HttpsError('invalid-argument', 'offer.targetItems is required for specific_items offers');
+  if (!restaurantId) {
+    throw new HttpsError('invalid-argument', 'restaurantId is required');
   }
 
   const restaurantSnap = await db.collection('restaurants').doc(restaurantId).get();
   if (!restaurantSnap.exists) {
     throw new HttpsError('not-found', 'Restaurant not found');
   }
+  const ownerUid = String(restaurantSnap.data()?.ownerUid || restaurantId).trim();
+  if (ownerUid !== request.auth.uid) {
+    throw new HttpsError('permission-denied', 'This store does not belong to the current user');
+  }
 
-  const restaurantData = restaurantSnap.data() || {};
-  const summaryText = buildStoreOfferSummaryText({
-    discountScope,
-    discountType,
-    discountValue,
-    maxDiscount,
-    minOrder,
-    targetItems,
-  });
+  const offersSnap = await db.collection('storeOffers')
+    .where('restaurantId', '==', restaurantId)
+    .get();
+  const batch = db.batch();
+  let repairedCount = 0;
+  for (const offerDoc of offersSnap.docs) {
+    const offer = offerDoc.data() || {};
+    if (String(offer.ownerUid || '').trim() === ownerUid) continue;
+    batch.set(offerDoc.ref, {
+      ownerUid,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    repairedCount += 1;
+  }
+  if (repairedCount > 0) {
+    await batch.commit();
+  }
 
-  const offerRef = await db.collection('storeOffers').add({
-    restaurantId,
-    restaurantName: String(restaurantData.name || '').trim(),
-    title,
-    description,
-    imageUrl,
-    badgeText,
-    discountScope,
-    discountType,
-    discountValue,
-    maxDiscount: maxDiscount || null,
-    minOrder: minOrder || null,
-    targetItems,
-    summaryText,
-    status: 'pending',
-    isActive: false,
-    merchantReviewNote,
-    startsAt,
-    endsAt,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    createdByUid: request.auth.uid,
-    reviewedAt: null,
-    reviewedByUid: '',
-    reviewDecision: '',
-  });
-
-  return {
-    ok: true,
-    offerId: offerRef.id,
-  };
+  return { ok: true, repairedCount };
 });
 
 exports.reviewStoreOfferRequest = onCall({ region: REGION }, async (request) => {
@@ -1543,102 +2023,116 @@ exports.reviewStoreOfferRequest = onCall({ region: REGION }, async (request) => 
 });
 
 exports.adminCreateStoreOffer = onCall({ region: REGION }, async (request) => {
-  await ensureAdminCallable(request, 'Only admins can create store offers', 'finance');
+  try {
+    await ensureAdminCallable(request, 'Only admins can create store offers', 'finance');
 
-  const restaurantId = String(request.data?.restaurantId || '').trim();
-  if (!restaurantId) {
-    throw new HttpsError('invalid-argument', 'restaurantId is required');
-  }
+    const restaurantId = String(request.data?.restaurantId || '').trim();
+    if (!restaurantId) {
+      throw new HttpsError('invalid-argument', 'restaurantId is required');
+    }
 
-  const offer = request.data?.offer || {};
-  const title = String(offer.title || '').trim();
-  const description = String(offer.description || '').trim();
-  const imageUrl = String(offer.imageUrl || '').trim();
-  const badgeText = String(offer.badgeText || '').trim();
-  const discountScope = String(offer.discountScope || '').trim();
-  const discountType = String(offer.discountType || '').trim();
-  const discountValue = Math.max(0, toSafeNumber(offer.discountValue));
-  const maxDiscount = Math.max(0, toSafeNumber(offer.maxDiscount));
-  const minOrder = Math.max(0, toSafeNumber(offer.minOrder));
-  const targetItems = normalizeStoreOfferTargetItems(offer.targetItems || []);
-  const adminReviewNote = String(offer.adminReviewNote || offer.reviewNote || '').trim();
-  const startsAt = parseOptionalTimestampInput(offer.startsAt, 'offer.startsAt', { required: true });
-  const endsAt = parseOptionalTimestampInput(offer.endsAt, 'offer.endsAt', { required: true });
-  const isActive = offer.isActive !== false;
+    const offer = request.data?.offer || {};
+    const title = String(offer.title || '').trim();
+    const description = String(offer.description || '').trim();
+    const imageUrl = String(offer.imageUrl || '').trim();
+    const badgeText = String(offer.badgeText || '').trim();
+    const offerKind = normalizeStoreOfferKind(offer.offerKind || offer.offerRule?.type || 'discount');
+    const offerRule = normalizeStoreOfferRule(offer.offerRule || offer.rule || {}, {
+      kind: offerKind,
+    });
+    const discountScope = String(offer.discountScope || '').trim();
+    const discountType = String(offer.discountType || '').trim();
+    const discountValue = Math.max(0, toSafeNumber(offer.discountValue));
+    const maxDiscount = Math.max(0, toSafeNumber(offer.maxDiscount));
+    const minOrder = Math.max(0, toSafeNumber(offer.minOrder));
+    const targetItems = normalizeStoreOfferTargetItems(offer.targetItems || []);
+    const adminReviewNote = String(offer.adminReviewNote || offer.reviewNote || '').trim();
+    const startsAt = parseOptionalTimestampInput(offer.startsAt, 'offer.startsAt', { required: true });
+    const endsAt = parseOptionalTimestampInput(offer.endsAt, 'offer.endsAt', { required: true });
+    const isActive = offer.isActive !== false;
 
-  if (!title) {
-    throw new HttpsError('invalid-argument', 'offer.title is required');
-  }
-  if (!description) {
-    throw new HttpsError('invalid-argument', 'offer.description is required');
-  }
-  if (!STORE_OFFER_SCOPE_VALUES.has(discountScope)) {
-    throw new HttpsError('invalid-argument', 'offer.discountScope is invalid');
-  }
-  if (!STORE_OFFER_TYPE_VALUES.has(discountType)) {
-    throw new HttpsError('invalid-argument', 'offer.discountType is invalid');
-  }
-  if (discountValue <= 0) {
-    throw new HttpsError('invalid-argument', 'offer.discountValue must be greater than zero');
-  }
-  if (endsAt.toMillis() <= startsAt.toMillis()) {
-    throw new HttpsError('invalid-argument', 'offer.endsAt must be after offer.startsAt');
-  }
-  if (discountScope === 'specific_items' && targetItems.length === 0) {
-    throw new HttpsError('invalid-argument', 'offer.targetItems is required for specific_items offers');
-  }
+    if (!title) {
+      throw new HttpsError('invalid-argument', 'offer.title is required');
+    }
+    if (!description) {
+      throw new HttpsError('invalid-argument', 'offer.description is required');
+    }
+    validateStoreOfferInput({
+      offerKind,
+      offerRule,
+      discountScope,
+      discountType,
+      discountValue,
+      targetItems,
+      startsAt,
+      endsAt,
+    });
 
-  const restaurantSnap = await db.collection('restaurants').doc(restaurantId).get();
-  if (!restaurantSnap.exists) {
-    throw new HttpsError('not-found', 'Restaurant not found');
+    const restaurantSnap = await db.collection('restaurants').doc(restaurantId).get();
+    if (!restaurantSnap.exists) {
+      throw new HttpsError('not-found', 'Restaurant not found');
+    }
+
+    const restaurantData = restaurantSnap.data() || {};
+    const summaryText = buildStoreOfferSummaryText({
+      offerKind,
+      offerRule,
+      discountScope,
+      discountType,
+      discountValue,
+      maxDiscount,
+      minOrder,
+      targetItems,
+    });
+
+    const offerRef = await db.collection('storeOffers').add({
+      restaurantId,
+      restaurantName: String(restaurantData.name || '').trim(),
+      title,
+      description,
+      imageUrl,
+      badgeText,
+      offerKind,
+      offerRule,
+      discountScope,
+      discountType,
+      discountValue,
+      maxDiscount: maxDiscount || null,
+      minOrder: minOrder || null,
+      targetItems,
+      summaryText,
+      status: 'approved',
+      isActive,
+      reviewNote: adminReviewNote,
+      adminReviewNote,
+      startsAt,
+      endsAt,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdByUid: request.auth.uid,
+      createdByRole: 'admin',
+      reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedByUid: request.auth.uid,
+      reviewDecision: isActive ? 'admin_created_active' : 'admin_created_inactive',
+    });
+
+    await syncRestaurantOfferSummary(restaurantId);
+
+    return {
+      ok: true,
+      offerId: offerRef.id,
+      restaurantId,
+    };
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    logger.error('adminCreateStoreOffer failed unexpectedly', {
+      uid: String(request.auth?.uid || ''),
+      restaurantId: String(request.data?.restaurantId || ''),
+      errorMessage: String(error?.message || error || ''),
+      offerKind: String(request.data?.offer?.offerKind || request.data?.offer?.offerRule?.type || 'discount'),
+    });
+    throw new HttpsError('internal', 'تعذر إنشاء العرض الآن. تحقق من بيانات العرض ثم أعد المحاولة.');
   }
-
-  const restaurantData = restaurantSnap.data() || {};
-  const summaryText = buildStoreOfferSummaryText({
-    discountScope,
-    discountType,
-    discountValue,
-    maxDiscount,
-    minOrder,
-    targetItems,
-  });
-
-  const offerRef = await db.collection('storeOffers').add({
-    restaurantId,
-    restaurantName: String(restaurantData.name || '').trim(),
-    title,
-    description,
-    imageUrl,
-    badgeText,
-    discountScope,
-    discountType,
-    discountValue,
-    maxDiscount: maxDiscount || null,
-    minOrder: minOrder || null,
-    targetItems,
-    summaryText,
-    status: 'approved',
-    isActive,
-    reviewNote: adminReviewNote,
-    adminReviewNote,
-    startsAt,
-    endsAt,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    createdByUid: request.auth.uid,
-    createdByRole: 'admin',
-    reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
-    reviewedByUid: request.auth.uid,
-    reviewDecision: isActive ? 'admin_created_active' : 'admin_created_inactive',
-  });
-
-  await syncRestaurantOfferSummary(restaurantId);
-
-  return {
-    ok: true,
-    offerId: offerRef.id,
-    restaurantId,
-  };
 });
 
 exports.expireApprovedStoreOffers = onSchedule({
@@ -1717,6 +2211,129 @@ exports.validatePromocodeForClient = onCall({ region: REGION }, async (request) 
     discountAmount: result.discountAmount,
     totalAfterDiscount: result.totalAfterDiscount,
     promo: result.promoSnapshot,
+  };
+});
+
+exports.adminUpdatePromocode = onCall({ region: REGION }, async (request) => {
+  await ensureAdminCallable(request, 'ليس لديك صلاحية تعديل أكواد الخصم.', 'finance');
+
+  const sourceCode = normalizePromoCode(request.data?.sourceCode);
+  const promoInput = request.data?.promo || {};
+  const code = normalizePromoCode(promoInput.code);
+  const discountScope = String(promoInput.discountScope || 'order_total').trim().toLowerCase();
+  const discountType = String(promoInput.discountType || 'percent').trim().toLowerCase();
+  const discountValue = Math.max(0, toSafeNumber(promoInput.discountValue));
+  const minOrder = Math.max(0, toSafeNumber(promoInput.minOrder));
+  const maxUsage = Math.max(0, Math.floor(toSafeNumber(promoInput.maxUsage)));
+  const maxUsagePerUser = Math.max(0, Math.floor(toSafeNumber(promoInput.maxUsagePerUser)));
+  const maxDiscount = Math.max(0, toSafeNumber(promoInput.maxDiscount));
+  const expiryMillis = Math.round(toSafeNumber(promoInput.expiryMillis));
+
+  if (!code || code.length > 80) {
+    throw new HttpsError('invalid-argument', 'A valid promocode is required');
+  }
+  if (!['order_total', 'delivery_fee'].includes(discountScope)) {
+    throw new HttpsError('invalid-argument', 'Invalid discount scope');
+  }
+  if (!['percent', 'fixed'].includes(discountType) || discountValue <= 0) {
+    throw new HttpsError('invalid-argument', 'Invalid discount value');
+  }
+  if (!Number.isFinite(expiryMillis) || expiryMillis <= Date.now()) {
+    throw new HttpsError('invalid-argument', 'A future expiry date is required');
+  }
+
+  const sourceRef = sourceCode ? db.collection('promocodes').doc(sourceCode) : null;
+  const targetRef = db.collection('promocodes').doc(code);
+  await db.runTransaction(async (tx) => {
+    const sourceSnap = sourceRef ? await tx.get(sourceRef) : null;
+    if (sourceRef && !sourceSnap?.exists) {
+      throw new HttpsError('not-found', 'Promocode not found');
+    }
+
+    if (!sourceRef || code !== sourceCode) {
+      const targetSnap = await tx.get(targetRef);
+      if (targetSnap.exists) {
+        throw new HttpsError(
+          'already-exists',
+          sourceRef
+            ? 'A promocode with the new code already exists'
+            : 'A promocode with this code already exists'
+        );
+      }
+    }
+
+    const existing = sourceSnap?.data() || {};
+    const patch = {
+      ...existing,
+      code,
+      discountScope,
+      discountType,
+      discountValue,
+      isActive: promoInput.isActive === true,
+      onlyForNewOrders: promoInput.onlyForNewOrders === true,
+      restaurantId: String(promoInput.restaurantId || '').trim(),
+      itemName: discountScope === 'delivery_fee'
+        ? ''
+        : String(promoInput.itemName || '').trim(),
+      minOrder: minOrder || null,
+      maxUsage: maxUsage || null,
+      maxUsagePerUser: maxUsagePerUser || null,
+      maxDiscount: maxDiscount || null,
+      expiryDate: admin.firestore.Timestamp.fromMillis(expiryMillis),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedByAdminUid: request.auth.uid,
+    };
+
+    if (!sourceRef) {
+      patch.usedCount = 0;
+      patch.usersUsed = {};
+      patch.createdAt = admin.firestore.FieldValue.serverTimestamp();
+      patch.createdBy = request.auth.uid;
+    }
+
+    tx.set(targetRef, patch, { merge: false });
+    if (sourceRef && code !== sourceCode) {
+      tx.delete(sourceRef);
+    }
+  });
+
+  return {
+    ok: true,
+    sourceCode,
+    code,
+    created: !sourceCode,
+    renamed: Boolean(sourceCode) && code !== sourceCode,
+  };
+});
+
+// lets the client preview merchant auto-offers (buy_x_get_y, bundle, etc.) before payment,
+// so the amount the customer is asked to pay already reflects the discount
+exports.previewAutoStoreOffer = onCall({ region: REGION }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Authentication is required');
+  }
+
+  const orderInput = request.data?.order || {};
+  const context = buildPromoOrderContext(orderInput);
+  if (!context.restaurantId) {
+    throw new HttpsError('invalid-argument', 'order.restaurantId is required');
+  }
+
+  const auto = await resolveBestAutoStoreOffer(
+    { restaurantId: context.restaurantId, items: orderInput.items },
+    {
+      subtotal: context.subtotal,
+      deliveryFee: context.deliveryFee,
+      largeOrderFee: context.largeOrderFee,
+      baseTotal: context.baseTotal,
+    }
+  );
+
+  return {
+    ok: true,
+    discountAmount: auto.discountAmount,
+    totalAfterDiscount: Math.max(0, context.baseTotal - auto.discountAmount),
+    offer: auto.appliedOffer,
   };
 });
 
@@ -1819,6 +2436,7 @@ exports.sendAdminNotification = onCall({ region: REGION }, async (request) => {
   const userId = String(data.userId || '').trim();
   const title = String(data.title || '').trim();
   const body = String(data.body || '').trim();
+  const imageUrl = String(data.imageUrl || '').trim();
 
   if (!title || !body) {
     throw new HttpsError('invalid-argument', 'العنوان والرسالة مطلوبان.');
@@ -1832,12 +2450,17 @@ exports.sendAdminNotification = onCall({ region: REGION }, async (request) => {
     throw new HttpsError('invalid-argument', 'الرسالة طويلة جدًا (الحد 1200 حرف).');
   }
 
+  if (imageUrl && (!/^https:\/\//i.test(imageUrl) || imageUrl.length > 2000)) {
+    throw new HttpsError('invalid-argument', 'رابط الصورة غير صالح.');
+  }
+
   const payload = buildNotificationPayload({
     title,
     body,
     type: 'admin_manual',
     source: 'admin-web',
     extra: {
+      ...(imageUrl ? { imageUrl } : {}),
       sentByUid: request.auth.uid,
       sentByEmail: String(request.auth.token?.email || ''),
     },
@@ -1875,6 +2498,9 @@ exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
   const targetId = String(request.data?.targetId || '').trim();
   const amountRaw = Number(request.data?.amount);
   const note = String(request.data?.note || '').trim();
+  const allowExtra = request.data?.allowExtra === true || request.data?.allowExtra === 1 || String(request.data?.allowExtra || '').trim() === '1';
+  const receiptUrlRaw = String(request.data?.receiptUrl || '').trim();
+  const receiptUrl = /^https?:\/\//i.test(receiptUrlRaw) ? receiptUrlRaw : '';
 
   if (!role || !targetId) {
     throw new HttpsError('invalid-argument', 'role و targetId مطلوبان.');
@@ -1905,9 +2531,12 @@ exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
       throw new HttpsError('failed-precondition', 'لا توجد قيمة صالحة للتحويل.');
     }
 
-    if (payoutAmount > pendingBalance) {
+    if (payoutAmount > pendingBalance && !allowExtra) {
       throw new HttpsError('failed-precondition', 'قيمة التحويل أكبر من الرصيد المستحق.');
     }
+
+    const pendingPortion = Math.min(payoutAmount, pendingBalance);
+    const extraAmount = Math.max(0, payoutAmount - pendingBalance);
 
     const account = targetData.payoutAccount || {};
     const accountMethod = String(account.method || targetData.payoutMethod || '').trim();
@@ -1922,7 +2551,10 @@ exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
       role,
       targetId,
       amount: payoutAmount,
+      pendingPortion,
+      extraAmount,
       note,
+      receiptUrl,
       accountMethod,
       accountNumber,
       accountName,
@@ -1935,7 +2567,10 @@ exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
       role,
       targetId,
       amount: payoutAmount,
+      pendingPortion,
+      extraAmount,
       note,
+      receiptUrl,
       accountMethod,
       accountNumber,
       accountName,
@@ -1945,8 +2580,10 @@ exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
     });
 
     tx.set(roleRef, {
-      walletPendingBalance: Math.max(0, pendingBalance - payoutAmount),
+      walletPendingBalance: Math.max(0, pendingBalance - pendingPortion),
       walletTransferredTotal: transferredTotal + payoutAmount,
+      walletManualExtraTotal: Math.max(0, Number(targetData.walletManualExtraTotal || 0)) + extraAmount,
+      walletLastTransferExtraAmount: extraAmount,
       walletLastTransferAmount: payoutAmount,
       walletLastTransferAt: nowTs,
       walletTransferCount: Number(targetData.walletTransferCount || 0) + 1,
@@ -1956,7 +2593,9 @@ exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
 
     return {
       payoutAmount,
-      remainingPendingBalance: Math.max(0, pendingBalance - payoutAmount),
+      pendingPortion,
+      extraAmount,
+      remainingPendingBalance: Math.max(0, pendingBalance - pendingPortion),
       accountMethod,
       accountNumber,
       beneficiaryName: String(targetData.name || targetData.fullName || targetId),
@@ -1965,9 +2604,19 @@ exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
 
   const audienceRole = role === 'store' ? 'store' : 'courier';
   const title = '💸 تم تحويل مستحقاتك';
-  const body = role === 'store'
+  const bodyBase = role === 'store'
     ? `تم تحويل مبلغ ${txResult.payoutAmount} ج.س إلى محفظة المتجر.`
     : `تم تحويل مبلغ ${txResult.payoutAmount} ج.س إلى محفظة المندوب.`;
+  const receiptLine = receiptUrl
+    ? `\nرابط إشعار التحويل: ${receiptUrl}`
+    : '';
+  const noteLine = !receiptUrl && note
+    ? `\nملاحظة: ${note}`
+    : '';
+  const extraLine = txResult.extraAmount > 0
+    ? `\nإضافة يدوية: ${txResult.extraAmount} ج.س.`
+    : '';
+  const body = `${bodyBase}${extraLine}${receiptLine}${noteLine}`;
 
   await sendNotificationToSingleUser(
     audienceRole,
@@ -1978,8 +2627,12 @@ exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
       type: 'wallet_payout',
       source: 'admin-finance',
       extra: {
+        imageUrl: receiptUrl,
         payoutAmount: txResult.payoutAmount,
+        payoutPendingPortion: txResult.pendingPortion,
+        payoutExtraAmount: txResult.extraAmount,
         payoutRole: role,
+        receiptUrl,
       },
     })
   );
@@ -1989,6 +2642,8 @@ exports.recordWalletPayout = onCall({ region: REGION }, async (request) => {
     role,
     targetId,
     payoutAmount: txResult.payoutAmount,
+    payoutPendingPortion: txResult.pendingPortion,
+    payoutExtraAmount: txResult.extraAmount,
     remainingPendingBalance: txResult.remainingPendingBalance,
     accountMethod: txResult.accountMethod,
     accountNumber: txResult.accountNumber,
@@ -2218,6 +2873,7 @@ exports.reviewOrderPaymentEvidence = onCall({ region: REGION }, async (request) 
   const orderId = String(request.data?.orderId || '').trim();
   const decision = String(request.data?.decision || '').trim().toLowerCase();
   const note = String(request.data?.note || '').trim();
+  const refundToWallet = request.data?.refundToWallet === true;
 
   if (!orderId || !['approve', 'reject'].includes(decision)) {
     throw new HttpsError('invalid-argument', 'orderId and decision(approve/reject) are required');
@@ -2225,6 +2881,7 @@ exports.reviewOrderPaymentEvidence = onCall({ region: REGION }, async (request) 
 
   const orderRef = db.collection('orders').doc(orderId);
   const nowTs = admin.firestore.FieldValue.serverTimestamp();
+  let walletRefund = null;
 
   await db.runTransaction(async (tx) => {
     const orderSnap = await tx.get(orderRef);
@@ -2274,6 +2931,36 @@ exports.reviewOrderPaymentEvidence = onCall({ region: REGION }, async (request) 
       return;
     }
 
+    const refundAmount = Math.max(0, Math.round(toSafeNumber(
+      order.totalWithDelivery || order.total || 0
+    )));
+    const clientId = String(order.clientId || '').trim();
+    const shouldRefund = refundToWallet && clientId && refundAmount > 0 && !order.walletRefundedAt;
+    if (shouldRefund) {
+      const clientRef = db.collection('clients').doc(clientId);
+      const clientSnap = await tx.get(clientRef);
+      const clientData = clientSnap.data() || {};
+      const currentBalance = toSafeNumber(
+        clientData.walletBalance ?? clientData.wallet ?? clientData.balance ?? 0
+      );
+      const nextBalance = currentBalance + refundAmount;
+      tx.set(clientRef, {
+        walletBalance: nextBalance,
+        wallet: nextBalance,
+        updatedAt: nowTs,
+      }, { merge: true });
+      tx.set(clientRef.collection('walletTransactions').doc(`refund_${orderId}`), {
+        type: 'refund',
+        orderId,
+        amount: refundAmount,
+        balanceBefore: currentBalance,
+        balanceAfter: nextBalance,
+        reason: 'payment_evidence_rejected',
+        createdAt: nowTs,
+      });
+      walletRefund = { clientId, amount: refundAmount };
+    }
+
     tx.set(orderRef, {
       paymentStatus: PAYMENT_REJECTED_STATUS,
       paymentReviewDecision: 'rejected',
@@ -2286,14 +2973,31 @@ exports.reviewOrderPaymentEvidence = onCall({ region: REGION }, async (request) 
       orderStatus: 'payment_rejected',
       status: 'payment_rejected',
       paidAt: admin.firestore.FieldValue.delete(),
+      paymentRejectionRefundRequested: refundToWallet,
+      ...(shouldRefund ? {
+        walletRefundedAmount: refundAmount,
+        walletRefundedAt: nowTs,
+        walletRefundReason: 'payment_evidence_rejected',
+      } : {}),
       updatedAt: nowTs,
     }, { merge: true });
   });
+
+  if (walletRefund) {
+    await sendNotificationToSingleUser('client', walletRefund.clientId, buildNotificationPayload({
+      title: '💰 تمت إعادة المبلغ إلى محفظتك',
+      body: `تم رفض إيصال الدفع وإعادة ${walletRefund.amount} ج.س إلى محفظتك.`,
+      type: 'wallet_refund',
+      source: 'payment-evidence-review',
+      orderId,
+    })).catch(() => {});
+  }
 
   return {
     ok: true,
     orderId,
     decision,
+    walletRefundedAmount: walletRefund?.amount || 0,
   };
 });
 
@@ -2522,6 +3226,9 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
   };
 
   if (afterStatus === 'store_pending') {
+    if (afterData.courierAcceptedBeforeStore === true) {
+      return { sent: 0, status: afterStatus };
+    }
     sendStore('📥 طلب جديد', `لديك طلب جديد رقم ${orderNumber} بانتظار المراجعة.`, 'store_new_order', { tone: 'urgent' });
     sendClient('✅ تم استلام طلبك', `تم استلام طلبك رقم ${orderNumber} وجارٍ مراجعته من المتجر.`, 'client_order_received');
   }
@@ -2543,7 +3250,6 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
 
   if (afterStatus === 'courier_assigned') {
     sendClient('🛵 تم تعيين مندوب', `تم تعيين مندوب لطلبك رقم ${orderNumber}.`, 'client_courier_assigned');
-    sendStore('🛵 تم تعيين مندوب', `تم تعيين مندوب للطلب رقم ${orderNumber}.`, 'store_courier_assigned', { tone: 'urgent' });
     sendCourier(
       assignedDriverId || offeredDriverId,
       '✅ تم إسناد الطلب لك',
@@ -2564,7 +3270,6 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
 
   if (afterStatus === 'picked_up') {
     sendClient('📦 خرج طلبك للتوصيل', `طلبك رقم ${orderNumber} أصبح في طريقه إليك.`, 'client_order_picked_up');
-    sendStore('📦 تم استلام الطلب', `تم استلام الطلب رقم ${orderNumber} من المتجر بواسطة المندوب.`, 'store_order_picked_up');
   }
 
   if (afterStatus === 'arrived_to_client') {
@@ -2573,7 +3278,6 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
 
   if (afterStatus === 'delivered') {
     sendClient('🎉 تم التسليم', `تم تسليم طلبك رقم ${orderNumber} بنجاح.`, 'client_order_delivered');
-    sendStore('✅ تم تسليم الطلب', `تم تسليم الطلب رقم ${orderNumber} للعميل.`, 'store_order_delivered');
     sendCourier(
       assignedDriverId || offeredDriverId,
       '✅ اكتمل التوصيل',
@@ -2582,9 +3286,8 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
     );
   }
 
-  if (afterStatus === 'cancelled' || afterStatus === 'store_rejected') {
+  if (afterStatus === 'cancelled') {
     sendClient('⚠️ تم إلغاء الطلب', `تم إلغاء الطلب رقم ${orderNumber}.`, 'client_order_cancelled');
-    sendStore('⚠️ تم إلغاء الطلب', `تم إلغاء الطلب رقم ${orderNumber}.`, 'store_order_cancelled');
     sendCourier(
       assignedDriverId || offeredDriverId,
       '⚠️ تم إلغاء الطلب',
@@ -2677,8 +3380,8 @@ exports.notifyOnOrderStatusUpdatedRealtime = onDocumentUpdated(
     const lastNotifiedStatus = String(afterData.lastNotifiedStatus || '').trim();
 
     if (!afterStatus) return;
+    if (beforeStatus === afterStatus) return;
     if (afterStatus === lastNotifiedStatus) return;
-    if (beforeStatus === afterStatus && lastNotifiedStatus === afterStatus) return;
 
     const result = await dispatchOrderStatusNotifications(event.params.orderId, afterData);
 
@@ -2687,6 +3390,53 @@ exports.notifyOnOrderStatusUpdatedRealtime = onDocumentUpdated(
       lastNotificationAt: admin.firestore.FieldValue.serverTimestamp(),
       lastNotificationSentCount: Number(result.sent || 0),
     }, { merge: true });
+  }
+);
+
+exports.convertStoreRejectToAutoAccept = onDocumentUpdated(
+  {
+    region: REGION,
+    document: 'orders/{orderId}',
+  },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+
+    const beforeStatus = getStatus(before);
+    const afterStatus = getStatus(after);
+
+    if (!isStoreRejectedStatus(afterStatus)) return;
+    if (isStoreRejectedStatus(beforeStatus)) return;
+
+    const orderRef = event.data?.after?.ref;
+    if (!orderRef) return;
+
+    await orderRef.set({
+      orderStatus: 'courier_searching',
+      status: 'courier_searching',
+      storeApprovalPending: false,
+      storeApprovedAt: admin.firestore.FieldValue.serverTimestamp(),
+      storeRejectionIntercepted: true,
+      storeRejectionInterceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+      storeDecisionSource: 'cloud_auto_accept',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    try {
+      const refreshed = await orderRef.get();
+      const refreshedOrder = refreshed.data() || {};
+      const refreshedStatus = getStatus(refreshedOrder);
+      const hasAssignedDriver = String(refreshedOrder.assignedDriverId || '').trim().length > 0;
+
+      if (refreshedStatus === 'courier_searching' && !hasAssignedDriver) {
+        await assignNextCourier(orderRef);
+      }
+    } catch (error) {
+      logger.warn('convertStoreRejectToAutoAccept assignment step failed', {
+        orderId: String(event.params?.orderId || ''),
+        error: error?.message || error,
+      });
+    }
   }
 );
 
@@ -2781,16 +3531,57 @@ exports.notifyTelegramOnSupportMessageCreated = onDocumentCreated(
         ? 'المتجر'
         : 'العميل';
     const senderName = String(data.senderName || data.senderId || 'مستخدم').trim();
+    const senderId = String(data.senderId || '-').trim() || '-';
+    const receiverLabel = String(data.receiverName || data.receiverId || 'الدعم الفني').trim() || 'الدعم الفني';
     const messageText = String(data.message || '').trim();
-    const preview = messageText || (data.imageUrl ? 'صورة مرفقة' : 'رسالة جديدة بدون نص');
+    const hasImage = Boolean(String(data.imageUrl || '').trim());
+    const messageType = hasImage
+      ? (messageText ? 'نص + صورة' : 'صورة')
+      : 'نص';
+    const preview = messageText || (hasImage ? 'صورة مرفقة بدون نص.' : 'رسالة جديدة بدون نص.');
+    const referenceId = String(
+      data.ticketId
+      || data.requestId
+      || data.caseId
+      || data.orderId
+      || data.conversationId
+      || event.params?.messageId
+      || '-'
+    ).trim() || '-';
 
-    await sendTelegramOpsAlert('رسالة دعم جديدة', [
-      `المصدر: ${sourceApp}`,
-      `المرسل: ${senderName}`,
-      `المحادثة: ${conversationId}`,
-      `المحتوى: ${preview}`,
-      'الحالة: تحتاج فتح مركز الدعم الفني في الأدمن.',
-    ], { category: 'support' });
+    const createdAtDate = data.createdAt && typeof data.createdAt.toDate === 'function'
+      ? data.createdAt.toDate()
+      : null;
+    const createdAtLabel = createdAtDate
+      ? new Intl.DateTimeFormat('ar-EG', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(createdAtDate)
+      : '-';
+
+    const lines = [
+      '<b>تنبيه دعم فني جديد</b>',
+      '━━━━━━━━━━━━━━━━━━',
+      `<b>التطبيق:</b> ${escapeTelegramHtml(sourceApp)}`,
+      `<b>نوع الرسالة:</b> ${escapeTelegramHtml(messageType)}`,
+      `<b>المرسل:</b> ${escapeTelegramHtml(senderName)}`,
+      `<b>معرّف المرسل:</b> <code>${escapeTelegramHtml(senderId)}</code>`,
+      `<b>إلى:</b> ${escapeTelegramHtml(receiverLabel)}`,
+      `<b>المحادثة:</b> <code>${escapeTelegramHtml(conversationId)}</code>`,
+      `<b>المرجع:</b> <code>${escapeTelegramHtml(referenceId)}</code>`,
+      `<b>الوقت:</b> ${escapeTelegramHtml(createdAtLabel)}`,
+      '━━━━━━━━━━━━━━━━━━',
+      `<b>المحتوى:</b> ${escapeTelegramHtml(preview)}`,
+      hasImage
+        ? `<b>رابط المرفق:</b> ${escapeTelegramHtml(String(data.imageUrl || '').trim())}`
+        : '',
+      'الحالة: تحتاج مراجعة من مركز الدعم في لوحة الأدمن.',
+    ].filter(Boolean);
+
+    await sendTelegramMessageHtml(lines.join('\n'), { category: 'support' });
   }
 );
 
@@ -3010,6 +3801,59 @@ exports.syncRealtimeOrderPricing = onDocumentUpdated(
   }
 );
 
+exports.syncRealtimeOrderPricingOnCreate = onDocumentCreated(
+  {
+    region: REGION,
+    document: 'orders/{orderId}',
+  },
+  async (event) => {
+    const data = event.data?.data() || {};
+    await syncOrderPricingFields(event.data.ref, data);
+  }
+);
+
+async function autoDispatchPreparedStoreOrder(orderRef, order) {
+  const status = getStatus(order);
+  if (status !== 'store_pending' && status !== 'بانتظار المطعم') return false;
+  if (order.autoDispatchStartedAt || String(order.orderSource || '').trim() === 'store_direct_delivery') {
+    return false;
+  }
+
+  const restaurantId = String(order.restaurantId || '').trim();
+  if (!restaurantId) return false;
+  const restaurantSnap = await db.collection('restaurants').doc(restaurantId).get();
+  const businessType = String(restaurantSnap.data()?.businessType || 'restaurant').trim().toLowerCase();
+  if (!['restaurant', 'grocery'].includes(businessType)) return false;
+
+  await orderRef.set({
+    orderStatus: 'courier_searching',
+    status: 'courier_searching',
+    storeApprovalPending: false,
+    preparationRequired: true,
+    preparationStarted: false,
+    readyByRestaurant: false,
+    autoDispatchStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  await assignNextCourier(orderRef);
+  return true;
+}
+
+exports.autoDispatchRestaurantAndGroceryOrdersOnCreate = onDocumentCreated(
+  { region: REGION, document: 'orders/{orderId}' },
+  async (event) => autoDispatchPreparedStoreOrder(event.data.ref, event.data.data() || {})
+);
+
+exports.autoDispatchRestaurantAndGroceryOrdersAfterPayment = onDocumentUpdated(
+  { region: REGION, document: 'orders/{orderId}' },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+    if (getStatus(before) === getStatus(after) && after.autoDispatchStartedAt) return false;
+    return autoDispatchPreparedStoreOrder(event.data.after.ref, after);
+  }
+);
+
 exports.settleClientWalletOnPaidOrder = onDocumentUpdated(
   {
     region: REGION,
@@ -3061,6 +3905,84 @@ exports.syncCourierWalletOnOrderUpdate = onDocumentUpdated(
   }
 );
 
+exports.awardClientRewardsOnDeliveredOrder = onDocumentUpdated(
+  {
+    region: REGION,
+    document: 'orders/{orderId}',
+  },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+    const becameDelivered = !isDeliveredOrderStatus(before.orderStatus || before.status)
+      && isDeliveredOrderStatus(after.orderStatus || after.status);
+    const clientId = String(after.clientId || '').trim();
+    if (!becameDelivered || !clientId || after.rewardsAwardedAt) return false;
+
+    const settings = await db.collection('clientHomeSettings').doc('default').get();
+    const config = settings.data()?.rewards || {};
+    if (config.enabled !== true) return false;
+
+    const amountPerPoint = Math.max(1, Math.floor(Number(config.amountPerPoint || 100)));
+    const orderAmount = Math.max(0, Number(after.total || after.subtotal || 0));
+    const points = Math.floor(orderAmount / amountPerPoint);
+    if (points <= 0) return false;
+
+    const orderRef = event.data.after.ref;
+    const clientRef = db.collection('clients').doc(clientId);
+    const historyRef = clientRef.collection('pointsHistory').doc(orderRef.id);
+    await db.runTransaction(async (tx) => {
+      const currentOrder = await tx.get(orderRef);
+      if (!currentOrder.exists || currentOrder.data()?.rewardsAwardedAt) return;
+      tx.set(clientRef, {
+        points: admin.firestore.FieldValue.increment(points),
+        pointsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      tx.set(historyRef, {
+        points,
+        type: 'order_delivery',
+        orderId: orderRef.id,
+        note: `نقاط إكمال الطلب ${String(after.orderNumber || after.orderId || orderRef.id)}`,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      tx.update(orderRef, {
+        rewardsAwardedAt: admin.firestore.FieldValue.serverTimestamp(),
+        rewardsAwardedPoints: points,
+      });
+    });
+    return true;
+  }
+);
+
+exports.finalizeCourierAcceptanceAfterStoreApproval = onDocumentUpdated(
+  {
+    region: REGION,
+    document: 'orders/{orderId}',
+  },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+
+    const beforeStatus = String(before.orderStatus || before.status || '').trim();
+    const afterStatus = String(after.orderStatus || after.status || '').trim();
+    const hasAcceptedCourier = String(after.assignedDriverId || '').trim().length > 0;
+    const courierAcceptedBeforeStore = after.courierAcceptedBeforeStore === true;
+
+    if (!courierAcceptedBeforeStore || !hasAcceptedCourier) return;
+    if (afterStatus !== 'courier_searching' && afterStatus !== 'قيد التجهيز') return;
+    if (beforeStatus !== 'store_pending' && beforeStatus !== 'بانتظار المطعم') return;
+
+    await event.data.after.ref.set({
+      orderStatus: 'courier_assigned',
+      status: 'courier_assigned',
+      storeApprovalPending: false,
+      courierAcceptedBeforeStore: false,
+      courierAcceptedBeforeStoreAt: admin.firestore.FieldValue.delete(),
+      storeApprovedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
+);
+
 exports.repairCourierAvailabilitySessionFromHeartbeat = onDocumentUpdated(
   {
     region: REGION,
@@ -3095,7 +4017,14 @@ exports.repairCourierAvailabilitySessionFromHeartbeat = onDocumentUpdated(
 );
 
 function isWaitingCourierStatus(status) {
-  return status === 'courier_searching' || status === 'قيد التجهيز';
+  return status === 'store_pending' ||
+    status === 'بانتظار المطعم' ||
+    status === 'courier_searching' ||
+    status === 'قيد التجهيز';
+}
+
+function isCourierOfferDispatchableStatus(status) {
+  return isWaitingCourierStatus(status) || status === 'courier_offer_pending';
 }
 
 function formatUnifiedOrderCode(orderNumber, orderId) {
@@ -3265,6 +4194,15 @@ function getOrderRestaurantCoords(order) {
   const lng = toNumberOrNull(order.restaurantLng);
   if (lat != null && lng != null) return { lat, lng };
 
+  const pickupPoint = extractLatLng(order.pickupLocation);
+  if (pickupPoint) return pickupPoint;
+
+  const pickupLat = toNumberOrNull(order.pickupLat);
+  const pickupLng = toNumberOrNull(order.pickupLng);
+  if (pickupLat != null && pickupLng != null) {
+    return { lat: pickupLat, lng: pickupLng };
+  }
+
   return null;
 }
 
@@ -3426,6 +4364,89 @@ async function ensureAdminCallable(request, deniedMessage, requiredPermission = 
       throw new HttpsError('permission-denied', deniedMessage || 'You do not have access to this admin action');
     }
   }
+}
+
+async function ensureStaticSuperAdminCallable(request, deniedMessage = '') {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Authentication is required');
+  }
+
+  const callerUid = String(request.auth.uid || '').trim();
+  const callerEmail = String(request.auth.token?.email || '').toLowerCase().trim();
+  if (isStaticAdminEmail(callerEmail)) {
+    return;
+  }
+
+  const profile = await getAdminAccessProfileByUid(callerUid);
+  const permissions = normalizeAdminPermissions(profile.permissions, { fallbackToAll: true });
+  const canDeleteRestaurants = profile.allowed === true
+    && permissions.includes('admins')
+    && profile.data?.canDeleteRestaurants === true;
+
+  if (!canDeleteRestaurants) {
+    throw new HttpsError(
+      'permission-denied',
+      deniedMessage || 'Only super admins can perform this action'
+    );
+  }
+}
+
+async function countActiveOrdersForRestaurant(restaurantId) {
+  const rid = String(restaurantId || '').trim();
+  if (!rid) return 0;
+
+  let active = 0;
+  let lastDoc = null;
+
+  while (true) {
+    let q = db
+      .collection('orders')
+      .where('restaurantId', '==', rid)
+      .orderBy(admin.firestore.FieldPath.documentId())
+      .limit(300);
+
+    if (lastDoc) {
+      q = q.startAfter(lastDoc);
+    }
+
+    const snap = await q.get();
+    if (snap.empty) break;
+
+    snap.docs.forEach((docSnap) => {
+      if (isActiveOrderLifecycleStatus(getStatus(docSnap.data() || {}))) {
+        active += 1;
+      }
+    });
+
+    lastDoc = snap.docs[snap.docs.length - 1] || null;
+    if (snap.size < 300) break;
+  }
+
+  return active;
+}
+
+async function deleteRestaurantOrdersCascaded(restaurantId) {
+  const rid = String(restaurantId || '').trim();
+  if (!rid) return 0;
+
+  let deletedOrders = 0;
+
+  while (true) {
+    const snap = await db
+      .collection('orders')
+      .where('restaurantId', '==', rid)
+      .limit(25)
+      .get();
+
+    if (snap.empty) break;
+
+    for (const docSnap of snap.docs) {
+      await db.recursiveDelete(docSnap.ref);
+      deletedOrders += 1;
+    }
+  }
+
+  return deletedOrders;
 }
 
 function isActiveOrderLifecycleStatus(statusRaw) {
@@ -3607,6 +4628,54 @@ function stringifyRemoteValue(value) {
   }
 }
 
+const OPS_RUNTIME_REMOTE_PARAMETER_DEFAULTS = Object.freeze(
+  ['client', 'courier', 'store'].reduce(
+    (parameters, appKey) => ({
+      ...parameters,
+      [`${appKey}_chat_enabled`]: { value: 'true', valueType: 'BOOLEAN' },
+      [`${appKey}_chat_disabled_message`]: { value: 'الدردشة متوقفة مؤقتًا.', valueType: 'STRING' },
+      [`${appKey}_notifications_enabled`]: { value: 'true', valueType: 'BOOLEAN' },
+      [`${appKey}_ringtone_enabled`]: { value: 'true', valueType: 'BOOLEAN' },
+      [`${appKey}_ringtone_volume`]: { value: '1', valueType: 'NUMBER' },
+    }),
+    {
+      ops_chat_enabled: { value: 'true', valueType: 'BOOLEAN' },
+      ops_chat_disabled_message: { value: 'الدردشة متوقفة مؤقتًا.', valueType: 'STRING' },
+      ops_notifications_enabled: { value: 'true', valueType: 'BOOLEAN' },
+      ops_ringtone_enabled: { value: 'true', valueType: 'BOOLEAN' },
+      ops_ringtone_volume: { value: '1', valueType: 'NUMBER' },
+      client_feature_business_filters: { value: 'false', valueType: 'BOOLEAN' },
+      client_feature_parcel_delivery: { value: 'false', valueType: 'BOOLEAN' },
+      courier_pickup_delay_reminder_minutes: { value: '10', valueType: 'NUMBER' },
+      courier_pickup_delay_critical_minutes: { value: '15', valueType: 'NUMBER' },
+      courier_client_arrival_delay_minutes: { value: '20', valueType: 'NUMBER' },
+    }
+  )
+);
+
+async function getCourierDelayReminderConfig() {
+  const now = Date.now();
+  if (courierDelayReminderConfigCache.value && courierDelayReminderConfigCache.expiresAtMillis > now) {
+    return courierDelayReminderConfigCache.value;
+  }
+  const fallback = { pickupReminderMinutes: 10, pickupCriticalMinutes: 15, clientArrivalMinutes: 20 };
+  try {
+    const template = await admin.remoteConfig().getTemplate();
+    const parameters = template?.parameters || {};
+    const value = {
+      pickupReminderMinutes: Math.max(1, Math.round(parseRemoteNumberParam(parameters.courier_pickup_delay_reminder_minutes, fallback.pickupReminderMinutes))),
+      pickupCriticalMinutes: Math.max(1, Math.round(parseRemoteNumberParam(parameters.courier_pickup_delay_critical_minutes, fallback.pickupCriticalMinutes))),
+      clientArrivalMinutes: Math.max(1, Math.round(parseRemoteNumberParam(parameters.courier_client_arrival_delay_minutes, fallback.clientArrivalMinutes))),
+    };
+    courierDelayReminderConfigCache = { value, expiresAtMillis: now + 5 * 60 * 1000 };
+    return value;
+  } catch (error) {
+    logger.warn('courier delay reminder config load failed', { error: error?.message || String(error) });
+    courierDelayReminderConfigCache = { value: fallback, expiresAtMillis: now + 60 * 1000 };
+    return fallback;
+  }
+}
+
 async function loadPricingConfigFromRemoteConfig() {
   try {
     const template = await admin.remoteConfig().getTemplate();
@@ -3730,12 +4799,19 @@ function calculateLargeOrderFeeFromItems(itemsRaw, pricingConfig) {
   return Math.max(0, Math.round(totalLargeFee));
 }
 
-function recalculateOrderTotals(order, pricingConfig) {
+function recalculateOrderTotals(order, pricingConfig, discountOverride = null) {
   const subtotal = toNumberOrNull(order.total) || 0;
   const deliveryFee = calculateClientDeliveryFeeFromOrder(order, pricingConfig);
   const largeOrderFee = calculateLargeOrderFeeFromItems(order.items, pricingConfig);
   const totalBeforeDiscount = Math.max(0, subtotal + deliveryFee + largeOrderFee);
-  const discountAmount = Math.max(0, Math.round(toNumberOrNull(order.discountAmount) || 0));
+  const discountAmount = Math.max(
+    0,
+    Math.round(
+      discountOverride == null
+        ? (toNumberOrNull(order.discountAmount) || 0)
+        : toSafeNumber(discountOverride)
+    )
+  );
   const totalWithDelivery = Math.max(0, totalBeforeDiscount - discountAmount);
 
   return {
@@ -3750,21 +4826,44 @@ function recalculateOrderTotals(order, pricingConfig) {
 
 async function syncOrderPricingFields(orderRef, orderData) {
   const pricingConfig = await getPricingConfigCached();
-  const recalculated = recalculateOrderTotals(orderData, pricingConfig);
+  const totalsForOffers = recalculateOrderTotals(orderData, pricingConfig, 0);
+  const hasPromoCode = String(orderData.discountCode || '').trim().length > 0
+    || (orderData.promocode && typeof orderData.promocode === 'object');
+
+  let nextDiscountAmount = Math.max(0, Math.round(toNumberOrNull(orderData.discountAmount) || 0));
+  let appliedAutoOffer = null;
+
+  if (!hasPromoCode) {
+    const auto = await resolveBestAutoStoreOffer(orderData, {
+      subtotal: totalsForOffers.subtotal,
+      deliveryFee: totalsForOffers.deliveryFee,
+      largeOrderFee: totalsForOffers.largeOrderFee,
+      baseTotal: totalsForOffers.totalBeforeDiscount,
+    });
+    nextDiscountAmount = Math.max(0, Math.round(toSafeNumber(auto.discountAmount)));
+    appliedAutoOffer = auto.appliedOffer;
+  }
+
+  const recalculated = recalculateOrderTotals(orderData, pricingConfig, nextDiscountAmount);
   const storedDeliveryFee = Math.round(toNumberOrNull(orderData.deliveryFee) || 0);
   const storedLargeFee = Math.round(toNumberOrNull(orderData.largeOrderFee) || 0);
+  const storedDiscountAmount = Math.round(toNumberOrNull(orderData.discountAmount) || 0);
   const storedTotalBeforeDiscount = Math.round(
     toNumberOrNull(orderData.totalBeforeDiscount)
       || (Math.round(toNumberOrNull(orderData.totalWithDelivery) || 0)
           + Math.round(toNumberOrNull(orderData.discountAmount) || 0))
   );
   const storedTotalWithDelivery = Math.round(toNumberOrNull(orderData.totalWithDelivery) || 0);
+  const storedAutoOfferId = String(orderData.autoOfferId || '').trim();
+  const nextAutoOfferId = String(appliedAutoOffer?.offerId || '').trim();
 
   if (
     storedDeliveryFee === recalculated.deliveryFee &&
     storedLargeFee === recalculated.largeOrderFee &&
+    storedDiscountAmount === recalculated.discountAmount &&
     storedTotalBeforeDiscount === recalculated.totalBeforeDiscount &&
-    storedTotalWithDelivery === recalculated.totalWithDelivery
+    storedTotalWithDelivery === recalculated.totalWithDelivery &&
+    storedAutoOfferId === nextAutoOfferId
   ) {
     return false;
   }
@@ -3772,8 +4871,17 @@ async function syncOrderPricingFields(orderRef, orderData) {
   await orderRef.set({
     deliveryFee: recalculated.deliveryFee,
     largeOrderFee: recalculated.largeOrderFee,
+    discountAmount: recalculated.discountAmount,
     totalBeforeDiscount: recalculated.totalBeforeDiscount,
     totalWithDelivery: recalculated.totalWithDelivery,
+    autoOfferId: nextAutoOfferId || admin.firestore.FieldValue.delete(),
+    autoOfferTitle: appliedAutoOffer?.title || admin.firestore.FieldValue.delete(),
+    autoOfferSummary: appliedAutoOffer?.summaryText || admin.firestore.FieldValue.delete(),
+    autoOfferKind: appliedAutoOffer?.offerKind || admin.firestore.FieldValue.delete(),
+    autoOfferRule: appliedAutoOffer?.offerRule || admin.firestore.FieldValue.delete(),
+    autoOfferAppliedAt: appliedAutoOffer
+      ? admin.firestore.FieldValue.serverTimestamp()
+      : admin.firestore.FieldValue.delete(),
     pricingLastRecalculatedAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
@@ -3872,6 +4980,12 @@ async function settleClientWalletForPaidOrder(orderRef) {
 function getDriverCoords(driver) {
   const fromGeoPoint = extractLatLng(driver.location);
   if (fromGeoPoint) return fromGeoPoint;
+
+  const currentLocation = extractLatLng(driver.currentLocation);
+  if (currentLocation) return currentLocation;
+
+  const lastLocation = extractLatLng(driver.lastLocation);
+  if (lastLocation) return lastLocation;
 
   const lat = toNumberOrNull(driver.lat ?? driver.latitude);
   const lng = toNumberOrNull(driver.lng ?? driver.longitude);
@@ -4022,6 +5136,94 @@ exports.estimateRoute = onCall({ region: REGION, timeoutSeconds: 12, memory: '25
   return fetchGoogleDirectionsRoute(origin, destination);
 });
 
+exports.adminGeocodeRestaurantAddress = onCall(
+  { region: REGION, timeoutSeconds: 20, memory: '256MiB' },
+  async (request) => {
+    await ensureAdminCallable(
+      request,
+      'Only order admins can geocode restaurant addresses',
+      'orders'
+    );
+
+    const restaurantId = String(request.data?.restaurantId || '').trim();
+    const rawAddress = String(request.data?.address || '').trim();
+
+    if (!restaurantId) {
+      throw new HttpsError('invalid-argument', 'restaurantId is required');
+    }
+    if (!rawAddress) {
+      throw new HttpsError('invalid-argument', 'address is required');
+    }
+
+    const apiKey = String(
+      process.env.GOOGLE_DIRECTIONS_API_KEY ||
+        process.env.GOOGLE_MAPS_API_KEY ||
+        process.env.MAPS_API_KEY ||
+        ''
+    ).trim();
+
+    if (!apiKey) {
+      throw new HttpsError('failed-precondition', 'Google Maps API key is not configured');
+    }
+
+    const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+    url.searchParams.set('address', rawAddress);
+    url.searchParams.set('language', 'ar');
+    url.searchParams.set('region', 'sd');
+    url.searchParams.set('key', apiKey);
+
+    const response = await fetch(url);
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok || body.status !== 'OK' || !Array.isArray(body.results) || !body.results.length) {
+      throw new HttpsError(
+        'failed-precondition',
+        `تعذر العثور على العنوان في Google (${body.status || response.status})`
+      );
+    }
+
+    const result = body.results[0] || {};
+    const location = result.geometry?.location || {};
+    const lat = Number(location.lat);
+    const lng = Number(location.lng);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      throw new HttpsError('failed-precondition', 'Google did not return valid coordinates');
+    }
+
+    const formattedAddress = String(result.formatted_address || rawAddress).trim() || rawAddress;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    await db.collection('restaurants').doc(restaurantId).set(
+      {
+        address: formattedAddress,
+        formattedAddressGoogle: formattedAddress,
+        latitude: lat,
+        longitude: lng,
+        lat,
+        lng,
+        restaurantLat: lat,
+        restaurantLng: lng,
+        location: new admin.firestore.GeoPoint(lat, lng),
+        geocodedByGoogle: true,
+        geocodedAt: now,
+        geocodedByUid: request.auth?.uid || '',
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+
+    return {
+      ok: true,
+      restaurantId,
+      address: formattedAddress,
+      latitude: lat,
+      longitude: lng,
+      placeId: String(result.place_id || '').trim(),
+    };
+  }
+);
+
 async function setStatus(ref, status, extra = {}) {
   await ref.update({
     orderStatus: status,
@@ -4029,6 +5231,275 @@ async function setStatus(ref, status, extra = {}) {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     ...extra,
   });
+}
+
+function hasDriverActiveOrder(driverData = {}) {
+  return String(driverData.activeOrderId || '').trim().length > 0;
+}
+
+function getOfferDriverIds(order = {}) {
+  const offerDriverIds = Array.isArray(order.offerDriverIds)
+    ? order.offerDriverIds.map((id) => String(id || '').trim()).filter(Boolean)
+    : [];
+  if (offerDriverIds.length) return offerDriverIds;
+  const legacyOfferedDriverId = String(order.offeredDriverId || '').trim();
+  return legacyOfferedDriverId ? [legacyOfferedDriverId] : [];
+}
+
+function getDriverOwnerUids(driverData = {}, driverId = '') {
+  return Array.from(new Set([
+    driverId,
+    driverData.ownerUid,
+    driverData.ownerId,
+    driverData.userId,
+    driverData.uid,
+  ].map((value) => String(value || '').trim()).filter(Boolean)));
+}
+
+function getDriverOfferRadiusKm(driverData = {}) {
+  const selectedRadius = Math.round(toSafeNumber(driverData.offerRadiusKm, 5));
+  return [5, 10, 15].includes(selectedRadius) ? selectedRadius : 5;
+}
+
+function isDriverWithinOrderOfferRange(order = {}, driverData = {}) {
+  const restaurantCoords = getOrderRestaurantCoords(order);
+  const driverCoords = getDriverCoords(driverData);
+  if (!restaurantCoords || !driverCoords) return true;
+
+  const orderRadiusKm = Math.max(
+    1,
+    toSafeNumber(order.courierOfferRadiusKm ?? order.maxDriverDistanceKm, MAX_DRIVER_RESTAURANT_DISTANCE_KM)
+      || MAX_DRIVER_RESTAURANT_DISTANCE_KM,
+  );
+  const distanceKm = haversineKm(
+    restaurantCoords.lat,
+    restaurantCoords.lng,
+    driverCoords.lat,
+    driverCoords.lng,
+  );
+  return Number.isFinite(distanceKm) && distanceKm <= orderRadiusKm;
+}
+
+function canDriverReceiveOrderOffer(order = {}, driverId, driverData = {}) {
+  if (!driverId) return false;
+  if (driverData.available !== true) return false;
+  if (hasDriverActiveOrder(driverData)) return false;
+  if (String(order.assignedDriverId || '').trim()) return false;
+  if (getStatus(order) !== 'courier_offer_pending') return false;
+
+  const existingOfferDriverIds = getOfferDriverIds(order);
+  if (existingOfferDriverIds.includes(String(driverId))) return false;
+
+  if (!isDriverWithinOrderOfferRange(order, driverData)) return false;
+
+  const orderState = orderStateId(order);
+  if (orderState && driverStateId(driverData) !== orderState) return false;
+
+  return true;
+}
+
+async function clearDriverOrderLockIfMatches(driverId, orderId) {
+  if (!driverId || !orderId) return;
+  const driverRef = db.collection('drivers').doc(String(driverId));
+  await db.runTransaction(async (tx) => {
+    const driverSnap = await tx.get(driverRef);
+    if (!driverSnap.exists) return;
+    const currentActiveOrderId = String((driverSnap.data() || {}).activeOrderId || '').trim();
+    if (currentActiveOrderId !== String(orderId)) return;
+    tx.update(driverRef, {
+      activeOrderId: admin.firestore.FieldValue.delete(),
+      activeOrderLockedAt: admin.firestore.FieldValue.delete(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+}
+
+async function syncDriverOffersOnAvailabilityChange(
+  driverId,
+  driverData = {},
+  refreshOfferEligibility = false,
+) {
+  const normalizedDriverId = String(driverId || '').trim();
+  if (!normalizedDriverId) return { removedFrom: 0, addedTo: 0, reassigned: 0 };
+
+  let currentDriverData = driverData;
+  const activeOrderId = String(driverData.activeOrderId || '').trim();
+  if (driverData.available === true && activeOrderId) {
+    const activeOrderSnap = await db.collection('orders').doc(activeOrderId).get();
+    const activeOrder = activeOrderSnap.data() || {};
+    const hasValidActiveOrder = activeOrderSnap.exists
+      && String(activeOrder.assignedDriverId || '').trim() === normalizedDriverId
+      && isActiveOrderLifecycleStatus(getStatus(activeOrder));
+
+    if (!hasValidActiveOrder) {
+      await clearDriverOrderLockIfMatches(normalizedDriverId, activeOrderId);
+      currentDriverData = { ...driverData, activeOrderId: '' };
+    }
+  }
+
+  if (currentDriverData.available !== true || hasDriverActiveOrder(currentDriverData) || refreshOfferEligibility) {
+    const offeredOrdersSnap = await db
+      .collection('orders')
+      .where('orderStatus', '==', 'courier_offer_pending')
+      .where('offerDriverIds', 'array-contains', normalizedDriverId)
+      .limit(120)
+      .get();
+
+    let removedFrom = 0;
+    let reassigned = 0;
+    for (const orderDoc of offeredOrdersSnap.docs) {
+      const orderRef = orderDoc.ref;
+      let shouldReassign = false;
+      await db.runTransaction(async (tx) => {
+        const fresh = await tx.get(orderRef);
+        if (!fresh.exists) return;
+        const order = fresh.data() || {};
+        if (getStatus(order) !== 'courier_offer_pending') return;
+
+        const shouldRemoveDriver = currentDriverData.available !== true ||
+          hasDriverActiveOrder(currentDriverData) ||
+          !isDriverWithinOrderOfferRange(order, currentDriverData);
+        if (!shouldRemoveDriver) return;
+
+        const activeOfferDriverIds = getOfferDriverIds(order)
+          .filter((id) => id !== normalizedDriverId);
+        const driverDistances = order.offerDriverDistancesKm && typeof order.offerDriverDistancesKm === 'object'
+          ? { ...order.offerDriverDistancesKm }
+          : {};
+        delete driverDistances[normalizedDriverId];
+
+        if (activeOfferDriverIds.length) {
+          const removedDriverOwnerUids = getDriverOwnerUids(currentDriverData, normalizedDriverId);
+          tx.update(orderRef, {
+            offeredDriverId: activeOfferDriverIds[0],
+            offerDriverIds: activeOfferDriverIds,
+            offerDriverOwnerUids: (Array.isArray(order.offerDriverOwnerUids)
+              ? order.offerDriverOwnerUids.map(String)
+              : []).filter((uid) => !removedDriverOwnerUids.includes(uid)),
+            offerDriverDistancesKm: driverDistances,
+            offerEligibleDriversCount: activeOfferDriverIds.length,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          removedFrom += 1;
+          return;
+        }
+
+        tx.update(orderRef, {
+          offeredDriverId: admin.firestore.FieldValue.delete(),
+          offerDriverIds: admin.firestore.FieldValue.delete(),
+          offerDriverOwnerUids: admin.firestore.FieldValue.delete(),
+          offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
+          offerStartedAt: admin.firestore.FieldValue.delete(),
+          offerExpiresAt: admin.firestore.FieldValue.delete(),
+          offerEligibleDriversCount: admin.firestore.FieldValue.delete(),
+          orderStatus: 'courier_searching',
+          status: 'courier_searching',
+          assignmentBackoffReason: 'no-offer-drivers-available',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        removedFrom += 1;
+        shouldReassign = true;
+      });
+
+      if (shouldReassign) {
+        await assignNextCourier(orderRef);
+        reassigned += 1;
+      }
+    }
+
+    return { removedFrom, addedTo: 0, reassigned };
+  }
+
+  const pendingOffersSnap = await db
+    .collection('orders')
+    .where('orderStatus', '==', 'courier_offer_pending')
+    .limit(120)
+    .get();
+
+  let addedTo = 0;
+  for (const orderDoc of pendingOffersSnap.docs) {
+    const orderRef = orderDoc.ref;
+    await db.runTransaction(async (tx) => {
+      const freshOrderSnap = await tx.get(orderRef);
+      if (!freshOrderSnap.exists) return;
+      const order = freshOrderSnap.data() || {};
+      if (!canDriverReceiveOrderOffer(order, normalizedDriverId, currentDriverData)) return;
+
+      const offerDriverIds = getOfferDriverIds(order);
+      const nextOfferDriverIds = Array.from(new Set([...offerDriverIds, normalizedDriverId]));
+      const nextOfferDriverOwnerUids = Array.from(new Set([
+        ...(Array.isArray(order.offerDriverOwnerUids)
+          ? order.offerDriverOwnerUids.map(String)
+          : []),
+        ...getDriverOwnerUids(currentDriverData, normalizedDriverId),
+      ]));
+      const offerDriverDistancesKm = order.offerDriverDistancesKm && typeof order.offerDriverDistancesKm === 'object'
+        ? { ...order.offerDriverDistancesKm }
+        : {};
+
+      const restaurantCoords = getOrderRestaurantCoords(order);
+      const driverCoords = getDriverCoords(currentDriverData);
+      if (restaurantCoords && driverCoords) {
+        const distanceKm = haversineKm(
+          restaurantCoords.lat,
+          restaurantCoords.lng,
+          driverCoords.lat,
+          driverCoords.lng
+        );
+        if (Number.isFinite(distanceKm)) {
+          offerDriverDistancesKm[normalizedDriverId] = Number(distanceKm.toFixed(3));
+        }
+      }
+
+      const patch = {
+        offerDriverIds: nextOfferDriverIds,
+        offerDriverOwnerUids: nextOfferDriverOwnerUids,
+        offerDriverDistancesKm,
+        offerEligibleDriversCount: nextOfferDriverIds.length,
+        offerExpiresAt: admin.firestore.FieldValue.delete(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      if (!String(order.offeredDriverId || '').trim()) {
+        patch.offeredDriverId = normalizedDriverId;
+      }
+
+      tx.update(orderRef, patch);
+      tx.set(db.collection('driverNotifications').doc(), {
+        driverId: normalizedDriverId,
+        orderId: freshOrderSnap.id,
+        type: 'courier_offer',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        read: false,
+      });
+      addedTo += 1;
+    });
+  }
+
+  const waitingByOrderStatus = await db
+    .collection('orders')
+    .where('orderStatus', 'in', ['store_pending', 'courier_searching', 'قيد التجهيز'])
+    .limit(40)
+    .get();
+  const waitingByLegacyStatus = await db
+    .collection('orders')
+    .where('status', 'in', ['store_pending', 'بانتظار المطعم', 'courier_searching', 'قيد التجهيز'])
+    .limit(40)
+    .get();
+
+  const waitingMap = new Map();
+  for (const doc of waitingByOrderStatus.docs) waitingMap.set(doc.id, doc);
+  for (const doc of waitingByLegacyStatus.docs) waitingMap.set(doc.id, doc);
+
+  let reassigned = 0;
+  for (const orderDoc of waitingMap.values()) {
+    const order = orderDoc.data() || {};
+    if (!isWaitingCourierStatus(getStatus(order))) continue;
+    if (String(order.assignedDriverId || '').trim()) continue;
+    const result = await assignNextCourier(orderDoc.ref);
+    if (result.assigned) reassigned += 1;
+  }
+
+  return { removedFrom: 0, addedTo, reassigned };
 }
 
 async function assignNextCourier(orderRef) {
@@ -4039,7 +5510,7 @@ async function assignNextCourier(orderRef) {
     const order = snap.data() || {};
     const status = getStatus(order);
 
-    if (!isWaitingCourierStatus(status)) {
+    if (!isCourierOfferDispatchableStatus(status)) {
       return { assigned: false, reason: 'status-not-assignable' };
     }
 
@@ -4052,8 +5523,7 @@ async function assignNextCourier(orderRef) {
     const now = admin.firestore.Timestamp.now();
     const candidatesRaw = Array.isArray(order.candidateDrivers) ? order.candidateDrivers.map(String) : [];
     const rejectedDriverIds = Array.isArray(order.rejectedByDrivers) ? order.rejectedByDrivers.map(String) : [];
-    const timedOutDriverIds = Array.isArray(order.timedOutByDrivers) ? order.timedOutByDrivers.map(String) : [];
-    const excludedDriverIds = new Set([...candidatesRaw, ...rejectedDriverIds, ...timedOutDriverIds]);
+    const excludedDriverIds = new Set(rejectedDriverIds);
     const previousCycleStartedAt = order.assignmentCycleStartedAt;
     const cycleStartedMillis = previousCycleStartedAt?.toMillis?.() || 0;
     const cycleExpired =
@@ -4061,6 +5531,7 @@ async function assignNextCourier(orderRef) {
       (now.toMillis() - cycleStartedMillis) >= ASSIGNMENT_CYCLE_RESET_SECONDS * 1000;
 
     let restaurantCoords = getOrderRestaurantCoords(order);
+    let resolvedOrderStatePatch = null;
 
     if ((!stateId || !restaurantCoords) && order.restaurantId) {
       const restaurantRef = db.collection('restaurants').doc(String(order.restaurantId));
@@ -4071,11 +5542,11 @@ async function assignNextCourier(orderRef) {
           const resolvedStateId = restaurantStateId(restaurantData);
           if (resolvedStateId) {
             stateId = resolvedStateId;
-            tx.update(orderRef, {
+            resolvedOrderStatePatch = {
               stateId,
               region: stateId,
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
+            };
           }
         }
         if (!restaurantCoords) {
@@ -4091,20 +5562,38 @@ async function assignNextCourier(orderRef) {
       }
     }
 
+    if (restaurantCoords) {
+      const coordinateStateId = inferKhartoumStateIdFromCoords(restaurantCoords);
+      if (coordinateStateId && stateId !== coordinateStateId) {
+        stateId = coordinateStateId;
+        resolvedOrderStatePatch = {
+          stateId,
+          restaurantStateId: stateId,
+          region: stateId,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+      }
+    }
     const driverSnap = await tx.get(
       db.collection('drivers')
         .where('available', '==', true)
-        .limit(80)
+        .limit(MAX_ASSIGNMENT_DRIVER_SCAN)
     );
 
-    const availableDriverIds = new Set(driverSnap.docs.map((d) => d.id));
+    const availableDriverIds = new Set(
+      driverSnap.docs
+        .filter((d) => !hasDriverActiveOrder(d.data() || {}))
+        .map((d) => d.id)
+    );
     let candidates = candidatesRaw.filter((id) => availableDriverIds.has(String(id)));
     if (cycleExpired) {
       candidates = [];
       excludedDriverIds.clear();
     }
 
-    let remainingDrivers = driverSnap.docs.filter((d) => !excludedDriverIds.has(d.id));
+    let remainingDrivers = driverSnap.docs.filter((d) =>
+      availableDriverIds.has(d.id) && !excludedDriverIds.has(d.id)
+    );
     let assignmentBackoffReason = 'no-available-next-driver-in-cycle';
     const availableDriversCount = remainingDrivers.length;
     let sameStateDriversCount = availableDriversCount;
@@ -4115,10 +5604,9 @@ async function assignNextCourier(orderRef) {
         return driverStateId(data) === stateId;
       });
       sameStateDriversCount = sameStateDrivers.length;
-      if (sameStateDrivers.length > 0) {
-        remainingDrivers = sameStateDrivers;
-      } else {
-        assignmentBackoffReason = 'no-driver-in-same-state-fallback-to-distance';
+      remainingDrivers = sameStateDrivers;
+      if (sameStateDrivers.length === 0) {
+        assignmentBackoffReason = 'no-available-driver-in-order-state';
       }
     }
 
@@ -4131,9 +5619,8 @@ async function assignNextCourier(orderRef) {
     const offerRadiusKm = Math.max(1, requestedRadius || MAX_DRIVER_RESTAURANT_DISTANCE_KM);
 
     if (remainingDrivers.length > 0) {
-      if (!restaurantCoords) {
+      if (stateId || !restaurantCoords) {
         offerDrivers = remainingDrivers
-          .slice(0, MAX_COURIER_BROADCAST_DRIVERS)
           .map((doc) => ({ doc, distanceKm: null }));
       } else {
         const ranked = remainingDrivers.map((d) => {
@@ -4147,23 +5634,30 @@ async function assignNextCourier(orderRef) {
               driverCoords.lng
             )
             : Number.POSITIVE_INFINITY;
-          return { doc: d, distanceKm };
-        }).sort((a, b) => a.distanceKm - b.distanceKm);
+          return {
+            doc: d,
+            distanceKm,
+            isInOrderState: !stateId || driverStateId(driverData) === stateId,
+            isWithinPreferredRadius: Number.isFinite(distanceKm) &&
+              distanceKm <= getDriverOfferRadiusKm(driverData),
+          };
+        }).sort((a, b) => {
+          if (a.isInOrderState !== b.isInOrderState) {
+            return a.isInOrderState ? -1 : 1;
+          }
+          if (a.isWithinPreferredRadius !== b.isWithinPreferredRadius) {
+            return a.isWithinPreferredRadius ? -1 : 1;
+          }
+          return a.distanceKm - b.distanceKm;
+        });
 
-        const withinRange = ranked.filter((item) =>
-          Number.isFinite(item.distanceKm) && item.distanceKm <= offerRadiusKm
-        );
+        const withinRange = ranked.filter((item) => {
+          return Number.isFinite(item.distanceKm) && item.distanceKm <= offerRadiusKm;
+        });
 
         if (withinRange.length > 0) {
-          offerDrivers = withinRange.slice(0, MAX_COURIER_BROADCAST_DRIVERS);
+          offerDrivers = withinRange;
         } else {
-          longDistanceDrivers = ranked
-            .filter((item) => {
-              const driverData = item.doc.data() || {};
-              return Number.isFinite(item.distanceKm) &&
-                driverData.acceptsLongDistance === true;
-            })
-            .slice(0, 20);
           assignmentBackoffReason = `no-driver-within-${offerRadiusKm}km`;
         }
       }
@@ -4175,7 +5669,18 @@ async function assignNextCourier(orderRef) {
       for (const item of longDistanceDrivers) {
         longDistanceDriverDistancesKm[item.doc.id] = Number(item.distanceKm.toFixed(3));
       }
+      logger.info('assignNextCourier found no eligible driver', {
+        orderId: snap.id,
+        orderStatus: status,
+        stateId: stateId || '',
+        hasRestaurantCoords: Boolean(restaurantCoords),
+        availableDriversCount,
+        sameStateDriversCount,
+        driversAfterStateFilter: remainingDrivers.length,
+        assignmentBackoffReason,
+      });
       tx.update(orderRef, {
+        ...(resolvedOrderStatePatch || {}),
         candidateDrivers: candidates,
         longDistanceDriverIds,
         longDistanceDriverDistancesKm,
@@ -4194,11 +5699,11 @@ async function assignNextCourier(orderRef) {
       return { assigned: false, reason: 'no-driver-found' };
     }
 
-    const expiresAt = admin.firestore.Timestamp.fromMillis(
-      now.toMillis() + COURIER_OFFER_TIMEOUT_SECONDS * 1000
-    );
-
+    const previousOfferDriverIds = getOfferDriverIds(order);
     const offerDriverIds = offerDrivers.map((item) => item.doc.id);
+    const offerDriverOwnerUids = Array.from(new Set(
+      offerDrivers.flatMap((item) => getDriverOwnerUids(item.doc.data() || {}, item.doc.id))
+    ));
     const nextCandidates = Array.from(new Set([...candidates, ...offerDriverIds]));
     const offerDriverDistancesKm = {};
     for (const item of offerDrivers) {
@@ -4207,11 +5712,15 @@ async function assignNextCourier(orderRef) {
       }
     }
 
+    const storeApprovalPending = status === 'store_pending' || status === 'بانتظار المطعم';
+
     tx.update(orderRef, {
+      ...(resolvedOrderStatePatch || {}),
       offeredDriverId: offerDriverIds[0],
       offerDriverIds,
+      offerDriverOwnerUids,
       offerStartedAt: now,
-      offerExpiresAt: expiresAt,
+      offerExpiresAt: admin.firestore.FieldValue.delete(),
       assignmentAttempts: Number(order.assignmentAttempts || 0) + 1,
       candidateDrivers: nextCandidates,
       assignmentCycleStartedAt: cycleExpired ? now : (previousCycleStartedAt || now),
@@ -4231,16 +5740,17 @@ async function assignNextCourier(orderRef) {
       assignmentAvailableDriversCount: availableDriversCount,
       assignmentSameStateDriversCount: sameStateDriversCount,
       assignmentBackoffReason: admin.firestore.FieldValue.delete(),
+      storeApprovalPending,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     for (const driverId of offerDriverIds) {
+      if (previousOfferDriverIds.includes(driverId)) continue;
       tx.set(db.collection('driverNotifications').doc(), {
         driverId,
         orderId: snap.id,
         type: 'courier_offer',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt,
         read: false,
       });
     }
@@ -4255,13 +5765,19 @@ exports.assignWaitingOrders = onSchedule({
 }, async () => {
   const waitingByOrderStatus = await db
     .collection('orders')
-    .where('orderStatus', 'in', ['courier_searching', 'قيد التجهيز'])
+    .where('orderStatus', 'in', ['store_pending', 'courier_searching', 'قيد التجهيز'])
     .limit(100)
     .get();
 
   const waitingByLegacyStatus = await db
     .collection('orders')
-    .where('status', 'in', ['courier_searching', 'قيد التجهيز'])
+    .where('status', 'in', ['store_pending', 'بانتظار المطعم', 'courier_searching', 'قيد التجهيز'])
+    .limit(100)
+    .get();
+
+  const pendingOffers = await db
+    .collection('orders')
+    .where('orderStatus', '==', 'courier_offer_pending')
     .limit(100)
     .get();
 
@@ -4272,6 +5788,9 @@ exports.assignWaitingOrders = onSchedule({
   for (const doc of waitingByLegacyStatus.docs) {
     waitingMap.set(doc.id, doc);
   }
+  for (const doc of pendingOffers.docs) {
+    waitingMap.set(doc.id, doc);
+  }
 
   const waiting = Array.from(waitingMap.values());
 
@@ -4279,7 +5798,7 @@ exports.assignWaitingOrders = onSchedule({
   for (const doc of waiting) {
     const order = doc.data() || {};
     if (order.assignedDriverId) continue;
-    if (!isWaitingCourierStatus(getStatus(order))) continue;
+    if (!isCourierOfferDispatchableStatus(getStatus(order))) continue;
     const result = await assignNextCourier(doc.ref);
     if (result.assigned) assignedCount += 1;
   }
@@ -4294,7 +5813,6 @@ exports.handleCourierOfferTimeouts = onSchedule({
   schedule: 'every 1 minutes',
   region: SCHEDULE_REGION,
 }, async () => {
-  const now = admin.firestore.Timestamp.now();
   const snap = await db
     .collection('orders')
     .where('orderStatus', '==', 'courier_offer_pending')
@@ -4305,73 +5823,117 @@ exports.handleCourierOfferTimeouts = onSchedule({
   for (const doc of snap.docs) {
     const ref = doc.ref;
     const data = doc.data() || {};
-    const offeredDriverId = String(data.offeredDriverId || '').trim();
-    const offerDriverIds = Array.isArray(data.offerDriverIds)
-      ? data.offerDriverIds.map((id) => String(id || '').trim()).filter(Boolean)
-      : [];
-    const offerExpiresAt = data.offerExpiresAt;
-
-    let shouldReassign = false;
-    if (offerExpiresAt?.toMillis?.() && offerExpiresAt.toMillis() <= now.toMillis()) {
-      shouldReassign = true;
-    }
-
-    const activeOfferDriverIds = offerDriverIds.length ? offerDriverIds : (offeredDriverId ? [offeredDriverId] : []);
+    const activeOfferDriverIds = getOfferDriverIds(data);
+    let shouldReassign = activeOfferDriverIds.length === 0;
+    let nextActiveOfferDriverIds = activeOfferDriverIds;
+    let activeDriverSnaps = [];
 
     if (!shouldReassign && activeOfferDriverIds.length) {
-      const activeDriverSnaps = await Promise.all(
+      activeDriverSnaps = await Promise.all(
         activeOfferDriverIds.map((driverId) => db.collection('drivers').doc(driverId).get())
       );
-      const anyAvailable = activeDriverSnaps.some((driverSnap) => {
-        const driverData = driverSnap.data() || {};
-        return driverSnap.exists && driverData.available === true;
-      });
-      if (!anyAvailable) {
-        shouldReassign = true;
-      }
+      nextActiveOfferDriverIds = activeDriverSnaps
+        .filter((driverSnap) => {
+          const driverData = driverSnap.data() || {};
+          return driverSnap.exists && driverData.available === true && !hasDriverActiveOrder(driverData);
+        })
+        .map((driverSnap) => driverSnap.id);
+
+      shouldReassign = nextActiveOfferDriverIds.length === 0;
     }
 
-    if (!shouldReassign) {
+    if (shouldReassign) {
+      await db.runTransaction(async (tx) => {
+        const fresh = await tx.get(ref);
+        if (!fresh.exists) return;
+        const order = fresh.data() || {};
+        if (getStatus(order) !== 'courier_offer_pending') return;
+
+        tx.update(ref, {
+          assignedDriverId: admin.firestore.FieldValue.delete(),
+          offeredDriverId: admin.firestore.FieldValue.delete(),
+          offerDriverIds: admin.firestore.FieldValue.delete(),
+          offerDriverOwnerUids: admin.firestore.FieldValue.delete(),
+          offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
+          offerStartedAt: admin.firestore.FieldValue.delete(),
+          offerExpiresAt: admin.firestore.FieldValue.delete(),
+          offerEligibleDriversCount: admin.firestore.FieldValue.delete(),
+          orderStatus: 'courier_searching',
+          status: 'courier_searching',
+          assignmentBackoffReason: 'no-offer-drivers-available',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+
+      await assignNextCourier(ref);
+      processed += 1;
       continue;
     }
 
-    await db.runTransaction(async (tx) => {
-      const fresh = await tx.get(ref);
-      if (!fresh.exists) return;
-      const order = fresh.data() || {};
-      if (getStatus(order) !== 'courier_offer_pending') return;
+    const activeSet = new Set(nextActiveOfferDriverIds);
+    const initialSet = new Set(activeOfferDriverIds);
+    const activeDriverOwnerUids = Array.from(new Set(
+      activeDriverSnaps
+        .filter((driverSnap) => activeSet.has(driverSnap.id))
+        .flatMap((driverSnap) => getDriverOwnerUids(driverSnap.data() || {}, driverSnap.id))
+    ));
+    const currentDriverOwnerUids = Array.isArray(data.offerDriverOwnerUids)
+      ? data.offerDriverOwnerUids.map(String).sort()
+      : [];
+    const changed = activeOfferDriverIds.length !== nextActiveOfferDriverIds.length
+      || activeOfferDriverIds.some((id) => !activeSet.has(id))
+      || currentDriverOwnerUids.join('|') !== activeDriverOwnerUids.slice().sort().join('|');
 
-      const activeOfferedDriverId = String(order.offeredDriverId || '').trim();
-      const activeOfferDriverIds = Array.isArray(order.offerDriverIds)
-        ? order.offerDriverIds.map((id) => String(id || '').trim()).filter(Boolean)
-        : [];
-      const existingCandidates = Array.isArray(order.candidateDrivers)
-        ? order.candidateDrivers.map(String)
-        : [];
-      const timeoutDriverIds = activeOfferDriverIds.length
-        ? activeOfferDriverIds
-        : (activeOfferedDriverId ? [activeOfferedDriverId] : []);
-      const nextCandidates = Array.from(new Set([...existingCandidates, ...timeoutDriverIds]));
+    if (changed) {
+      await db.runTransaction(async (tx) => {
+        const fresh = await tx.get(ref);
+        if (!fresh.exists) return;
+        const order = fresh.data() || {};
+        if (getStatus(order) !== 'courier_offer_pending') return;
 
-      tx.update(ref, {
-        assignedDriverId: admin.firestore.FieldValue.delete(),
-        offeredDriverId: admin.firestore.FieldValue.delete(),
-        offerDriverIds: admin.firestore.FieldValue.delete(),
-        offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
-        offerStartedAt: admin.firestore.FieldValue.delete(),
-        offerExpiresAt: admin.firestore.FieldValue.delete(),
-        candidateDrivers: nextCandidates,
-        ...(timeoutDriverIds.length
-          ? { timedOutByDrivers: admin.firestore.FieldValue.arrayUnion(...timeoutDriverIds) }
-          : {}),
-        orderStatus: 'courier_searching',
-        status: 'courier_searching',
-        lastOfferTimeoutAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        const latestOfferDriverIds = getOfferDriverIds(order);
+        const filteredOfferDriverIds = latestOfferDriverIds.filter((id) => activeSet.has(id));
+        if (!filteredOfferDriverIds.length) {
+          tx.update(ref, {
+            offeredDriverId: admin.firestore.FieldValue.delete(),
+            offerDriverIds: admin.firestore.FieldValue.delete(),
+            offerDriverOwnerUids: admin.firestore.FieldValue.delete(),
+            offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
+            offerStartedAt: admin.firestore.FieldValue.delete(),
+            offerExpiresAt: admin.firestore.FieldValue.delete(),
+            offerEligibleDriversCount: admin.firestore.FieldValue.delete(),
+            orderStatus: 'courier_searching',
+            status: 'courier_searching',
+            assignmentBackoffReason: 'no-offer-drivers-available',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          return;
+        }
+
+        const driverDistances = order.offerDriverDistancesKm && typeof order.offerDriverDistancesKm === 'object'
+          ? { ...order.offerDriverDistancesKm }
+          : {};
+        for (const driverId of Object.keys(driverDistances)) {
+          if (!activeSet.has(driverId)) delete driverDistances[driverId];
+        }
+
+        tx.update(ref, {
+          offeredDriverId: filteredOfferDriverIds[0],
+          offerDriverIds: filteredOfferDriverIds,
+          offerDriverOwnerUids: activeDriverOwnerUids,
+          offerDriverDistancesKm: driverDistances,
+          offerExpiresAt: admin.firestore.FieldValue.delete(),
+          offerEligibleDriversCount: filteredOfferDriverIds.length,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
       });
-    });
+      processed += 1;
+      if (!nextActiveOfferDriverIds.length && initialSet.size) {
+        await assignNextCourier(ref);
+      }
+      continue;
+    }
 
-    await assignNextCourier(ref);
     processed += 1;
   }
 
@@ -4460,6 +6022,90 @@ exports.recalculateRecentOrderPricing = onSchedule({
     updated: updatedCount,
     pricing: pricingConfig,
   });
+});
+
+exports.sendCourierDelayReminders = onSchedule({
+  schedule: 'every 1 minutes',
+  region: SCHEDULE_REGION,
+}, async () => {
+  const config = await getCourierDelayReminderConfig();
+  const now = Date.now();
+  const lookbackMillis = 24 * 60 * 60 * 1000;
+  const reminderPlans = [
+    {
+      sourceField: 'acceptedAt',
+      delayMinutes: config.pickupReminderMinutes,
+      sentField: 'courierPickupDelayReminderSentAt',
+      allowedStatuses: new Set(['courier_assigned', 'pickup_ready', 'store_pending']),
+      title: 'لقد تأخرت عن استلام الطلب',
+      body: 'يرجى استلام الطلب في أسرع وقت.',
+      type: 'courier_pickup_delay_reminder',
+    },
+    {
+      sourceField: 'acceptedAt',
+      delayMinutes: Math.max(config.pickupReminderMinutes, config.pickupCriticalMinutes),
+      sentField: 'courierPickupDelayCriticalSentAt',
+      allowedStatuses: new Set(['courier_assigned', 'pickup_ready', 'store_pending']),
+      title: 'إنذار! لقد تأخرت جداً عن استلام الطلب',
+      body: 'يرجى التوجه لاستلام الطلب فوراً.',
+      type: 'courier_pickup_delay_critical',
+    },
+    {
+      sourceField: 'pickedUpAt',
+      delayMinutes: config.clientArrivalMinutes,
+      sentField: 'courierClientArrivalDelaySentAt',
+      allowedStatuses: new Set(['picked_up', 'قيد التوصيل']),
+      title: 'لقد تأخرت في الوصول للعميل',
+      body: 'يرجى المسارعة للوصول إلى العميل.',
+      type: 'courier_client_arrival_delay',
+    },
+  ];
+  let sent = 0;
+
+  for (const plan of reminderPlans) {
+    const dueAt = admin.firestore.Timestamp.fromMillis(now - plan.delayMinutes * 60 * 1000);
+    const windowStart = admin.firestore.Timestamp.fromMillis(now - lookbackMillis);
+    const snapshot = await db.collection('orders')
+      .where(plan.sourceField, '>=', windowStart)
+      .where(plan.sourceField, '<=', dueAt)
+      .orderBy(plan.sourceField, 'asc')
+      .limit(250)
+      .get();
+
+    for (const orderDoc of snapshot.docs) {
+      let driverId = '';
+      let claimed = false;
+      await db.runTransaction(async (tx) => {
+        const freshSnap = await tx.get(orderDoc.ref);
+        if (!freshSnap.exists) return;
+        const order = freshSnap.data() || {};
+        if (order[plan.sentField]) return;
+        if (!plan.allowedStatuses.has(getStatus(order))) return;
+        const startedAtMillis = order[plan.sourceField]?.toMillis?.() || 0;
+        if (!startedAtMillis || now - startedAtMillis < plan.delayMinutes * 60 * 1000) return;
+        driverId = String(order.assignedDriverId || '').trim();
+        if (!driverId) return;
+        tx.update(orderDoc.ref, {
+          [plan.sentField]: admin.firestore.FieldValue.serverTimestamp(),
+          courierDelayReminderLastType: plan.type,
+          courierDelayReminderLastAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        claimed = true;
+      });
+      if (!claimed || !driverId) continue;
+      await sendNotificationToSingleUser('courier', driverId, buildNotificationPayload({
+        title: plan.title,
+        body: plan.body,
+        type: plan.type,
+        source: 'courier-delay-reminder',
+        orderId: orderDoc.id,
+        tone: 'normal',
+      }));
+      sent += 1;
+    }
+  }
+  logger.info('sendCourierDelayReminders complete', { sent, config });
 });
 
 exports.syncRestaurantClosuresFromWorkingHours = onSchedule({
@@ -4556,6 +6202,7 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
   }
 
   const orderRef = db.collection('orders').doc(orderId);
+  const driverRef = db.collection('drivers').doc(String(driverId));
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(orderRef);
     if (!snap.exists) throw new HttpsError('not-found', 'Order not found');
@@ -4576,10 +6223,54 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
       throw new HttpsError('permission-denied', 'This offer is not assigned to this driver');
     }
 
+    const driverSnap = await tx.get(driverRef);
+    if (!driverSnap.exists) {
+      throw new HttpsError('not-found', 'Driver not found');
+    }
+    const driverData = driverSnap.data() || {};
+    const lockedActiveOrderId = String(driverData.activeOrderId || '').trim();
+    if (lockedActiveOrderId && lockedActiveOrderId !== String(orderId)) {
+      throw new HttpsError('failed-precondition', 'Driver already has another active order');
+    }
+
     if (decision === 'accept') {
       const driverFee = calculateDriverFeeFromOrder(order, pricingConfig);
-      const driverSnap = await db.collection('drivers').doc(driverId).get();
-      const driverName = driverSnap.exists ? String((driverSnap.data() || {}).name || (driverSnap.data() || {}).displayName || '').trim() : '';
+      if (driverData.available !== true && lockedActiveOrderId !== String(orderId)) {
+        throw new HttpsError('failed-precondition', 'Driver is not available to accept now');
+      }
+
+      const driverName = String(driverData.name || driverData.displayName || '').trim();
+      const waitingStoreApproval = order.storeApprovalPending === true;
+      tx.set(driverRef, {
+        activeOrderId: String(orderId),
+        activeOrderLockedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      if (waitingStoreApproval) {
+        tx.update(orderRef, {
+          orderStatus: 'store_pending',
+          status: 'store_pending',
+          assignedDriverId: driverId,
+          assignedDriverName: driverName,
+          deliveryFeeForDriver: driverFee,
+          driverShare: driverFee,
+          courierFee: driverFee,
+          offeredDriverId: admin.firestore.FieldValue.delete(),
+          offerDriverIds: admin.firestore.FieldValue.delete(),
+          offerDriverOwnerUids: admin.firestore.FieldValue.delete(),
+          offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
+          offerStartedAt: admin.firestore.FieldValue.delete(),
+          offerExpiresAt: admin.firestore.FieldValue.delete(),
+          courierAcceptedBeforeStore: true,
+          courierAcceptedBeforeStoreAt: admin.firestore.FieldValue.serverTimestamp(),
+          acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+          offerAcceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return;
+      }
+
       tx.update(orderRef, {
         orderStatus: 'courier_assigned',
         status: 'courier_assigned',
@@ -4590,6 +6281,7 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
         courierFee: driverFee,
         offeredDriverId: admin.firestore.FieldValue.delete(),
         offerDriverIds: admin.firestore.FieldValue.delete(),
+        offerDriverOwnerUids: admin.firestore.FieldValue.delete(),
         offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
         offerStartedAt: admin.firestore.FieldValue.delete(),
         offerExpiresAt: admin.firestore.FieldValue.delete(),
@@ -4606,6 +6298,10 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
       ? { ...order.offerDriverDistancesKm }
       : {};
     delete driverDistances[String(driverId)];
+    const removedOfferDriverOwnerUids = getDriverOwnerUids(driverData, String(driverId));
+    const currentOfferDriverOwnerUids = Array.isArray(order.offerDriverOwnerUids)
+      ? order.offerDriverOwnerUids.map(String)
+      : [];
 
     const patch = {
       assignedDriverId: admin.firestore.FieldValue.delete(),
@@ -4617,11 +6313,13 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
     if (remainingOfferDriverIds.length) {
       patch.offeredDriverId = remainingOfferDriverIds[0];
       patch.offerDriverIds = remainingOfferDriverIds;
+      patch.offerDriverOwnerUids = currentOfferDriverOwnerUids.filter((uid) => !removedOfferDriverOwnerUids.includes(uid));
       patch.offerDriverDistancesKm = driverDistances;
       patch.offerEligibleDriversCount = remainingOfferDriverIds.length;
     } else {
       patch.offeredDriverId = admin.firestore.FieldValue.delete();
       patch.offerDriverIds = admin.firestore.FieldValue.delete();
+      patch.offerDriverOwnerUids = admin.firestore.FieldValue.delete();
       patch.offerDriverDistancesKm = admin.firestore.FieldValue.delete();
       patch.offerStartedAt = admin.firestore.FieldValue.delete();
       patch.offerExpiresAt = admin.firestore.FieldValue.delete();
@@ -4719,6 +6417,987 @@ exports.courierUpdateOrderStage = onCall({ region: REGION }, async (request) => 
   };
 });
 
+exports.reconcileCourierOrderLock = onCall({ region: REGION }, async (request) => {
+  const driverId = String(request.data?.driverId || '').trim();
+  await ensureAuthenticatedDriver(request, driverId);
+
+  const driverRef = db.collection('drivers').doc(driverId);
+  return db.runTransaction(async (tx) => {
+    const driverSnap = await tx.get(driverRef);
+    if (!driverSnap.exists) {
+      throw new HttpsError('not-found', 'Driver not found');
+    }
+
+    const driverData = driverSnap.data() || {};
+    const activeOrderId = String(driverData.activeOrderId || '').trim();
+    if (!activeOrderId) {
+      return { ok: true, cleared: false, reason: 'no-active-lock' };
+    }
+
+    const orderSnap = await tx.get(db.collection('orders').doc(activeOrderId));
+    const order = orderSnap.data() || {};
+    const isValidActiveLock = orderSnap.exists
+      && String(order.assignedDriverId || '').trim() === driverId
+      && isActiveOrderLifecycleStatus(getStatus(order));
+
+    if (isValidActiveLock) {
+      return { ok: true, cleared: false, reason: 'active-order', orderId: activeOrderId };
+    }
+
+    tx.update(driverRef, {
+      activeOrderId: admin.firestore.FieldValue.delete(),
+      activeOrderLockedAt: admin.firestore.FieldValue.delete(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return { ok: true, cleared: true, orderId: activeOrderId };
+  });
+});
+
+exports.courierReportOrderIssue = onCall({ region: REGION }, async (request) => {
+  const normalizedOrderId = String(request.data?.orderId || '').trim();
+  const normalizedDriverId = String(request.data?.driverId || '').trim();
+  const normalizedReason = String(request.data?.reason || '').trim();
+  const normalizedNote = String(request.data?.note || '').trim();
+  const allowedReasons = new Set([
+    'client_not_responding',
+    'incorrect_address',
+    'store_closed',
+    'cannot_complete_delivery',
+    'other',
+  ]);
+  const activeStatuses = new Set([
+    'courier_assigned',
+    'pickup_ready',
+    'picked_up',
+    'arrived_to_client',
+    'جاهز للتوصيل',
+    'قيد التوصيل',
+    'وصل إلى العميل',
+  ]);
+
+  if (!normalizedOrderId || !normalizedDriverId || !normalizedReason) {
+    throw new HttpsError('invalid-argument', 'orderId, driverId and reason are required');
+  }
+  if (!allowedReasons.has(normalizedReason)) {
+    throw new HttpsError('invalid-argument', 'Unsupported issue reason');
+  }
+  if (normalizedNote.length > 500) {
+    throw new HttpsError('invalid-argument', 'Issue note is too long');
+  }
+  await ensureAuthenticatedDriver(request, normalizedDriverId);
+
+  const orderRef = db.collection('orders').doc(normalizedOrderId);
+  const issueId = crypto.randomUUID();
+  const reportedAtMillis = Date.now();
+  let orderCode = normalizedOrderId;
+  await db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) throw new HttpsError('not-found', 'Order not found');
+
+    const order = orderSnap.data() || {};
+    if (String(order.assignedDriverId || '').trim() !== normalizedDriverId) {
+      throw new HttpsError('permission-denied', 'This order is not assigned to this driver');
+    }
+    if (!activeStatuses.has(getStatus(order))) {
+      throw new HttpsError('failed-precondition', 'لا يمكن تسجيل مشكلة لهذا الطلب في حالته الحالية.');
+    }
+
+    orderCode = String(order.orderNumber || order.orderId || normalizedOrderId).trim();
+    const issue = {
+      id: issueId,
+      reason: normalizedReason,
+      note: normalizedNote,
+      status: 'open',
+      driverId: normalizedDriverId,
+      reportedAtMillis,
+    };
+    const issueHistory = Array.isArray(order.courierIssueHistory)
+      ? order.courierIssueHistory.slice(-19)
+      : [];
+    tx.update(orderRef, {
+      courierIssue: issue,
+      courierIssueHistory: [...issueHistory, issue],
+      courierIssueReportedAt: admin.firestore.FieldValue.serverTimestamp(),
+      courierIssueUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      courierIssueCount: admin.firestore.FieldValue.increment(1),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  const reasonLabels = {
+    client_not_responding: 'العميل لا يرد',
+    incorrect_address: 'العنوان غير صحيح',
+    store_closed: 'المطعم مغلق',
+    cannot_complete_delivery: 'تعذر إتمام التوصيل',
+    other: 'مشكلة أخرى',
+  };
+  const lines = [
+    `الطلب: ${escapeTelegramHtml(orderCode)}`,
+    `المندوب: ${escapeTelegramHtml(normalizedDriverId)}`,
+    `السبب: ${escapeTelegramHtml(reasonLabels[normalizedReason])}`,
+  ];
+  if (normalizedNote) lines.push(`ملاحظة: ${escapeTelegramHtml(normalizedNote)}`);
+  await sendTelegramOpsAlert('بلاغ مشكلة من المندوب', lines).catch((error) => {
+    logger.error('Failed to send courier order issue alert', {
+      orderId: normalizedOrderId,
+      error: String(error),
+    });
+  });
+
+  return { ok: true, orderId: normalizedOrderId, issueId };
+});
+
+function extractStoreDeliveryWalletBalance(data) {
+    return toSafeNumber(
+      data?.storeDeliveryWalletBalance ?? data?.deliveryWalletBalance ?? 0
+    );
+  }
+
+  async function ensureStoreOwner(request, restaurantId) {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Authentication is required');
+    }
+    const restaurantRef = db.collection('restaurants').doc(restaurantId);
+    const restaurantSnap = await restaurantRef.get();
+    if (!restaurantSnap.exists) throw new HttpsError('not-found', 'Store not found');
+    const restaurant = restaurantSnap.data() || {};
+    const ownerId = String(restaurant.ownerUid || restaurantId).trim();
+    if (request.auth.uid !== ownerId) {
+      throw new HttpsError('permission-denied', 'This store does not belong to the current user');
+    }
+    if (restaurant.approvalStatus !== 'approved' || restaurant.isApproved !== true || restaurant.temporarilyClosed === true) {
+      throw new HttpsError('failed-precondition', 'Store is not available for direct delivery');
+    }
+    return { restaurantRef, restaurant };
+  }
+
+  function resolveRestaurantCoords(restaurant) {
+    return extractLatLng(restaurant.location) || extractLatLng(restaurant.defaultLocation) || (() => {
+      const lat = toNumberOrNull(restaurant.latitude ?? restaurant.lat ?? restaurant.restaurantLat);
+      const lng = toNumberOrNull(restaurant.longitude ?? restaurant.lng ?? restaurant.restaurantLng);
+      return lat != null && lng != null ? { lat, lng } : null;
+    })();
+  }
+
+  function validateDirectDeliveryDestination(data) {
+    const clientLat = toNumberOrNull(data?.clientLat);
+    const clientLng = toNumberOrNull(data?.clientLng);
+    if (clientLat == null || clientLng == null || Math.abs(clientLat) > 90 || Math.abs(clientLng) > 180) {
+      throw new HttpsError('invalid-argument', 'Valid client coordinates are required');
+    }
+    return { lat: clientLat, lng: clientLng };
+  }
+
+  function validateParcelPoint(data, prefix) {
+    const lat = toNumberOrNull(data?.[`${prefix}Lat`]);
+    const lng = toNumberOrNull(data?.[`${prefix}Lng`]);
+    if (lat == null || lng == null || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      throw new HttpsError('invalid-argument', `Valid ${prefix} coordinates are required`);
+    }
+    return { lat, lng };
+  }
+
+  exports.previewClientParcelDelivery = onCall({ region: REGION }, async (request) => {
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Authentication is required');
+    const pickup = validateParcelPoint(request.data, 'pickup');
+    const dropoff = validateParcelPoint(request.data, 'dropoff');
+    const pricingConfig = await getPricingConfigCached();
+    const distanceKm = haversineKm(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng);
+    const deliveryFee = Math.round(calculateDistanceBasedClientDeliveryFee(distanceKm, pricingConfig));
+    const clientSnap = await db.collection('clients').doc(request.auth.uid).get();
+    const walletBalance = Math.round(extractClientWalletBalance(clientSnap.data() || {}));
+    return {
+      distanceKm: Number(distanceKm.toFixed(2)), deliveryFee, walletBalance,
+      walletBalanceAfterDebit: walletBalance - deliveryFee,
+      estimatedDeliveryMinutes: Math.max(15, Math.round(distanceKm * 4) + 10),
+    };
+  });
+
+  exports.createClientParcelDelivery = onCall({ region: REGION }, async (request) => {
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Authentication is required');
+    const pickup = validateParcelPoint(request.data, 'pickup');
+    const dropoff = validateParcelPoint(request.data, 'dropoff');
+    const itemDescription = String(request.data?.itemDescription || '').trim();
+    const pickupMapUrl = String(request.data?.pickupMapUrl || '').trim();
+    const dropoffMapUrl = String(request.data?.dropoffMapUrl || '').trim();
+    const deferPayment = request.data?.deferPayment === true;
+    if (!itemDescription || itemDescription.length > 500 || pickupMapUrl.length > 2000 || dropoffMapUrl.length > 2000) {
+      throw new HttpsError('invalid-argument', 'A valid item description and location details are required');
+    }
+    const clientRef = db.collection('clients').doc(request.auth.uid);
+    const orderRef = db.collection('orders').doc();
+    const pricingConfig = await getPricingConfigCached();
+    if (deferPayment) {
+      const clientSnap = await clientRef.get();
+      if (!clientSnap.exists) throw new HttpsError('not-found', 'Client was not found');
+      const client = clientSnap.data() || {};
+      const distanceKm = haversineKm(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng);
+      const deliveryFee = Math.round(calculateDistanceBasedClientDeliveryFee(distanceKm, pricingConfig));
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      const orderCode = `PAR-${Date.now().toString().slice(-8)}-${orderRef.id.slice(-4).toUpperCase()}`;
+      await orderRef.set({
+        orderId: orderCode, orderNumber: orderCode, orderSource: 'client_parcel_delivery',
+        fulfillmentMode: 'parcel_delivery', clientId: request.auth.uid,
+        clientName: String(client.name || client.displayName || '').trim(),
+        clientPhone: String(client.phone || client.phoneNumber || '').trim(),
+        pickupLat: pickup.lat, pickupLng: pickup.lng,
+        pickupLocation: new admin.firestore.GeoPoint(pickup.lat, pickup.lng), pickupMapUrl,
+        clientLat: dropoff.lat, clientLng: dropoff.lng,
+        clientLocation: new admin.firestore.GeoPoint(dropoff.lat, dropoff.lng), dropoffMapUrl,
+        packageDescription: itemDescription, items: [], distanceKm: Number(distanceKm.toFixed(2)),
+        routeDistanceKm: Number(distanceKm.toFixed(2)),
+        estimatedDeliveryMinutes: Math.max(15, Math.round(distanceKm * 4) + 10),
+        total: 0, deliveryFee, totalWithDelivery: deliveryFee, totalBeforeDiscount: deliveryFee,
+        deliveryFeeForDriver: Math.round(calculateDistanceBasedDriverFee(distanceKm, pricingConfig)),
+        paymentStatus: 'بانتظار الدفع', paymentReviewDecision: '', paymentReviewRequired: false,
+        orderStatus: 'payment_pending', status: 'payment_pending', createdAt: now, updatedAt: now,
+      });
+      return { ok: true, orderId: orderRef.id, deliveryFee, paymentRequired: true };
+    }
+    let deliveryFee = 0;
+    let balanceAfter = 0;
+    await db.runTransaction(async (tx) => {
+      const clientSnap = await tx.get(clientRef);
+      if (!clientSnap.exists) throw new HttpsError('not-found', 'Client wallet was not found');
+      const client = clientSnap.data() || {};
+      const distanceKm = haversineKm(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng);
+      deliveryFee = Math.round(calculateDistanceBasedClientDeliveryFee(distanceKm, pricingConfig));
+      const balanceBefore = Math.round(extractClientWalletBalance(client));
+      if (balanceBefore < deliveryFee) throw new HttpsError('failed-precondition', 'Insufficient wallet balance');
+      balanceAfter = balanceBefore - deliveryFee;
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      const orderCode = `PAR-${Date.now().toString().slice(-8)}-${orderRef.id.slice(-4).toUpperCase()}`;
+      tx.set(clientRef, { walletBalance: balanceAfter, wallet: balanceAfter, updatedAt: now }, { merge: true });
+      tx.set(clientRef.collection('walletTransactions').doc(), {
+        type: 'client_parcel_delivery_fee', orderId: orderRef.id, amount: -deliveryFee,
+        balanceBefore, balanceAfter, createdAt: now,
+      });
+      tx.set(orderRef, {
+        orderId: orderCode, orderNumber: orderCode, orderSource: 'client_parcel_delivery',
+        fulfillmentMode: 'parcel_delivery', clientId: request.auth.uid,
+        clientName: String(client.name || client.displayName || '').trim(),
+        clientPhone: String(client.phone || client.phoneNumber || '').trim(),
+        pickupLat: pickup.lat, pickupLng: pickup.lng,
+        pickupLocation: new admin.firestore.GeoPoint(pickup.lat, pickup.lng), pickupMapUrl,
+        clientLat: dropoff.lat, clientLng: dropoff.lng,
+        clientLocation: new admin.firestore.GeoPoint(dropoff.lat, dropoff.lng), dropoffMapUrl,
+        packageDescription: itemDescription, items: [], distanceKm: Number(distanceKm.toFixed(2)),
+        routeDistanceKm: Number(distanceKm.toFixed(2)),
+        estimatedDeliveryMinutes: Math.max(15, Math.round(distanceKm * 4) + 10),
+        deliveryFee, deliveryFeeForDriver: Math.round(calculateDistanceBasedDriverFee(distanceKm, pricingConfig)),
+        paymentMethod: 'wallet', paymentStatus: 'paid', parcelWalletDebitedAmount: deliveryFee,
+        orderStatus: 'courier_searching', status: 'courier_searching', createdAt: now, updatedAt: now,
+      });
+    });
+    await assignNextCourier(orderRef);
+    return { ok: true, orderId: orderRef.id, deliveryFee, walletBalanceAfter: balanceAfter };
+  });
+
+exports.autoDispatchPaidParcelDelivery = onDocumentUpdated(
+  { region: REGION, document: 'orders/{orderId}' },
+  async (event) => {
+    const orderRef = event.data.after.ref;
+    const order = event.data.after.data() || {};
+    if (String(order.orderSource || '').trim() !== 'client_parcel_delivery') return false;
+    if (getStatus(order) !== 'store_pending' || normalizePaymentStatus(order.paymentStatus) !== 'paid') return false;
+    if (String(order.assignedDriverId || '').trim() || order.parcelDispatchStartedAt) return false;
+    if (String(order.paymentMethod || '').trim() === 'wallet' && !order.walletSettledAt) return false;
+    await orderRef.set({
+      orderStatus: 'courier_searching', status: 'courier_searching',
+      parcelDispatchStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await assignNextCourier(orderRef);
+    return true;
+  }
+);
+
+  exports.cancelClientParcelDelivery = onCall({ region: REGION }, async (request) => {
+    const orderId = String(request.data?.orderId || '').trim();
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Authentication is required');
+    if (!orderId) throw new HttpsError('invalid-argument', 'orderId is required');
+    const orderRef = db.collection('orders').doc(orderId);
+    let refundAmount = 0;
+    await db.runTransaction(async (tx) => {
+      const orderSnap = await tx.get(orderRef);
+      if (!orderSnap.exists) throw new HttpsError('not-found', 'Order not found');
+      const order = orderSnap.data() || {};
+      if (String(order.clientId || '').trim() !== request.auth.uid || String(order.orderSource || '').trim() !== 'client_parcel_delivery') {
+        throw new HttpsError('permission-denied', 'This delivery does not belong to the current client');
+      }
+      if (String(order.assignedDriverId || '').trim()) {
+        throw new HttpsError('failed-precondition', 'Delivery can only be cancelled before a courier accepts it');
+      }
+      if (!['courier_searching', 'courier_offer_pending'].includes(getStatus(order))) {
+        throw new HttpsError('failed-precondition', 'Delivery can no longer be cancelled');
+      }
+      const clientRef = db.collection('clients').doc(request.auth.uid);
+      const clientSnap = await tx.get(clientRef);
+      if (!clientSnap.exists) throw new HttpsError('not-found', 'Client wallet was not found');
+      refundAmount = Math.max(0, Math.round(toSafeNumber(order.parcelWalletDebitedAmount || order.deliveryFee)));
+      const balanceBefore = Math.round(extractClientWalletBalance(clientSnap.data() || {}));
+      const balanceAfter = balanceBefore + refundAmount;
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      tx.set(clientRef, { walletBalance: balanceAfter, wallet: balanceAfter, updatedAt: now }, { merge: true });
+      tx.set(clientRef.collection('walletTransactions').doc(), { type: 'client_parcel_delivery_refund', orderId, amount: refundAmount, balanceBefore, balanceAfter, createdAt: now });
+      tx.set(orderRef, { orderStatus: 'cancelled', status: 'cancelled', parcelCancelledByClient: true, walletRefundedAmount: refundAmount, walletRefundedAt: now, cancelledAt: now, updatedAt: now }, { merge: true });
+    });
+    return { ok: true, orderId, refundAmount };
+  });
+
+  exports.previewStoreDirectDelivery = onCall({ region: REGION }, async (request) => {
+    const restaurantId = String(request.data?.restaurantId || '').trim();
+    if (!restaurantId) throw new HttpsError('invalid-argument', 'restaurantId is required');
+    const { restaurant } = await ensureStoreOwner(request, restaurantId);
+    const origin = resolveRestaurantCoords(restaurant);
+    const destination = validateDirectDeliveryDestination(request.data);
+    if (!origin) throw new HttpsError('failed-precondition', 'Store location is incomplete');
+
+    const pricingConfig = await getPricingConfigCached();
+    const distanceKm = haversineKm(origin.lat, origin.lng, destination.lat, destination.lng);
+    const deliveryFee = Math.round(calculateDistanceBasedClientDeliveryFee(distanceKm, pricingConfig));
+    const walletBalance = Math.round(extractStoreDeliveryWalletBalance(restaurant));
+    return {
+      distanceKm: Number(distanceKm.toFixed(2)),
+      deliveryFee,
+      walletBalance,
+      walletBalanceAfterDebit: walletBalance - deliveryFee,
+      estimatedDeliveryMinutes: Math.max(15, Math.round(distanceKm * 4) + 10),
+    };
+  });
+
+  exports.createStoreDirectDelivery = onCall({ region: REGION }, async (request) => {
+    const restaurantId = String(request.data?.restaurantId || '').trim();
+    const clientName = String(request.data?.clientName || '').trim();
+    const clientPhone = String(request.data?.clientPhone || '').trim();
+    const packageDescription = String(request.data?.packageDescription || '').trim();
+    const clientMapUrl = String(request.data?.clientMapUrl || '').trim();
+    if (!restaurantId || !clientName || !clientPhone) {
+      throw new HttpsError('invalid-argument', 'restaurantId, clientName and clientPhone are required');
+    }
+    if (packageDescription.length > 500 || clientMapUrl.length > 2000) {
+      throw new HttpsError('invalid-argument', 'Direct delivery details are too long');
+    }
+    const destination = validateDirectDeliveryDestination(request.data);
+    const { restaurantRef } = await ensureStoreOwner(request, restaurantId);
+    const orderRef = db.collection('orders').doc();
+    const pricingConfig = await getPricingConfigCached();
+    let deliveryFee = 0;
+    let walletBalanceBefore = 0;
+    let walletBalanceAfter = 0;
+
+    await db.runTransaction(async (tx) => {
+      const restaurantSnap = await tx.get(restaurantRef);
+      if (!restaurantSnap.exists) throw new HttpsError('not-found', 'Store not found');
+      const restaurant = restaurantSnap.data() || {};
+      const origin = resolveRestaurantCoords(restaurant);
+      if (!origin) throw new HttpsError('failed-precondition', 'Store location is incomplete');
+      if (restaurant.approvalStatus !== 'approved' || restaurant.isApproved !== true || restaurant.temporarilyClosed === true) {
+        throw new HttpsError('failed-precondition', 'Store is not available for direct delivery');
+      }
+
+      const distanceKm = haversineKm(origin.lat, origin.lng, destination.lat, destination.lng);
+      const originStateId = inferKhartoumStateIdFromCoords(origin) ||
+        restaurantStateId(restaurant);
+      deliveryFee = Math.round(calculateDistanceBasedClientDeliveryFee(distanceKm, pricingConfig));
+      const driverShare = Math.round(calculateDistanceBasedDriverFee(distanceKm, pricingConfig));
+      walletBalanceBefore = Math.round(extractStoreDeliveryWalletBalance(restaurant));
+      walletBalanceAfter = walletBalanceBefore - deliveryFee;
+      const orderCode = `DIR-${Date.now().toString().slice(-8)}-${orderRef.id.slice(-4).toUpperCase()}`;
+      const now = admin.firestore.FieldValue.serverTimestamp();
+
+      tx.set(restaurantRef, {
+        storeDeliveryWalletBalance: walletBalanceAfter,
+        deliveryWalletBalance: walletBalanceAfter,
+        storeDirectDeliveryDebitedTotal: admin.firestore.FieldValue.increment(deliveryFee),
+        updatedAt: now,
+      }, { merge: true });
+      tx.set(restaurantRef.collection('walletTransactions').doc(), {
+        type: 'store_direct_delivery_fee',
+        orderId: orderRef.id,
+        amount: -deliveryFee,
+        balanceBefore: walletBalanceBefore,
+        balanceAfter: walletBalanceAfter,
+        createdAt: now,
+      });
+      tx.set(orderRef, {
+        orderId: orderCode,
+        orderNumber: orderCode,
+        orderSource: 'store_direct_delivery',
+        fulfillmentMode: 'merchant_delivery',
+        restaurantId,
+        restaurantName: String(restaurant.name || restaurant.restaurantName || '').trim(),
+        restaurantLat: origin.lat,
+        restaurantLng: origin.lng,
+        restaurantLocation: new admin.firestore.GeoPoint(origin.lat, origin.lng),
+        ...(originStateId ? {
+          stateId: originStateId,
+          restaurantStateId: originStateId,
+          region: originStateId,
+        } : {}),
+        clientName,
+        clientPhone,
+        clientLat: destination.lat,
+        clientLng: destination.lng,
+        clientLocation: new admin.firestore.GeoPoint(destination.lat, destination.lng),
+        clientMapUrl,
+        packageDescription,
+        items: [],
+        distanceKm: Number(distanceKm.toFixed(2)),
+        routeDistanceKm: Number(distanceKm.toFixed(2)),
+        estimatedDeliveryMinutes: Math.max(15, Math.round(distanceKm * 4) + 10),
+        deliveryFee,
+        deliveryFeeChargedToStore: deliveryFee,
+        deliveryFeeForDriver: driverShare,
+        driverShare,
+        platformMargin: Math.max(0, deliveryFee - driverShare),
+        storeWalletBalanceBeforeDebit: walletBalanceBefore,
+        storeWalletBalanceAfterDebit: walletBalanceAfter,
+        paymentMethod: 'store_wallet',
+        paymentStatus: 'paid',
+        orderStatus: 'courier_searching',
+        status: 'courier_searching',
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    let assignment = { assigned: false, reason: 'assignment-not-attempted' };
+    try {
+      assignment = await assignNextCourier(orderRef);
+    } catch (error) {
+      logger.error('createStoreDirectDelivery assignment failed after order creation', {
+        orderId: orderRef.id,
+        restaurantId,
+        error: error?.message || String(error),
+      });
+      await orderRef.set({
+        assignmentBackoffReason: 'dispatch-initial-attempt-failed',
+        assignmentDispatchErrorAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+    return {
+      ok: true,
+      orderId: orderRef.id,
+      deliveryFee,
+      walletBalanceBefore,
+      walletBalanceAfter,
+      courierOfferSent: assignment.assigned === true,
+      assignmentReason: assignment.reason || '',
+    };
+  });
+
+function normalizeSubstitutionItems(rawItems) {
+  if (!Array.isArray(rawItems) || rawItems.length === 0 || rawItems.length > 40) {
+    throw new HttpsError('invalid-argument', 'A replacement item list is required');
+  }
+  return rawItems.map((rawItem) => {
+    const item = rawItem || {};
+    const name = String(item.name || item.itemName || '').trim();
+    const quantity = Math.max(1, Math.min(100, Math.round(toSafeNumber(item.quantity ?? item.qty, 1))));
+    const price = Math.max(0, Math.min(100000000, Math.round(toSafeNumber(item.price ?? item.unitPrice))));
+    if (!name || name.length > 160) {
+      throw new HttpsError('invalid-argument', 'Each replacement item needs a valid name');
+    }
+    return {
+      name,
+      quantity,
+      price,
+      total: quantity * price,
+      ...(String(item.note || '').trim() ? { note: String(item.note).trim().slice(0, 300) } : {}),
+    };
+  });
+}
+
+function orderItemAmount(item) {
+  const quantity = Math.max(1, Math.round(toSafeNumber(item?.quantity ?? item?.qty, 1)));
+  const price = Math.max(0, Math.round(toSafeNumber(item?.price ?? item?.unitPrice)));
+  return quantity * price;
+}
+
+exports.storeMarkOrderItemUnavailable = onCall({ region: REGION }, async (request) => {
+  const orderId = String(request.data?.orderId || '').trim();
+  const restaurantId = String(request.data?.restaurantId || '').trim();
+  const itemIndex = Math.round(toSafeNumber(request.data?.itemIndex, -1));
+  if (!orderId || !restaurantId || itemIndex < 0) {
+    throw new HttpsError('invalid-argument', 'orderId, restaurantId and itemIndex are required');
+  }
+  await ensureStoreOwner(request, restaurantId);
+  const orderRef = db.collection('orders').doc(orderId);
+  let clientId = '';
+  let itemName = '';
+  await db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) throw new HttpsError('not-found', 'Order not found');
+    const order = orderSnap.data() || {};
+    if (String(order.restaurantId || '').trim() !== restaurantId) {
+      throw new HttpsError('permission-denied', 'This order does not belong to the store');
+    }
+    if (order.preparationStarted === true || order.readyByRestaurant === true) {
+      throw new HttpsError('failed-precondition', 'Items cannot be changed after preparation starts');
+    }
+    if (order.unavailableItemPending === true) {
+      throw new HttpsError('failed-precondition', 'Wait for the client response to the unavailable item');
+    }
+    const items = Array.isArray(order.items) ? order.items : [];
+    if (!items[itemIndex]) throw new HttpsError('not-found', 'Order item not found');
+    clientId = String(order.clientId || '').trim();
+    itemName = String(items[itemIndex].name || items[itemIndex].title || 'صنف').trim();
+    tx.set(orderRef, {
+      unavailableItemPending: true,
+      unavailableItemStatus: 'pending_client_choice',
+      unavailableItemIndex: itemIndex,
+      unavailableItem: { ...items[itemIndex], originalIndex: itemIndex },
+      unavailableItemReportedAt: admin.firestore.FieldValue.serverTimestamp(),
+      unavailableItemReportedByStoreId: restaurantId,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+  if (clientId) {
+    await sendNotificationToSingleUser('client', clientId, buildNotificationPayload({
+      title: 'صنف غير متوفر في طلبك',
+      body: `${itemName || 'أحد الأصناف'} غير متوفر. اختر بديلاً أو أكمل الطلب بدونه قبل بدء التجهيز.`,
+      type: 'order_item_unavailable', source: 'order-unavailable-item', tone: 'normal', orderId,
+    }));
+  }
+  return { ok: true, orderId, itemIndex };
+});
+
+exports.clientResolveUnavailableOrderItem = onCall({ region: REGION }, async (request) => {
+  const orderId = String(request.data?.orderId || '').trim();
+  const decision = String(request.data?.decision || '').trim().toLowerCase();
+  const menuItemId = String(request.data?.menuItemId || '').trim();
+  if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Authentication is required');
+  if (!orderId || !['replacement', 'continue_without'].includes(decision)) {
+    throw new HttpsError('invalid-argument', 'orderId and a valid decision are required');
+  }
+  if (decision === 'replacement' && !menuItemId) {
+    throw new HttpsError('invalid-argument', 'menuItemId is required for a replacement');
+  }
+  const orderRef = db.collection('orders').doc(orderId);
+  let result = { decision, difference: 0, restaurantId: '', itemName: '' };
+  await db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) throw new HttpsError('not-found', 'Order not found');
+    const order = orderSnap.data() || {};
+    if (String(order.clientId || '').trim() !== request.auth.uid) {
+      throw new HttpsError('permission-denied', 'This order does not belong to the current client');
+    }
+    if (order.unavailableItemPending !== true || order.unavailableItemStatus !== 'pending_client_choice') {
+      throw new HttpsError('failed-precondition', 'There is no unavailable item awaiting a decision');
+    }
+    if (order.preparationStarted === true || order.readyByRestaurant === true) {
+      throw new HttpsError('failed-precondition', 'This order can no longer be changed');
+    }
+    const items = Array.isArray(order.items) ? [...order.items] : [];
+    const itemIndex = Math.round(toSafeNumber(order.unavailableItemIndex, -1));
+    const unavailableItem = items[itemIndex];
+    if (!unavailableItem) throw new HttpsError('failed-precondition', 'The unavailable item is no longer in the order');
+    const originalAmount = orderItemAmount(unavailableItem);
+    let replacementItem = null;
+    if (decision === 'replacement') {
+      const menuRef = db.collection('restaurants').doc(String(order.restaurantId || '').trim()).collection('full_menu').doc(menuItemId);
+      const menuSnap = await tx.get(menuRef);
+      if (!menuSnap.exists) throw new HttpsError('not-found', 'Replacement item not found');
+      const menuItem = menuSnap.data() || {};
+      if (menuItem.available === false) throw new HttpsError('failed-precondition', 'Replacement item is unavailable');
+      const quantity = Math.max(1, Math.round(toSafeNumber(unavailableItem.quantity ?? unavailableItem.qty, 1)));
+      const price = Math.max(0, Math.round(toSafeNumber(menuItem.price)));
+      replacementItem = {
+        name: String(menuItem.name || '').trim() || 'صنف بديل', quantity, price,
+        total: quantity * price, menuItemId,
+        replacementFor: String(unavailableItem.name || unavailableItem.title || '').trim(),
+      };
+      items[itemIndex] = replacementItem;
+    } else {
+      items.removeAt(itemIndex);
+    }
+    const replacementAmount = replacementItem ? orderItemAmount(replacementItem) : 0;
+    const difference = replacementAmount - originalAmount;
+    const currentTotal = Math.max(0, Math.round(toSafeNumber(order.total)));
+    const currentTotalWithDelivery = Math.max(0, Math.round(toSafeNumber(order.totalWithDelivery ?? currentTotal)));
+    const nextTotal = Math.max(0, currentTotal + difference);
+    const nextTotalWithDelivery = Math.max(0, currentTotalWithDelivery + difference);
+    const clientRef = db.collection('clients').doc(request.auth.uid);
+    const clientSnap = await tx.get(clientRef);
+    if (!clientSnap.exists) throw new HttpsError('not-found', 'Client wallet was not found');
+    const balanceBefore = Math.round(extractClientWalletBalance(clientSnap.data() || {}));
+    const balanceAfter = balanceBefore - difference;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    result = { decision, difference, restaurantId: String(order.restaurantId || '').trim(), itemName: String(unavailableItem.name || unavailableItem.title || 'الصنف').trim() };
+    tx.set(orderRef, {
+      items, total: nextTotal, totalWithDelivery: nextTotalWithDelivery,
+      unavailableItemPending: false,
+      unavailableItemStatus: decision === 'replacement' ? 'replacement_selected' : 'continued_without_item',
+      unavailableItemResolution: decision, unavailableItemReplacement: replacementItem,
+      unavailableItemResolvedAt: now,
+      unavailableItemWalletBalanceBefore: balanceBefore,
+      unavailableItemWalletBalanceAfter: balanceAfter, updatedAt: now,
+    }, { merge: true });
+    tx.set(clientRef, { walletBalance: balanceAfter, wallet: balanceAfter, updatedAt: now }, { merge: true });
+    if (difference !== 0) {
+      tx.set(clientRef.collection('walletTransactions').doc(), {
+        type: 'order_unavailable_item_adjustment', orderId, amount: -difference,
+        balanceBefore, balanceAfter, createdAt: now,
+      });
+    }
+  });
+  if (result.restaurantId) {
+    const choseReplacement = result.decision === 'replacement';
+    await sendNotificationToSingleUser('store', result.restaurantId, buildNotificationPayload({
+      title: choseReplacement ? 'اختار العميل بديلاً' : 'سيكمل العميل بدون الصنف',
+      body: choseReplacement
+        ? `اختار العميل بديلاً عن ${result.itemName || 'الصنف غير المتوفر'}. يمكنك بدء التجهيز.`
+        : `سيكمل العميل طلبه بدون ${result.itemName || 'الصنف غير المتوفر'}. يمكنك بدء التجهيز.`,
+      type: 'order_unavailable_item_resolved', source: 'order-unavailable-item', orderId,
+    }));
+  }
+  return { ok: true, ...result };
+});
+
+exports.storeProposeOrderSubstitution = onCall({ region: REGION }, async (request) => {
+  const orderId = String(request.data?.orderId || '').trim();
+  const restaurantId = String(request.data?.restaurantId || '').trim();
+  const note = String(request.data?.note || '').trim();
+  if (!orderId || !restaurantId) {
+    throw new HttpsError('invalid-argument', 'orderId and restaurantId are required');
+  }
+  if (note.length > 500) throw new HttpsError('invalid-argument', 'Replacement note is too long');
+  await ensureStoreOwner(request, restaurantId);
+  const replacementItems = normalizeSubstitutionItems(request.data?.items);
+  const replacementSubtotal = replacementItems.reduce((total, item) => total + item.total, 0);
+  const orderRef = db.collection('orders').doc(orderId);
+
+  await db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) throw new HttpsError('not-found', 'Order not found');
+    const order = orderSnap.data() || {};
+    if (String(order.restaurantId || '').trim() !== restaurantId) {
+      throw new HttpsError('permission-denied', 'This order does not belong to the store');
+    }
+    const status = getStatus(order);
+    if (!['store_pending', 'courier_searching', 'courier_offer_pending', 'courier_assigned', 'قيد التجهيز'].includes(status)) {
+      throw new HttpsError('failed-precondition', 'This order can no longer be changed');
+    }
+    if (order.readyByRestaurant === true || status === 'pickup_ready') {
+      throw new HttpsError('failed-precondition', 'The order is already ready for pickup');
+    }
+    const currentSubtotal = Math.max(0, Math.round(toSafeNumber(order.total)));
+    tx.set(orderRef, {
+      substitutionStatus: 'pending_client_response',
+      substitutionPending: true,
+      substitutionItems: replacementItems,
+      substitutionNote: note,
+      substitutionSubtotal: replacementSubtotal,
+      substitutionPriceDifference: replacementSubtotal - currentSubtotal,
+      substitutionProposedAt: admin.firestore.FieldValue.serverTimestamp(),
+      substitutionProposedByStoreId: restaurantId,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+
+  const orderSnap = await orderRef.get();
+  const order = orderSnap.data() || {};
+  await sendNotificationToSingleUser('client', String(order.clientId || '').trim(), buildNotificationPayload({
+    title: 'تعديل مطلوب على طلبك',
+    body: 'اقترح المتجر بديلاً أو تعديلًا على أصناف طلبك. راجع التفاصيل قبل متابعة التجهيز.',
+    type: 'order_substitution_pending',
+    source: 'order-substitution',
+    orderId,
+  }));
+  return { ok: true, orderId, replacementSubtotal };
+});
+
+exports.clientRespondToOrderSubstitution = onCall({ region: REGION }, async (request) => {
+  const orderId = String(request.data?.orderId || '').trim();
+  const decision = String(request.data?.decision || '').trim().toLowerCase();
+  if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Authentication is required');
+  if (!orderId || !['accept', 'reject'].includes(decision)) {
+    throw new HttpsError('invalid-argument', 'orderId and decision are required');
+  }
+  const orderRef = db.collection('orders').doc(orderId);
+  let result = { decision, difference: 0, restaurantId: '' };
+
+  await db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) throw new HttpsError('not-found', 'Order not found');
+    const order = orderSnap.data() || {};
+    if (String(order.clientId || '').trim() !== request.auth.uid) {
+      throw new HttpsError('permission-denied', 'This order does not belong to the current client');
+    }
+    if (order.substitutionStatus !== 'pending_client_response' || order.substitutionPending !== true) {
+      throw new HttpsError('failed-precondition', 'There is no pending replacement proposal');
+    }
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const difference = Math.round(toSafeNumber(order.substitutionPriceDifference));
+    result = { decision, difference, restaurantId: String(order.restaurantId || '').trim() };
+
+    if (decision === 'reject') {
+      tx.set(orderRef, {
+        substitutionStatus: 'rejected_by_client',
+        substitutionPending: false,
+        substitutionRespondedAt: now,
+        updatedAt: now,
+      }, { merge: true });
+      return;
+    }
+
+    const replacementItems = Array.isArray(order.substitutionItems) ? order.substitutionItems : [];
+    if (!replacementItems.length) throw new HttpsError('failed-precondition', 'Replacement items are missing');
+    const currentTotal = Math.max(0, Math.round(toSafeNumber(order.total)));
+    const nextTotal = Math.max(0, currentTotal + difference);
+    const currentTotalWithDelivery = Math.max(0, Math.round(toSafeNumber(order.totalWithDelivery ?? currentTotal)));
+    const nextTotalWithDelivery = Math.max(0, currentTotalWithDelivery + difference);
+    const clientRef = db.collection('clients').doc(request.auth.uid);
+    const clientSnap = await tx.get(clientRef);
+    if (!clientSnap.exists) throw new HttpsError('not-found', 'Client wallet was not found');
+    const clientData = clientSnap.data() || {};
+    const balanceBefore = Math.round(extractClientWalletBalance(clientData));
+    const balanceAfter = balanceBefore - difference;
+
+    tx.set(orderRef, {
+      items: replacementItems,
+      total: nextTotal,
+      totalWithDelivery: nextTotalWithDelivery,
+      substitutionStatus: 'accepted_by_client',
+      substitutionPending: false,
+      substitutionRespondedAt: now,
+      substitutionAppliedAt: now,
+      substitutionWalletBalanceBefore: balanceBefore,
+      substitutionWalletBalanceAfter: balanceAfter,
+      updatedAt: now,
+    }, { merge: true });
+    tx.set(clientRef, {
+      walletBalance: balanceAfter,
+      wallet: balanceAfter,
+      updatedAt: now,
+    }, { merge: true });
+    if (difference !== 0) {
+      tx.set(clientRef.collection('walletTransactions').doc(), {
+        type: 'order_substitution_adjustment',
+        orderId,
+        amount: -difference,
+        balanceBefore,
+        balanceAfter,
+        createdAt: now,
+      });
+    }
+  });
+
+  if (result.restaurantId) {
+    await sendNotificationToSingleUser('store', result.restaurantId, buildNotificationPayload({
+      title: decision === 'accept' ? 'تمت الموافقة على البديل' : 'رُفض اقتراح البديل',
+      body: decision === 'accept'
+        ? 'وافق العميل على تعديل الطلب ويمكنك متابعة التجهيز.'
+        : 'رفض العميل التعديل المقترح. راجع الطلب قبل متابعة التجهيز.',
+      type: 'order_substitution_response',
+      source: 'order-substitution',
+      orderId,
+    }));
+  }
+  return { ok: true, ...result };
+});
+
+exports.storeUpdateOrderStage = onCall({ region: REGION }, async (request) => {
+  const normalizedOrderId = String(request.data?.orderId || '').trim();
+  const normalizedRestaurantId = String(request.data?.restaurantId || '').trim();
+  const normalizedStage = String(request.data?.stage || '').trim();
+  if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Authentication is required');
+  if (!normalizedOrderId || !normalizedRestaurantId || !normalizedStage) {
+    throw new HttpsError('invalid-argument', 'orderId, restaurantId and stage are required');
+  }
+  const restaurantSnap = await db.collection('restaurants').doc(normalizedRestaurantId).get();
+  if (!restaurantSnap.exists) throw new HttpsError('not-found', 'Restaurant not found');
+  const restaurant = restaurantSnap.data() || {};
+  const restaurantOwnerId = String(restaurant.ownerUid || normalizedRestaurantId).trim();
+  if (request.auth.uid !== restaurantOwnerId) {
+    throw new HttpsError('permission-denied', 'This restaurant does not belong to the current user');
+  }
+  if (restaurant.approvalStatus !== 'approved' || restaurant.isApproved !== true) {
+    throw new HttpsError('permission-denied', 'Restaurant is not approved');
+  }
+  const stageConfig = {
+    accept: { allowedStatuses: new Set(['store_pending', 'payment_review', 'قيد المراجعة', 'بانتظار المطعم']) },
+    reject: { allowedStatuses: new Set(['store_pending', 'payment_review', 'قيد المراجعة', 'بانتظار المطعم']) },
+    start_preparing: { allowedStatuses: new Set(['courier_searching', 'courier_offer_pending', 'courier_assigned', 'قيد التجهيز']) },
+    ready: { allowedStatuses: new Set(['courier_searching', 'courier_offer_pending', 'courier_assigned', 'قيد التجهيز']) },
+  };
+  const config = stageConfig[normalizedStage];
+  if (!config) {
+    throw new HttpsError('invalid-argument', 'Unsupported store stage');
+  }
+
+  const orderRef = db.collection('orders').doc(normalizedOrderId);
+  let shouldAssignCourier = false;
+  await db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) throw new HttpsError('not-found', 'Order not found');
+
+    const order = orderSnap.data() || {};
+    if (String(order.restaurantId || '').trim() !== normalizedRestaurantId) {
+      throw new HttpsError('permission-denied', 'This order does not belong to the restaurant');
+    }
+    const status = getStatus(order);
+    if (!config.allowedStatuses.has(status)) {
+      throw new HttpsError('failed-precondition', `Order cannot move from ${status || 'empty'} using ${normalizedStage}`);
+    }
+
+    const assignedDriverId = String(order.assignedDriverId || '').trim();
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    if (normalizedStage === 'reject') {
+      tx.update(orderRef, {
+        orderStatus: 'store_rejected',
+        status: 'store_rejected',
+        storeRejectedAt: now,
+        updatedAt: now,
+      });
+      return;
+    }
+    if (normalizedStage === 'start_preparing') {
+      if (order.substitutionPending === true) {
+        throw new HttpsError('failed-precondition', 'Wait for the client response to the replacement proposal');
+      }
+      if (order.unavailableItemPending === true) {
+        throw new HttpsError('failed-precondition', 'Wait for the client decision about the unavailable item');
+      }
+      tx.update(orderRef, {
+        preparationRequired: true,
+        preparationStarted: true,
+        preparationStartedAt: now,
+        invoice: {
+          number: `INV-${String(order.orderNumber || order.orderId || normalizedOrderId).replace(/[^a-zA-Z0-9-]/g, '').slice(-18) || normalizedOrderId.slice(-10)}`,
+          orderId: normalizedOrderId,
+          restaurantId: normalizedRestaurantId,
+          items: Array.isArray(order.items) ? order.items : [],
+          subtotal: Math.max(0, Math.round(toSafeNumber(order.total))),
+          deliveryFee: Math.max(0, Math.round(toSafeNumber(order.deliveryFee))),
+          total: Math.max(0, Math.round(toSafeNumber(order.totalWithDelivery ?? order.total))),
+          issuedAt: now,
+        },
+        invoiceIssuedAt: now,
+        updatedAt: now,
+      });
+      return;
+    }
+
+    if (normalizedStage === 'accept') {
+      const nextStatus = assignedDriverId ? 'courier_assigned' : 'courier_searching';
+      shouldAssignCourier = !assignedDriverId;
+      tx.update(orderRef, {
+        storeApprovedAt: now,
+        orderStatus: nextStatus,
+        status: nextStatus,
+        updatedAt: now,
+      });
+    }
+
+    if (normalizedStage === 'ready') {
+      if (order.substitutionPending === true) {
+        throw new HttpsError('failed-precondition', 'Wait for the client response to the replacement proposal');
+      }
+      if (order.preparationRequired === true && order.preparationStarted !== true) {
+        throw new HttpsError('failed-precondition', 'Preparation must be started before marking the order ready');
+      }
+      const nextStatus = assignedDriverId ? 'pickup_ready' : 'courier_searching';
+      shouldAssignCourier = !assignedDriverId;
+      tx.update(orderRef, {
+        readyByRestaurant: true,
+        orderStatus: nextStatus,
+        status: nextStatus,
+        readyByRestaurantAt: now,
+        updatedAt: now,
+      });
+      return;
+    }
+
+  });
+
+  if (shouldAssignCourier) {
+    await assignNextCourier(orderRef);
+  }
+
+  return { ok: true, orderId: normalizedOrderId, stage: normalizedStage };
+});
+
+exports.syncDriverOffersOnAvailabilityChange = onDocumentUpdated(
+  {
+    region: REGION,
+    document: 'drivers/{driverId}',
+  },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+    const driverId = String(event.params?.driverId || '').trim();
+    if (!driverId) return;
+
+    const beforeAvailable = before.available === true;
+    const afterAvailable = after.available === true;
+    const beforeActiveOrderId = String(before.activeOrderId || '').trim();
+    const afterActiveOrderId = String(after.activeOrderId || '').trim();
+    const availabilityChanged = beforeAvailable !== afterAvailable;
+    const activeOrderChanged = beforeActiveOrderId !== afterActiveOrderId;
+    const rangeChanged =
+      getDriverOfferRadiusKm(before) !== getDriverOfferRadiusKm(after);
+
+    if (!availabilityChanged && !activeOrderChanged && !rangeChanged) return;
+
+    const result = await syncDriverOffersOnAvailabilityChange(
+      driverId,
+      after,
+      rangeChanged,
+    );
+    logger.info('syncDriverOffersOnAvailabilityChange complete', {
+      driverId,
+      beforeAvailable,
+      afterAvailable,
+      beforeActiveOrderId,
+      afterActiveOrderId,
+      rangeChanged,
+      ...result,
+    });
+  }
+);
+
+exports.releaseDriverOrderLockOnOrderUpdate = onDocumentUpdated(
+  {
+    region: REGION,
+    document: 'orders/{orderId}',
+  },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+    const orderId = String(event.params?.orderId || '').trim();
+    if (!orderId) return;
+
+    const beforeDriverId = String(before.assignedDriverId || '').trim();
+    const afterDriverId = String(after.assignedDriverId || '').trim();
+    const beforeActive = isActiveOrderLifecycleStatus(getStatus(before));
+    const afterActive = isActiveOrderLifecycleStatus(getStatus(after));
+
+    const tasks = [];
+    if (beforeDriverId && (beforeDriverId !== afterDriverId || (beforeActive && !afterActive))) {
+      tasks.push(clearDriverOrderLockIfMatches(beforeDriverId, orderId));
+    }
+
+    if (afterDriverId && afterActive) {
+      const afterDriverRef = db.collection('drivers').doc(afterDriverId);
+      tasks.push(
+        afterDriverRef.set({
+          activeOrderId: orderId,
+          activeOrderLockedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true })
+      );
+    }
+
+    if (tasks.length) {
+      await Promise.all(tasks);
+    }
+  }
+);
+
 exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
   await ensureAdminCallable(request, 'Only order admins can manage orders', 'orders');
 
@@ -4726,8 +7405,9 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
   const action = String(request.data?.action || '').trim().toLowerCase();
   const nextDriverId = String(request.data?.nextDriverId || request.data?.driverId || '').trim();
   const note = String(request.data?.note || '').trim();
+  const refundToWallet = request.data?.refundToWallet === true;
 
-  if (!orderId || !['cancel', 'unassign_courier', 'reassign_auto', 'assign_specific', 'expand_courier_radius'].includes(action)) {
+  if (!orderId || !['cancel', 'restore_cancelled', 'set_status', 'unassign_courier', 'reassign_auto', 'assign_specific', 'expand_courier_radius', 'resolve_courier_issue'].includes(action)) {
     throw new HttpsError('invalid-argument', 'orderId and a valid action are required');
   }
 
@@ -4740,7 +7420,7 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
   const order = orderSnap.data() || {};
   const currentStatus = getStatus(order);
   const immutableStatuses = new Set(['delivered', 'completed']);
-  if (immutableStatuses.has(currentStatus)) {
+  if (immutableStatuses.has(currentStatus) && action !== 'resolve_courier_issue') {
     throw new HttpsError('failed-precondition', 'This order can no longer be managed from admin');
   }
 
@@ -4764,21 +7444,106 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
     assignedDriverId: previousAssignedDriverId,
   };
 
+  if (action === 'resolve_courier_issue') {
+    const issue = order.courierIssue;
+    const issueStatus = String(issue?.status || '').trim().toLowerCase();
+    if (!issue || typeof issue !== 'object' || issueStatus !== 'open') {
+      throw new HttpsError('failed-precondition', 'There is no open courier issue for this order');
+    }
+
+    const reportingDriverId = String(issue.driverId || previousAssignedDriverId).trim();
+    const resolvedAtMillis = Date.now();
+    const issueHistory = Array.isArray(order.courierIssueHistory)
+      ? order.courierIssueHistory
+      : [];
+    const resolvedIssue = {
+      ...issue,
+      status: 'resolved',
+      resolutionNote: note,
+      resolvedAtMillis,
+      resolvedByUid: request.auth.uid,
+    };
+    const hasMatchingHistoryIssue = issueHistory.some((historyIssue) =>
+      String(historyIssue?.id || '') === String(issue.id || '')
+    );
+    const resolvedIssueHistory = issueHistory.map((historyIssue) => {
+      if (String(historyIssue?.id || '') === String(issue.id || '')) {
+        return resolvedIssue;
+      }
+      return historyIssue;
+    });
+    if (!hasMatchingHistoryIssue) {
+      resolvedIssueHistory.push(resolvedIssue);
+    }
+    await orderRef.set({
+      ...adminPatch,
+      courierIssue: resolvedIssue,
+      courierIssueHistory: resolvedIssueHistory,
+      courierIssueResolutionNote: note,
+      courierIssueResolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+      courierIssueResolvedByUid: request.auth.uid,
+      courierIssueResolvedByEmail: String(request.auth.token?.email || ''),
+    }, { merge: true });
+
+    if (reportingDriverId) {
+      await sendNotificationToSingleUser('courier', reportingDriverId, buildNotificationPayload({
+        title: 'تمت معالجة بلاغ الطلب',
+        body: note || 'راجع تفاصيل الطلب لمعرفة آخر تحديث من فريق العمليات.',
+        type: 'courier_issue_resolved',
+        source: 'admin-order-issue-resolution',
+        orderId,
+      })).catch((error) => {
+        logger.error('Failed to notify courier about issue resolution', {
+          orderId,
+          driverId: reportingDriverId,
+          error: String(error),
+        });
+      });
+    }
+
+    return {
+      ...result,
+      issueStatus: 'resolved',
+    };
+  }
+
   if (action === 'cancel') {
     if (currentStatus === 'cancelled') {
       throw new HttpsError('failed-precondition', 'Order is already cancelled');
     }
 
+    const cancelledFromStatus = currentStatus || 'courier_searching';
+    const cancelledFromAssignedDriverName = String(order.assignedDriverName || '').trim();
+    const cancelledFromOfferDriverIds = Array.isArray(order.offerDriverIds)
+      ? order.offerDriverIds.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
+    const cancelledFromOfferDriverOwnerUids = Array.isArray(order.offerDriverOwnerUids)
+      ? order.offerDriverOwnerUids.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
+    const cancelledFromOfferDriverDistancesKm = order.offerDriverDistancesKm
+      && typeof order.offerDriverDistancesKm === 'object'
+      ? order.offerDriverDistancesKm
+      : null;
+
     await orderRef.set({
       ...adminPatch,
       orderStatus: 'cancelled',
       status: 'cancelled',
+      cancelledFromStatus,
+      cancelledFromAssignedDriverId: previousAssignedDriverId || admin.firestore.FieldValue.delete(),
+      cancelledFromAssignedDriverName: cancelledFromAssignedDriverName || admin.firestore.FieldValue.delete(),
+      cancelledFromOfferedDriverId: previousOfferedDriverId || admin.firestore.FieldValue.delete(),
+      cancelledFromOfferDriverIds: cancelledFromOfferDriverIds.length ? cancelledFromOfferDriverIds : admin.firestore.FieldValue.delete(),
+      cancelledFromOfferDriverOwnerUids: cancelledFromOfferDriverOwnerUids.length ? cancelledFromOfferDriverOwnerUids : admin.firestore.FieldValue.delete(),
+      cancelledFromOfferDriverDistancesKm: cancelledFromOfferDriverDistancesKm || admin.firestore.FieldValue.delete(),
       cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
       cancelledByRole: 'admin',
       cancelledByAdminUid: request.auth.uid,
       cancellationReason: note || 'admin_cancelled',
+      cancellationRefundRequested: refundToWallet,
       offeredDriverId: admin.firestore.FieldValue.delete(),
       offerDriverIds: admin.firestore.FieldValue.delete(),
+      offerDriverOwnerUids: admin.firestore.FieldValue.delete(),
       offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
       longDistanceDriverIds: admin.firestore.FieldValue.delete(),
       longDistanceDriverDistancesKm: admin.firestore.FieldValue.delete(),
@@ -4788,14 +7553,14 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
       offerExpiresAt: admin.firestore.FieldValue.delete(),
     }, { merge: true });
 
-    // ─── استرداد تلقائي للمحفظة إذا كان الطلب مدفوعاً ──────────────────
+    // ─── رد اختياري للمحفظة يقرره المسؤول عند الإلغاء ──────────────────
     const walletUsed = Math.max(0, Math.round(toSafeNumber(order.walletUsedAmount || order.walletRequestedAmount || 0)));
     const payMethod = String(order.paymentMethod || '').trim().toLowerCase();
     const payStatus = normalizePaymentStatus(order.paymentStatus);
     const isPrepaid = payStatus === 'paid' || payStatus === 'under_review';
     const clientId = String(order.clientId || '').trim();
 
-    if (clientId && isPrepaid && (walletUsed > 0 || payMethod === 'wallet')) {
+    if (refundToWallet && !order.walletRefundedAt && clientId && isPrepaid && (walletUsed > 0 || payMethod === 'wallet')) {
       const refundAmount = walletUsed > 0 ? walletUsed : Math.round(toSafeNumber(order.totalWithDelivery || order.total || 0));
       if (refundAmount > 0) {
         try {
@@ -4822,7 +7587,11 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
               createdAt: admin.firestore.FieldValue.serverTimestamp(),
             });
           });
-          await orderRef.set({ walletRefundedAmount: refundAmount, walletRefundedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          await orderRef.set({
+            walletRefundedAmount: refundAmount,
+            walletRefundedAt: admin.firestore.FieldValue.serverTimestamp(),
+            walletRefundReason: 'admin_order_cancelled',
+          }, { merge: true });
           await sendNotificationToSingleUser('client', clientId, buildNotificationPayload({
             title: '💰 تم استرداد المبلغ إلى محفظتك',
             body: `تم إلغاء طلبك وإعادة ${refundAmount} ج.س إلى محفظتك.`,
@@ -4840,6 +7609,233 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
       ...result,
       status: 'cancelled',
       assignedDriverId: '',
+      walletRefundRequested: refundToWallet,
+    };
+  }
+
+  if (action === 'restore_cancelled') {
+    const canRestoreFrom = new Set(['cancelled', 'canceled', 'store_rejected']);
+    if (!canRestoreFrom.has(currentStatus)) {
+      throw new HttpsError('failed-precondition', 'Only cancelled or store-rejected orders can be restored');
+    }
+
+    const blockedRestoreStatuses = new Set(['cancelled', 'canceled', 'delivered', 'completed', 'store_rejected']);
+    const retainDriverStatuses = new Set(['store_pending', 'courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client']);
+
+    const requestedRestoreStatus = String(order.cancelledFromStatus || '').trim().toLowerCase();
+    let restoreStatus = requestedRestoreStatus || (currentStatus === 'store_rejected' ? 'store_pending' : 'courier_searching');
+    if (blockedRestoreStatuses.has(restoreStatus)) {
+      restoreStatus = 'courier_searching';
+    }
+
+    const restoreDriverId = String(order.cancelledFromAssignedDriverId || order.assignedDriverId || '').trim();
+    const restoreDriverName = String(order.cancelledFromAssignedDriverName || order.assignedDriverName || '').trim();
+    const restoreOfferedDriverId = String(order.cancelledFromOfferedDriverId || '').trim();
+    const restoreOfferDriverIds = Array.isArray(order.cancelledFromOfferDriverIds)
+      ? order.cancelledFromOfferDriverIds.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
+    const restoreOfferDriverOwnerUids = Array.isArray(order.cancelledFromOfferDriverOwnerUids)
+      ? order.cancelledFromOfferDriverOwnerUids.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
+    const restoreOfferDriverDistancesKm = order.cancelledFromOfferDriverDistancesKm
+      && typeof order.cancelledFromOfferDriverDistancesKm === 'object'
+      ? order.cancelledFromOfferDriverDistancesKm
+      : null;
+
+    if (retainDriverStatuses.has(restoreStatus) && !restoreDriverId) {
+      restoreStatus = 'courier_searching';
+    }
+    if (restoreStatus === 'courier_offer_pending' && !restoreOfferedDriverId && !restoreOfferDriverIds.length) {
+      restoreStatus = 'courier_searching';
+    }
+
+    const restorePatch = {
+      ...adminPatch,
+      orderStatus: restoreStatus,
+      status: restoreStatus,
+      restoredFromCancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+      restoredByAdminUid: request.auth.uid,
+      cancelledAt: admin.firestore.FieldValue.delete(),
+      cancelledByRole: admin.firestore.FieldValue.delete(),
+      cancelledByAdminUid: admin.firestore.FieldValue.delete(),
+      cancellationReason: admin.firestore.FieldValue.delete(),
+      assignmentBackoffReason: admin.firestore.FieldValue.delete(),
+    };
+
+    let refundReversedAmount = 0;
+
+    await db.runTransaction(async (tx) => {
+      const freshOrderSnap = await tx.get(orderRef);
+      if (!freshOrderSnap.exists) {
+        throw new HttpsError('not-found', 'Order not found');
+      }
+
+      const freshOrder = freshOrderSnap.data() || {};
+      const freshStatus = getStatus(freshOrder);
+      if (!canRestoreFrom.has(freshStatus)) {
+        throw new HttpsError('failed-precondition', 'Order is no longer in a restorable cancelled state');
+      }
+
+      const refundedAmount = Math.max(0, Math.round(toSafeNumber(freshOrder.walletRefundedAmount || 0)));
+      const clientId = String(freshOrder.clientId || '').trim();
+
+      if (refundedAmount > 0 && clientId) {
+        const clientRef = db.collection('clients').doc(clientId);
+        const clientSnap = await tx.get(clientRef);
+        if (!clientSnap.exists) {
+          throw new HttpsError('failed-precondition', 'Cannot restore: client wallet not found for refund reversal');
+        }
+
+        const clientData = clientSnap.data() || {};
+        const currentBalance = toSafeNumber(clientData.walletBalance ?? clientData.wallet ?? clientData.balance ?? 0);
+        if (currentBalance < refundedAmount) {
+          throw new HttpsError('failed-precondition', 'Cannot restore: client wallet balance is below refunded amount');
+        }
+
+        const nextBalance = currentBalance - refundedAmount;
+        tx.set(clientRef, {
+          walletBalance: nextBalance,
+          wallet: nextBalance,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+        tx.set(clientRef.collection('walletTransactions').doc(), {
+          type: 'refund_reversal',
+          orderId,
+          amount: -refundedAmount,
+          balanceBefore: currentBalance,
+          balanceAfter: nextBalance,
+          reason: 'order_restore_cancelled',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        refundReversedAmount = refundedAmount;
+      }
+
+      if (retainDriverStatuses.has(restoreStatus) && restoreDriverId) {
+        restorePatch.assignedDriverId = restoreDriverId;
+        restorePatch.assignedDriverName = restoreDriverName || admin.firestore.FieldValue.delete();
+        restorePatch.offeredDriverId = admin.firestore.FieldValue.delete();
+        restorePatch.offerDriverIds = admin.firestore.FieldValue.delete();
+        restorePatch.offerDriverOwnerUids = admin.firestore.FieldValue.delete();
+        restorePatch.offerDriverDistancesKm = admin.firestore.FieldValue.delete();
+        restorePatch.offerStartedAt = admin.firestore.FieldValue.delete();
+        restorePatch.offerExpiresAt = admin.firestore.FieldValue.delete();
+      } else if (restoreStatus === 'courier_offer_pending') {
+        restorePatch.assignedDriverId = admin.firestore.FieldValue.delete();
+        restorePatch.assignedDriverName = admin.firestore.FieldValue.delete();
+        restorePatch.offeredDriverId = restoreOfferedDriverId || admin.firestore.FieldValue.delete();
+        restorePatch.offerDriverIds = restoreOfferDriverIds.length ? restoreOfferDriverIds : admin.firestore.FieldValue.delete();
+        restorePatch.offerDriverOwnerUids = restoreOfferDriverOwnerUids.length ? restoreOfferDriverOwnerUids : admin.firestore.FieldValue.delete();
+        restorePatch.offerDriverDistancesKm = restoreOfferDriverDistancesKm || admin.firestore.FieldValue.delete();
+      } else {
+        restorePatch.assignedDriverId = admin.firestore.FieldValue.delete();
+        restorePatch.assignedDriverName = admin.firestore.FieldValue.delete();
+        restorePatch.offeredDriverId = admin.firestore.FieldValue.delete();
+        restorePatch.offerDriverIds = admin.firestore.FieldValue.delete();
+        restorePatch.offerDriverOwnerUids = admin.firestore.FieldValue.delete();
+        restorePatch.offerDriverDistancesKm = admin.firestore.FieldValue.delete();
+        restorePatch.offerStartedAt = admin.firestore.FieldValue.delete();
+        restorePatch.offerExpiresAt = admin.firestore.FieldValue.delete();
+      }
+
+      if (refundReversedAmount > 0) {
+        restorePatch.walletRefundReversedAmount = refundReversedAmount;
+        restorePatch.walletRefundReversedAt = admin.firestore.FieldValue.serverTimestamp();
+        restorePatch.walletRefundedAmount = admin.firestore.FieldValue.delete();
+        restorePatch.walletRefundedAt = admin.firestore.FieldValue.delete();
+      }
+
+      tx.set(orderRef, restorePatch, { merge: true });
+    });
+
+    result = {
+      ...result,
+      status: restoreStatus,
+      assignedDriverId: retainDriverStatuses.has(restoreStatus) ? restoreDriverId : '',
+      refundReversedAmount,
+    };
+  }
+
+  if (action === 'set_status') {
+    const rawNextStatus = String(request.data?.nextStatus || '').trim().toLowerCase();
+    const allowedStatuses = new Set([
+      'pending',
+      'store_pending',
+      'courier_searching',
+      'courier_offer_pending',
+      'courier_assigned',
+      'pickup_ready',
+      'picked_up',
+      'arrived_to_client',
+      'delivered',
+    ]);
+
+    if (!allowedStatuses.has(rawNextStatus)) {
+      throw new HttpsError('invalid-argument', 'nextStatus is not allowed');
+    }
+
+    const transitions = {
+      pending: new Set(['store_pending', 'courier_searching']),
+      store_pending: new Set(['courier_searching', 'courier_offer_pending', 'courier_assigned', 'pickup_ready']),
+      courier_searching: new Set(['courier_offer_pending', 'courier_assigned', 'store_pending']),
+      courier_offer_pending: new Set(['courier_searching', 'courier_assigned']),
+      courier_assigned: new Set(['pickup_ready', 'courier_searching']),
+      pickup_ready: new Set(['picked_up', 'courier_assigned']),
+      picked_up: new Set(['arrived_to_client', 'pickup_ready']),
+      arrived_to_client: new Set(['delivered', 'picked_up']),
+      delivered: new Set([]),
+    };
+
+    const current = String(currentStatus || '').trim().toLowerCase();
+    if (current !== rawNextStatus) {
+      const allowedNext = transitions[current] || new Set();
+      if (!allowedNext.has(rawNextStatus)) {
+        throw new HttpsError('failed-precondition', `Transition from ${current || 'unknown'} to ${rawNextStatus} is not allowed`);
+      }
+    }
+
+    const setStatusPatch = {
+      ...adminPatch,
+      orderStatus: rawNextStatus,
+      status: rawNextStatus,
+    };
+
+    if (rawNextStatus === 'courier_searching') {
+      setStatusPatch.assignedDriverId = admin.firestore.FieldValue.delete();
+      setStatusPatch.assignedDriverName = admin.firestore.FieldValue.delete();
+      setStatusPatch.offeredDriverId = admin.firestore.FieldValue.delete();
+      setStatusPatch.offerDriverIds = admin.firestore.FieldValue.delete();
+      setStatusPatch.offerDriverOwnerUids = admin.firestore.FieldValue.delete();
+      setStatusPatch.offerDriverDistancesKm = admin.firestore.FieldValue.delete();
+      setStatusPatch.offerStartedAt = admin.firestore.FieldValue.delete();
+      setStatusPatch.offerExpiresAt = admin.firestore.FieldValue.delete();
+      setStatusPatch.acceptedAt = admin.firestore.FieldValue.delete();
+      setStatusPatch.offerAcceptedAt = admin.firestore.FieldValue.delete();
+    }
+
+    if (rawNextStatus === 'courier_assigned' && !previousAssignedDriverId) {
+      throw new HttpsError('failed-precondition', 'Cannot set courier_assigned without an assigned courier');
+    }
+
+    if (rawNextStatus === 'picked_up') {
+      setStatusPatch.pickedUpAt = admin.firestore.FieldValue.serverTimestamp();
+    }
+
+    if (rawNextStatus === 'arrived_to_client') {
+      setStatusPatch.arrivedToClientAt = admin.firestore.FieldValue.serverTimestamp();
+    }
+
+    if (rawNextStatus === 'delivered') {
+      setStatusPatch.deliveredAt = admin.firestore.FieldValue.serverTimestamp();
+    }
+
+    await orderRef.set(setStatusPatch, { merge: true });
+
+    result = {
+      ...result,
+      status: rawNextStatus,
+      assignedDriverId: rawNextStatus === 'courier_searching' ? '' : previousAssignedDriverId,
     };
   }
 
@@ -4853,6 +7849,7 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
       assignedDriverId: admin.firestore.FieldValue.delete(),
       offeredDriverId: admin.firestore.FieldValue.delete(),
       offerDriverIds: admin.firestore.FieldValue.delete(),
+      offerDriverOwnerUids: admin.firestore.FieldValue.delete(),
       offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
       longDistanceDriverIds: admin.firestore.FieldValue.delete(),
       longDistanceDriverDistancesKm: admin.firestore.FieldValue.delete(),
@@ -4903,6 +7900,7 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
       maxDriverDistanceKm: radiusKm,
       offeredDriverId: admin.firestore.FieldValue.delete(),
       offerDriverIds: admin.firestore.FieldValue.delete(),
+      offerDriverOwnerUids: admin.firestore.FieldValue.delete(),
       offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
       longDistanceDriverIds: admin.firestore.FieldValue.delete(),
       longDistanceDriverDistancesKm: admin.firestore.FieldValue.delete(),
@@ -4971,6 +7969,7 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
       assignedDriverName,
       offeredDriverId: admin.firestore.FieldValue.delete(),
       offerDriverIds: admin.firestore.FieldValue.delete(),
+      offerDriverOwnerUids: admin.firestore.FieldValue.delete(),
       offerDriverDistancesKm: admin.firestore.FieldValue.delete(),
       longDistanceDriverIds: admin.firestore.FieldValue.delete(),
       longDistanceDriverDistancesKm: admin.firestore.FieldValue.delete(),
@@ -5029,6 +8028,37 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
     ).catch((error) => {
       logger.warn('adminManageOrder next courier notify failed', { orderId, nextDriverId: result.assignedDriverId, error: error?.message || error });
     });
+  }
+
+  if (action === 'restore_cancelled') {
+    const clientId = String(order.clientId || '').trim();
+    if (clientId) {
+      await sendNotificationToSingleUser(
+        'client',
+        clientId,
+        buildNotificationPayload({
+          title: 'تم استرجاع الطلب',
+          body: `تمت إعادة طلبك رقم ${orderId} إلى مساره التشغيلي السابق.`,
+          type: 'order_restored',
+          source: 'admin-order-control',
+          orderId,
+        })
+      ).catch(() => {});
+    }
+
+    if (result.assignedDriverId) {
+      await sendNotificationToSingleUser(
+        'courier',
+        result.assignedDriverId,
+        buildNotificationPayload({
+          title: 'تمت إعادة طلب إليك',
+          body: `تم استرجاع الطلب رقم ${orderId} وإعادته إلى مسارك.`,
+          type: 'order_restored_to_courier',
+          source: 'admin-order-control',
+          orderId,
+        })
+      ).catch(() => {});
+    }
   }
 
   return result;
@@ -5104,6 +8134,130 @@ exports.deleteManagedUserAccount = onCall({ region: REGION }, async (request) =>
     ...linkedCleanup,
   };
 });
+
+exports.adminDeleteRestaurantAccount = onCall(
+  { region: REGION, timeoutSeconds: 540, memory: '1GiB' },
+  async (request) => {
+    await ensureStaticSuperAdminCallable(
+      request,
+      'Only super admins can permanently delete restaurants'
+    );
+
+    const restaurantId = String(request.data?.restaurantId || '').trim();
+    const confirmation = String(request.data?.confirmation || '').trim().toUpperCase();
+
+    if (!restaurantId) {
+      throw new HttpsError('invalid-argument', 'restaurantId is required');
+    }
+
+    const expectedConfirmation = 'DELETE';
+    if (confirmation !== expectedConfirmation) {
+      throw new HttpsError('invalid-argument', 'Invalid deletion confirmation token');
+    }
+
+    const restaurantRef = db.collection('restaurants').doc(restaurantId);
+    const restaurantSnap = await restaurantRef.get();
+    if (!restaurantSnap.exists) {
+      throw new HttpsError('not-found', 'Restaurant not found');
+    }
+
+    const restaurantData = restaurantSnap.data() || {};
+    const ownerUid = String(restaurantData.ownerUid || restaurantId).trim() || restaurantId;
+
+    const blockingActiveOrders = await countActiveOrdersForRestaurant(restaurantId);
+    if (blockingActiveOrders > 0) {
+      throw new HttpsError(
+        'failed-precondition',
+        'لا يمكن حذف المطعم لوجود طلبات نشطة مرتبطة به'
+      );
+    }
+
+    const ownerAdminSnap = await db.collection('admins').doc(ownerUid).get();
+    if (ownerAdminSnap.exists) {
+      throw new HttpsError('failed-precondition', 'الحساب مرتبط بأدمن ولا يمكن حذفه بهذه العملية');
+    }
+
+    let ownerAuthEmail = '';
+    let ownerAuthExists = false;
+    try {
+      const ownerAuthRecord = await admin.auth().getUser(ownerUid);
+      ownerAuthExists = true;
+      ownerAuthEmail = String(ownerAuthRecord.email || '').toLowerCase().trim();
+    } catch (error) {
+      if (error?.code !== 'auth/user-not-found') {
+        throw error;
+      }
+    }
+
+    if (ownerAuthExists && isStaticAdminEmail(ownerAuthEmail)) {
+      throw new HttpsError('failed-precondition', 'هذا الحساب محمي ولا يمكن حذفه');
+    }
+
+    const deletedOrders = await deleteRestaurantOrdersCascaded(restaurantId);
+    const deletedStoreOffers = await deleteQueryInBatches(
+      db.collection('storeOffers').where('restaurantId', '==', restaurantId)
+    );
+    const deletedStoreChangeRequests = await deleteQueryInBatches(
+      db.collection('storeChangeRequests').where('restaurantId', '==', restaurantId)
+    );
+    const deletedRestaurantNotifications = await deleteQueryInBatches(
+      db.collection('notifications').where('restaurantId', '==', restaurantId)
+    );
+
+    const [restaurantDeleted, userDocByRestaurantDeleted, userDocByOwnerDeleted] = await Promise.all([
+      recursiveDeleteIfExists(restaurantRef),
+      recursiveDeleteIfExists(db.collection('users').doc(restaurantId)),
+      ownerUid && ownerUid !== restaurantId
+        ? recursiveDeleteIfExists(db.collection('users').doc(ownerUid))
+        : Promise.resolve(false),
+    ]);
+
+    const [restaurantApplicationByIdDeleted, restaurantApplicationByOwnerDeleted] = await Promise.all([
+      recursiveDeleteIfExists(db.collection('restaurantApplications').doc(restaurantId)),
+      ownerUid && ownerUid !== restaurantId
+        ? recursiveDeleteIfExists(db.collection('restaurantApplications').doc(ownerUid))
+        : Promise.resolve(false),
+    ]);
+
+    let ownerAuthDeleted = false;
+    if (ownerAuthExists) {
+      await admin.auth().deleteUser(ownerUid);
+      ownerAuthDeleted = true;
+    }
+
+    logger.warn('adminDeleteRestaurantAccount completed', {
+      restaurantId,
+      ownerUid,
+      requestedBy: request.auth?.uid || '',
+      deletedOrders,
+      deletedStoreOffers,
+      deletedStoreChangeRequests,
+      deletedRestaurantNotifications,
+      restaurantDeleted,
+      userDocByRestaurantDeleted,
+      userDocByOwnerDeleted,
+      restaurantApplicationByIdDeleted,
+      restaurantApplicationByOwnerDeleted,
+      ownerAuthDeleted,
+    });
+
+    return {
+      ok: true,
+      restaurantId,
+      ownerUid,
+      deletedOrders,
+      deletedStoreOffers,
+      deletedStoreChangeRequests,
+      deletedRestaurantNotifications,
+      restaurantDeleted,
+      userDocByRestaurantDeleted,
+      userDocByOwnerDeleted,
+      restaurantApplicationByIdDeleted,
+      restaurantApplicationByOwnerDeleted,
+      ownerAuthDeleted,
+    };
+  }
+);
 
 exports.updateManagedUserProfile = onCall({ region: REGION }, async (request) => {
   await ensureAdminCallable(request, 'Only order admins can update managed accounts', 'orders');
@@ -5282,6 +8436,9 @@ exports.updateManagedUserProfile = onCall({ region: REGION }, async (request) =>
       rolePatch.idImageUrl = value;
       applicationPatch.idImageUrl = value;
     }
+    if (hasOwnValue(rawFields, 'profileImage')) {
+      rolePatch.profileImage = normalizeManagedTextValue(rawFields.profileImage, 2000);
+    }
   }
 
   if (role === 'store') {
@@ -5409,6 +8566,8 @@ exports.setUserAdminRole = onCall({ region: REGION }, async (request) => {
   const callerEmail = String(request.auth.token?.email || '').toLowerCase().trim();
   const { email, uid, active } = request.data || {};
   const permissions = normalizeAdminPermissions(request.data?.permissions, { fallbackToAll: false });
+  const canDeleteRestaurantsFlag = request.data?.canDeleteRestaurants;
+  const shouldSetCanDeleteRestaurants = typeof canDeleteRestaurantsFlag === 'boolean';
   const targetEmail = String(email || '').toLowerCase().trim();
   const targetUid = String(uid || '').trim();
   const activeFlag = active !== false;
@@ -5424,6 +8583,10 @@ exports.setUserAdminRole = onCall({ region: REGION }, async (request) => {
   }
   if (!bootstrapAllowed) {
     await ensureAdminCallable(request, 'Only privileged admins can manage admin roles', 'admins');
+
+    if (shouldSetCanDeleteRestaurants && !isStaticAdminEmail(callerEmail)) {
+      throw new HttpsError('permission-denied', 'Only super admins can grant hard-delete restaurant access');
+    }
   }
 
   let userRecord;
@@ -5448,7 +8611,7 @@ exports.setUserAdminRole = onCall({ region: REGION }, async (request) => {
   const adminRef = db.collection('admins').doc(userRecord.uid);
   const existing = await adminRef.get();
 
-  await adminRef.set({
+  const adminPayload = {
     uid: userRecord.uid,
     email: String(userRecord.email || '').toLowerCase(),
     role: 'admin',
@@ -5457,70 +8620,103 @@ exports.setUserAdminRole = onCall({ region: REGION }, async (request) => {
     updatedAt: now,
     ...(existing.exists ? {} : { createdAt: now }),
     updatedBy: callerUid,
-  }, { merge: true });
+  };
+
+  if (shouldSetCanDeleteRestaurants) {
+    adminPayload.canDeleteRestaurants = canDeleteRestaurantsFlag === true;
+  }
+
+  await adminRef.set(adminPayload, { merge: true });
 
   return {
     ok: true,
     uid: userRecord.uid,
     email: String(userRecord.email || '').toLowerCase(),
     bootstrapUsed: bootstrapAllowed,
+    canDeleteRestaurants: shouldSetCanDeleteRestaurants
+      ? (canDeleteRestaurantsFlag === true)
+      : Boolean(existing.data()?.canDeleteRestaurants === true),
   };
 });
 
 exports.submitRestaurantApplication = onCall({ region: REGION }, async (request) => {
   const data = request.data || {};
-  const email = String(data.email || '').toLowerCase().trim();
+  const allowedBusinessTypes = new Set(['restaurant', 'brand', 'ecommerce', 'grocery', 'pharmacy']);
+  const authenticatedUid = String(request.auth?.uid || '').trim();
+  const authenticatedEmail = String(request.auth?.token?.email || '').toLowerCase().trim();
+  const email = (authenticatedEmail || String(data.email || '').toLowerCase().trim());
   const password = String(data.password || '');
   const name = String(data.name || '').trim();
+  const businessType = String(data.businessType || 'restaurant').trim().toLowerCase();
   const phone = String(data.phone || '').trim();
   const commercialRecordNumber = String(data.commercialRecordNumber || '').trim();
   const commercialRecordImageUrl = String(data.commercialRecordImageUrl || '').trim();
+  const pharmacyLicenseNumber = String(data.pharmacyLicenseNumber || '').trim();
+  const pharmacyLicenseImageUrl = String(data.pharmacyLicenseImageUrl || '').trim();
+  const returnPolicyDays = Math.max(0, Math.min(365, Math.round(toSafeNumber(data.returnPolicyDays, 14))));
 
   if (!email || !email.includes('@')) {
     throw new HttpsError('invalid-argument', 'Valid email is required');
   }
-  if (password.length < 6) {
+  if (!authenticatedUid && password.length < 6) {
     throw new HttpsError('invalid-argument', 'Password must be at least 6 characters');
   }
   if (!name || !phone || !commercialRecordNumber || !commercialRecordImageUrl) {
     throw new HttpsError('invalid-argument', 'Missing required application fields');
   }
+  if (!allowedBusinessTypes.has(businessType)) {
+    throw new HttpsError('invalid-argument', 'Unsupported business type');
+  }
+  if (businessType === 'pharmacy' && (!pharmacyLicenseNumber || !pharmacyLicenseImageUrl)) {
+    throw new HttpsError('invalid-argument', 'Pharmacy license number and image are required');
+  }
 
   let userRecord;
-  try {
-    userRecord = await admin.auth().getUserByEmail(email);
-    if (userRecord.disabled) {
-      userRecord = await admin.auth().updateUser(userRecord.uid, {
-        password,
-        displayName: name || undefined,
-        disabled: true,
-      });
-    }
-  } catch (err) {
-    if (err instanceof HttpsError) throw err;
-    const code = String(err?.code || '');
-    if (code === 'auth/user-not-found') {
-      userRecord = await admin.auth().createUser({
-        email,
-        password,
-        displayName: name || undefined,
-        disabled: true,
-      });
-    } else {
-      throw new HttpsError('internal', err?.message || 'Failed to prepare user account');
+  if (authenticatedUid) {
+    userRecord = await admin.auth().getUser(authenticatedUid);
+  } else {
+    try {
+      userRecord = await admin.auth().getUserByEmail(email);
+      if (userRecord.disabled) {
+        userRecord = await admin.auth().updateUser(userRecord.uid, {
+          password,
+          displayName: name || undefined,
+          disabled: true,
+        });
+      }
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      const code = String(err?.code || '');
+      if (code === 'auth/user-not-found') {
+        userRecord = await admin.auth().createUser({
+          email,
+          password,
+          displayName: name || undefined,
+          disabled: true,
+        });
+      } else {
+        throw new HttpsError('internal', err?.message || 'Failed to prepare user account');
+      }
     }
   }
 
   const ownerUid = userRecord.uid;
   const now = admin.firestore.FieldValue.serverTimestamp();
-  await db.collection('restaurantApplications').doc(ownerUid).set({
+  const appRef = db.collection('restaurantApplications').doc();
+  await appRef.set({
     name,
+    businessType,
     phone,
     commercialRecordNumber,
     commercialRecordImageUrl,
+    pharmacyLicenseNumber,
+    pharmacyLicenseImageUrl,
+    ...(businessType === 'brand' || businessType === 'ecommerce'
+      ? { returnPolicyDays }
+      : {}),
     email,
     ownerUid,
-    restaurantId: ownerUid,
+    restaurantId: appRef.id,
     status: 'pending',
     approvalStatus: 'pending',
     isApproved: false,
@@ -5530,7 +8726,7 @@ exports.submitRestaurantApplication = onCall({ region: REGION }, async (request)
 
   return {
     ok: true,
-    applicationId: ownerUid,
+    applicationId: appRef.id,
     ownerUid,
     email,
   };
@@ -5840,14 +9036,14 @@ exports.approveRestaurantApplication = onCall({ region: REGION }, async (request
     await admin.auth().updateUser(userRecord.uid, { disabled: false });
   }
 
-  const restaurantId = userRecord.uid;
+  const restaurantId = String(appData.restaurantId || applicationId).trim();
   const now = admin.firestore.FieldValue.serverTimestamp();
 
   await appRef.set({
     status: 'approved',
     approvalStatus: 'approved',
     isApproved: true,
-    ownerUid: restaurantId,
+    ownerUid: userRecord.uid,
     restaurantId,
     reviewedAt: now,
     reviewedBy: callerUid,
@@ -5857,11 +9053,19 @@ exports.approveRestaurantApplication = onCall({ region: REGION }, async (request
 
   await db.collection('restaurants').doc(restaurantId).set({
     name: String(appData.name || '').trim(),
+    businessType: ['restaurant', 'brand', 'ecommerce', 'grocery', 'pharmacy'].includes(String(appData.businessType || '').trim())
+      ? String(appData.businessType).trim()
+      : 'restaurant',
     phone: String(appData.phone || '').trim(),
     email: appEmail,
     commercialRecordNumber: String(appData.commercialRecordNumber || '').trim(),
     commercialRecordImageUrl: String(appData.commercialRecordImageUrl || '').trim(),
-    ownerUid: restaurantId,
+    pharmacyLicenseNumber: String(appData.pharmacyLicenseNumber || '').trim(),
+    pharmacyLicenseImageUrl: String(appData.pharmacyLicenseImageUrl || '').trim(),
+    ...( ['brand', 'ecommerce'].includes(String(appData.businessType || '').trim())
+      ? { returnPolicyDays: Math.max(0, Math.min(365, Math.round(toSafeNumber(appData.returnPolicyDays, 14)))) }
+      : {}),
+    ownerUid: userRecord.uid,
     approvalStatus: 'approved',
     isApproved: true,
     temporarilyClosed: false,
@@ -6133,13 +9337,25 @@ exports.getAdminRemoteConfigSettings = onCall({ region: REGION }, async (request
   };
 
   if (includeParameters) {
-    response.parameters = Object.entries(parameters)
+    const managedDefaults = new Set();
+    const parametersForAdmin = { ...parameters };
+    for (const [key, defaultParameter] of Object.entries(OPS_RUNTIME_REMOTE_PARAMETER_DEFAULTS)) {
+      if (parametersForAdmin[key]) continue;
+      parametersForAdmin[key] = {
+        defaultValue: { value: defaultParameter.value },
+        valueType: defaultParameter.valueType,
+      };
+      managedDefaults.add(key);
+    }
+
+    response.parameters = Object.entries(parametersForAdmin)
       .map(([key, param]) => ({
         key,
         value: String(param?.defaultValue?.value ?? ''),
         description: String(param?.description || ''),
         valueType: String(param?.valueType || 'STRING'),
         hasConditionalValues: !!(param?.conditionalValues && Object.keys(param.conditionalValues).length),
+        isManagedDefault: managedDefaults.has(key),
       }))
       .sort((a, b) => a.key.localeCompare(b.key));
   }

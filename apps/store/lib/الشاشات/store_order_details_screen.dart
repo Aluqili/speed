@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
-import '../services/order_service.dart';
+
+import 'store_courier_tracking_screen.dart';
 
 const Set<String> _storeNewStatuses = {
   'payment_review',
@@ -252,8 +258,13 @@ class StoreOrderDetailsScreen extends StatelessWidget {
           });
         }
 
-        // إضافة التغيير عبر الخدمة الموحدة للحالة دون تغيير المنطق القديم
-        await OrderService.approveByRestaurant(orderDocId);
+        await FirebaseFunctions.instanceFor(region: 'me-central1')
+            .httpsCallable('storeUpdateOrderStage')
+            .call({
+          'orderId': orderDocId,
+          'restaurantId': restaurantId,
+          'stage': 'accept',
+        });
         if (!context.mounted) return;
 
         final updatedSnapshot = await FirebaseFirestore.instance
@@ -320,14 +331,233 @@ class StoreOrderDetailsScreen extends StatelessWidget {
     if (!confirmed) return;
 
     final docId = orderData['docId'] ?? orderData['orderId'];
-    await FirebaseFirestore.instance.collection('orders').doc(docId).update({
-      'orderStatus': 'store_rejected',
-      'status': 'store_rejected',
-      'updatedAt': FieldValue.serverTimestamp(),
+    final restaurantId = (orderData['restaurantId'] ?? '').toString().trim();
+    await FirebaseFunctions.instanceFor(region: 'me-central1')
+        .httpsCallable('storeUpdateOrderStage')
+        .call({
+      'orderId': docId,
+      'restaurantId': restaurantId,
+      'stage': 'reject',
     });
     if (!context.mounted) return;
     Navigator.of(context).pop();
     GFToast.showToast('تم رفض الطلب', context);
+  }
+
+  Future<void> _markItemUnavailable(
+    BuildContext context,
+    int itemIndex,
+    String itemName,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تأكيد عدم التوفر'),
+        content: Text(
+            'هل $itemName غير متوفر؟ سيُطلب من العميل اختيار بديل أو الإكمال بدونه.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('إبلاغ العميل'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('storeMarkOrderItemUnavailable')
+          .call({
+        'orderId': orderData['docId'] ?? orderData['orderId'],
+        'restaurantId': orderData['restaurantId'],
+        'itemIndex': itemIndex,
+      });
+      if (!context.mounted) return;
+      GFToast.showToast('تم إشعار العميل بعدم توفر $itemName.', context);
+    } on FirebaseFunctionsException catch (error) {
+      if (!context.mounted) return;
+      GFToast.showToast(error.message ?? 'تعذر إشعار العميل حالياً.', context);
+    }
+  }
+
+  Future<void> _printInvoice(BuildContext context) async {
+    try {
+      final invoice = Map<String, dynamic>.from(
+        (orderData['invoice'] as Map?) ?? const <String, dynamic>{},
+      );
+      final fontData = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+      final boldFontData = await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
+      final regularFont = pw.Font.ttf(fontData);
+      final boldFont = pw.Font.ttf(boldFontData);
+      final invoiceItems =
+          (invoice['items'] as List? ?? orderData['items'] as List? ?? const [])
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList();
+      final invoiceSubtotal = _safeNum(
+        invoice['subtotal'] ?? orderData['subtotal'] ?? orderData['total'],
+      );
+      final invoiceTotal = _safeNum(
+        invoice['total'] ?? orderData['grandTotal'] ?? orderData['total'],
+      );
+      final invoiceNumber = (invoice['number'] ??
+              orderData['orderNumber'] ??
+              orderData['orderId'] ??
+              orderData['docId'] ??
+              '')
+          .toString();
+      final document = pw.Document();
+      document.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a5,
+          margin: const pw.EdgeInsets.all(24),
+          build: (_) => pw.Directionality(
+            textDirection: pw.TextDirection.rtl,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              children: [
+                pw.Text(
+                  (orderData['restaurantName'] ?? 'SpeedStar').toString(),
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(font: boldFont, fontSize: 19),
+                ),
+                pw.SizedBox(height: 8),
+                pw.Text(
+                  'فاتورة طلب $invoiceNumber',
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(font: regularFont, fontSize: 12),
+                ),
+                pw.Divider(),
+                ...invoiceItems.map((item) {
+                  final quantity = _itemQuantity(item);
+                  final total = _itemLineTotal(item);
+                  return pw.Padding(
+                    padding: const pw.EdgeInsets.symmetric(vertical: 4),
+                    child: pw.Row(children: [
+                      pw.Expanded(
+                        child: pw.Text(
+                          '${_formatAmount(quantity)} × ${_itemName(item)}',
+                          style: pw.TextStyle(font: regularFont, fontSize: 11),
+                        ),
+                      ),
+                      pw.Text(
+                        '${_formatAmount(total)} ج.س',
+                        style: pw.TextStyle(font: regularFont, fontSize: 11),
+                      ),
+                    ]),
+                  );
+                }),
+                pw.Divider(),
+                pw.Row(children: [
+                  pw.Expanded(
+                    child: pw.Text('إجمالي الأصناف',
+                        style: pw.TextStyle(font: regularFont)),
+                  ),
+                  pw.Text('${_formatAmount(invoiceSubtotal)} ج.س',
+                      style: pw.TextStyle(font: boldFont)),
+                ]),
+                pw.SizedBox(height: 6),
+                pw.Row(children: [
+                  pw.Expanded(
+                    child: pw.Text('الإجمالي',
+                        style: pw.TextStyle(font: regularFont)),
+                  ),
+                  pw.Text('${_formatAmount(invoiceTotal)} ج.س',
+                      style: pw.TextStyle(font: boldFont)),
+                ]),
+                pw.SizedBox(height: 16),
+                pw.Text('شكراً لطلبكم',
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(font: regularFont, fontSize: 10)),
+              ],
+            ),
+          ),
+        ),
+      );
+      Uint8List bytes;
+      try {
+        bytes = await document.save();
+      } catch (_) {
+        bytes = await _buildFallbackInvoicePdf(
+          invoiceNumber: invoiceNumber,
+          invoiceItems: invoiceItems,
+          subtotal: invoiceSubtotal,
+          total: invoiceTotal,
+        );
+      }
+      try {
+        await Printing.layoutPdf(onLayout: (_) async => bytes);
+      } catch (_) {
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename: 'speedstar-invoice-$invoiceNumber.pdf',
+        );
+      }
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'تعذر إنشاء الفاتورة: $error',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<Uint8List> _buildFallbackInvoicePdf({
+    required String invoiceNumber,
+    required List<Map<String, dynamic>> invoiceItems,
+    required num subtotal,
+    required num total,
+  }) async {
+    final document = pw.Document();
+    document.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a5,
+        margin: const pw.EdgeInsets.all(24),
+        build: (_) => [
+          pw.Text(
+            'SpeedStar Invoice',
+            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Text('Order: ${invoiceNumber.isEmpty ? '-' : invoiceNumber}'),
+          pw.Divider(),
+          ...invoiceItems.map((item) {
+            final quantity = _itemQuantity(item);
+            final lineTotal = _itemLineTotal(item);
+            final name =
+                _itemName(item).replaceAll(RegExp(r'[^\x20-\x7E]'), '').trim();
+            return pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 3),
+              child: pw.Row(
+                children: [
+                  pw.Expanded(
+                    child: pw.Text(
+                      '${_formatAmount(quantity)} x ${name.isEmpty ? 'Item' : name}',
+                    ),
+                  ),
+                  pw.Text('${_formatAmount(lineTotal)} SDG'),
+                ],
+              ),
+            );
+          }),
+          pw.Divider(),
+          pw.Text('Subtotal: ${_formatAmount(subtotal)} SDG'),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'Total: ${_formatAmount(total)} SDG',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+    return document.save();
   }
 
   @override
@@ -344,12 +574,33 @@ class StoreOrderDetailsScreen extends StatelessWidget {
     );
     final status =
         (orderData['orderStatus'] ?? orderData['status'] ?? '').toString();
+    final isDirectDelivery =
+        orderData['orderSource'] == 'store_direct_delivery';
     final assignedDriverId = orderData['assignedDriverId'] as String?;
     final hasAssignedDriver = (assignedDriverId ?? '').trim().isNotEmpty;
-    final showReadyAction = status == 'courier_searching' ||
-        status == 'courier_offer_pending' ||
-        status == 'courier_assigned' ||
-        status == 'قيد التجهيز';
+    final canManagePreparation = !isDirectDelivery &&
+        (status == 'courier_searching' ||
+            status == 'courier_offer_pending' ||
+            status == 'courier_assigned' ||
+            status == 'قيد التجهيز');
+    final preparationStarted = orderData['preparationStarted'] == true;
+    final substitutionPending =
+        orderData['substitutionStatus'] == 'pending_client_response' ||
+            orderData['substitutionPending'] == true;
+    final unavailableItemPending = orderData['unavailableItemPending'] == true;
+    final unavailableItemStatus =
+        (orderData['unavailableItemStatus'] ?? '').toString();
+    final hasInvoice = orderData['invoice'] is Map || items.isNotEmpty;
+    final substitutionStatus =
+        (orderData['substitutionStatus'] ?? '').toString();
+    final showStartPreparation = canManagePreparation &&
+        !preparationStarted &&
+        !substitutionPending &&
+        !unavailableItemPending;
+    final showReadyAction = canManagePreparation &&
+        preparationStarted &&
+        !substitutionPending &&
+        !unavailableItemPending;
 
     final showAcceptReject = status == 'store_pending' ||
         status == 'قيد المراجعة' ||
@@ -509,7 +760,9 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'مراجعة سريعة قبل قبول الطلب أو تجهيزه.',
+                      isDirectDelivery
+                          ? 'طلب توصيل مباشر، تابع حالة المندوب وبيانات المستلم.'
+                          : 'مراجعة سريعة قبل قبول الطلب أو تجهيزه.',
                       style: const TextStyle(
                         fontSize: 14,
                         fontFamily: 'Tajawal',
@@ -517,22 +770,41 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        infoPill(
-                          icon: Icons.shopping_bag_outlined,
-                          label: 'الأصناف',
-                          value: '${items.length} عناصر',
-                        ),
-                        const SizedBox(width: 10),
-                        infoPill(
-                          icon: Icons.payments_outlined,
-                          label:
-                              hasStoreDiscount ? 'صافي المتجر' : 'مستحق المتجر',
-                          value: '${_formatAmount(receivable)} ج.س',
-                        ),
-                      ],
-                    ),
+                    if (isDirectDelivery)
+                      Row(
+                        children: [
+                          infoPill(
+                            icon: Icons.person_outline_rounded,
+                            label: 'المستلم',
+                            value: (orderData['clientName'] ?? '—').toString(),
+                          ),
+                          const SizedBox(width: 10),
+                          infoPill(
+                            icon: Icons.local_shipping_outlined,
+                            label: 'رسوم التوصيل',
+                            value:
+                                '${_formatAmount(_safeNum(orderData['deliveryFeeChargedToStore'] ?? orderData['deliveryFee']))} ج.س',
+                          ),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          infoPill(
+                            icon: Icons.shopping_bag_outlined,
+                            label: 'الأصناف',
+                            value: '${items.length} عناصر',
+                          ),
+                          const SizedBox(width: 10),
+                          infoPill(
+                            icon: Icons.payments_outlined,
+                            label: hasStoreDiscount
+                                ? 'صافي المتجر'
+                                : 'مستحق المتجر',
+                            value: '${_formatAmount(receivable)} ج.س',
+                          ),
+                        ],
+                      ),
                     if (hasStoreDiscount) ...[
                       const SizedBox(height: 10),
                       infoPill(
@@ -544,161 +816,321 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 18),
-              sectionCard(
-                title: 'عناصر الطلب',
-                icon: Icons.restaurant_menu_outlined,
-                child: Column(
-                  children: items.map((item) {
-                    final name = _itemName(item);
-                    final qty = _itemQuantity(item);
-                    final price = _itemPrice(item);
-                    final totalItemPrice = _itemLineTotal(item);
-                    final itemNotes = _itemSpecialNotes(item);
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppThemeArabic.storeSurface,
-                        borderRadius: BorderRadius.circular(16),
+              if (isDirectDelivery && hasAssignedDriver) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => StoreCourierTrackingScreen(
+                          orderId: (orderData['docId'] ?? orderData['orderId'])
+                              .toString(),
+                        ),
                       ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 46,
-                            height: 46,
-                            decoration: BoxDecoration(
-                              color: AppThemeArabic.storePrimary
-                                  .withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(14),
+                    ),
+                    icon: const Icon(Icons.location_searching_rounded),
+                    label: const Text('تتبع المندوب مباشرة'),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 18),
+              if (isDirectDelivery)
+                sectionCard(
+                  title: 'بيانات التوصيل المباشر',
+                  icon: Icons.local_shipping_outlined,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          'المستلم: ${(orderData['clientName'] ?? '—').toString()}'),
+                      const SizedBox(height: 8),
+                      Text(
+                          'الهاتف: ${(orderData['clientPhone'] ?? '—').toString()}'),
+                      if ((orderData['packageDescription'] ?? '')
+                          .toString()
+                          .trim()
+                          .isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                            'وصف الإرسالية: ${(orderData['packageDescription'] ?? '').toString().trim()}'),
+                      ],
+                      const SizedBox(height: 8),
+                      Text(
+                          'المسافة التقريبية: ${_formatAmount(_safeNum(orderData['distanceKm']))} كم'),
+                    ],
+                  ),
+                ),
+              if (!isDirectDelivery)
+                sectionCard(
+                  title: 'عناصر الطلب',
+                  icon: Icons.restaurant_menu_outlined,
+                  child: Column(
+                    children: items.asMap().entries.map((entry) {
+                      final itemIndex = entry.key;
+                      final item = entry.value;
+                      final name = _itemName(item);
+                      final qty = _itemQuantity(item);
+                      final price = _itemPrice(item);
+                      final totalItemPrice = _itemLineTotal(item);
+                      final itemNotes = _itemSpecialNotes(item);
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppThemeArabic.storeSurface,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 46,
+                              height: 46,
+                              decoration: BoxDecoration(
+                                color: AppThemeArabic.storePrimary
+                                    .withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: const Icon(
+                                Icons.fastfood_rounded,
+                                color: AppThemeArabic.storePrimary,
+                              ),
                             ),
-                            child: const Icon(
-                              Icons.fastfood_rounded,
-                              color: AppThemeArabic.storePrimary,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '${_formatAmount(qty)} × $name',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 15,
-                                    fontFamily: 'Tajawal',
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    _ItemInfoChip(
-                                      icon: Icons.confirmation_number_outlined,
-                                      text: 'الكمية: ${_formatAmount(qty)}',
-                                    ),
-                                    _ItemInfoChip(
-                                      icon: Icons.sell_outlined,
-                                      text:
-                                          'سعر الوحدة: ${_formatAmount(price)} ج.س',
-                                    ),
-                                    _ItemInfoChip(
-                                      icon: Icons.calculate_outlined,
-                                      text:
-                                          'إجمالي الصنف: ${_formatAmount(totalItemPrice)} ج.س',
-                                      highlighted: true,
-                                    ),
-                                  ],
-                                ),
-                                if (qty > 1) ...[
-                                  const SizedBox(height: 8),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                                   Text(
-                                    'هذا الصنف مطلوب ${_formatAmount(qty)} مرات.',
+                                    '${_formatAmount(qty)} × $name',
                                     style: const TextStyle(
-                                      color: AppThemeArabic.storeTextSecondary,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15,
                                       fontFamily: 'Tajawal',
                                     ),
                                   ),
-                                ],
-                                if (itemNotes.isNotEmpty) ...[
                                   const SizedBox(height: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      _ItemInfoChip(
+                                        icon:
+                                            Icons.confirmation_number_outlined,
+                                        text: 'الكمية: ${_formatAmount(qty)}',
+                                      ),
+                                      _ItemInfoChip(
+                                        icon: Icons.sell_outlined,
+                                        text:
+                                            'سعر الوحدة: ${_formatAmount(price)} ج.س',
+                                      ),
+                                      _ItemInfoChip(
+                                        icon: Icons.calculate_outlined,
+                                        text:
+                                            'إجمالي الصنف: ${_formatAmount(totalItemPrice)} ج.س',
+                                        highlighted: true,
+                                      ),
+                                    ],
+                                  ),
+                                  if (qty > 1) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'هذا الصنف مطلوب ${_formatAmount(qty)} مرات.',
+                                      style: const TextStyle(
+                                        color:
+                                            AppThemeArabic.storeTextSecondary,
+                                        fontFamily: 'Tajawal',
+                                      ),
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: AppThemeArabic.storeAccent
-                                          .withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.sticky_note_2_outlined,
-                                          size: 16,
-                                          color: AppThemeArabic.storeAccent,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            itemNotes,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              color: AppThemeArabic
-                                                  .storeTextPrimary,
+                                  ],
+                                  if (itemNotes.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppThemeArabic.storeAccent
+                                            .withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.sticky_note_2_outlined,
+                                            size: 16,
+                                            color: AppThemeArabic.storeAccent,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              itemNotes,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                color: AppThemeArabic
+                                                    .storeTextPrimary,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
-                                  ),
+                                  ],
+                                  if (canManagePreparation &&
+                                      !preparationStarted &&
+                                      !unavailableItemPending) ...[
+                                    const SizedBox(height: 10),
+                                    OutlinedButton.icon(
+                                      onPressed: () => _markItemUnavailable(
+                                        context,
+                                        itemIndex,
+                                        name,
+                                      ),
+                                      icon: const Icon(
+                                          Icons.remove_shopping_cart_outlined),
+                                      label: const Text('غير متوفر'),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.red.shade700,
+                                        side: BorderSide(
+                                          color: Colors.red.shade200,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
-                          ),
-                          Text(
-                            '$totalItemPrice ج.س',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontFamily: 'Tajawal',
+                            Text(
+                              '$totalItemPrice ج.س',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontFamily: 'Tajawal',
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ),
-              ),
+              if (substitutionPending || unavailableItemPending) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: Text(
+                    unavailableItemPending
+                        ? 'بانتظار قرار العميل بشأن الصنف غير المتوفر قبل بدء التجهيز.'
+                        : 'بانتظار موافقة العميل على تعديل الأصناف قبل متابعة التجهيز.',
+                    style: const TextStyle(
+                      color: AppThemeArabic.storeTextPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Tajawal',
+                    ),
+                  ),
+                ),
+              ],
+              if (substitutionStatus == 'accepted_by_client' ||
+                  substitutionStatus == 'rejected_by_client') ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: substitutionStatus == 'accepted_by_client'
+                        ? Colors.green.shade50
+                        : Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: substitutionStatus == 'accepted_by_client'
+                          ? Colors.green.shade200
+                          : Colors.red.shade200,
+                    ),
+                  ),
+                  child: Text(
+                    substitutionStatus == 'accepted_by_client'
+                        ? 'وافق العميل على التعديل. يمكنك متابعة تجهيز الطلب.'
+                        : 'رفض العميل التعديل المقترح. يمكنك إرسال اقتراح آخر عند الحاجة.',
+                    style: const TextStyle(
+                      color: AppThemeArabic.storeTextPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Tajawal',
+                    ),
+                  ),
+                ),
+              ],
+              if (unavailableItemStatus == 'replacement_selected' ||
+                  unavailableItemStatus == 'continued_without_item') ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Text(
+                    unavailableItemStatus == 'replacement_selected'
+                        ? 'اختار العميل بديلاً للصنف غير المتوفر. يمكنك بدء التجهيز.'
+                        : 'اختار العميل الإكمال بدون الصنف غير المتوفر. يمكنك بدء التجهيز.',
+                    style: const TextStyle(
+                      color: AppThemeArabic.storeTextPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Tajawal',
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 18),
-              sectionCard(
-                title: 'المبلغ المستحق للمتجر',
-                icon: Icons.account_balance_wallet_outlined,
-                child: Column(
-                  children: [
-                    _buildMoneyRow(
-                      'قيمة أصناف الطلب',
-                      '${_formatAmount(subtotal)} ج.س',
+              if (hasInvoice) ...[
+                sectionCard(
+                  title: 'فاتورة التجهيز',
+                  icon: Icons.receipt_long_outlined,
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => _printInvoice(context),
+                      icon: const Icon(Icons.print_outlined),
+                      label: const Text('طباعة الفاتورة'),
                     ),
-                    if (hasStoreDiscount)
-                      _buildMoneyRow(
-                        'خصم المتجر',
-                        '- ${_formatAmount(storeDiscount)} ج.س',
-                      ),
-                    const Divider(height: 26),
-                    _buildMoneyRow(
-                      hasStoreDiscount
-                          ? 'صافي ما يستلمه المتجر'
-                          : 'ما يستلمه المتجر',
-                      '${_formatAmount(receivable)} ج.س',
-                      emphasized: true,
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+                const SizedBox(height: 18),
+              ],
+              if (!isDirectDelivery)
+                sectionCard(
+                  title: 'المبلغ المستحق للمتجر',
+                  icon: Icons.account_balance_wallet_outlined,
+                  child: Column(
+                    children: [
+                      _buildMoneyRow(
+                        'قيمة أصناف الطلب',
+                        '${_formatAmount(subtotal)} ج.س',
+                      ),
+                      if (hasStoreDiscount)
+                        _buildMoneyRow(
+                          'خصم المتجر',
+                          '- ${_formatAmount(storeDiscount)} ج.س',
+                        ),
+                      const Divider(height: 26),
+                      _buildMoneyRow(
+                        hasStoreDiscount
+                            ? 'صافي ما يستلمه المتجر'
+                            : 'ما يستلمه المتجر',
+                        '${_formatAmount(receivable)} ج.س',
+                        emphasized: true,
+                      ),
+                    ],
+                  ),
+                ),
               if (orderNote.isNotEmpty) ...[
                 const SizedBox(height: 18),
                 sectionCard(
@@ -782,6 +1214,69 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+              if (showStartPreparation)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: sectionCard(
+                    title: 'تجهيز الطلب',
+                    icon: Icons.restaurant_outlined,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'بدأ البحث عن مندوب. اضغط عند البدء بتجهيز الطلب ليعرف العميل أن طلبه قيد التحضير.',
+                          style: TextStyle(
+                            color: AppThemeArabic.storeTextSecondary,
+                            fontFamily: 'Tajawal',
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () async {
+                              final docId =
+                                  orderData['docId'] ?? orderData['orderId'];
+                              await FirebaseFunctions.instanceFor(
+                                      region: 'me-central1')
+                                  .httpsCallable('storeUpdateOrderStage')
+                                  .call({
+                                'orderId': docId,
+                                'restaurantId': orderData['restaurantId'],
+                                'stage': 'start_preparing',
+                              });
+                              if (!context.mounted) return;
+                              final updatedSnapshot = await FirebaseFirestore
+                                  .instance
+                                  .collection('orders')
+                                  .doc(docId)
+                                  .get();
+                              final updatedOrderData =
+                                  Map<String, dynamic>.from(
+                                updatedSnapshot.data() ?? orderData,
+                              );
+                              updatedOrderData['docId'] = updatedSnapshot.id;
+                              Navigator.of(context)
+                                  .pushReplacement(MaterialPageRoute(
+                                builder: (_) => StoreOrderDetailsScreen(
+                                    orderData: updatedOrderData),
+                              ));
+                            },
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.orange.shade800,
+                              minimumSize: const Size.fromHeight(54),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                            ),
+                            icon: const Icon(Icons.play_circle_outline_rounded),
+                            label: const Text('ابدأ تجهيز الطلب الآن'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               if (showReadyAction)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
@@ -807,18 +1302,12 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                             onPressed: () async {
                               final docId =
                                   orderData['docId'] ?? orderData['orderId'];
-                              await FirebaseFirestore.instance
-                                  .collection('orders')
-                                  .doc(docId)
-                                  .update({
-                                'readyByRestaurant': true,
-                                'orderStatus': hasAssignedDriver
-                                    ? 'pickup_ready'
-                                    : 'courier_searching',
-                                'status': hasAssignedDriver
-                                    ? 'pickup_ready'
-                                    : 'courier_searching',
-                                'updatedAt': FieldValue.serverTimestamp(),
+                              await FirebaseFunctions.instanceFor(
+                                region: 'me-central1',
+                              ).httpsCallable('storeUpdateOrderStage').call({
+                                'orderId': docId,
+                                'restaurantId': orderData['restaurantId'],
+                                'stage': 'ready',
                               });
                               if (!context.mounted) return;
                               final updatedSnapshot = await FirebaseFirestore
@@ -853,11 +1342,7 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                               ),
                             ),
                             icon: const Icon(Icons.inventory_2_outlined),
-                            label: Text(
-                              hasAssignedDriver
-                                  ? 'تأكيد الجاهزية للاستلام'
-                                  : 'تأكيد الجاهزية والبحث',
-                            ),
+                            label: const Text('جاهز'),
                           ),
                         ),
                       ],

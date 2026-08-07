@@ -120,6 +120,24 @@
       },
       "valueType": "STRING"
     },
+    "courier_pickup_delay_reminder_minutes": {
+      "defaultValue": {
+        "value": "10"
+      },
+      "valueType": "NUMBER"
+    },
+    "courier_pickup_delay_critical_minutes": {
+      "defaultValue": {
+        "value": "15"
+      },
+      "valueType": "NUMBER"
+    },
+    "courier_client_arrival_delay_minutes": {
+      "defaultValue": {
+        "value": "20"
+      },
+      "valueType": "NUMBER"
+    },
     "client_state_guard_distance_km": {
       "defaultValue": {
         "value": "120"
@@ -141,6 +159,42 @@
     "client_home_show_offers_section": {
       "defaultValue": {
         "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "client_home_show_categories_section": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "client_home_show_restaurants_section": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "client_feature_business_filters": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "client_feature_parcel_delivery": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "valueType": "BOOLEAN"
+    },
+    "client_delivery_time_mode": {
+      "defaultValue": {
+        "value": "hybrid"
+      },
+      "valueType": "STRING"
+    },
+    "client_delivery_time_show_route_minutes": {
+      "defaultValue": {
+        "value": "false"
       },
       "valueType": "BOOLEAN"
     },

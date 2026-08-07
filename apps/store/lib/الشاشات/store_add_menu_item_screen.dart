@@ -94,10 +94,22 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
   final TextEditingController _smallPriceController = TextEditingController();
   final TextEditingController _mediumPriceController = TextEditingController();
   final TextEditingController _largePriceController = TextEditingController();
+  final TextEditingController _skuController = TextEditingController();
+  final TextEditingController _stockQuantityController =
+      TextEditingController();
   String? _selectedCategory;
   File? _imageFile;
   String? _existingImageUrl;
   bool _isLoading = false;
+  bool _requiresPrescription = false;
+  String _businessType = 'restaurant';
+
+  bool get _isRestaurant => _businessType == 'restaurant';
+  bool get _showsInventory =>
+      _businessType == 'grocery' ||
+      _businessType == 'brand' ||
+      _businessType == 'ecommerce';
+  bool get _isPharmacy => _businessType == 'pharmacy';
 
   @override
   void initState() {
@@ -113,12 +125,44 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
       _smallPriceController.text =
           initialSizes['small']?.toStringAsFixed(2).replaceAll('.00', '') ?? '';
       _mediumPriceController.text =
-          initialSizes['medium']?.toStringAsFixed(2).replaceAll('.00', '') ?? '';
+          initialSizes['medium']?.toStringAsFixed(2).replaceAll('.00', '') ??
+              '';
       _largePriceController.text =
           initialSizes['large']?.toStringAsFixed(2).replaceAll('.00', '') ?? '';
     } else if (widget.initialPrice != null && widget.initialPrice! > 0) {
       _itemPriceController.text =
           widget.initialPrice!.toStringAsFixed(2).replaceAll('.00', '');
+    }
+    _loadBusinessItemDetails();
+  }
+
+  Future<void> _loadBusinessItemDetails() async {
+    try {
+      final restaurantDoc = await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(widget.restaurantId)
+          .get();
+      final itemDoc = widget.isEditing
+          ? await FirebaseFirestore.instance
+              .collection('restaurants')
+              .doc(widget.restaurantId)
+              .collection('full_menu')
+              .doc(widget.itemId)
+              .get()
+          : null;
+      if (!mounted) return;
+      final item = itemDoc?.data() ?? const <String, dynamic>{};
+      setState(() {
+        _businessType = (restaurantDoc.data()?['businessType'] ?? 'restaurant')
+            .toString()
+            .trim()
+            .toLowerCase();
+        _skuController.text = (item['sku'] ?? '').toString();
+        _stockQuantityController.text = item['stockQuantity']?.toString() ?? '';
+        _requiresPrescription = item['requiresPrescription'] == true;
+      });
+    } catch (_) {
+      // Restaurant-compatible fields remain available if profile loading fails.
     }
   }
 
@@ -129,6 +173,8 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
     _smallPriceController.dispose();
     _mediumPriceController.dispose();
     _largePriceController.dispose();
+    _skuController.dispose();
+    _stockQuantityController.dispose();
     super.dispose();
   }
 
@@ -212,7 +258,8 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
-    if (_imageFile == null && (_existingImageUrl == null || _existingImageUrl!.isEmpty)) {
+    if (_imageFile == null &&
+        (_existingImageUrl == null || _existingImageUrl!.isEmpty)) {
       messenger.showSnackBar(
         const SnackBar(content: Text('الرجاء اختيار صورة للصنف')),
       );
@@ -227,6 +274,8 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
     final rawMedium = _mediumPriceController.text.trim().replaceAll(',', '.');
     final rawLarge = _largePriceController.text.trim().replaceAll(',', '.');
     final category = _selectedCategory?.trim() ?? '';
+    final sku = _skuController.text.trim();
+    final stockQuantity = int.tryParse(_stockQuantityController.text.trim());
 
     final hasAnySize =
         rawSmall.isNotEmpty || rawMedium.isNotEmpty || rawLarge.isNotEmpty;
@@ -255,14 +304,16 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
       if (smallPrice == null || mediumPrice == null || largePrice == null) {
         setState(() => _isLoading = false);
         messenger.showSnackBar(
-          const SnackBar(content: Text('عند استخدام الأحجام يجب إدخال الأسعار الثلاثة')),
+          const SnackBar(
+              content: Text('عند استخدام الأحجام يجب إدخال الأسعار الثلاثة')),
         );
         return;
       }
       if (smallPrice <= 0 || mediumPrice <= 0 || largePrice <= 0) {
         setState(() => _isLoading = false);
         messenger.showSnackBar(
-          const SnackBar(content: Text('أسعار الأحجام يجب أن تكون أكبر من صفر')),
+          const SnackBar(
+              content: Text('أسعار الأحجام يجب أن تكون أكبر من صفر')),
         );
         return;
       }
@@ -281,6 +332,13 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
       setState(() => _isLoading = false);
       messenger.showSnackBar(
         const SnackBar(content: Text('الرجاء إدخال اسم الفئة')),
+      );
+      return;
+    }
+    if (_showsInventory && (stockQuantity == null || stockQuantity < 0)) {
+      setState(() => _isLoading = false);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('أدخل كمية مخزون صحيحة')),
       );
       return;
     }
@@ -334,6 +392,16 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
       };
       if (sizes.isNotEmpty) {
         payload['sizes'] = sizes;
+      }
+      if (!_isRestaurant) {
+        payload['businessType'] = _businessType;
+      }
+      if (_showsInventory) {
+        payload['sku'] = sku;
+        payload['stockQuantity'] = stockQuantity;
+      }
+      if (_isPharmacy) {
+        payload['requiresPrescription'] = _requiresPrescription;
       }
       if (!widget.isEditing) {
         payload['createdAt'] = FieldValue.serverTimestamp();
@@ -415,7 +483,9 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
       if (!mounted) return;
       setState(() => _isLoading = false);
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر ${widget.isEditing ? 'تعديل' : 'إضافة'} الصنف: $e')),
+        SnackBar(
+            content:
+                Text('تعذر ${widget.isEditing ? 'تعديل' : 'إضافة'} الصنف: $e')),
       );
     }
   }
@@ -454,7 +524,9 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Icon(
-                        widget.isEditing ? Icons.edit_note_rounded : Icons.add_box_rounded,
+                        widget.isEditing
+                            ? Icons.edit_note_rounded
+                            : Icons.add_box_rounded,
                         color: Colors.white,
                       ),
                     ),
@@ -464,7 +536,9 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            widget.isEditing ? 'تحديث بيانات الصنف' : 'أضف صنفًا جديدًا للقائمة',
+                            widget.isEditing
+                                ? 'تحديث بيانات الصنف'
+                                : 'أضف صنفًا جديدًا للقائمة',
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w800,
@@ -535,8 +609,9 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
                       final small = _smallPriceController.text.trim();
                       final medium = _mediumPriceController.text.trim();
                       final large = _largePriceController.text.trim();
-                      final hasAnySize =
-                          small.isNotEmpty || medium.isNotEmpty || large.isNotEmpty;
+                      final hasAnySize = small.isNotEmpty ||
+                          medium.isNotEmpty ||
+                          large.isNotEmpty;
 
                       if (!hasAnySize && (value == null || value.isEmpty)) {
                         return 'الرجاء إدخال السعر أو إدخال أسعار الأحجام';
@@ -560,24 +635,60 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
                     controller: _smallPriceController,
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'سعر الحجم الصغير'),
+                    decoration:
+                        const InputDecoration(labelText: 'سعر الحجم الصغير'),
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _mediumPriceController,
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'سعر الحجم الوسط'),
+                    decoration:
+                        const InputDecoration(labelText: 'سعر الحجم الوسط'),
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _largePriceController,
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'سعر الحجم الكبير'),
+                    decoration:
+                        const InputDecoration(labelText: 'سعر الحجم الكبير'),
                   ),
                 ],
               ),
+              if (!_isRestaurant)
+                _buildSectionCard(
+                  title: _isPharmacy ? 'بيانات الدواء' : 'بيانات المنتج',
+                  icon: _isPharmacy
+                      ? Icons.medication_outlined
+                      : Icons.inventory_2_outlined,
+                  children: [
+                    if (_showsInventory) ...[
+                      TextFormField(
+                        controller: _skuController,
+                        decoration: const InputDecoration(
+                            labelText: 'رمز المنتج SKU (اختياري)'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: _stockQuantityController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                            labelText: 'الكمية المتاحة في المخزون'),
+                      ),
+                    ],
+                    if (_isPharmacy)
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('يتطلب روشتة طبية'),
+                        subtitle: const Text(
+                            'تظهر للعميل كدواء يحتاج مراجعة الصيدلية.'),
+                        value: _requiresPrescription,
+                        onChanged: (value) =>
+                            setState(() => _requiresPrescription = value),
+                      ),
+                  ],
+                ),
               _buildSectionCard(
                 title: 'الصورة والهوية البصرية',
                 icon: Icons.image_outlined,
@@ -596,7 +707,9 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
                               decoration: BoxDecoration(
                                 color: AppThemeArabic.storeBackground,
                                 borderRadius: BorderRadius.circular(18),
-                                border: Border.all(color: AppThemeArabic.storePrimary.withOpacity(0.12)),
+                                border: Border.all(
+                                    color: AppThemeArabic.storePrimary
+                                        .withOpacity(0.12)),
                               ),
                               child: const Text(
                                 'لم يتم اختيار صورة بعد',

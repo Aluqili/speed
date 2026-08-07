@@ -31,7 +31,8 @@ class OrderAlertForegroundService : Service() {
 					?: "طلب جديد"
 				val body = intent.getStringExtra(EXTRA_BODY)
 					?: "لديك طلب جديد بانتظار القبول أو الرفض."
-				startForeground(NOTIFICATION_ID, buildNotification(title, body))
+				val orderId = intent.getStringExtra(EXTRA_ORDER_ID).orEmpty()
+				startForeground(NOTIFICATION_ID, buildNotification(title, body, orderId))
 				startPlaybackIfNeeded()
 				return START_STICKY
 			}
@@ -45,8 +46,13 @@ class OrderAlertForegroundService : Service() {
 		super.onDestroy()
 	}
 
-	private fun buildNotification(title: String, body: String): Notification {
-		val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+	private fun buildNotification(title: String, body: String, orderId: String): Notification {
+		val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+			putExtra(EXTRA_ORDER_ID, orderId)
+			putExtra(EXTRA_TITLE, title)
+			putExtra(EXTRA_BODY, body)
+			addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+		}
 		val contentIntent = PendingIntent.getActivity(
 			this,
 			0,
@@ -58,8 +64,10 @@ class OrderAlertForegroundService : Service() {
 			.setSmallIcon(R.drawable.ic_stat_speedstar)
 			.setContentTitle(title)
 			.setContentText(body)
+			.setStyle(NotificationCompat.BigTextStyle().bigText(body))
 			.setCategory(NotificationCompat.CATEGORY_ALARM)
 			.setPriority(NotificationCompat.PRIORITY_MAX)
+			.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 			.setOngoing(true)
 			.setOnlyAlertOnce(true)
 			.setSilent(true)
@@ -108,13 +116,13 @@ class OrderAlertForegroundService : Service() {
 	}
 
 	companion object {
-		const val SERVICE_CHANNEL_ID = "speedstar_store_alert_service_v1"
+		const val SERVICE_CHANNEL_ID = "speedstar_store_alert_service_v2"
 		private const val NOTIFICATION_ID = 88041
 		private const val ACTION_START = "com.aluqili.speedstar.store.action.START_ORDER_ALERT"
 		private const val ACTION_STOP = "com.aluqili.speedstar.store.action.STOP_ORDER_ALERT"
-		private const val EXTRA_TITLE = "extra_title"
-		private const val EXTRA_BODY = "extra_body"
-		private const val EXTRA_ORDER_ID = "extra_order_id"
+		const val EXTRA_TITLE = "extra_title"
+		const val EXTRA_BODY = "extra_body"
+		const val EXTRA_ORDER_ID = "extra_order_id"
 
 		fun start(context: Context, title: String?, body: String?, orderId: String?) {
 			val intent = Intent(context, OrderAlertForegroundService::class.java).apply {

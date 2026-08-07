@@ -28,7 +28,8 @@ import {
   deleteField,
   serverTimestamp,
   getDocs,
-  writeBatch
+  writeBatch,
+  GeoPoint
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 
 import {
@@ -60,6 +61,9 @@ const adminCreateStoreOffer = httpsCallable(fns, 'adminCreateStoreOffer');
 const adminManageOrder = httpsCallable(fns, 'adminManageOrder');
 const deleteManagedUserAccount = httpsCallable(fns, 'deleteManagedUserAccount');
 const updateManagedUserProfile = httpsCallable(fns, 'updateManagedUserProfile');
+const adminDeleteRestaurantAccount = httpsCallable(fns, 'adminDeleteRestaurantAccount');
+const adminGeocodeRestaurantAddress = httpsCallable(fns, 'adminGeocodeRestaurantAddress');
+const adminUpdatePromocode = httpsCallable(fns, 'adminUpdatePromocode');
 
 const loginCard = document.getElementById('loginCard');
 const appPanel = document.getElementById('appPanel');
@@ -74,6 +78,8 @@ const adminGlobalSearch = document.getElementById('adminGlobalSearch');
 const adminSearchMeta = document.getElementById('adminSearchMeta');
 const adminSearchResults = document.getElementById('adminSearchResults');
 const dashboardQuickActions = document.getElementById('dashboardQuickActions');
+const appSidebar = document.getElementById('appSidebar');
+const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
 
 const statsGrid = document.getElementById('statsGrid');
 const opsPriorityGrid = document.getElementById('opsPriorityGrid');
@@ -133,6 +139,14 @@ const ocashOpenUrlInput = document.getElementById('ocashOpenUrlInput');
 const fawryOpenUrlInput = document.getElementById('fawryOpenUrlInput');
 const savePaymentSettingsBtn = document.getElementById('savePaymentSettingsBtn');
 const paymentSettingsResult = document.getElementById('paymentSettingsResult');
+const shiftAccountForm = document.getElementById('shiftAccountForm');
+const shiftEmployeeDisplayName = document.getElementById('shiftEmployeeDisplayName');
+const saveShiftAccountBtn = document.getElementById('saveShiftAccountBtn');
+const activateShiftAccountBtn = document.getElementById('activateShiftAccountBtn');
+const endShiftAccountBtn = document.getElementById('endShiftAccountBtn');
+const activeShiftOwnerLabel = document.getElementById('activeShiftOwnerLabel');
+const shiftIncomeSummary = document.getElementById('shiftIncomeSummary');
+const shiftAccountResult = document.getElementById('shiftAccountResult');
 const restaurantsTable = document.getElementById('restaurantsTable');
 const couriersTable = document.getElementById('couriersTable');
 const adminsTable = document.getElementById('adminsTable');
@@ -163,6 +177,11 @@ const notificationTitle = document.getElementById('notificationTitle');
 const notificationBody = document.getElementById('notificationBody');
 const notificationSendBtn = document.getElementById('notificationSendBtn');
 const notificationResult = document.getElementById('notificationResult');
+const notificationImageInput = document.getElementById('notificationImageInput');
+const notificationAttachImageBtn = document.getElementById('notificationAttachImageBtn');
+const notificationImagePreview = document.getElementById('notificationImagePreview');
+const notificationImagePreviewImg = document.getElementById('notificationImagePreviewImg');
+const notificationRemoveImageBtn = document.getElementById('notificationRemoveImageBtn');
 const pendingTable = document.getElementById('pendingTable');
 const pendingGeoStatsSummary = document.getElementById('pendingGeoStatsSummary');
 const pendingGeoStatsTables = document.getElementById('pendingGeoStatsTables');
@@ -175,6 +194,16 @@ const clientDetailsPanel = document.getElementById('clientDetailsPanel');
 const operationsOrderSummary = document.getElementById('operationsOrderSummary');
 const operationsOrdersTable = document.getElementById('operationsOrdersTable');
 const operationsOrderDetails = document.getElementById('operationsOrderDetails');
+const mockOrderForm = document.getElementById('mockOrderForm');
+const mockOrderMode = document.getElementById('mockOrderMode');
+const mockOrderCourierIds = document.getElementById('mockOrderCourierIds');
+const mockOrderClientName = document.getElementById('mockOrderClientName');
+const mockOrderClientPhone = document.getElementById('mockOrderClientPhone');
+const mockOrderStoreName = document.getElementById('mockOrderStoreName');
+const mockOrderAddress = document.getElementById('mockOrderAddress');
+const mockOrderPaymentMethod = document.getElementById('mockOrderPaymentMethod');
+const mockOrderCreateBtn = document.getElementById('mockOrderCreateBtn');
+const mockOrderResult = document.getElementById('mockOrderResult');
 const clientsTable = document.getElementById('clientsTable');
 const orderStatusFilter = document.getElementById('orderStatusFilter');
 const orderSearchInput = document.getElementById('orderSearchInput');
@@ -182,6 +211,7 @@ const ordersSegmentButtons = Array.from(document.querySelectorAll('[data-orders-
 const addAdminForm = document.getElementById('addAdminForm');
 const adminEmailInput = document.getElementById('adminEmailInput');
 const adminPermissionInputs = Array.from(document.querySelectorAll('input[name="adminPermission"]'));
+const adminCanDeleteRestaurantsInput = document.getElementById('adminCanDeleteRestaurantsInput');
 const normalizeStateForm = document.getElementById('normalizeStateForm');
 const normalizeLimitInput = document.getElementById('normalizeLimitInput');
 const normalizeStateResult = document.getElementById('normalizeStateResult');
@@ -244,6 +274,18 @@ const pricingLargeItemFeeCapPerUnitInput = document.getElementById('pricingLarge
 const reloadPricingConfigBtn = document.getElementById('reloadPricingConfigBtn');
 const savePricingConfigBtn = document.getElementById('savePricingConfigBtn');
 const pricingConfigResult = document.getElementById('pricingConfigResult');
+const storeHomeConfigForm = document.getElementById('storeHomeConfigForm');
+const storeHomeConfigTarget = document.getElementById('storeHomeConfigTarget');
+const storeHomeFeaturedInput = document.getElementById('storeHomeFeaturedInput');
+const storeHomeOffersInput = document.getElementById('storeHomeOffersInput');
+const storeHomeConfigResult = document.getElementById('storeHomeConfigResult');
+const clientHomeImagesForm = document.getElementById('clientHomeImagesForm');
+const clientHomeImagesResult = document.getElementById('clientHomeImagesResult');
+const rewardsConfigForm = document.getElementById('rewardsConfigForm');
+const rewardsEnabledInput = document.getElementById('rewardsEnabledInput');
+const rewardsAmountPerPointInput = document.getElementById('rewardsAmountPerPointInput');
+const rewardsMinRedeemPointsInput = document.getElementById('rewardsMinRedeemPointsInput');
+const rewardsConfigResult = document.getElementById('rewardsConfigResult');
 const discountForm = document.getElementById('discountForm');
 const discountCode = document.getElementById('discountCode');
 const discountScope = document.getElementById('discountScope');
@@ -259,6 +301,7 @@ const discountExpiryDate = document.getElementById('discountExpiryDate');
 const discountIsActive = document.getElementById('discountIsActive');
 const discountOnlyNewOrders = document.getElementById('discountOnlyNewOrders');
 const discountSaveBtn = document.getElementById('discountSaveBtn');
+const discountCancelEditBtn = document.getElementById('discountCancelEditBtn');
 const discountResult = document.getElementById('discountResult');
 const discountsTable = document.getElementById('discountsTable');
 const adminCreateOfferForm = document.getElementById('adminCreateOfferForm');
@@ -448,26 +491,40 @@ let supportPendingImageFile = null;
 let supportPendingImagePreviewUrl = '';
 let supportSendInFlight = false;
 let notificationFormBound = false;
+let notificationPendingImageFile = null;
+let notificationPendingImagePreviewUrl = '';
 let authTransitionInProgress = false;
 let preservedLoginStatus = null;
 let selectedOrderOnMapId = '';
-let allowCompletedSelectedOrderOnMap = false;
 let currentMapSelection = null;
 let currentAdminProfile = null;
 let currentAdminPermissions = new Set();
 let financeRangeFilterBound = false;
 let paymentSettingsFormBound = false;
+let shiftAccountFormBound = false;
 let rolloutSelectedCityIds = new Set();
 let remoteConfigParametersCache = [];
 let operationsOrdersBound = false;
+let mockOrderFormBound = false;
 let operationsOrderDocsCache = [];
+let currentOperationsOrderId = '';
 let courierDirectoryCache = [];
+let courierDirectoryDocsCache = [];
+let courierSearchFilterFrame = 0;
+let pendingMountRefreshTimer = null;
+let managementRenderTimers = {
+  operations: null,
+  courierActivity: null,
+};
 let activeOrderDriverUnsubscribe = null;
 let activeOrderDriverCleanupRegistered = false;
 let activeOrderDriverId = '';
 let longDistanceCouriersUnsubscribe = null;
 let longDistanceCouriersOrderId = '';
 let restaurantsDirectoryCache = new Map(); // storeId → {name, ...}
+let orderInlineMap = null;
+let orderInlineMapVisible = false;
+let orderInlineMapOrderId = '';
 
 const MAP_STYLE_PRESETS = {
   voyager: {
@@ -532,6 +589,18 @@ const ORDER_STATUS_LABELS = {
   payment_review: 'مراجعة دفع',
 };
 
+const ADMIN_ORDER_STATUS_FLOW = [
+  'pending',
+  'store_pending',
+  'courier_searching',
+  'courier_offer_pending',
+  'courier_assigned',
+  'pickup_ready',
+  'picked_up',
+  'arrived_to_client',
+  'delivered',
+];
+
 const APPROVAL_STATUS_LABELS = {
   approved: 'معتمد',
   pending: 'قيد المراجعة',
@@ -545,6 +614,46 @@ function formatOrderStatusLabel(value) {
   const raw = String(value || '').trim();
   const normalized = raw.toLowerCase();
   return ORDER_STATUS_LABELS[normalized] || raw || '-';
+}
+
+function getAdminOrderedStatusChoices(currentStatusRaw) {
+  const currentStatus = String(currentStatusRaw || '').trim().toLowerCase();
+  const choices = ADMIN_ORDER_STATUS_FLOW.map((key, index) => {
+    const label = ORDER_STATUS_LABELS[key] || key;
+    return {
+      key,
+      title: `${index + 1}. ${label}`,
+      selected: key === currentStatus,
+    };
+  });
+
+  if (currentStatus && !ADMIN_ORDER_STATUS_FLOW.includes(currentStatus)) {
+    choices.unshift({
+      key: currentStatus,
+      title: `الحالة الحالية: ${formatOrderStatusLabel(currentStatus)}`,
+      selected: true,
+    });
+  }
+
+  return choices;
+}
+
+function renderStoreApprovalFlowHint(orderData) {
+  const data = orderData || {};
+  const status = String(data.orderStatus || data.status || '').trim().toLowerCase();
+  const courierAcceptedBeforeStore = data.courierAcceptedBeforeStore === true;
+  const storeApprovedAtMs = getTimestampMillis(data.storeApprovedAt);
+  const hasAssignedDriver = String(data.assignedDriverId || '').trim().length > 0;
+
+  if (courierAcceptedBeforeStore && status === 'store_pending') {
+    return '<div style="margin-top:8px; padding:8px 10px; border:1px solid #f59e0b55; background:#fff7ed; border-radius:10px; color:#9a3412;"><b>تنبيه تشغيلي:</b> المندوب وافق أولاً والطلب ما زال بانتظار قبول المتجر.</div>';
+  }
+
+  if (storeApprovedAtMs > 0 && hasAssignedDriver) {
+    return `<div style="margin-top:8px; padding:8px 10px; border:1px solid #16a34a55; background:#f0fdf4; border-radius:10px; color:#14532d;"><b>تنبيه تشغيلي:</b> المتجر وافق بعد قبول المندوب وتم اعتماد الإسناد.${storeApprovedAtMs ? ` <span class="muted">(${escapeHtml(formatDateTimeLabel(storeApprovedAtMs))})</span>` : ''}</div>`;
+  }
+
+  return '';
 }
 
 // ── Entity display helpers (name over ID) ─────────────────────────────────────
@@ -577,14 +686,53 @@ function resolveClientDisplay(clientId, fallbackName = '') {
   return resolveEntityDisplay(clientId, name);
 }
 
-function formatApprovalStatusLabel(value) {
-  const raw = String(value || '').trim();
-  const normalized = raw.toLowerCase();
-  return APPROVAL_STATUS_LABELS[normalized] || raw || '-';
+function resolveRestaurantPhone(restaurantId, fallbackPhone = '') {
+  const id = String(restaurantId || '').trim();
+  const direct = String(fallbackPhone || '').trim();
+  if (direct) return direct;
+  if (!id) return '';
+
+  const fromMapState = mapState?.restaurants?.get(id)?.data?.phone;
+  if (String(fromMapState || '').trim()) return String(fromMapState).trim();
+
+  const fromDirectory = restaurantsDirectoryCache?.get(id)?.phone;
+  if (String(fromDirectory || '').trim()) return String(fromDirectory).trim();
+
+  return '';
+}
+
+function resolveDriverPhone(driverId, fallbackPhone = '') {
+  const id = String(driverId || '').trim();
+  const direct = String(fallbackPhone || '').trim();
+  if (direct) return direct;
+  if (!id) return '';
+
+  const fromMapState = mapState?.drivers?.get(id)?.data?.phone;
+  if (String(fromMapState || '').trim()) return String(fromMapState).trim();
+
+  const fromDirectory = (courierDirectoryCache || []).find((entry) => entry.id === id)?.data?.phone;
+  if (String(fromDirectory || '').trim()) return String(fromDirectory).trim();
+
+  return '';
+}
+
+function normalizeApprovalStatus(value, isApproved) {
+  if (value === true) return 'approved';
+  if (value === false) return 'rejected';
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw) return raw;
+  if (isApproved === true) return 'approved';
+  if (isApproved === false) return 'rejected';
+  return 'pending';
+}
+
+function formatApprovalStatusLabel(value, isApproved) {
+  const normalized = normalizeApprovalStatus(value, isApproved);
+  return APPROVAL_STATUS_LABELS[normalized] || String(value || '').trim() || (isApproved === true ? APPROVAL_STATUS_LABELS.approved : isApproved === false ? APPROVAL_STATUS_LABELS.rejected : '-');
 }
 
 const mapUiState = {
-  style: 'voyager',
+  style: 'osm',
   orderStatus: 'active',
   showDrivers: true,
   showClients: true,
@@ -605,6 +753,7 @@ let opsAudioControlsBound = false;
 
 const opsCenterState = {
   activeOrders: 0,
+  openCourierIssues: 0,
   paymentReviews: 0,
   walletRecharges: 0,
   walletWithdrawals: 0,
@@ -682,6 +831,7 @@ function syncAdminAttentionUi() {
 
 function resetOpsCenterAttentionState() {
   opsCenterState.activeOrders = 0;
+  opsCenterState.openCourierIssues = 0;
   opsCenterState.paymentReviews = 0;
   opsCenterState.walletRecharges = 0;
   opsCenterState.supportUnread = 0;
@@ -820,6 +970,21 @@ const REMOTE_CONFIG_METADATA = {
     description: 'الرابط الجذري الذي يجلب منه تطبيق المندوب المحتوى البعيد.',
     valueType: 'STRING',
   },
+  courier_pickup_delay_reminder_minutes: {
+    label: 'تذكير تأخر استلام الطلب',
+    description: 'عدد الدقائق بعد قبول المندوب للطلب قبل إرسال تذكير الاستلام الأول.',
+    valueType: 'NUMBER',
+  },
+  courier_pickup_delay_critical_minutes: {
+    label: 'إنذار تأخر استلام الطلب',
+    description: 'عدد الدقائق بعد قبول المندوب للطلب قبل إرسال إنذار التأخر الشديد.',
+    valueType: 'NUMBER',
+  },
+  courier_client_arrival_delay_minutes: {
+    label: 'تذكير تأخر الوصول للعميل',
+    description: 'عدد الدقائق بعد استلام المندوب للطلب قبل تذكيره بالوصول للعميل.',
+    valueType: 'NUMBER',
+  },
   client_state_guard_distance_km: {
     label: 'مسافة حراسة الولاية',
     description: 'المسافة القصوى للتحقق من تفعيل الولاية للعميل.',
@@ -839,6 +1004,41 @@ const REMOTE_CONFIG_METADATA = {
     label: 'رسالة الولايات غير المفعلة',
     description: 'الرسالة التي تظهر للمستخدم خارج النطاق المفعّل.',
     valueType: 'STRING',
+  },
+  client_home_show_offers_section: {
+    label: 'إظهار قسم العروض في الرئيسية',
+    description: 'تشغيل أو إيقاف سلايدر العروض في الصفحة الرئيسية للعميل.',
+    valueType: 'BOOLEAN',
+  },
+  client_home_show_categories_section: {
+    label: 'إظهار قسم التصنيفات في الرئيسية',
+    description: 'تشغيل أو إيقاف شريط التصنيفات في الصفحة الرئيسية للعميل.',
+    valueType: 'BOOLEAN',
+  },
+  client_home_show_restaurants_section: {
+    label: 'إظهار قسم المطاعم في الرئيسية',
+    description: 'تشغيل أو إيقاف قائمة المطاعم في الصفحة الرئيسية للعميل.',
+    valueType: 'BOOLEAN',
+  },
+  client_feature_business_filters: {
+    label: 'إظهار تبويبات أنواع المنشآت',
+    description: 'تشغيل أو إيقاف تبويبات المطاعم والبقالات والصيدليات والبراندات في رئيسية العميل.',
+    valueType: 'BOOLEAN',
+  },
+  client_feature_parcel_delivery: {
+    label: 'تفعيل خدمة وصل غرضك',
+    description: 'تشغيل أو إيقاف خدمة توصيل غرض العميل بين نقطتي استلام وتسليم.',
+    valueType: 'BOOLEAN',
+  },
+  client_delivery_time_mode: {
+    label: 'وضع زمن التوصيل للعميل',
+    description: 'القيم: hybrid أو admin_only أو computed للتحكم في طريقة عرض زمن التوصيل.',
+    valueType: 'STRING',
+  },
+  client_delivery_time_show_route_minutes: {
+    label: 'إضافة زمن الطريق إلى زمن الأدمن',
+    description: 'عند تفعيلها في وضع hybrid يُضاف زمن الطريق إلى الزمن المضبوط من المطعم.',
+    valueType: 'BOOLEAN',
   },
   pricing_client_delivery_base_fee: {
     label: 'سعر العميل الأساسي',
@@ -917,6 +1117,26 @@ const PRICING_REMOTE_KEYS = [
   'pricing_large_item_fee_cap_per_unit',
 ];
 
+const OPS_RUNTIME_REMOTE_CONFIG_METADATA = {
+  ops_chat_enabled: { label: 'تفعيل الدردشة العامة', description: 'تشغيل أو إيقاف الدردشة في كل التطبيقات.', valueType: 'BOOLEAN' },
+  ops_chat_disabled_message: { label: 'رسالة إيقاف الدردشة العامة', description: 'الرسالة المعروضة عند إيقاف الدردشة.', valueType: 'STRING' },
+  ops_notifications_enabled: { label: 'تفعيل الإشعارات العامة', description: 'تشغيل أو إيقاف الإشعارات في كل التطبيقات.', valueType: 'BOOLEAN' },
+  ops_ringtone_enabled: { label: 'تفعيل النغمة العامة', description: 'تشغيل أو إيقاف نغمة التنبيه في التطبيقات.', valueType: 'BOOLEAN' },
+  ops_ringtone_volume: { label: 'مستوى النغمة العام', description: 'قيمة من 0 إلى 1 لمستوى نغمة التنبيه.', valueType: 'NUMBER' },
+};
+
+for (const [appKey, appLabel] of Object.entries({ client: 'العميل', courier: 'المندوب', store: 'المتجر' })) {
+  Object.assign(OPS_RUNTIME_REMOTE_CONFIG_METADATA, {
+    [`${appKey}_chat_enabled`]: { label: `تفعيل دردشة ${appLabel}`, description: `تشغيل أو إيقاف الدردشة في تطبيق ${appLabel}.`, valueType: 'BOOLEAN' },
+    [`${appKey}_chat_disabled_message`]: { label: `رسالة إيقاف دردشة ${appLabel}`, description: `رسالة إيقاف الدردشة الخاصة بتطبيق ${appLabel}.`, valueType: 'STRING' },
+    [`${appKey}_notifications_enabled`]: { label: `تفعيل إشعارات ${appLabel}`, description: `تشغيل أو إيقاف الإشعارات في تطبيق ${appLabel}.`, valueType: 'BOOLEAN' },
+    [`${appKey}_ringtone_enabled`]: { label: `تفعيل نغمة ${appLabel}`, description: `تشغيل أو إيقاف نغمة التنبيه في تطبيق ${appLabel}.`, valueType: 'BOOLEAN' },
+    [`${appKey}_ringtone_volume`]: { label: `مستوى نغمة ${appLabel}`, description: `قيمة من 0 إلى 1 لمستوى نغمة تطبيق ${appLabel}.`, valueType: 'NUMBER' },
+  });
+}
+
+Object.assign(REMOTE_CONFIG_METADATA, OPS_RUNTIME_REMOTE_CONFIG_METADATA);
+
 const APP_REMOTE_KEYS = [
   'ops_force_update_enabled',
   'ops_min_build_android',
@@ -974,8 +1194,8 @@ function activateSubpanel(portalId, subpanelId, options = {}) {
   });
 
   if (scroll) {
-    const targetPanel = portalPanels.find((panel) => panel.dataset.subpanel === nextSubpanelId);
-    targetPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const panel = portalPanels.find((item) => item.dataset.subpanel === nextSubpanelId);
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }
 
@@ -1175,7 +1395,7 @@ function setToCsv(setValues) {
 
 function syncEnvUi() {
   if (envBadge) {
-    envBadge.textContent = `ENV: ${activeEnv.toUpperCase()} | ${firebaseConfig.projectId}`;
+    envBadge.textContent = `ENV: ${activeEnv.toUpperCase()}`;
   }
   if (envSelect) {
     envSelect.value = activeEnv;
@@ -1359,6 +1579,7 @@ function renderOpsPriorityCards() {
     <div class="stat accent-amber"><h4>شحن محافظ بانتظار المراجعة</h4><b>${Number(opsCenterState.walletRecharges || 0).toLocaleString('ar-EG')}</b></div>
     <div class="stat accent-blue"><h4>محادثات دعم غير مقروءة</h4><b>${Number(opsCenterState.supportUnread || 0).toLocaleString('ar-EG')}</b></div>
     <div class="stat accent-green"><h4>طلبات نشطة قابلة للتحكم</h4><b>${Number(opsCenterState.activeOrders || 0).toLocaleString('ar-EG')}</b></div>
+    <div class="stat accent-danger"><h4>بلاغات مندوب مفتوحة</h4><b>${Number(opsCenterState.openCourierIssues || 0).toLocaleString('ar-EG')}</b></div>
     <div class="stat"><h4>اعتمادات معلقة</h4><b>${Number(opsCenterState.pendingApprovals || 0).toLocaleString('ar-EG')}</b></div>
   `;
   syncAdminAttentionUi();
@@ -1518,7 +1739,7 @@ function stopActiveOrderDriverListener() {
 
 function extractDriverPoint(raw) {
   if (!raw) return null;
-  if (raw instanceof GeoPoint) {
+  if (typeof GeoPoint !== 'undefined' && raw instanceof GeoPoint) {
     return { lat: raw.latitude, lng: raw.longitude };
   }
   if (typeof raw === 'object') {
@@ -1755,26 +1976,72 @@ function collectWorkingHoursFromPanel(storeId) {
   return result;
 }
 
-async function markSupportConversationRead(conversationId) {
+function normalizeSupportSourceApp(value) {
+  const v = String(value || '').trim().toLowerCase();
+  if (v === 'courier' || v === 'driver') return 'courier';
+  if (v === 'store' || v === 'restaurant') return 'store';
+  return 'client';
+}
+
+function splitSupportThreadKey(value) {
+  let base = String(value || '').trim();
+  let sourceApp = '';
+  const prefixPattern = /^(client|courier|store):(.+)$/;
+  let match = base.match(prefixPattern);
+  while (match) {
+    if (!sourceApp) sourceApp = match[1];
+    base = match[2];
+    match = base.match(prefixPattern);
+  }
+  return { sourceApp, base };
+}
+
+function buildSupportThreadKeyFromData(data = {}) {
+  const explicitThreadKey = String(
+    data.supportThreadKey || data.supportThreadId || data.threadKey || data.threadId || ''
+  ).trim();
+  const conversationId = String(data.conversationId || '').trim();
+  const parsed = splitSupportThreadKey(explicitThreadKey || conversationId);
+  const sourceApp = parsed.sourceApp || normalizeSupportSourceApp(data.sourceApp || 'client');
+  const base = parsed.base || conversationId;
+  return base ? `${sourceApp}:${base}` : '';
+}
+
+function getSupportThreadBaseKey(threadKey) {
+  return splitSupportThreadKey(threadKey).base || String(threadKey || '').trim();
+}
+
+async function markSupportConversationRead(conversation) {
+  const conversationId = typeof conversation === 'object'
+    ? String(conversation?.conversationId || conversation?.id || '').trim()
+    : String(conversation || '').trim();
   if (!conversationId) return;
+  const expectedThreadKey = typeof conversation === 'object'
+    ? String(conversation?.id || '').trim()
+    : '';
   const q = query(collection(db, 'supportMessages'), where('conversationId', '==', conversationId));
   const result = await getDocs(q);
   if (!result.docs.length) return;
   const batch = writeBatch(db);
+  let updates = 0;
   result.docs.forEach((docSnap) => {
+    if (expectedThreadKey && buildSupportThreadKeyFromData(docSnap.data() || {}) !== expectedThreadKey) {
+      return;
+    }
     batch.set(doc(db, 'supportMessages', docSnap.id), {
       adminReadAt: serverTimestamp(),
       adminUnread: false,
       updatedAt: serverTimestamp(),
     }, { merge: true });
+    updates += 1;
   });
-  await batch.commit();
+  if (updates > 0) await batch.commit();
 }
 
 async function markAllSupportConversationsRead() {
   const unreadConversations = supportConversations.filter((item) => item.unreadCount > 0);
   for (const convo of unreadConversations) {
-    await markSupportConversationRead(convo.id);
+    await markSupportConversationRead(convo);
   }
 }
 
@@ -1807,6 +2074,7 @@ const lineState = {
 const mapRouteCache = new Map();
 const mapRoutePending = new Map();
 const mapRouteFailures = new Set();
+const mapRouteLastActualByOrder = new Map();
 
 let leafletReadyPromise = null;
 let leafletClusterReadyPromise = null;
@@ -1888,6 +2156,49 @@ function pickSingleImageFile() {
     };
     input.click();
   });
+}
+
+async function downloadImageToDevice(url, suggestedName = 'image') {
+  const value = String(url || '').trim();
+  if (!value) throw new Error('رابط الصورة غير متاح.');
+
+  const extFromUrl = (() => {
+    try {
+      const pathname = new URL(value).pathname || '';
+      const raw = pathname.split('.').pop() || '';
+      const cleaned = String(raw).toLowerCase().replace(/[^a-z0-9]/g, '');
+      return cleaned || 'jpg';
+    } catch (_) {
+      return 'jpg';
+    }
+  })();
+
+  const baseName = String(suggestedName || 'image').trim().replace(/[^\u0600-\u06FFa-zA-Z0-9._-]/g, '_') || 'image';
+  const finalName = baseName.includes('.') ? baseName : `${baseName}.${extFromUrl}`;
+
+  try {
+    const response = await fetch(value, { mode: 'cors' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = finalName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+    return;
+  } catch (_) {
+    const link = document.createElement('a');
+    link.href = value;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.download = finalName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
 }
 
 function loadExternalStyle(href) {
@@ -2107,34 +2418,38 @@ function parseSpreadsheetBoolean(raw, fallback = true) {
 
 function parseSpreadsheetSizes(row) {
   const basePrice = parseSpreadsheetNumber(spreadsheetValue(row, ['price', 'baseprice', 'السعر', 'سعر']));
-  const small = parseSpreadsheetNumber(spreadsheetValue(row, ['smallPrice', 'small', 'سعرصغير', 'صغير']));
-  const medium = parseSpreadsheetNumber(spreadsheetValue(row, ['mediumPrice', 'medium', 'سعروسط', 'وسط']));
-  const large = parseSpreadsheetNumber(spreadsheetValue(row, ['largePrice', 'large', 'سعركبير', 'كبير']));
+  const sizeAliases = [
+    ['small', ['smallPrice', 'small', 'سعرصغير', 'صغير']],
+    ['medium', ['mediumPrice', 'medium', 'سعروسط', 'وسط']],
+    ['large', ['largePrice', 'large', 'سعركبير', 'كبير']],
+    ['family', ['familyPrice', 'family', 'سعرعائلي', 'عائلي']],
+    ['jumbo', ['jumboPrice', 'jumbo', 'سعرجامبو', 'جامبو']],
+  ];
 
-  const hasAnySize = small != null || medium != null || large != null;
-  let sizes = null;
-
-  if (hasAnySize) {
-    if (small == null || medium == null || large == null) {
-      return {
-        ok: false,
-        message: 'عند استخدام الأحجام يجب تعبئة السعر الصغير والوسط والكبير كلها بأرقام أكبر من صفر.',
-      };
+  const sizes = {};
+  sizeAliases.forEach(([sizeKey, aliases]) => {
+    const parsed = parseSpreadsheetNumber(spreadsheetValue(row, aliases));
+    if (parsed != null) {
+      sizes[sizeKey] = parsed;
     }
-    sizes = { small, medium, large };
-  }
+  });
 
-  if (basePrice == null && !sizes) {
+  const hasAnySize = Object.keys(sizes).length > 0;
+
+  if (basePrice == null && !hasAnySize) {
     return {
       ok: false,
       message: 'أدخل السعر الأساسي أو أسعار الأحجام.',
     };
   }
 
+  const fallbackSizePrice =
+    sizes.medium ?? sizes.small ?? sizes.large ?? sizes.family ?? sizes.jumbo ?? Object.values(sizes)[0];
+
   return {
     ok: true,
-    price: basePrice ?? sizes.medium,
-    sizes,
+    price: basePrice ?? fallbackSizePrice,
+    sizes: hasAnySize ? sizes : null,
   };
 }
 
@@ -2287,9 +2602,9 @@ async function resolveSpreadsheetImageUrl({ imageUrl, imageFileName, zipState, r
 
 function buildSpreadsheetTemplateCsv() {
   return [
-    'itemId,name,category,price,smallPrice,mediumPrice,largePrice,available,imageUrl,imageFileName',
-    'pizza-margherita,بيتزا مارجريتا,بيتزا,120,,,,true,https://example.com/pizza.jpg,pizza-margherita.jpg',
-    'shawarma-chicken,شاورما دجاج,شاورما,,80,100,120,true,,shawarma-chicken.jpg'
+    'itemId,name,category,price,smallPrice,mediumPrice,largePrice,familyPrice,jumboPrice,available,imageUrl,imageFileName',
+    'pizza-margherita,بيتزا مارجريتا,بيتزا,120,,,,,,true,https://example.com/pizza.jpg,pizza-margherita.jpg',
+    'shawarma-chicken,شاورما دجاج,شاورما,,80,,120,150,180,true,,shawarma-chicken.jpg'
   ].join('\n');
 }
 
@@ -2397,13 +2712,16 @@ function resolveOrderRoutePoints(orderId, points, preferActualRoute) {
   }
 
   if (mapRouteCache.has(routeKey)) {
-    return { points: mapRouteCache.get(routeKey), routeKey, mode: 'actual' };
+    const routedPoints = mapRouteCache.get(routeKey);
+    mapRouteLastActualByOrder.set(orderId, { routeKey, points: routedPoints });
+    return { points: routedPoints, routeKey, mode: 'actual' };
   }
 
   if (!mapRoutePending.has(routeKey) && !mapRouteFailures.has(routeKey)) {
     const promise = fetchRouteGeometry(points)
       .then((routedPoints) => {
         mapRouteCache.set(routeKey, routedPoints);
+        mapRouteLastActualByOrder.set(orderId, { routeKey, points: routedPoints });
         mapRouteFailures.delete(routeKey);
       })
       .catch(() => {
@@ -2414,6 +2732,15 @@ function resolveOrderRoutePoints(orderId, points, preferActualRoute) {
         requestRefreshMapLayers();
       });
     mapRoutePending.set(routeKey, promise);
+  }
+
+  const previousActualRoute = mapRouteLastActualByOrder.get(orderId);
+  if (previousActualRoute?.points?.length) {
+    return {
+      points: previousActualRoute.points,
+      routeKey,
+      mode: 'updating',
+    };
   }
 
   return {
@@ -2572,6 +2899,48 @@ function focusAdminGlobalSearch() {
   adminGlobalSearch.select?.();
 }
 
+const MOBILE_SIDEBAR_BREAKPOINT = 1080;
+let sidebarBackdrop = null;
+
+function ensureSidebarBackdrop() {
+  if (sidebarBackdrop) return sidebarBackdrop;
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'sidebar-backdrop';
+  el.setAttribute('aria-label', 'إغلاق القائمة الجانبية');
+  el.addEventListener('click', () => closeSidebar());
+  document.body.appendChild(el);
+  sidebarBackdrop = el;
+  return el;
+}
+
+function closeSidebar() {
+  appSidebar?.classList.remove('open');
+  document.body.classList.remove('sidebar-open');
+  ensureSidebarBackdrop().classList.remove('visible');
+}
+
+function openSidebar() {
+  if (!appSidebar) return;
+  appSidebar.classList.add('open');
+  document.body.classList.add('sidebar-open');
+  ensureSidebarBackdrop().classList.add('visible');
+}
+
+function toggleSidebar() {
+  if (appSidebar?.classList.contains('open')) {
+    closeSidebar();
+  } else {
+    openSidebar();
+  }
+}
+
+function syncSidebarForViewport() {
+  if (window.innerWidth > MOBILE_SIDEBAR_BREAKPOINT) {
+    closeSidebar();
+  }
+}
+
 function refreshAdminWorkspace() {
   const refreshButton = document.querySelector('[data-ops-action="refresh"]');
   if (refreshButton) {
@@ -2590,6 +2959,28 @@ function refreshAdminWorkspace() {
         refreshButton.disabled = false;
       }
     });
+}
+
+function preserveViewportPosition(run, { enabled = true } = {}) {
+  if (!enabled) {
+    run();
+    return;
+  }
+
+  const previousY = window.scrollY || 0;
+  run();
+  if (previousY < 120) return;
+
+  requestAnimationFrame(() => {
+    const nextY = window.scrollY || 0;
+    if (Math.abs(nextY - previousY) > 40) {
+      window.scrollTo(0, previousY);
+    }
+  });
+}
+
+function getActiveSubpanelId(portalId) {
+  return String(document.querySelector(`#${portalId} .portal-subpanel.active`)?.dataset?.subpanel || '');
 }
 
 document.addEventListener('keydown', (e) => {
@@ -2619,7 +3010,7 @@ document.addEventListener('keydown', (e) => {
   // Escape → close confirmation overlays / mobile sidebar
   if (e.key === 'Escape') {
     document.querySelectorAll('.confirm-overlay').forEach((el) => el.remove());
-    document.getElementById('appSidebar')?.classList.remove('open');
+    closeSidebar();
     return;
   }
 
@@ -2658,6 +3049,10 @@ function getOperationsOrderBucket(data = {}) {
     return 'cancelled';
   }
 
+  if (isDeliveredOrderStatus(lifecycleStatus)) {
+    return 'completed';
+  }
+
   if (isActiveOrderStatus(lifecycleStatus)) {
     return 'active';
   }
@@ -2674,6 +3069,7 @@ function getOrderTimelineEntries(data = {}) {
     ['deliveredAt', 'تسليم الطلب'],
     ['paidAt', 'تسجيل الدفع'],
     ['paymentReviewAutoFlaggedAt', 'إحالة الإيصال للمراجعة'],
+    ['courierIssueReportedAt', 'بلاغ مشكلة من المندوب'],
     ['cancelledAt', 'إلغاء الطلب'],
     ['updatedAt', 'آخر تحديث'],
   ];
@@ -2688,6 +3084,91 @@ function getOrderTimelineEntries(data = {}) {
     })
     .filter(Boolean)
     .sort((a, b) => a.millis - b.millis);
+}
+
+function renderCourierIssueAlert(data = {}) {
+  const issue = data.courierIssue;
+  if (!issue || typeof issue !== 'object') return '';
+
+  const reasonLabels = {
+    client_not_responding: 'العميل لا يرد',
+    incorrect_address: 'العنوان غير صحيح',
+    store_closed: 'المطعم مغلق',
+    cannot_complete_delivery: 'تعذر إتمام التوصيل',
+    other: 'مشكلة أخرى',
+  };
+  const reason = reasonLabels[String(issue.reason || '').trim()] || 'مشكلة غير محددة';
+  const note = String(issue.note || '').trim();
+  const state = String(issue.status || 'open').trim() === 'open' ? 'مفتوح' : 'تمت معالجته';
+  const reportedAt = getTimestampMillis(data.courierIssueReportedAt);
+
+  return `
+    <div class="order-context-panel tone-warning">
+      <div class="order-context-head">بلاغ مندوب ${escapeHtml(state)}</div>
+      <div class="order-context-lines">
+        <div><b>السبب:</b> ${escapeHtml(reason)}</div>
+        ${note ? `<div><b>الملاحظة:</b> ${escapeHtml(note)}</div>` : ''}
+        ${reportedAt ? `<div><b>وقت البلاغ:</b> ${escapeHtml(formatDateTimeLabel(reportedAt))}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderUnavailableItemAlert(data = {}) {
+  const status = String(data.unavailableItemStatus || '').trim();
+  const pending = data.unavailableItemPending === true || status === 'pending_client_choice';
+  if (!pending && !['replacement_selected', 'continued_without_item'].includes(status)) {
+    return '';
+  }
+  const item = data.unavailableItem && typeof data.unavailableItem === 'object'
+    ? data.unavailableItem
+    : {};
+  const itemName = String(item.name || item.title || 'صنف من الطلب').trim();
+  const replacement = data.unavailableItemReplacement && typeof data.unavailableItemReplacement === 'object'
+    ? data.unavailableItemReplacement
+    : {};
+  const reportedAt = getTimestampMillis(data.unavailableItemReportedAt);
+  const resolvedAt = getTimestampMillis(data.unavailableItemResolvedAt);
+  const heading = pending
+    ? 'صنف غير متوفر - بانتظار العميل'
+    : status === 'replacement_selected'
+      ? 'اختار العميل بديلاً'
+      : 'سيُكمل العميل الطلب بدون الصنف';
+  const tone = pending ? 'tone-warning' : 'tone-success';
+  return `
+    <div class="order-context-panel ${tone}">
+      <div class="order-context-head">${escapeHtml(heading)}</div>
+      <div class="order-context-lines">
+        <div><b>الصنف غير المتوفر:</b> ${escapeHtml(itemName || '-')}</div>
+        ${status === 'replacement_selected' ? `<div><b>البديل المختار:</b> ${escapeHtml(String(replacement.name || replacement.title || '-'))}</div>` : ''}
+        ${reportedAt ? `<div><b>وقت إشعار العميل:</b> ${escapeHtml(formatDateTimeLabel(reportedAt))}</div>` : ''}
+        ${resolvedAt ? `<div><b>وقت قرار العميل:</b> ${escapeHtml(formatDateTimeLabel(resolvedAt))}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderCourierIssueHistory(data = {}) {
+  const history = Array.isArray(data.courierIssueHistory)
+    ? [...data.courierIssueHistory].reverse()
+    : [];
+  if (!history.length) return '';
+
+  const reasonLabels = {
+    client_not_responding: 'العميل لا يرد',
+    incorrect_address: 'العنوان غير صحيح',
+    store_closed: 'المطعم مغلق',
+    cannot_complete_delivery: 'تعذر إتمام التوصيل',
+    other: 'مشكلة أخرى',
+  };
+  const rows = history.map((issue) => {
+    const reason = reasonLabels[String(issue?.reason || '').trim()] || 'مشكلة غير محددة';
+    const status = String(issue?.status || '').trim() === 'resolved' ? 'تمت المعالجة' : 'مفتوح';
+    const reportedAt = Number(issue?.reportedAtMillis || 0);
+    const resolutionNote = String(issue?.resolutionNote || '').trim();
+    return `<div class="order-timeline-item"><b>${escapeHtml(reason)} - ${escapeHtml(status)}</b><span>${reportedAt ? escapeHtml(formatDateTimeLabel(reportedAt)) : '-'}</span>${resolutionNote ? `<span>${escapeHtml(resolutionNote)}</span>` : ''}</div>`;
+  }).join('');
+  return `<div class="order-detail-card"><strong>سجل بلاغات المندوب</strong><div class="order-timeline">${rows}</div></div>`;
 }
 
 function renderOrderItemsRows(items = []) {
@@ -2975,8 +3456,7 @@ tabs.forEach((tab) => tab.addEventListener('click', () => {
   if (!tab.dataset.tab) return;
   activateTab(tab.dataset.tab);
   // Close mobile sidebar on nav
-  const sidebar = document.getElementById('appSidebar');
-  if (sidebar) sidebar.classList.remove('open');
+  closeSidebar();
 }));
 portalSubtabs.forEach((button) => {
   button.addEventListener('click', () => {
@@ -3032,6 +3512,24 @@ function initAdminExperienceEnhancements() {
   if (!document.body || document.body.dataset.adminExperienceReady === '1') return;
   document.body.dataset.adminExperienceReady = '1';
 
+  ensureSidebarBackdrop();
+  syncSidebarForViewport();
+  window.addEventListener('resize', syncSidebarForViewport);
+
+  sidebarToggleBtn?.addEventListener('click', (event) => {
+    event.preventDefault();
+    toggleSidebar();
+  });
+
+  document.addEventListener('click', (event) => {
+    if (window.innerWidth > MOBILE_SIDEBAR_BREAKPOINT) return;
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (!appSidebar?.classList.contains('open')) return;
+    if (appSidebar.contains(target) || sidebarToggleBtn?.contains(target)) return;
+    closeSidebar();
+  });
+
   const dock = document.createElement('div');
   dock.className = 'ops-control-dock';
   dock.setAttribute('aria-label', 'أدوات التحكم السريعة');
@@ -3049,7 +3547,13 @@ function initAdminExperienceEnhancements() {
       <span aria-hidden="true">⎙</span><span>طباعة</span>
     </button>
   `;
-  document.body.appendChild(dock);
+  const portalStrip = document.querySelector('.portal-strip');
+  if (portalStrip) {
+    dock.classList.add('ops-control-dock--inline');
+    portalStrip.prepend(dock);
+  } else {
+    document.body.appendChild(dock);
+  }
 
   dock.querySelector('[data-ops-action="search"]')?.addEventListener('click', focusAdminGlobalSearch);
   dock.querySelector('[data-ops-action="refresh"]')?.addEventListener('click', refreshAdminWorkspace);
@@ -3112,7 +3616,7 @@ if (dashboardQuickActions) {
     btn.addEventListener('click', () => {
       const tabId = String(btn.getAttribute('data-quick-tab') || 'dashboard');
       if (tabId === 'management') {
-        openOrdersWorkspace();
+        activateTab('management');
         return;
       }
       activateTab(tabId);
@@ -3364,10 +3868,13 @@ function mountDashboard() {
     dashboardOrderDetails.innerHTML = `
       <h4 style="margin:0 0 8px">تفاصيل الطلب ${escapeHtml(formatUnifiedOrderCode(data.orderNumber, data.orderId, orderId))}</h4>
       <div><span class="kv"><b>الحالة:</b> ${escapeHtml(formatOrderStatusLabel(data.orderStatus || data.status || '-'))}</span><span class="kv"><b>الدفع:</b> ${escapeHtml(data.paymentStatus || '-')}</span></div>
+      ${renderStoreApprovalFlowHint(data)}
       <div><span class="kv"><b>العميل:</b> ${resolveClientDisplay(data.clientId, data.clientName)}</span><span class="kv"><b>المطعم:</b> ${resolveRestaurantDisplay(data.restaurantId, data.restaurantName)}</span></div>
-      <div><span class="kv"><b>المندوب:</b> ${resolveDriverDisplay(data.assignedDriverId || data.offeredDriverId, data.assignedDriverName || '')}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.clientPhone || '-')}</span></div>
+      <div><span class="kv"><b>المندوب:</b> ${data.assignedDriverId ? resolveDriverDisplay(data.assignedDriverId, data.assignedDriverName || '') : '<span class="muted">غير معين</span>'}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.clientPhone || '-')}</span></div>
       <div><span class="kv"><b>الإجمالي:</b> ${formatMoney(financial.totalWithDelivery)}</span><span class="kv"><b>حصة المطعم:</b> ${formatMoney(financial.restaurantShare)}</span><span class="kv"><b>حصة المندوب:</b> ${formatMoney(financial.driverShare)}</span><span class="kv"><b>حصة المنصة:</b> ${formatMoney(financial.platformShare)}</span></div>
       ${renderOrderFinancialBreakdown(financial)}
+      ${renderUnavailableItemAlert(data)}
+      ${renderCourierIssueAlert(data)}
       ${items ? `
         <div style="margin-top:8px;"><b>العناصر:</b></div>
         <div style="overflow:auto; border:1px solid #eef2f7; border-radius:10px; margin-top:6px;">
@@ -3479,6 +3986,9 @@ function mountDashboard() {
       const deliveredDocs = snap.docs.filter((docSnap) => isDeliveredOrderStatus(getOrderLifecycleStatus(docSnap.data() || {})));
 
       opsCenterState.activeOrders = activeDocs.length;
+      opsCenterState.openCourierIssues = snap.docs.filter((docSnap) =>
+        String(docSnap.data()?.courierIssue?.status || '').trim().toLowerCase() === 'open'
+      ).length;
       renderOpsPriorityCards();
 
       const buildRows = (docs, { allowMap = true } = {}) => docs.map((d) => {
@@ -3488,7 +3998,7 @@ function mountDashboard() {
           <td>${formatUnifiedOrderCode(data.orderNumber, data.orderId, d.id)}</td>
           <td>${data.clientName || '-'}</td>
           <td>${resolveRestaurantDisplay(data.restaurantId, data.restaurantName)}</td>
-          <td>${resolveDriverDisplay(data.assignedDriverId || data.offeredDriverId, data.assignedDriverName || '')}</td>
+          <td>${data.assignedDriverId ? resolveDriverDisplay(data.assignedDriverId, data.assignedDriverName || '') : '<span class="muted">غير معين</span>'}</td>
           <td>${formatOrderStatusLabel(data.status || data.orderStatus || '-')}</td>
           <td>${formatMoney(financial.totalWithDelivery)}</td>
           <td>
@@ -3581,9 +4091,305 @@ function mountFinance() {
     return { method, accountNumber, accountName };
   };
 
+  const currentAdminUid = String(auth.currentUser?.uid || '').trim();
+  const shiftAccountDocRef = currentAdminUid
+    ? doc(db, 'paymentSettings', `shift_account_${currentAdminUid}`)
+    : null;
+  const resolveShiftOwnerName = (data = {}) => {
+    const fromShift = String(data?.activeShift?.ownerDisplayName || '').trim();
+    const fromRoot = String(data?.activeShiftOwnerName || '').trim();
+    const fromProfile = String(currentAdminProfile?.name || currentAdminProfile?.displayName || auth.currentUser?.displayName || '').trim();
+    return fromShift || fromRoot || fromProfile || currentAdminUid || '-';
+  };
+
+  const collectShiftMethods = () => {
+    const methods = [];
+    if (enableBankk?.checked) methods.push('bankk');
+    if (enableOcash?.checked) methods.push('ocash');
+    if (enableFawry?.checked) methods.push('fawry');
+    return methods;
+  };
+
+  const buildShiftAccountPayload = () => ({
+    displayName: String(shiftEmployeeDisplayName?.value || '').trim(),
+    enabledMethods: collectShiftMethods(),
+    bankkAccount: String(bankkAccountInput?.value || '').trim(),
+    ocashAccount: String(ocashAccountInput?.value || '').trim(),
+    fawryAccount: String(fawryAccountInput?.value || '').trim(),
+    bankkAccountHolder: String(bankkAccountHolderInput?.value || '').trim(),
+    ocashAccountHolder: String(ocashAccountHolderInput?.value || '').trim(),
+    fawryAccountHolder: String(fawryAccountHolderInput?.value || '').trim(),
+    bankkQrUrl: String(bankkQrUrlInput?.value || '').trim(),
+    ocashQrUrl: String(ocashQrUrlInput?.value || '').trim(),
+    fawryQrUrl: String(fawryQrUrlInput?.value || '').trim(),
+    bankkInstructions: String(bankkInstructionsInput?.value || '').trim(),
+    ocashInstructions: String(ocashInstructionsInput?.value || '').trim(),
+    fawryInstructions: String(fawryInstructionsInput?.value || '').trim(),
+    bankkOpenUrlAndroid: String(bankkOpenUrlAndroidInput?.value || '').trim(),
+    ocashOpenUrlAndroid: String(ocashOpenUrlAndroidInput?.value || '').trim(),
+    fawryOpenUrlAndroid: String(fawryOpenUrlAndroidInput?.value || '').trim(),
+    bankkOpenUrlIos: String(bankkOpenUrlIosInput?.value || '').trim(),
+    ocashOpenUrlIos: String(ocashOpenUrlIosInput?.value || '').trim(),
+    fawryOpenUrlIos: String(fawryOpenUrlIosInput?.value || '').trim(),
+    bankkOpenUrl: String(bankkOpenUrlInput?.value || '').trim(),
+    ocashOpenUrl: String(ocashOpenUrlInput?.value || '').trim(),
+    fawryOpenUrl: String(fawryOpenUrlInput?.value || '').trim(),
+  });
+
+  const applyPaymentSettingsToForm = (data = {}) => {
+    const methods = Array.isArray(data.enabledMethods) ? data.enabledMethods : [];
+
+    if (enableBankk) enableBankk.checked = methods.includes('bankk');
+    if (enableOcash) enableOcash.checked = methods.includes('ocash');
+    if (enableFawry) enableFawry.checked = methods.includes('fawry');
+
+    if (bankkAccountInput) bankkAccountInput.value = String(data.bankkAccount || '');
+    if (ocashAccountInput) ocashAccountInput.value = String(data.ocashAccount || '');
+    if (fawryAccountInput) fawryAccountInput.value = String(data.fawryAccount || '');
+    if (bankkAccountHolderInput) bankkAccountHolderInput.value = String(data.bankkAccountHolder || '');
+    if (ocashAccountHolderInput) ocashAccountHolderInput.value = String(data.ocashAccountHolder || '');
+    if (fawryAccountHolderInput) fawryAccountHolderInput.value = String(data.fawryAccountHolder || '');
+    if (bankkQrUrlInput) bankkQrUrlInput.value = String(data.bankkQrUrl || '');
+    if (ocashQrUrlInput) ocashQrUrlInput.value = String(data.ocashQrUrl || '');
+    if (fawryQrUrlInput) fawryQrUrlInput.value = String(data.fawryQrUrl || '');
+    setQrPreview(bankkQrPreview, String(data.bankkQrUrl || ''));
+    setQrPreview(ocashQrPreview, String(data.ocashQrUrl || ''));
+    setQrPreview(fawryQrPreview, String(data.fawryQrUrl || ''));
+    if (bankkInstructionsInput) bankkInstructionsInput.value = String(data.bankkInstructions || '');
+    if (ocashInstructionsInput) ocashInstructionsInput.value = String(data.ocashInstructions || '');
+    if (fawryInstructionsInput) fawryInstructionsInput.value = String(data.fawryInstructions || '');
+    if (bankkOpenUrlAndroidInput) bankkOpenUrlAndroidInput.value = String(data.bankkOpenUrlAndroid || '');
+    if (ocashOpenUrlAndroidInput) ocashOpenUrlAndroidInput.value = String(data.ocashOpenUrlAndroid || '');
+    if (fawryOpenUrlAndroidInput) fawryOpenUrlAndroidInput.value = String(data.fawryOpenUrlAndroid || '');
+    if (bankkOpenUrlIosInput) bankkOpenUrlIosInput.value = String(data.bankkOpenUrlIos || '');
+    if (ocashOpenUrlIosInput) ocashOpenUrlIosInput.value = String(data.ocashOpenUrlIos || '');
+    if (fawryOpenUrlIosInput) fawryOpenUrlIosInput.value = String(data.fawryOpenUrlIos || '');
+    if (bankkOpenUrlInput) bankkOpenUrlInput.value = String(data.bankkOpenUrl || '');
+    if (ocashOpenUrlInput) ocashOpenUrlInput.value = String(data.ocashOpenUrl || '');
+    if (fawryOpenUrlInput) fawryOpenUrlInput.value = String(data.fawryOpenUrl || '');
+  };
+
+  const renderShiftSummary = async (paymentDocData = null) => {
+    if (!activeShiftOwnerLabel || !shiftIncomeSummary) return;
+
+    const data = paymentDocData || (await safeGetDoc(doc(db, 'paymentSettings', 'default')))?.data?.() || {};
+    const activeShift = data?.activeShift || {};
+    const ownerName = resolveShiftOwnerName(data);
+    const ownerUid = String(activeShift.ownerUid || data.activeShiftOwnerUid || '').trim();
+    const shiftActive = Boolean(activeShift.isActive);
+
+    activeShiftOwnerLabel.textContent = shiftActive
+      ? `الحسابات المفعلة الآن تخص: ${ownerName}`
+      : 'لا يوجد دوام مفعل الآن.';
+
+    if (!shiftActive || !ownerUid) {
+      shiftIncomeSummary.textContent = 'دخل الدوام الحالي: 0 ج.س | دخل الشهر: 0 ج.س';
+      return;
+    }
+
+    const shiftStartedAtMs = getTimestampMillis(activeShift.startedAt || activeShift.startedAtMs || data.activeShiftStartedAt);
+    const now = new Date();
+    const monthStartMs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+    let shiftIncome = 0;
+    let monthIncome = 0;
+
+    const addByTime = (amount, ts) => {
+      const safeAmount = Number(amount) || 0;
+      const ms = getTimestampMillis(ts);
+      if (!safeAmount || !ms) return;
+      if (shiftStartedAtMs > 0 && ms >= shiftStartedAtMs) shiftIncome += safeAmount;
+      if (ms >= monthStartMs) monthIncome += safeAmount;
+    };
+
+    try {
+      const [ordersSnap, rechargesSnap, withdrawalsSnap] = await Promise.all([
+        safeGetDocs(query(collection(db, 'orders'), where('paymentStatus', '==', 'paid'), orderBy('updatedAt', 'desc'), limit(600))),
+        safeGetDocs(query(collection(db, 'wallet_recharges'), orderBy('createdAt', 'desc'), limit(600))),
+        safeGetDocs(query(collection(db, 'wallet_withdrawals'), orderBy('createdAt', 'desc'), limit(600))),
+      ]);
+
+      (ordersSnap?.docs || []).forEach((docSnap) => {
+        const row = docSnap.data() || {};
+        const byUid = String(row.paymentReviewedByAdminUid || row.reviewedByAdminUid || row.updatedByAdminUid || '').trim();
+        if (byUid !== ownerUid) return;
+        const financial = computeFinancial(row);
+        addByTime(financial.totalWithDelivery, row.paidAt || row.updatedAt || row.createdAt);
+      });
+
+      (rechargesSnap?.docs || []).forEach((docSnap) => {
+        const row = docSnap.data() || {};
+        const status = String(row.status || '').trim().toLowerCase();
+        const reviewStatus = String(row.reviewStatus || '').trim().toLowerCase();
+        if (!(status === 'approved' || reviewStatus === 'approved')) return;
+        const byUid = String(row.reviewedByAdminUid || row.updatedByAdminUid || '').trim();
+        if (byUid !== ownerUid) return;
+        addByTime(Number(row.amount || 0), row.reviewedAt || row.updatedAt || row.createdAt);
+      });
+
+      (withdrawalsSnap?.docs || []).forEach((docSnap) => {
+        const row = docSnap.data() || {};
+        const status = String(row.status || '').trim().toLowerCase();
+        const reviewStatus = String(row.reviewStatus || '').trim().toLowerCase();
+        if (!(status === 'approved' || reviewStatus === 'approved')) return;
+        const byUid = String(row.reviewedByAdminUid || row.updatedByAdminUid || '').trim();
+        if (byUid !== ownerUid) return;
+        addByTime(Number(row.amount || 0), row.reviewedAt || row.updatedAt || row.createdAt);
+      });
+    } catch (err) {
+      console.warn('shift summary failed', err);
+    }
+
+    shiftIncomeSummary.textContent = `دخل الدوام الحالي: ${formatMoney(shiftIncome)} | دخل الشهر: ${formatMoney(monthIncome)}`;
+  };
+
+  if (shiftAccountForm && !shiftAccountFormBound) {
+    shiftAccountForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!currentAdminUid) {
+        if (shiftAccountResult) shiftAccountResult.textContent = 'تعذر تحديد حساب الأدمن الحالي.';
+        return;
+      }
+
+      const payload = buildShiftAccountPayload();
+      if (!payload.displayName) {
+        payload.displayName = String(currentAdminProfile?.name || currentAdminProfile?.displayName || auth.currentUser?.displayName || currentAdminUid);
+      }
+
+      if (saveShiftAccountBtn) saveShiftAccountBtn.disabled = true;
+      if (shiftAccountResult) shiftAccountResult.textContent = 'جارٍ حفظ حساب الموظف...';
+
+      try {
+        if (!shiftAccountDocRef) throw new Error('تعذر تحديد مسار حفظ حساب الدوام.');
+        await setDoc(shiftAccountDocRef, {
+          ...payload,
+          adminUid: currentAdminUid,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        if (shiftAccountResult) shiftAccountResult.textContent = '✅ تم حفظ حساب الموظف.';
+      } catch (err) {
+        if (shiftAccountResult) shiftAccountResult.textContent = `تعذر حفظ حساب الموظف: ${err.message || err}`;
+      } finally {
+        if (saveShiftAccountBtn) saveShiftAccountBtn.disabled = false;
+      }
+    });
+
+    activateShiftAccountBtn?.addEventListener('click', async () => {
+      if (!currentAdminUid) {
+        if (shiftAccountResult) shiftAccountResult.textContent = 'تعذر تحديد حساب الأدمن الحالي.';
+        return;
+      }
+
+      const shiftData = buildShiftAccountPayload();
+      const enabledMethods = shiftData.enabledMethods;
+      if (!enabledMethods.length) {
+        if (shiftAccountResult) shiftAccountResult.textContent = 'يجب تفعيل طريقة دفع واحدة على الأقل في حساب الموظف.';
+        return;
+      }
+
+      const ownerName = String(shiftData.displayName || currentAdminProfile?.name || currentAdminProfile?.displayName || auth.currentUser?.displayName || currentAdminUid).trim();
+
+      if (activateShiftAccountBtn) activateShiftAccountBtn.disabled = true;
+      if (shiftAccountResult) shiftAccountResult.textContent = 'جارٍ تفعيل الدوام ونشر الحسابات للعملاء...';
+
+      try {
+        if (!shiftAccountDocRef) throw new Error('تعذر تحديد مسار حفظ حساب الدوام.');
+        await setDoc(shiftAccountDocRef, {
+          ...shiftData,
+          adminUid: currentAdminUid,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+
+        await setDoc(doc(db, 'paymentSettings', 'default'), {
+          enabledMethods,
+          bankkAccount: shiftData.bankkAccount,
+          ocashAccount: shiftData.ocashAccount,
+          fawryAccount: shiftData.fawryAccount,
+          bankkAccountHolder: shiftData.bankkAccountHolder,
+          ocashAccountHolder: shiftData.ocashAccountHolder,
+          fawryAccountHolder: shiftData.fawryAccountHolder,
+          bankkQrUrl: shiftData.bankkQrUrl,
+          ocashQrUrl: shiftData.ocashQrUrl,
+          fawryQrUrl: shiftData.fawryQrUrl,
+          bankkInstructions: shiftData.bankkInstructions,
+          ocashInstructions: shiftData.ocashInstructions,
+          fawryInstructions: shiftData.fawryInstructions,
+          bankkOpenUrlAndroid: shiftData.bankkOpenUrlAndroid,
+          ocashOpenUrlAndroid: shiftData.ocashOpenUrlAndroid,
+          fawryOpenUrlAndroid: shiftData.fawryOpenUrlAndroid,
+          bankkOpenUrlIos: shiftData.bankkOpenUrlIos,
+          ocashOpenUrlIos: shiftData.ocashOpenUrlIos,
+          fawryOpenUrlIos: shiftData.fawryOpenUrlIos,
+          bankkOpenUrl: shiftData.bankkOpenUrl,
+          ocashOpenUrl: shiftData.ocashOpenUrl,
+          fawryOpenUrl: shiftData.fawryOpenUrl,
+          activeShiftOwnerUid: currentAdminUid,
+          activeShiftOwnerName: ownerName,
+          activeShiftStartedAt: serverTimestamp(),
+          activeShift: {
+            isActive: true,
+            ownerUid: currentAdminUid,
+            ownerDisplayName: ownerName,
+            startedAt: serverTimestamp(),
+            enabledMethods,
+          },
+          updatedAt: serverTimestamp(),
+          updatedByAdminUid: currentAdminUid,
+        }, { merge: true });
+
+        if (shiftAccountResult) shiftAccountResult.textContent = '✅ تم بدء الدوام. العملاء الآن يرون حساباتك فقط.';
+      } catch (err) {
+        if (shiftAccountResult) shiftAccountResult.textContent = `تعذر تفعيل الدوام: ${err.message || err}`;
+      } finally {
+        if (activateShiftAccountBtn) activateShiftAccountBtn.disabled = false;
+      }
+    });
+
+    endShiftAccountBtn?.addEventListener('click', async () => {
+      if (!currentAdminUid) {
+        if (shiftAccountResult) shiftAccountResult.textContent = 'تعذر تحديد حساب الأدمن الحالي.';
+        return;
+      }
+
+      if (endShiftAccountBtn) endShiftAccountBtn.disabled = true;
+      if (shiftAccountResult) shiftAccountResult.textContent = 'جارٍ إنهاء الدوام...';
+
+      try {
+        await setDoc(doc(db, 'paymentSettings', 'default'), {
+          activeShiftOwnerUid: '',
+          activeShiftOwnerName: '',
+          activeShiftEndedAt: serverTimestamp(),
+          activeShift: {
+            isActive: false,
+            ownerUid: '',
+            ownerDisplayName: '',
+            endedAt: serverTimestamp(),
+            endedByUid: currentAdminUid,
+          },
+          updatedAt: serverTimestamp(),
+          updatedByAdminUid: currentAdminUid,
+        }, { merge: true });
+
+        if (shiftAccountResult) shiftAccountResult.textContent = '✅ تم إنهاء الدوام بنجاح.';
+      } catch (err) {
+        if (shiftAccountResult) shiftAccountResult.textContent = `تعذر إنهاء الدوام: ${err.message || err}`;
+      } finally {
+        if (endShiftAccountBtn) endShiftAccountBtn.disabled = false;
+      }
+    });
+
+    shiftAccountFormBound = true;
+  }
+
   if (paymentSettingsForm && !paymentSettingsFormBound) {
     paymentSettingsForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (!currentAdminUid || !shiftAccountDocRef) {
+        if (paymentSettingsResult) {
+          paymentSettingsResult.textContent = 'تعذر تحديد حساب الأدمن الحالي.';
+        }
+        return;
+      }
 
       const enabledMethods = [];
       if (enableBankk?.checked) enabledMethods.push('bankk');
@@ -3633,11 +4439,27 @@ function mountFinance() {
           ocashOpenUrl: String(ocashOpenUrlInput?.value || '').trim(),
           fawryOpenUrl: String(fawryOpenUrlInput?.value || '').trim(),
           updatedAt: serverTimestamp(),
-          updatedByAdminUid: auth.currentUser?.uid || '',
+          updatedByAdminUid: currentAdminUid,
+          adminUid: currentAdminUid,
         };
 
         if (paymentSettingsResult) paymentSettingsResult.textContent = 'جارٍ حفظ الإعدادات...';
-        await setDoc(doc(db, 'paymentSettings', 'default'), payload, { merge: true });
+        await setDoc(shiftAccountDocRef, payload, { merge: true });
+
+        const defaultSnap = await safeGetDoc(doc(db, 'paymentSettings', 'default'));
+        const defaultData = defaultSnap?.data?.() || {};
+        const activeShift = defaultData.activeShift || {};
+        const activeOwnerUid = String(activeShift.ownerUid || defaultData.activeShiftOwnerUid || '').trim();
+        const activeShiftOn = Boolean(activeShift.isActive);
+
+        if (activeShiftOn && activeOwnerUid && activeOwnerUid === currentAdminUid) {
+          await setDoc(doc(db, 'paymentSettings', 'default'), {
+            ...payload,
+            updatedAt: serverTimestamp(),
+            updatedByAdminUid: currentAdminUid,
+          }, { merge: true });
+        }
+
         if (bankkQrUrlInput) bankkQrUrlInput.value = bankkQrUrl;
         if (ocashQrUrlInput) ocashQrUrlInput.value = ocashQrUrl;
         if (fawryQrUrlInput) fawryQrUrlInput.value = fawryQrUrl;
@@ -3648,7 +4470,9 @@ function mountFinance() {
         if (ocashQrFileInput) ocashQrFileInput.value = '';
         if (fawryQrFileInput) fawryQrFileInput.value = '';
         if (paymentSettingsResult) {
-          paymentSettingsResult.textContent = '✅ تم حفظ إعدادات الدفع بنجاح.';
+          paymentSettingsResult.textContent = activeShiftOn && activeOwnerUid === currentAdminUid
+            ? '✅ تم حفظ إعداداتك وتحديث حسابات الدفع المعروضة للعملاء.'
+            : '✅ تم حفظ إعداداتك الخاصة. ستظهر للعملاء عند الضغط على بدء الدوام.';
         }
       } catch (err) {
         if (paymentSettingsResult) {
@@ -3663,42 +4487,25 @@ function mountFinance() {
   }
 
   unsubscribers.push(
-    onSnapshot(doc(db, 'paymentSettings', 'default'), (snap) => {
+    onSnapshot(shiftAccountDocRef || doc(db, 'paymentSettings', '__missing_shift_account__'), (snap) => {
       const data = snap.data() || {};
-      const methods = Array.isArray(data.enabledMethods) ? data.enabledMethods : [];
+      if (shiftEmployeeDisplayName) {
+        const fallbackName = String(currentAdminProfile?.name || currentAdminProfile?.displayName || auth.currentUser?.displayName || currentAdminUid || '');
+        shiftEmployeeDisplayName.value = String(data.displayName || fallbackName);
+      }
 
-      if (enableBankk) enableBankk.checked = methods.includes('bankk');
-      if (enableOcash) enableOcash.checked = methods.includes('ocash');
-      if (enableFawry) enableFawry.checked = methods.includes('fawry');
-
-      if (bankkAccountInput) bankkAccountInput.value = String(data.bankkAccount || '');
-      if (ocashAccountInput) ocashAccountInput.value = String(data.ocashAccount || '');
-      if (fawryAccountInput) fawryAccountInput.value = String(data.fawryAccount || '');
-      if (bankkAccountHolderInput) bankkAccountHolderInput.value = String(data.bankkAccountHolder || '');
-      if (ocashAccountHolderInput) ocashAccountHolderInput.value = String(data.ocashAccountHolder || '');
-      if (fawryAccountHolderInput) fawryAccountHolderInput.value = String(data.fawryAccountHolder || '');
-      if (bankkQrUrlInput) bankkQrUrlInput.value = String(data.bankkQrUrl || '');
-      if (ocashQrUrlInput) ocashQrUrlInput.value = String(data.ocashQrUrl || '');
-      if (fawryQrUrlInput) fawryQrUrlInput.value = String(data.fawryQrUrl || '');
-      setQrPreview(bankkQrPreview, String(data.bankkQrUrl || ''));
-      setQrPreview(ocashQrPreview, String(data.ocashQrUrl || ''));
-      setQrPreview(fawryQrPreview, String(data.fawryQrUrl || ''));
-      if (bankkInstructionsInput) bankkInstructionsInput.value = String(data.bankkInstructions || '');
-      if (ocashInstructionsInput) ocashInstructionsInput.value = String(data.ocashInstructions || '');
-      if (fawryInstructionsInput) fawryInstructionsInput.value = String(data.fawryInstructions || '');
-      if (bankkOpenUrlAndroidInput) bankkOpenUrlAndroidInput.value = String(data.bankkOpenUrlAndroid || '');
-      if (ocashOpenUrlAndroidInput) ocashOpenUrlAndroidInput.value = String(data.ocashOpenUrlAndroid || '');
-      if (fawryOpenUrlAndroidInput) fawryOpenUrlAndroidInput.value = String(data.fawryOpenUrlAndroid || '');
-      if (bankkOpenUrlIosInput) bankkOpenUrlIosInput.value = String(data.bankkOpenUrlIos || '');
-      if (ocashOpenUrlIosInput) ocashOpenUrlIosInput.value = String(data.ocashOpenUrlIos || '');
-      if (fawryOpenUrlIosInput) fawryOpenUrlIosInput.value = String(data.fawryOpenUrlIos || '');
-      if (bankkOpenUrlInput) bankkOpenUrlInput.value = String(data.bankkOpenUrl || '');
-      if (ocashOpenUrlInput) ocashOpenUrlInput.value = String(data.ocashOpenUrl || '');
-      if (fawryOpenUrlInput) fawryOpenUrlInput.value = String(data.fawryOpenUrl || '');
+      applyPaymentSettingsToForm(data);
 
       if (paymentSettingsResult && !paymentSettingsResult.textContent.includes('✅')) {
-        paymentSettingsResult.textContent = 'الإعدادات الحالية محمّلة من Firebase.';
+        paymentSettingsResult.textContent = 'تم تحميل إعداداتك الخاصة.';
       }
+    }, () => {})
+  );
+
+  unsubscribers.push(
+    onSnapshot(doc(db, 'paymentSettings', 'default'), (snap) => {
+      const data = snap.data() || {};
+      void renderShiftSummary(data);
     }, (err) => {
       if (paymentSettingsResult) {
         paymentSettingsResult.textContent = `تعذر تحميل إعدادات الدفع: ${err.message || err}`;
@@ -3788,20 +4595,51 @@ function mountFinance() {
       entry.payable = Math.max(0, entry.totalEarned - transferred);
     });
 
+    const renderRemainingBadge = (payableRaw) => {
+      const payable = Math.max(0, Math.round(toMoney(payableRaw)));
+      if (payable <= 0) {
+        return `<span class="payout-remaining-badge payout-remaining-badge--done">${formatMoney(0)} • مكتمل</span>`;
+      }
+      return `<span class="payout-remaining-badge payout-remaining-badge--pending">${formatMoney(payable)} • متبقي</span>`;
+    };
+
+    const resolveTransferAmount = (payableRaw, label) => {
+      const payable = Math.max(0, Math.round(toMoney(payableRaw)));
+      const amountRaw = prompt(`قيمة التحويل ${label} (المتبقي الحالي: ${payable.toLocaleString('ar-EG')} ج.س):`, String(payable));
+      if (amountRaw === null) return { cancelled: true, amount: 0, remainingAfter: payable };
+
+      const amount = Math.round(toMoney(amountRaw));
+      if (!Number.isFinite(amount) || amount <= 0) {
+        if (window.showToast) window.showToast('قيمة التحويل غير صحيحة.', 'error');
+        else alert('قيمة التحويل غير صحيحة.');
+        return { cancelled: true, amount: 0, remainingAfter: payable };
+      }
+
+      const extraAmount = Math.max(0, amount - payable);
+      return {
+        cancelled: false,
+        amount,
+        remainingAfter: Math.max(0, payable - amount),
+        extraAmount,
+        isExtra: extraAmount > 0,
+      };
+    };
+
     const storeRows = Array.from(storeAgg.entries()).map(([storeId, agg]) => {
       const data = restaurantMap.get(storeId) || {};
       const account = parseAccount(data);
+      const payableRounded = Math.max(0, Math.round(toMoney(agg.payable)));
       return `<tr>
         <td>${escapeHtml(String(data.name || storeId))}</td>
         <td>${agg.ordersCount}</td>
         <td>${formatMoney(agg.totalEarned)}</td>
         <td>${formatMoney(agg.transferred)}</td>
-        <td>${formatMoney(agg.payable)}</td>
+        <td>${renderRemainingBadge(agg.payable)}</td>
         <td>${escapeHtml(account.method || '-')}</td>
         <td>${escapeHtml(account.accountName || '-')}</td>
         <td>${escapeHtml(account.accountNumber || '-')}</td>
         <td>
-          <button class="btn primary" data-pay-store="${escapeHtml(storeId)}" data-payable="${agg.payable}">تم التحويل</button>
+          <button class="btn ${payableRounded > 0 ? 'primary' : 'ghost'}" data-pay-store="${escapeHtml(storeId)}" data-payable="${payableRounded}">${payableRounded > 0 ? 'تم التحويل' : 'إضافة وتحويل'}</button>
         </td>
       </tr>`;
     });
@@ -3809,59 +4647,182 @@ function mountFinance() {
     const courierRows = Array.from(courierAgg.entries()).map(([driverId, agg]) => {
       const data = driverMap.get(driverId) || {};
       const account = parseAccount(data);
+      const payableRounded = Math.max(0, Math.round(toMoney(agg.payable)));
       return `<tr>
         <td>${escapeHtml(String(data.name || driverId))}</td>
         <td>${agg.ordersCount}</td>
         <td>${formatMoney(agg.totalEarned)}</td>
         <td>${formatMoney(agg.transferred)}</td>
-        <td>${formatMoney(agg.payable)}</td>
+        <td>${renderRemainingBadge(agg.payable)}</td>
         <td>${escapeHtml(account.method || '-')}</td>
         <td>${escapeHtml(account.accountName || '-')}</td>
         <td>${escapeHtml(account.accountNumber || '-')}</td>
         <td>
-          <button class="btn primary" data-pay-courier="${escapeHtml(driverId)}" data-payable="${agg.payable}">تم التحويل</button>
+          <button class="btn ${payableRounded > 0 ? 'primary' : 'ghost'}" data-pay-courier="${escapeHtml(driverId)}" data-payable="${payableRounded}">${payableRounded > 0 ? 'تم التحويل' : 'إضافة وتحويل'}</button>
         </td>
       </tr>`;
+    });
+
+    const openPayoutComposer = ({ label, name, payable }) => new Promise((resolve) => {
+      const safePayable = Math.max(0, Math.round(toMoney(payable)));
+      const suggestedAmount = safePayable > 0 ? safePayable : 10;
+
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.innerHTML = `
+        <div class="confirm-dialog payout-composer-dialog" role="dialog" aria-modal="true">
+          <h4>تسجيل تحويل ${escapeHtml(label)}</h4>
+          <p>الجهة: <b>${escapeHtml(name)}</b></p>
+          <div class="payout-composer-meta">
+            <span class="payout-remaining-badge payout-remaining-badge--pending">المتبقي الحالي: ${formatMoney(safePayable)}</span>
+          </div>
+          <div class="payout-composer-form">
+            <label>قيمة التحويل
+              <input id="_payoutAmount" type="number" min="1" step="1" value="${suggestedAmount}" />
+            </label>
+            <label>صورة إشعار التحويل (اختياري)
+              <input id="_payoutImage" type="file" accept="image/*" />
+              <span id="_payoutImageHint" class="field-hint">يمكنك رفع صورة أو إدخال رابط يدويًا.</span>
+            </label>
+            <label>رابط إشعار التحويل (اختياري)
+              <input id="_payoutUrl" type="url" placeholder="https://..." />
+            </label>
+            <div id="_payoutPreview" class="payout-composer-preview"></div>
+          </div>
+          <div class="confirm-dialog-actions">
+            <button class="btn ghost" id="_payoutCancel">إلغاء</button>
+            <button class="btn primary" id="_payoutConfirm">تسجيل التحويل</button>
+          </div>
+        </div>
+      `;
+
+      let settled = false;
+      const settle = (payload) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', onKeyDown, true);
+        overlay.remove();
+        resolve(payload);
+      };
+
+      const onKeyDown = (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          settle({ cancelled: true });
+        }
+      };
+
+      const amountInput = overlay.querySelector('#_payoutAmount');
+      const imageInput = overlay.querySelector('#_payoutImage');
+      const urlInput = overlay.querySelector('#_payoutUrl');
+      const imageHint = overlay.querySelector('#_payoutImageHint');
+      const preview = overlay.querySelector('#_payoutPreview');
+      const confirmBtn = overlay.querySelector('#_payoutConfirm');
+      const cancelBtn = overlay.querySelector('#_payoutCancel');
+
+      const renderPreview = () => {
+        const amount = Math.max(0, Math.round(toMoney(amountInput?.value)));
+        const remaining = Math.max(0, safePayable - amount);
+        const extra = Math.max(0, amount - safePayable);
+        const remainingClass = remaining > 0 ? 'payout-remaining-badge--pending' : 'payout-remaining-badge--done';
+        preview.innerHTML = `
+          <span class="payout-remaining-badge ${remainingClass}">المتبقي بعد التحويل: ${formatMoney(remaining)}</span>
+          ${extra > 0 ? `<span class="payout-remaining-badge payout-remaining-badge--pending">إضافة يدوية: ${formatMoney(extra)}</span>` : ''}
+        `;
+      };
+
+      amountInput?.addEventListener('input', renderPreview);
+      imageInput?.addEventListener('change', () => {
+        const selectedName = imageInput.files?.[0]?.name || '';
+        imageHint.textContent = selectedName ? `تم اختيار: ${selectedName}` : 'يمكنك رفع صورة أو إدخال رابط يدويًا.';
+      });
+
+      cancelBtn?.addEventListener('click', () => settle({ cancelled: true }));
+      overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) settle({ cancelled: true });
+      });
+
+      confirmBtn?.addEventListener('click', async () => {
+        const amount = Math.max(0, Math.round(toMoney(amountInput?.value)));
+        if (!Number.isFinite(amount) || amount <= 0) {
+          if (window.showToast) window.showToast('قيمة التحويل غير صحيحة.', 'error');
+          else alert('قيمة التحويل غير صحيحة.');
+          return;
+        }
+
+        if (confirmBtn) confirmBtn.disabled = true;
+
+        try {
+          let receiptUrl = String(urlInput?.value || '').trim();
+          const file = imageInput?.files?.[0] || null;
+          if (file) {
+            if (window.showToast) window.showToast('جارٍ رفع الصورة...', 'info');
+            const uploadedUrl = await uploadImageToCloudinary(file, file.name || 'payout-receipt.jpg');
+            if (!uploadedUrl) {
+              if (window.showToast) window.showToast('تعذر رفع الصورة. جرّب صورة أخرى أو استخدم رابط يدوي.', 'error');
+              if (confirmBtn) confirmBtn.disabled = false;
+              return;
+            }
+            receiptUrl = String(uploadedUrl).trim();
+            if (urlInput) urlInput.value = receiptUrl;
+            if (window.showToast) window.showToast('تم رفع الصورة وتحويلها لرابط.', 'success');
+          }
+
+          const remainingAfter = Math.max(0, safePayable - amount);
+          const extraAmount = Math.max(0, amount - safePayable);
+          settle({
+            cancelled: false,
+            amount,
+            receiptUrl,
+            remainingAfter,
+            extraAmount,
+            isExtra: extraAmount > 0,
+          });
+        } catch (err) {
+          if (window.showToast) window.showToast(`تعذر تجهيز التحويل: ${err.message || err}`, 'error');
+          if (confirmBtn) confirmBtn.disabled = false;
+        }
+      });
+
+      document.body.appendChild(overlay);
+      document.addEventListener('keydown', onKeyDown, true);
+      renderPreview();
+      amountInput?.focus();
+      amountInput?.select?.();
     });
 
     if (financeStoresPayoutTable) {
       setHtml(financeStoresPayoutTable, table(['المطعم', 'عدد الطلبات', 'المستحق الكلي', 'المحول سابقاً', 'المتبقي للتحويل', 'طريقة الدفع', 'اسم صاحب الحساب', 'رقم الحساب', 'إجراء'], storeRows));
       financeStoresPayoutTable.querySelectorAll('[data-pay-store]').forEach((btn) => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
           const targetId = btn.getAttribute('data-pay-store');
           const payable = toMoney(btn.getAttribute('data-payable'));
-          if (!targetId || payable <= 0) {
-            if (window.showToast) window.showToast('لا توجد قيمة مستحقة للتحويل.', 'error');
-            else alert('لا توجد قيمة مستحقة للتحويل.');
+          if (!targetId) {
+            if (window.showToast) window.showToast('تعذر تحديد المطعم.', 'error');
+            else alert('تعذر تحديد المطعم.');
             return;
           }
 
           const storeName = escapeHtml(btn.closest('tr')?.querySelector('td')?.textContent?.trim() || targetId);
-          const amount = Math.round(payable);
+          const transferChoice = await openPayoutComposer({
+            label: 'للمطعم',
+            name: storeName,
+            payable,
+          });
+          if (transferChoice.cancelled) return;
 
-          if (window.confirmAction) {
-            window.confirmAction({
-              title: 'تأكيد تحويل المتجر',
-              message: `تسجيل تحويل مبلغ <b>${amount.toLocaleString('ar-EG')} ج.س</b> للمتجر <b>${storeName}</b>؟`,
-              confirmText: 'تأكيد التحويل',
-              danger: false,
-              onConfirm: async () => {
-                try {
-                  await recordWalletPayout({ role: 'store', targetId, amount });
-                  if (window.showToast) window.showToast('تم تسجيل التحويل للمطعم وإرسال إشعار.', 'success');
-                } catch (err) {
-                  if (window.showToast) window.showToast(`تعذر تسجيل التحويل: ${err.message || err}`, 'error');
-                }
-              },
+          try {
+            await recordWalletPayout({
+              role: 'store',
+              targetId,
+              amount: transferChoice.amount,
+              allowExtra: transferChoice.isExtra,
+              receiptUrl: transferChoice.receiptUrl || '',
+              note: `${transferChoice.receiptUrl ? `رابط إشعار التحويل: ${transferChoice.receiptUrl}` : ''}${transferChoice.isExtra ? `${transferChoice.receiptUrl ? ' | ' : ''}إضافة يدوية: ${transferChoice.extraAmount} ج.س` : ''}`,
             });
-          } else {
-            const amountRaw = prompt('ادخل قيمة التحويل (يمكن تعديلها):', String(amount));
-            if (amountRaw === null) return;
-            const confirmedAmount = toMoney(amountRaw);
-            if (!Number.isFinite(confirmedAmount) || confirmedAmount <= 0) { alert('قيمة التحويل غير صحيحة.'); return; }
-            recordWalletPayout({ role: 'store', targetId, amount: confirmedAmount })
-              .then(() => alert('تم تسجيل التحويل للمطعم وإرسال إشعار.'))
-              .catch((err) => alert(`تعذر تسجيل التحويل: ${err.message || err}`));
+            if (window.showToast) window.showToast('تم تسجيل التحويل للمطعم وإرسال إشعار.', 'success');
+          } catch (err) {
+            if (window.showToast) window.showToast(`تعذر تسجيل التحويل: ${err.message || err}`, 'error');
           }
         });
       });
@@ -3870,41 +4831,35 @@ function mountFinance() {
     if (financeCouriersPayoutTable) {
       setHtml(financeCouriersPayoutTable, table(['المندوب', 'عدد الطلبات', 'المستحق الكلي', 'المحول سابقاً', 'المتبقي للتحويل', 'طريقة الدفع', 'اسم صاحب الحساب', 'رقم الحساب', 'إجراء'], courierRows));
       financeCouriersPayoutTable.querySelectorAll('[data-pay-courier]').forEach((btn) => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
           const targetId = btn.getAttribute('data-pay-courier');
           const payable = toMoney(btn.getAttribute('data-payable'));
-          if (!targetId || payable <= 0) {
-            if (window.showToast) window.showToast('لا توجد قيمة مستحقة للتحويل.', 'error');
-            else alert('لا توجد قيمة مستحقة للتحويل.');
+          if (!targetId) {
+            if (window.showToast) window.showToast('تعذر تحديد المندوب.', 'error');
+            else alert('تعذر تحديد المندوب.');
             return;
           }
 
           const courierName = escapeHtml(btn.closest('tr')?.querySelector('td')?.textContent?.trim() || targetId);
-          const amount = Math.round(payable);
+          const transferChoice = await openPayoutComposer({
+            label: 'للمندوب',
+            name: courierName,
+            payable,
+          });
+          if (transferChoice.cancelled) return;
 
-          if (window.confirmAction) {
-            window.confirmAction({
-              title: 'تأكيد تحويل المندوب',
-              message: `تسجيل تحويل مبلغ <b>${amount.toLocaleString('ar-EG')} ج.س</b> للمندوب <b>${courierName}</b>؟`,
-              confirmText: 'تأكيد التحويل',
-              danger: false,
-              onConfirm: async () => {
-                try {
-                  await recordWalletPayout({ role: 'courier', targetId, amount });
-                  if (window.showToast) window.showToast('تم تسجيل التحويل للمندوب وإرسال إشعار.', 'success');
-                } catch (err) {
-                  if (window.showToast) window.showToast(`تعذر تسجيل التحويل: ${err.message || err}`, 'error');
-                }
-              },
+          try {
+            await recordWalletPayout({
+              role: 'courier',
+              targetId,
+              amount: transferChoice.amount,
+              allowExtra: transferChoice.isExtra,
+              receiptUrl: transferChoice.receiptUrl || '',
+              note: `${transferChoice.receiptUrl ? `رابط إشعار التحويل: ${transferChoice.receiptUrl}` : ''}${transferChoice.isExtra ? `${transferChoice.receiptUrl ? ' | ' : ''}إضافة يدوية: ${transferChoice.extraAmount} ج.س` : ''}`,
             });
-          } else {
-            const amountRaw = prompt('ادخل قيمة التحويل (يمكن تعديلها):', String(amount));
-            if (amountRaw === null) return;
-            const confirmedAmount = toMoney(amountRaw);
-            if (!Number.isFinite(confirmedAmount) || confirmedAmount <= 0) { alert('قيمة التحويل غير صحيحة.'); return; }
-            recordWalletPayout({ role: 'courier', targetId, amount: confirmedAmount })
-              .then(() => alert('تم تسجيل التحويل للمندوب وإرسال إشعار.'))
-              .catch((err) => alert(`تعذر تسجيل التحويل: ${err.message || err}`));
+            if (window.showToast) window.showToast('تم تسجيل التحويل للمندوب وإرسال إشعار.', 'success');
+          } catch (err) {
+            if (window.showToast) window.showToast(`تعذر تسجيل التحويل: ${err.message || err}`, 'error');
           }
         });
       });
@@ -4081,9 +5036,10 @@ function mountFinance() {
               <summary>تفاصيل</summary>
               <div class="review-expand-card">
                 <div class="review-expand-grid">
-                  <div><strong>المندوب</strong>${resolveDriverDisplay(data.assignedDriverId || data.offeredDriverId, data.assignedDriverName || '')}</div>
+                  <div><strong>المندوب</strong>${data.assignedDriverId ? resolveDriverDisplay(data.assignedDriverId, data.assignedDriverName || '') : '<span class="muted">غير معين</span>'}</div>
                   <div><strong>هاتف العميل</strong>${escapeHtml(String(data.clientPhone || '-'))}</div>
                   <div><strong>الحالة الحالية</strong>${escapeHtml(formatOrderStatusLabel(data.orderStatus || data.status || '-'))}</div>
+                  <div><strong>سير القبول</strong>${renderStoreApprovalFlowHint(data) || '<span class="muted">طبيعي</span>'}</div>
                   <div><strong>العنوان</strong>${escapeHtml(String(data.deliveryAddress || data.address || '-'))}</div>
                 </div>
                 <div>
@@ -4122,7 +5078,7 @@ function mountFinance() {
       btn.addEventListener('click', () => {
         const orderId = btn.getAttribute('data-open-review-map');
         if (!orderId) return;
-        openOrderOnMap(orderId, { allowCompleted: true });
+        openOrderOnMap(orderId);
       });
     });
 
@@ -4151,7 +5107,10 @@ function mountFinance() {
             danger: true,
             onConfirm: async () => {
               try {
-                await reviewOrderPaymentEvidence({ orderId, decision: 'reject', note: '' });
+                const refundToWallet = window.confirm(
+                  'هل تريد إعادة مبلغ هذا الطلب مباشرة إلى محفظة العميل؟\n\nموافق: إعادة المبلغ\nإلغاء: رفض الإيصال دون رد للمحفظة'
+                );
+                await reviewOrderPaymentEvidence({ orderId, decision: 'reject', note: '', refundToWallet });
                 if (window.showToast) window.showToast('تم رفض الإيصال بنجاح.', 'success');
               } catch (err) {
                 if (window.showToast) window.showToast(`تعذر رفض الإيصال: ${err.message || err}`, 'error');
@@ -4160,7 +5119,10 @@ function mountFinance() {
           });
         } else {
           const note = prompt('سبب الرفض (اختياري):', '') || '';
-          reviewOrderPaymentEvidence({ orderId, decision: 'reject', note: note.trim() })
+          const refundToWallet = window.confirm(
+            'هل تريد إعادة مبلغ هذا الطلب مباشرة إلى محفظة العميل؟\n\nموافق: إعادة المبلغ\nإلغاء: رفض الإيصال دون رد للمحفظة'
+          );
+          reviewOrderPaymentEvidence({ orderId, decision: 'reject', note: note.trim(), refundToWallet })
             .then(() => alert('تم رفض الإيصال'))
             .catch((err) => alert(`تعذر رفض الإيصال: ${err.message || err}`));
         }
@@ -4611,8 +5573,12 @@ function bindAdminCreateOfferForm() {
       return;
     }
 
+    const selectedKindForValidation = String(document.getElementById('adminOfferKind')?.value || 'discount').trim().toLowerCase();
     const targetItems = parseAdminOfferTargetItems(adminOfferTargetItems?.value);
-    if (adminOfferDiscountScope?.value === 'specific_items' && targetItems.length === 0) {
+    const kindNeedsItems = selectedKindForValidation === 'buy_x_get_y'
+      || selectedKindForValidation === 'bundle_price'
+      || selectedKindForValidation === 'nth_item_percent';
+    if ((adminOfferDiscountScope?.value === 'specific_items' || kindNeedsItems) && targetItems.length === 0) {
       if (adminCreateOfferResult) adminCreateOfferResult.textContent = 'اكتب أسماء الأصناف المشمولة بالعرض.';
       return;
     }
@@ -4620,6 +5586,51 @@ function bindAdminCreateOfferForm() {
     if (adminCreateOfferBtn) adminCreateOfferBtn.disabled = true;
     if (adminCreateOfferResult) adminCreateOfferResult.textContent = 'جاري إنشاء العرض...';
     try {
+      const titleText = String(adminOfferTitle?.value || '').trim();
+      const descriptionText = String(adminOfferDescription?.value || '').trim();
+      const ruleSource = `${titleText} ${descriptionText}`;
+      const plusMatch = ruleSource.match(/(\d+)\s*\+\s*(\d+)/);
+      const selectedKind = String(document.getElementById('adminOfferKind')?.value || '').trim().toLowerCase();
+      let offerKind = selectedKind || 'discount';
+      let offerRule = { type: offerKind };
+
+      if (!selectedKind && plusMatch && (adminOfferDiscountScope?.value === 'specific_items')) {
+        offerKind = 'buy_x_get_y';
+        offerRule = {
+          type: 'buy_x_get_y',
+          buyQty: Number(plusMatch[1] || 3),
+          freeQty: Number(plusMatch[2] || 1),
+          applyOn: 'same_item',
+        };
+      }
+
+      if (offerKind === 'buy_x_get_y') {
+        offerRule = {
+          type: 'buy_x_get_y',
+          buyQty: Number(document.getElementById('adminOfferBuyQty')?.value || plusMatch?.[1] || 3),
+          freeQty: Number(document.getElementById('adminOfferFreeQty')?.value || plusMatch?.[2] || 1),
+          applyOn: String(document.getElementById('adminOfferApplyOn')?.value || 'same_item').trim().toLowerCase(),
+        };
+      } else if (offerKind === 'bundle_price') {
+        offerRule = {
+          type: 'bundle_price',
+          bundleQty: Number(document.getElementById('adminOfferBundleQty')?.value || 2),
+          bundlePrice: Number(document.getElementById('adminOfferBundlePrice')?.value || 0),
+        };
+      } else if (offerKind === 'nth_item_percent') {
+        offerRule = {
+          type: 'nth_item_percent',
+          nthQty: Number(document.getElementById('adminOfferNthQty')?.value || 2),
+          percentOff: Number(document.getElementById('adminOfferNthPercent')?.value || 50),
+        };
+      } else if (offerKind === 'spend_x_get_percent') {
+        offerRule = {
+          type: 'spend_x_get_percent',
+          minSpend: Number(document.getElementById('adminOfferMinSpend')?.value || adminOfferMinOrder?.value || 0),
+          percentOff: Number(document.getElementById('adminOfferSpendPercent')?.value || 10),
+        };
+      }
+
       let uploadedImageUrl = adminOfferImageUrl?.value || '';
       const imageFile = adminOfferImageFile?.files && adminOfferImageFile.files.length
         ? adminOfferImageFile.files[0]
@@ -4640,6 +5651,8 @@ function bindAdminCreateOfferForm() {
           description: adminOfferDescription?.value || '',
           badgeText: adminOfferBadgeText?.value || '',
           imageUrl: uploadedImageUrl,
+          offerKind,
+          offerRule,
           discountScope: adminOfferDiscountScope?.value || 'order_total',
           discountType: adminOfferDiscountType?.value || 'percent',
           discountValue: Number(adminOfferDiscountValue?.value || 0),
@@ -4699,6 +5712,13 @@ function mountStoreOffersReview() {
     } catch (_) {
       return '-';
     }
+  };
+
+  const formatDateTimeInput = (value) => {
+    if (!value || typeof value.toDate !== 'function') return '';
+    const date = value.toDate();
+    const pad = (part) => String(part).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   };
 
   const renderEmptyState = (message, columns) => [
@@ -4995,6 +6015,209 @@ async function loadClientDetails(clientId) {
   }
 }
 
+function setMockOrderResult(message = '', tone = 'muted') {
+  if (!mockOrderResult) return;
+  const safeTone = tone === 'error' || tone === 'success' ? tone : 'muted';
+  mockOrderResult.className = safeTone;
+  mockOrderResult.textContent = message;
+}
+
+function getApprovedCouriersForMockOrder() {
+  return courierDirectoryCache
+    .filter((item) => {
+      const data = item.data || {};
+      return data.isApproved === true || String(data.approvalStatus || '').trim().toLowerCase() === 'approved';
+    })
+    .map((item) => ({
+      id: item.id,
+      data: item.data || {},
+    }));
+}
+
+function renderMockOrderCouriersSelect() {
+  if (!mockOrderCourierIds) return;
+  const approvedCouriers = getApprovedCouriersForMockOrder();
+  const previousSelection = new Set(Array.from(mockOrderCourierIds.selectedOptions || []).map((opt) => String(opt.value || '').trim()));
+  const rows = approvedCouriers
+    .sort((a, b) => String(a.data.name || a.id).localeCompare(String(b.data.name || b.id), 'ar'))
+    .map((item) => {
+      const name = String(item.data.name || item.id).trim();
+      const available = item.data.available === true;
+      const statusLabel = available ? 'متاح' : 'غير متاح';
+      return `<option value="${escapeHtml(item.id)}">${escapeHtml(name)} - ${escapeHtml(statusLabel)} - ${escapeHtml(item.id)}</option>`;
+    });
+
+  mockOrderCourierIds.innerHTML = rows.length
+    ? rows.join('')
+    : '<option value="" disabled>لا يوجد مندوبون معتمدون حالياً</option>';
+
+  Array.from(mockOrderCourierIds.options || []).forEach((opt) => {
+    if (previousSelection.has(String(opt.value || '').trim())) {
+      opt.selected = true;
+    }
+  });
+}
+
+function syncMockOrderModeUi() {
+  if (!mockOrderMode || !mockOrderCourierIds) return;
+  const mode = String(mockOrderMode.value || 'all').trim().toLowerCase();
+  const isSpecific = mode === 'specific';
+  mockOrderCourierIds.disabled = !isSpecific;
+}
+
+function getMockOrderTargetDriverIds() {
+  const approvedCouriers = getApprovedCouriersForMockOrder();
+  const approvedById = new Map(approvedCouriers.map((item) => [item.id, item]));
+  const mode = String(mockOrderMode?.value || 'all').trim().toLowerCase();
+
+  if (mode === 'specific') {
+    const selectedIds = Array.from(mockOrderCourierIds?.selectedOptions || [])
+      .map((opt) => String(opt.value || '').trim())
+      .filter(Boolean);
+    const selectedApproved = selectedIds.filter((id) => approvedById.has(id));
+    const selectedAvailable = selectedApproved.filter((id) => approvedById.get(id)?.data?.available === true);
+    return {
+      ids: Array.from(new Set(selectedAvailable)),
+      selectedCount: selectedIds.length,
+      unavailableCount: Math.max(0, selectedApproved.length - selectedAvailable.length),
+      mode,
+    };
+  }
+
+  const allAvailable = approvedCouriers
+    .filter((item) => item.data.available === true)
+    .map((item) => item.id);
+
+  return {
+    ids: Array.from(new Set(allAvailable)),
+    selectedCount: allAvailable.length,
+    unavailableCount: 0,
+    mode,
+  };
+}
+
+async function createMockOrderFromAdmin(event) {
+  event.preventDefault();
+
+  if (!hasAdminPermission('orders')) {
+    setMockOrderResult('لا تملك صلاحية إنشاء طلب تجريبي.', 'error');
+    return;
+  }
+
+  const target = getMockOrderTargetDriverIds();
+  if (!target.ids.length) {
+    if (target.mode === 'specific') {
+      setMockOrderResult('اختر مندوبًا متاحًا واحدًا على الأقل. المندوب غير المتاح لا يستقبل عروضًا.', 'error');
+      return;
+    }
+    setMockOrderResult('لا يوجد مندوبون متاحون حاليًا لاستقبال الطلب التجريبي.', 'error');
+    return;
+  }
+
+  const now = Date.now();
+  const orderSeed = String(now).slice(-8);
+  const clientName = String(mockOrderClientName?.value || '').trim() || 'عميل تجريبي';
+  const clientPhone = String(mockOrderClientPhone?.value || '').trim() || '0900000000';
+  const restaurantName = String(mockOrderStoreName?.value || '').trim() || 'متجر تجريبي';
+  const deliveryAddress = String(mockOrderAddress?.value || '').trim() || 'الخرطوم - طلب تجريبي';
+  const paymentMethod = String(mockOrderPaymentMethod?.value || 'cash').trim().toLowerCase();
+  const offeredDriverId = target.ids[0];
+
+  const payload = {
+    orderId: `mock-${now}`,
+    orderNumber: orderSeed,
+    source: 'admin_mock_order',
+    isMockOrder: true,
+    status: 'courier_offer_pending',
+    orderStatus: 'courier_offer_pending',
+    paymentMethod,
+    paymentStatus: 'pending',
+    storeApprovalPending: false,
+    clientId: `mock-client-${orderSeed}`,
+    clientName,
+    clientPhone,
+    restaurantId: `mock-store-${orderSeed}`,
+    restaurantName,
+    deliveryAddress,
+    address: deliveryAddress,
+    restaurantLat: 15.5007,
+    restaurantLng: 32.5599,
+    clientLat: 15.5406,
+    clientLng: 32.5599,
+    restaurantLocation: new GeoPoint(15.5007, 32.5599),
+    clientLocation: new GeoPoint(15.5406, 32.5599),
+    items: [
+      {
+        name: 'طلب تجريبي من لوحة الأدمن',
+        quantity: 1,
+        price: 2500,
+        total: 2500,
+      },
+    ],
+    subtotal: 2500,
+    deliveryFee: 400,
+    total: 2900,
+    totalAmount: 2900,
+    currency: 'SDG',
+    offeredDriverId,
+    offerDriverIds: target.ids,
+    offerEligibleDriversCount: target.ids.length,
+    assignmentAvailableDriversCount: target.ids.length,
+    courierOfferRadiusKm: 20,
+    maxDriverDistanceKm: 20,
+    createdByAdminUid: String(currentAdminProfile?.uid || auth.currentUser?.uid || '').trim(),
+    createdByAdminEmail: String(currentAdminProfile?.email || auth.currentUser?.email || '').trim(),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    storeApprovedAt: serverTimestamp(),
+    offerStartedAt: serverTimestamp(),
+  };
+
+  if (mockOrderCreateBtn) mockOrderCreateBtn.disabled = true;
+  setMockOrderResult('جاري إنشاء الطلب التجريبي...', 'muted');
+
+  try {
+    const ref = await addDoc(collection(db, 'orders'), payload);
+    const extra = target.unavailableCount > 0
+      ? ` (تم استبعاد ${target.unavailableCount} غير متاح)`
+      : '';
+    setMockOrderResult(`تم إنشاء الطلب التجريبي بنجاح: ${formatUnifiedOrderCode(payload.orderNumber, payload.orderId, ref.id)} | المستهدفون: ${target.ids.length}${extra}`, 'success');
+    if (orderSearchInput) {
+      orderSearchInput.value = ref.id;
+    }
+    if (orderStatusFilter) {
+      orderStatusFilter.value = 'active';
+    }
+    renderOperationsOrders();
+  } catch (err) {
+    setMockOrderResult(`تعذر إنشاء الطلب التجريبي: ${err.message || err}`, 'error');
+  } finally {
+    if (mockOrderCreateBtn) mockOrderCreateBtn.disabled = false;
+  }
+}
+
+function bindMockOrderForm() {
+  if (!mockOrderForm || mockOrderFormBound) return;
+  mockOrderFormBound = true;
+
+  if (mockOrderClientName && !mockOrderClientName.value) mockOrderClientName.value = 'عميل تجريبي';
+  if (mockOrderStoreName && !mockOrderStoreName.value) mockOrderStoreName.value = 'متجر تجريبي';
+  if (mockOrderAddress && !mockOrderAddress.value) mockOrderAddress.value = 'الخرطوم - طلب تجريبي';
+
+  renderMockOrderCouriersSelect();
+  syncMockOrderModeUi();
+
+  mockOrderMode?.addEventListener('change', () => {
+    syncMockOrderModeUi();
+    const isSpecific = String(mockOrderMode.value || 'all').trim().toLowerCase() === 'specific';
+    setMockOrderResult(isSpecific
+      ? 'اختر مندوبًا متاحًا أو أكثر من القائمة.'
+      : 'سيتم الاستهداف تلقائيًا لكل المندوبين المتاحين.', 'muted');
+  });
+
+  mockOrderForm.addEventListener('submit', createMockOrderFromAdmin);
+}
+
 function getFilteredOperationsOrders() {
   const filter = String(orderStatusFilter?.value || 'active').trim().toLowerCase();
   const queryText = String(orderSearchInput?.value || '').trim().toLowerCase();
@@ -5007,9 +6230,10 @@ function getFilteredOperationsOrders() {
       const offerDriverIds = Array.isArray(data.offerDriverIds) ? data.offerDriverIds : [];
 
       if (filter === 'active' && !isActiveOrderStatus(status)) return false;
+      if (filter === 'completed' && bucket !== 'completed') return false;
       if (filter === 'review' && bucket !== 'review') return false;
       if (filter === 'cancelled' && bucket !== 'cancelled') return false;
-      if (filter === 'courier' && !(data.assignedDriverId || data.offeredDriverId || offerDriverIds.length)) return false;
+      if (filter === 'courier' && !data.assignedDriverId) return false;
 
       if (!queryText) return true;
       const haystack = [
@@ -5034,7 +6258,10 @@ async function executeAdminOrderAction(orderId, action) {
   const order = orderEntry?.data || {};
   if (!orderId || !orderEntry) return;
 
-  const note = String(prompt('ملاحظة إدارية داخلية (اختياري):', '') || '').trim();
+  const notePrompt = action === 'resolve_courier_issue'
+    ? 'اكتب نتيجة المعالجة لإرسالها إلى المندوب (اختياري):'
+    : 'ملاحظة إدارية داخلية (اختياري):';
+  const note = String(prompt(notePrompt, '') || '').trim();
   const payload = { orderId, action, note };
 
   if (action === 'assign_specific') {
@@ -5045,6 +6272,15 @@ async function executeAdminOrderAction(orderId, action) {
     }
     payload.nextDriverId = driverId;
     payload.driverId = driverId;
+  }
+
+  if (action === 'set_status') {
+    const nextStatus = String(document.getElementById(`orderSetStatus-${orderId}`)?.value || '').trim().toLowerCase();
+    if (!nextStatus) {
+      alert('اختر الحالة أولاً.');
+      return;
+    }
+    payload.nextStatus = nextStatus;
   }
 
   if (action === 'expand_courier_radius') {
@@ -5063,6 +6299,16 @@ async function executeAdminOrderAction(orderId, action) {
     return;
   }
 
+  if (action === 'cancel') {
+    payload.refundToWallet = window.confirm(
+      'هل تريد إعادة المبلغ المدفوع إلى محفظة العميل؟\n\nموافق: إعادة المبلغ\nإلغاء: إلغاء الطلب دون رد للمحفظة'
+    );
+  }
+
+  if (action === 'restore_cancelled' && !confirm(`تأكيد استرجاع الطلب ${formatUnifiedOrderCode(order.orderNumber, order.orderId, orderId)} لنفس مرحلته السابقة؟`)) {
+    return;
+  }
+
   try {
     await adminManageOrder(payload);
     alert('تم تنفيذ الإجراء بنجاح.');
@@ -5072,16 +6318,303 @@ async function executeAdminOrderAction(orderId, action) {
   }
 }
 
+function getOfferAudienceCount(orderData = {}) {
+  const countFromEligible = Number(orderData.offerEligibleDriversCount);
+  if (Number.isFinite(countFromEligible) && countFromEligible > 0) {
+    return Math.floor(countFromEligible);
+  }
+
+  const idsFromOfferList = Array.isArray(orderData.offerDriverIds)
+    ? orderData.offerDriverIds.map((id) => String(id || '').trim()).filter(Boolean)
+    : [];
+  if (idsFromOfferList.length) {
+    return idsFromOfferList.length;
+  }
+
+  const idsFromLegacyList = Array.isArray(orderData.offeredDriverIds)
+    ? orderData.offeredDriverIds.map((id) => String(id || '').trim()).filter(Boolean)
+    : [];
+  if (idsFromLegacyList.length) {
+    return idsFromLegacyList.length;
+  }
+
+  const distanceMapCount = orderData.offerDriverDistancesKm && typeof orderData.offerDriverDistancesKm === 'object'
+    ? Object.keys(orderData.offerDriverDistancesKm).filter(Boolean).length
+    : 0;
+  if (distanceMapCount > 0) {
+    return distanceMapCount;
+  }
+
+  if (String(orderData.offeredDriverId || '').trim()) {
+    return 1;
+  }
+
+  const countFromAvailable = Number(orderData.assignmentAvailableDriversCount);
+  if (Number.isFinite(countFromAvailable) && countFromAvailable > 0) {
+    return Math.floor(countFromAvailable);
+  }
+
+  const countFromCandidates = Array.isArray(orderData.candidateDrivers)
+    ? orderData.candidateDrivers.map((id) => String(id || '').trim()).filter(Boolean).length
+    : 0;
+  if (countFromCandidates > 0) {
+    return countFromCandidates;
+  }
+
+  return 0;
+}
+
+function getOrderProgressState(orderData = {}) {
+  const status = String(getOrderLifecycleStatus(orderData) || '').trim().toLowerCase();
+  const steps = [
+    { key: 'created', label: 'الإنشاء' },
+    { key: 'searching', label: 'بحث مندوب' },
+    { key: 'assigned', label: 'إسناد' },
+    { key: 'pickup', label: 'استلام' },
+    { key: 'arrived', label: 'وصول' },
+    { key: 'delivered', label: 'تسليم' },
+  ];
+
+  const cancelled = status.includes('cancel') || status.includes('رفض') || status.includes('rejected') || status.includes('ملغي');
+  if (cancelled) {
+    return {
+      steps,
+      currentStep: 2,
+      cancelled: true,
+      label: 'ملغي',
+    };
+  }
+
+  if (isDeliveredOrderStatus(status)) {
+    return { steps, currentStep: 6, cancelled: false, label: 'مكتمل' };
+  }
+
+  const stepMap = {
+    pending: 1,
+    store_pending: 1,
+    courier_searching: 2,
+    courier_offer_pending: 2,
+    courier_assigned: 3,
+    pickup_ready: 4,
+    picked_up: 4,
+    arrived_to_client: 5,
+  };
+
+  return {
+    steps,
+    currentStep: stepMap[status] || 1,
+    cancelled: false,
+    label: formatOrderStatusLabel(status || '-'),
+  };
+}
+
+function buildOrderProgressMarkup(orderData = {}) {
+  const state = getOrderProgressState(orderData);
+  const pct = Math.round((Math.max(1, state.currentStep) / state.steps.length) * 100);
+  const items = state.steps.map((step, index) => {
+    const n = index + 1;
+    const cls = n < state.currentStep ? 'done' : n === state.currentStep ? 'active' : 'todo';
+    return `
+      <li class="order-progress-step ${cls}">
+        <span class="order-progress-dot">${n}</span>
+        <span class="order-progress-label">${escapeHtml(step.label)}</span>
+      </li>
+    `;
+  }).join('');
+
+  return `
+    <div class="order-progress ${state.cancelled ? 'is-cancelled' : ''}">
+      <div class="order-progress-head">
+        <strong>مسار الطلب التشغيلي</strong>
+        <span class="order-progress-status">${escapeHtml(state.label)}</span>
+      </div>
+      <div class="order-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${state.cancelled ? 0 : pct}">
+        <span style="width:${state.cancelled ? 100 : pct}%"></span>
+      </div>
+      <ol class="order-progress-steps">${items}</ol>
+    </div>
+  `;
+}
+
+function markSelectedOperationsRow(orderId) {
+  const rows = operationsOrdersTable?.querySelectorAll('tbody tr') || [];
+  rows.forEach((row) => {
+    const btn = row.querySelector('[data-operations-order]');
+    const rowOrderId = String(btn?.getAttribute('data-operations-order') || '');
+    row.classList.toggle('is-selected-row', !!orderId && rowOrderId === orderId);
+  });
+}
+
+function destroyOrderInlineMap() {
+  if (orderInlineMap) {
+    try {
+      orderInlineMap.remove();
+    } catch (_) {
+    }
+  }
+  orderInlineMap = null;
+}
+
+async function renderInlineOrderMap(orderId, orderData = {}) {
+  const mapShell = document.getElementById(`orderInlineMapShell-${orderId}`);
+  const mapCanvas = document.getElementById(`orderInlineMap-${orderId}`);
+  const mapMeta = document.getElementById(`orderInlineMapMeta-${orderId}`);
+  if (!mapShell || !mapCanvas) return;
+
+  mapShell.classList.remove('is-hidden');
+  orderInlineMapVisible = true;
+  orderInlineMapOrderId = String(orderId || '').trim();
+
+  try {
+    await withTimeout(ensureLeaflet(), 9000, 'تعذر تحميل الخريطة داخل الطلب (timeout).');
+  } catch (error) {
+    if (mapMeta) {
+      mapMeta.textContent = error?.message || 'تعذر تحميل الخريطة داخل الطلب.';
+      mapMeta.classList.remove('muted');
+    }
+    return;
+  }
+
+  destroyOrderInlineMap();
+  orderInlineMap = window.L.map(mapCanvas, {
+    zoomControl: true,
+    attributionControl: true,
+  });
+
+  const inlineBase = MAP_STYLE_PRESETS[mapUiState.style] || MAP_STYLE_PRESETS.voyager || MAP_STYLE_PRESETS.osm;
+  window.L.tileLayer(inlineBase.url, {
+    attribution: inlineBase.attribution || '&copy; OpenStreetMap contributors',
+    subdomains: inlineBase.subdomains,
+    maxZoom: 19,
+  }).addTo(orderInlineMap);
+
+  const restaurantGeo = getRestaurantGeoByOrder(orderData);
+  const driverGeo = getDriverGeoByOrder(orderData);
+  const clientGeo = getClientGeoByOrder(orderData);
+
+  const points = [];
+  const routePoints = [];
+
+  const pushPoint = (geo, title, markerType, markerVariant = 'default') => {
+    if (!geo) return;
+    const latLng = [geo.lat, geo.lng];
+    points.push(latLng);
+    const last = routePoints[routePoints.length - 1];
+    if (!last || last[0] !== latLng[0] || last[1] !== latLng[1]) {
+      routePoints.push(latLng);
+    }
+    const marker = window.L.marker(latLng, {
+      icon: buildMarkerIcon({ type: markerType, variant: markerVariant })
+    }).addTo(orderInlineMap);
+    marker.bindTooltip(title);
+    marker.bindPopup(title);
+  };
+
+  pushPoint(restaurantGeo, `المتجر: ${resolveRestaurantDisplay(orderData.restaurantId, orderData.restaurantName)}`, 'restaurant', 'online');
+  pushPoint(driverGeo, `المندوب: ${resolveDriverDisplay(orderData.assignedDriverId, orderData.assignedDriverName || '')}`, 'driver', 'current');
+  pushPoint(clientGeo, `العميل: ${resolveClientDisplay(orderData.clientId, orderData.clientName)}`, 'client', 'default');
+
+  if (restaurantGeo && driverGeo) {
+    window.L.polyline([
+      [restaurantGeo.lat, restaurantGeo.lng],
+      [driverGeo.lat, driverGeo.lng],
+    ], {
+      color: '#0ea5e9',
+      weight: 4,
+      opacity: 0.85,
+      lineCap: 'round',
+      dashArray: '2, 6',
+    }).addTo(orderInlineMap);
+  }
+
+  if (driverGeo && clientGeo) {
+    window.L.polyline([
+      [driverGeo.lat, driverGeo.lng],
+      [clientGeo.lat, clientGeo.lng],
+    ], {
+      color: '#2563eb',
+      weight: 5,
+      opacity: 0.95,
+      lineCap: 'round',
+    }).addTo(orderInlineMap);
+  } else if (routePoints.length >= 2) {
+    window.L.polyline(routePoints, {
+      color: '#2563eb',
+      weight: 4,
+      opacity: 0.9,
+      lineCap: 'round',
+    }).addTo(orderInlineMap);
+  }
+
+  if (!points.length) {
+    orderInlineMap.setView([15.5007, 32.5599], 11);
+    if (mapMeta) {
+      mapMeta.textContent = 'لا تتوفر نقاط جغرافية كافية لهذا الطلب حالياً.';
+      mapMeta.classList.remove('muted');
+    }
+    return;
+  }
+
+  if (points.length === 1) {
+    orderInlineMap.setView(points[0], 15);
+  } else {
+    const bounds = window.L.latLngBounds(points);
+    orderInlineMap.fitBounds(bounds.pad(0.24), { animate: true, maxZoom: 16 });
+  }
+
+  const routeStateLabel = describeOrderRouteState(orderId, points);
+  const missingPieces = [
+    restaurantGeo ? '' : 'المتجر بلا موقع صالح',
+    String(orderData.assignedDriverId || '').trim() && !driverGeo ? 'المندوب المعين لا يرسل موقعًا حاليًا' : '',
+    clientGeo ? '' : 'العميل بلا موقع صالح',
+  ].filter(Boolean);
+
+  if (mapMeta) {
+    mapMeta.textContent = missingPieces.length
+      ? `${routeStateLabel} | ${missingPieces.join(' | ')}`
+      : routeStateLabel;
+    mapMeta.classList.remove('muted');
+  }
+
+  mapShell.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+
+  const settleResize = () => {
+    try {
+      orderInlineMap?.invalidateSize();
+    } catch (_) {
+    }
+  };
+  requestAnimationFrame(settleResize);
+  setTimeout(() => {
+    settleResize();
+  }, 120);
+  setTimeout(() => {
+    settleResize();
+  }, 420);
+}
+
 function renderOperationsOrderDetails(orderId) {
   if (!operationsOrderDetails) return;
+  const shouldRestoreInlineMap = orderInlineMapVisible && orderInlineMapOrderId === String(orderId || '').trim();
+  destroyOrderInlineMap();
+  if (!shouldRestoreInlineMap) {
+    orderInlineMapVisible = false;
+    orderInlineMapOrderId = '';
+  }
+  currentOperationsOrderId = String(orderId || '').trim();
   stopActiveOrderDriverListener();
   const entry = operationsOrderDocsCache.find((item) => item.id === orderId);
   if (!entry) {
     operationsOrderDetails.innerHTML = '<span class="muted">لم يتم العثور على الطلب المحدد.</span>';
+    orderInlineMapVisible = false;
+    orderInlineMapOrderId = '';
     return;
   }
 
   const data = entry.data || {};
+  const lifecycleStatus = String(getOrderLifecycleStatus(data) || '').trim().toLowerCase();
+  const isCancelledOrder = lifecycleStatus.includes('cancel') || lifecycleStatus.includes('store_rejected') || lifecycleStatus.includes('reject');
+  const statusChoices = getAdminOrderedStatusChoices(lifecycleStatus);
   const timeline = getOrderTimelineEntries(data);
   const financial = computeOrderFinancialBreakdown(data);
   const availableCouriers = courierDirectoryCache.filter((item) => {
@@ -5089,63 +6622,97 @@ function renderOperationsOrderDetails(orderId) {
     return courier.isApproved === true || String(courier.approvalStatus || '').trim().toLowerCase() === 'approved';
   });
   const offerDriverIds = Array.isArray(data.offerDriverIds) ? data.offerDriverIds : [];
-  const liveDriverId = String(data.assignedDriverId || data.offeredDriverId || '').trim();
-  const liveDriverName = String(data.assignedDriverName || data.offeredDriverName || '').trim();
+  const storeId = String(data.restaurantId || '').trim();
+  const assignedDriverId = String(data.assignedDriverId || '').trim();
+  const hasOpenCourierIssue = String(data.courierIssue?.status || '').trim().toLowerCase() === 'open';
+  const offeredDriverId = String(data.offeredDriverId || '').trim();
+  const driverIdFromOrder = assignedDriverId;
+  const storePhone = resolveRestaurantPhone(
+    storeId,
+    data.restaurantPhone || data.storePhone || data.restaurantMobile || data.storeMobile || ''
+  );
+  const driverPhone = resolveDriverPhone(
+    driverIdFromOrder,
+    data.assignedDriverPhone || data.driverPhone || data.offeredDriverPhone || ''
+  );
+  const liveDriverId = assignedDriverId;
+  const liveDriverName = String(data.assignedDriverName || '').trim();
   const isAwaitingOfferDecision = String(data.orderStatus || data.status || '').trim() === 'courier_offer_pending';
-  const offerAudienceCount = Number.isFinite(Number(data.offerEligibleDriversCount))
-    ? Number(data.offerEligibleDriversCount)
-    : (offerDriverIds.length || (data.offeredDriverId ? 1 : 0));
+  const offerAudienceCount = getOfferAudienceCount(data);
   const courierRadiusKm = Number(data.courierOfferRadiusKm || data.maxDriverDistanceKm || 20);
+  const offerAudienceSummary = offerAudienceCount > 0
+    ? `<div><b>تم عرض الطلب على:</b> ${offerAudienceCount} مندوب</div>`
+    : '<div><b>تم عرض الطلب على:</b> غير متاح</div>';
   const offerSummaryMarkup = isAwaitingOfferDecision
-    ? `<div><b>المعروض عليهم الآن:</b> ${offerAudienceCount}</div><div class="muted">العرض ما زال بانتظار قبول أحد المناديب.</div>`
-    : liveDriverId
-      ? `<div><b>المندوب الذي قبل الطلب:</b> ${resolveDriverDisplay(liveDriverId, liveDriverName || data.assignedDriverName || '')}</div><div class="muted">النطاق السابق: ${escapeHtml(`${courierRadiusKm || 20} كم`)}</div>`
-      : `<div><b>النطاق السابق:</b> ${escapeHtml(`${courierRadiusKm || 20} كم`)}</div><div class="muted">لا يوجد عرض نشط حاليًا.</div>`;
+    ? `<div><b>المعروض عليهم الآن:</b> ${offerAudienceCount || '-'}</div>${offerAudienceSummary}<div class="muted">العرض ما زال بانتظار قبول أحد المناديب.</div>`
+    : assignedDriverId
+      ? `<div><b>المندوب الذي قبل الطلب:</b> ${resolveDriverDisplay(liveDriverId, liveDriverName || data.assignedDriverName || '')}</div>${offerAudienceSummary}<div class="muted">النطاق السابق: ${escapeHtml(`${courierRadiusKm || 20} كم`)}</div>`
+      : `${offerAudienceSummary}<div><b>النطاق السابق:</b> ${escapeHtml(`${courierRadiusKm || 20} كم`)}</div>${offeredDriverId ? '<div class="muted">يوجد مندوب مرشح للعرض، لكن لم يتم إسناد الطلب بعد.</div>' : '<div class="muted">لا يوجد مندوب معين حاليًا.</div>'}`;
 
   operationsOrderDetails.classList.remove('muted');
   operationsOrderDetails.innerHTML = `
     <div class="order-detail-shell">
+      ${buildOrderProgressMarkup(data)}
       <div class="order-detail-head">
         <div>
           <h4 style="margin:0 0 8px">${escapeHtml(formatUnifiedOrderCode(data.orderNumber, data.orderId, orderId))}</h4>
           <div><span class="kv"><b>الحالة:</b> ${escapeHtml(formatOrderStatusLabel(data.orderStatus || data.status || '-'))}</span><span class="kv"><b>الدفع:</b> ${escapeHtml(data.paymentStatus || '-')}</span></div>
+          ${renderStoreApprovalFlowHint(data)}
         </div>
         <div class="order-actions-row">
-          <button class="btn danger" data-admin-order-action="cancel" data-order-id="${escapeHtml(orderId)}">إلغاء الطلب</button>
-          <button class="btn ghost" data-admin-order-action="unassign_courier" data-order-id="${escapeHtml(orderId)}">سحب المندوب</button>
-          <button class="btn ghost" data-admin-order-action="reassign_auto" data-order-id="${escapeHtml(orderId)}">إعادة إسناد تلقائي</button>
-          <button class="btn ghost" data-admin-order-action="expand_courier_radius" data-order-id="${escapeHtml(orderId)}">توسيع نطاق المناديب</button>
-          <button class="btn primary" data-open-order-map="${escapeHtml(orderId)}">الخريطة</button>
+          ${isCancelledOrder
+            ? `<button class="btn primary" data-admin-order-action="restore_cancelled" data-order-id="${escapeHtml(orderId)}">استرجاع الطلب كما كان</button>`
+            : `
+              <button class="btn danger" data-admin-order-action="cancel" data-order-id="${escapeHtml(orderId)}">إلغاء الطلب</button>
+              <button class="btn ghost" data-admin-order-action="unassign_courier" data-order-id="${escapeHtml(orderId)}">سحب المندوب</button>
+              <button class="btn ghost" data-admin-order-action="reassign_auto" data-order-id="${escapeHtml(orderId)}">إعادة إسناد تلقائي</button>
+              <button class="btn ghost" data-admin-order-action="expand_courier_radius" data-order-id="${escapeHtml(orderId)}">توسيع نطاق المناديب</button>
+            `}
+          ${hasOpenCourierIssue ? `<button class="btn primary" data-admin-order-action="resolve_courier_issue" data-order-id="${escapeHtml(orderId)}">معالجة بلاغ المندوب</button>` : ''}
+          <button class="btn primary" data-open-order-map="${escapeHtml(orderId)}">الخريطة داخل الطلب</button>
         </div>
       </div>
       <div class="order-detail-grid">
         <div class="order-detail-card"><strong>العميل</strong>${resolveClientDisplay(data.clientId, data.clientName)}<br />${escapeHtml(data.clientPhone || '-')}</div>
-        <div class="order-detail-card"><strong>المتجر</strong>${resolveRestaurantDisplay(data.restaurantId, data.restaurantName)}</div>
-        <div class="order-detail-card order-detail-card--driver${liveDriverId ? ' order-detail-card--driver-current' : ''}" id="orderDriverCard-${escapeHtml(orderId)}">
+        <div class="order-detail-card"><strong>المتجر</strong>${resolveRestaurantDisplay(data.restaurantId, data.restaurantName)}<br />${escapeHtml(storePhone || '-')}</div>
+        <div class="order-detail-card order-detail-card--driver${assignedDriverId ? ' order-detail-card--driver-current' : ''}" id="orderDriverCard-${escapeHtml(orderId)}">
           <strong>المندوب الحالي</strong>
-          <div id="orderDriverName-${escapeHtml(orderId)}">${resolveDriverDisplay(data.assignedDriverId || data.offeredDriverId, data.assignedDriverName || data.offeredDriverName || '')}</div>
-          <div id="orderDriverLocation-${escapeHtml(orderId)}" class="muted">${liveDriverId ? 'جاري تحميل الموقع المباشر...' : 'لا يوجد مندوب معين حالياً'}</div>
+          <div id="orderDriverName-${escapeHtml(orderId)}">${assignedDriverId ? resolveDriverDisplay(assignedDriverId, data.assignedDriverName || '') : 'لا يوجد مندوب معين'}</div>
+          <div id="orderDriverPhone-${escapeHtml(orderId)}" class="muted">${escapeHtml(driverPhone || '-')}</div>
+          <div id="orderDriverLocation-${escapeHtml(orderId)}" class="muted">${assignedDriverId ? 'جاري تحميل الموقع المباشر...' : 'الطلب معروض للمناديب ضمن النطاق، وليس مسنداً لمندوب بعد.'}</div>
           <div id="orderDriverUpdated-${escapeHtml(orderId)}" class="muted"></div>
         </div>
         <div class="order-detail-card"><strong>نطاق العرض</strong>${offerSummaryMarkup}</div>
         <div class="order-detail-card"><strong>العنوان</strong>${escapeHtml(data.deliveryAddress || data.address || '-')}</div>
       </div>
       ${renderOrderFinancialBreakdown(financial)}
-      ${buildEntitySection('مناديب المسافات البعيدة', `
-        <div id="longDistanceCouriers-${escapeHtml(orderId)}" class="order-timeline">
-          <div class="muted">جاري تحميل المناديب المتاحين للمسافات البعيدة...</div>
-        </div>
-      `, { eyebrow: 'الطلبات البعيدة' })}
+      ${renderUnavailableItemAlert(data)}
+      ${renderCourierIssueAlert(data)}
+      ${isCancelledOrder ? '' : `
       <div class="order-actions-row">
+        <select id="orderSetStatus-${escapeHtml(orderId)}">
+          ${statusChoices.map((item) => `<option value="${escapeHtml(item.key)}" ${item.selected ? 'selected' : ''}>${escapeHtml(item.title)}</option>`).join('')}
+        </select>
+        <button class="btn primary" data-admin-order-action="set_status" data-order-id="${escapeHtml(orderId)}">تغيير الحالة</button>
         <select id="orderAssignDriver-${escapeHtml(orderId)}">
           <option value="">اختر مندوبًا للتحويل اليدوي</option>
           ${availableCouriers.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(String(item.data?.name || item.id))}</option>`).join('')}
         </select>
         <button class="btn primary" data-admin-order-action="assign_specific" data-order-id="${escapeHtml(orderId)}">تحويل إلى المندوب المحدد</button>
-        <button class="btn ghost" data-open-store-from-order="${escapeHtml(String(data.restaurantId || ''))}">فتح المتجر</button>
-        <button class="btn ghost" data-open-courier-from-order="${escapeHtml(String(data.assignedDriverId || data.offeredDriverId || ''))}">فتح المندوب</button>
-        <button class="btn ghost" data-open-client-from-order="${escapeHtml(String(data.clientId || ''))}">فتح العميل</button>
+        <button class="btn ghost" data-open-store-from-order="${escapeHtml(String(data.restaurantId || ''))}">معلومات المتجر</button>
+        ${assignedDriverId ? `<button class="btn ghost" data-open-courier-from-order="${escapeHtml(assignedDriverId)}">معلومات المندوب</button>` : ''}
+        <button class="btn ghost" data-open-client-from-order="${escapeHtml(String(data.clientId || ''))}">معلومات العميل</button>
       </div>
+      `}
+      <div id="orderContextPanel-${escapeHtml(orderId)}" class="order-context-panel muted">اختر "معلومات المتجر" أو "معلومات المندوب" أو "معلومات العميل" لعرض بطاقة سريعة هنا.</div>
+      <section class="order-inline-map-shell is-hidden" id="orderInlineMapShell-${escapeHtml(orderId)}">
+        <div class="order-inline-map-head">
+          <strong>خريطة الطلب المباشرة</strong>
+          <button class="btn ghost" type="button" data-close-order-map="${escapeHtml(orderId)}">إغلاق الخريطة</button>
+        </div>
+        <div id="orderInlineMap-${escapeHtml(orderId)}" class="order-inline-map-canvas"></div>
+        <div id="orderInlineMapMeta-${escapeHtml(orderId)}" class="order-inline-map-meta muted">جاري تجهيز الخريطة...</div>
+      </section>
       <div class="order-detail-grid">
         <div class="order-detail-card">
           <strong>التسلسل الزمني</strong>
@@ -5157,6 +6724,7 @@ function renderOperationsOrderDetails(orderId) {
           <strong>العناصر</strong>
           ${renderOrderItemsRows(data.items)}
         </div>
+        ${renderCourierIssueHistory(data)}
       </div>
     </div>
   `;
@@ -5170,8 +6738,16 @@ function renderOperationsOrderDetails(orderId) {
     });
   });
 
-  operationsOrderDetails.querySelector('[data-open-order-map]')?.addEventListener('click', () => {
-    openOrderOnMap(orderId, { allowCompleted: true });
+  operationsOrderDetails.querySelector('[data-open-order-map]')?.addEventListener('click', async () => {
+    await renderInlineOrderMap(orderId, data);
+  });
+
+  operationsOrderDetails.querySelector('[data-close-order-map]')?.addEventListener('click', () => {
+    const shell = document.getElementById(`orderInlineMapShell-${orderId}`);
+    shell?.classList.add('is-hidden');
+    orderInlineMapVisible = false;
+    orderInlineMapOrderId = '';
+    destroyOrderInlineMap();
   });
 
   if (liveDriverId) {
@@ -5185,12 +6761,14 @@ function renderOperationsOrderDetails(orderId) {
       if (activeOrderDriverId !== liveDriverId) return;
 
       const nameEl = document.getElementById(`orderDriverName-${orderId}`);
+      const phoneEl = document.getElementById(`orderDriverPhone-${orderId}`);
       const locationEl = document.getElementById(`orderDriverLocation-${orderId}`);
       const updatedEl = document.getElementById(`orderDriverUpdated-${orderId}`);
-      if (!nameEl || !locationEl || !updatedEl) return;
+      if (!nameEl || !phoneEl || !locationEl || !updatedEl) return;
 
       if (!driverSnap.exists()) {
         nameEl.textContent = 'تم حذف حساب المندوب';
+        phoneEl.textContent = '-';
         locationEl.textContent = 'لا توجد بيانات موقع حالياً';
         updatedEl.textContent = '';
         return;
@@ -5204,6 +6782,7 @@ function renderOperationsOrderDetails(orderId) {
       const lastUpdate = driver.lastLocationUpdate || driver.lastUpdated || driver.updatedAt || driver.createdAt;
 
       nameEl.innerHTML = resolveDriverDisplay(liveDriverId, driver.name || driver.displayName || data.assignedDriverName || '');
+      phoneEl.textContent = String(driver.phone || data.assignedDriverPhone || data.driverPhone || '-');
       locationEl.textContent = point
         ? `الموقع المباشر: ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`
         : 'جاري تحميل الموقع المباشر...';
@@ -5211,47 +6790,78 @@ function renderOperationsOrderDetails(orderId) {
     });
   }
 
-  longDistanceCouriersOrderId = orderId;
-  longDistanceCouriersUnsubscribe = onSnapshot(
-    query(collection(db, 'drivers'), where('acceptsLongDistance', '==', true)),
-    (snap) => {
-      if (longDistanceCouriersOrderId !== orderId) return;
-      renderLongDistanceCouriersList(orderId, data, snap.docs);
-    },
-    () => renderLongDistanceCouriersList(orderId, data, [])
-  );
+  longDistanceCouriersOrderId = '';
+
+  const setOrderContextPanel = (title, lines = [], tone = 'info') => {
+    const panel = document.getElementById(`orderContextPanel-${orderId}`);
+    if (!panel) return;
+    panel.classList.remove('muted', 'tone-info', 'tone-success', 'tone-warning');
+    panel.classList.add(`tone-${tone}`);
+    panel.innerHTML = `
+      <div class="order-context-head">${escapeHtml(title)}</div>
+      <div class="order-context-lines">
+        ${lines.map((line) => `<div>${escapeHtml(String(line || '-'))}</div>`).join('')}
+      </div>
+    `;
+  };
 
   operationsOrderDetails.querySelector('[data-open-store-from-order]')?.addEventListener('click', async () => {
     const storeId = String(data.restaurantId || '').trim();
     if (!storeId) return;
-    activateTab('management');
-    activateSubpanel('management', 'management-stores');
-    await loadStoreDetails(storeId);
-    document.getElementById('storeDetailsPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const storeData = restaurantsDirectoryCache.get(storeId) || {};
+    const storeName = String(data.restaurantName || storeData.name || storeId);
+    const storePhone = String(
+      data.restaurantPhone
+      || data.storePhone
+      || storeData.phone
+      || storeData.mobile
+      || '-'
+    );
+    const storeAddress = String(data.deliveryAddress || data.address || storeData.address || '-');
+    setOrderContextPanel('ملخص المتجر', [
+      `الاسم: ${storeName}`,
+      `الهاتف: ${storePhone}`,
+      `العنوان: ${storeAddress}`,
+      `المعرف: ${storeId}`,
+    ], 'info');
   });
 
   operationsOrderDetails.querySelector('[data-open-courier-from-order]')?.addEventListener('click', async () => {
-    const driverId = String(data.assignedDriverId || data.offeredDriverId || '').trim();
+    const driverId = String(data.assignedDriverId || '').trim();
     if (!driverId) return;
-    activateTab('management');
-    activateSubpanel('management', 'management-couriers');
-    await loadCourierDetails(driverId);
-    document.getElementById('courierDetailsPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const driverEntry = courierDirectoryCache.find((item) => item.id === driverId);
+    const driverData = driverEntry?.data || {};
+    const driverName = String(data.assignedDriverName || driverData.name || driverId);
+    const driverPhone = String(data.assignedDriverPhone || data.driverPhone || driverData.phone || '-');
+    const driverAvailability = driverData.available === true ? 'متاح الآن' : 'غير متاح';
+    setOrderContextPanel('ملخص المندوب', [
+      `الاسم: ${driverName}`,
+      `الهاتف: ${driverPhone}`,
+      `الحالة: ${driverAvailability}`,
+      `المعرف: ${driverId}`,
+    ], driverData.available === true ? 'success' : 'warning');
   });
 
   operationsOrderDetails.querySelector('[data-open-client-from-order]')?.addEventListener('click', async () => {
     const clientId = String(data.clientId || '').trim();
     if (!clientId) return;
-    openOrdersWorkspace(orderId);
-    await loadClientDetails(clientId);
-    document.getElementById('clientDetailsPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setOrderContextPanel('ملخص العميل', [
+      `الاسم: ${String(data.clientName || 'غير متوفر')}`,
+      `الهاتف: ${String(data.clientPhone || 'غير متوفر')}`,
+      `المعرف: ${clientId}`,
+    ], 'info');
   });
+
+  if (shouldRestoreInlineMap) {
+    renderInlineOrderMap(orderId, data).catch(() => {});
+  }
 }
 
 function renderOperationsOrders() {
   if (!operationsOrdersTable) return;
   const filtered = getFilteredOperationsOrders();
   const activeCount = operationsOrderDocsCache.filter((item) => isActiveOrderStatus(getOrderLifecycleStatus(item.data || {}))).length;
+  const completedCount = operationsOrderDocsCache.filter((item) => isDeliveredOrderStatus(getOrderLifecycleStatus(item.data || {}))).length;
   const reviewCount = operationsOrderDocsCache.filter((item) => getOperationsOrderBucket(item.data || {}) === 'review').length;
   const cancelledCount = operationsOrderDocsCache.filter((item) => getOperationsOrderBucket(item.data || {}) === 'cancelled').length;
   opsCenterState.activeOrders = activeCount;
@@ -5267,6 +6877,7 @@ function renderOperationsOrders() {
       <div>إجمالي الطلبات المعروضة الآن: <b>${filtered.length}</b> | العملاء في الذاكرة: <b>${clientDirectoryCache.length}</b></div>
       <div class="orders-summary-stats">
         <div class="orders-summary-stat"><strong>نشطة</strong><b>${activeCount}</b></div>
+        <div class="orders-summary-stat"><strong>مكتملة</strong><b>${completedCount}</b></div>
         <div class="orders-summary-stat"><strong>قيد المراجعة</strong><b>${reviewCount}</b></div>
         <div class="orders-summary-stat"><strong>ملغاة</strong><b>${cancelledCount}</b></div>
         <div class="orders-summary-stat"><strong>المعروضة الآن</strong><b>${filtered.length}</b></div>
@@ -5277,12 +6888,21 @@ function renderOperationsOrders() {
   const rows = filtered.slice(0, 150).map((item) => {
     const data = item.data || {};
     const bucket = getOperationsOrderBucket(data);
-    const bucketLabel = bucket === 'review' ? 'مراجعة' : bucket === 'cancelled' ? 'ملغى' : bucket === 'active' ? 'نشط' : 'أخرى';
-    return `<tr>
+    const isSelected = currentOperationsOrderId && currentOperationsOrderId === item.id;
+    const bucketLabel = bucket === 'review'
+      ? 'مراجعة'
+      : bucket === 'cancelled'
+        ? 'ملغى'
+        : bucket === 'completed'
+          ? 'مكتمل'
+          : bucket === 'active'
+            ? 'نشط'
+            : 'أخرى';
+    return `<tr class="${isSelected ? 'is-selected-row' : ''}">
       <td>${escapeHtml(formatUnifiedOrderCode(data.orderNumber, data.orderId, item.id))}</td>
       <td>${resolveClientDisplay(data.clientId, data.clientName)}</td>
       <td>${resolveRestaurantDisplay(data.restaurantId, data.restaurantName)}</td>
-      <td>${resolveDriverDisplay(data.assignedDriverId || data.offeredDriverId, data.assignedDriverName || '')}</td>
+      <td>${data.assignedDriverId ? resolveDriverDisplay(data.assignedDriverId, data.assignedDriverName || '') : '<span class="muted">غير معين</span>'}</td>
       <td>${escapeHtml(formatOrderStatusLabel(data.orderStatus || data.status || '-'))}</td>
       <td>${escapeHtml(String(data.paymentStatus || '-'))}</td>
       <td>${escapeHtml(bucketLabel)}<br /><span class="muted">${escapeHtml(formatDateTimeLabel(data.updatedAt || data.createdAt))}</span></td>
@@ -5290,18 +6910,52 @@ function renderOperationsOrders() {
     </tr>`;
   });
 
-  setHtml(operationsOrdersTable, table(['الطلب', 'العميل', 'المتجر', 'المندوب', 'الحالة', 'الدفع', 'التصنيف', 'إجراء'], rows));
-  operationsOrdersTable.querySelectorAll('[data-operations-order]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const orderId = btn.getAttribute('data-operations-order');
-      if (!orderId) return;
-      renderOperationsOrderDetails(orderId);
+  preserveViewportPosition(() => {
+    setHtml(operationsOrdersTable, table(['الطلب', 'العميل', 'المتجر', 'المندوب', 'الحالة', 'الدفع', 'التصنيف', 'إجراء'], rows));
+    operationsOrdersTable.querySelectorAll('[data-operations-order]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const orderId = btn.getAttribute('data-operations-order');
+        if (!orderId) return;
+        currentOperationsOrderId = orderId;
+        renderOperationsOrderDetails(orderId);
+        markSelectedOperationsRow(orderId);
+      });
     });
-  });
+    markSelectedOperationsRow(currentOperationsOrderId);
+  }, { enabled: String(document.querySelector('.tab-panel.active')?.id || '') === 'orders' });
 
-  if (filtered.length && operationsOrderDetails?.classList.contains('muted')) {
-    renderOperationsOrderDetails(filtered[0].id);
+  const selectedStillVisible = filtered.some((item) => item.id === currentOperationsOrderId);
+  if (!selectedStillVisible) {
+    currentOperationsOrderId = filtered[0]?.id || '';
   }
+
+  if (currentOperationsOrderId && operationsOrderDetails?.classList.contains('muted')) {
+    renderOperationsOrderDetails(currentOperationsOrderId);
+    return;
+  }
+
+  if (!currentOperationsOrderId && filtered.length && operationsOrderDetails?.classList.contains('muted')) {
+    currentOperationsOrderId = filtered[0].id;
+    renderOperationsOrderDetails(currentOperationsOrderId);
+  }
+}
+
+function getCourierActivityTier(item = {}) {
+  const monthOrders = Number(item.monthOrders || 0);
+  const monthHours = Number(item.monthMs || 0) / (60 * 60 * 1000);
+  const todayOrders = Number(item.todayOrders || 0);
+  const todayHours = Number(item.todayMs || 0) / (60 * 60 * 1000);
+  const activeOrders = Number(item.activeOrders || 0);
+
+  if (monthOrders >= 4 || monthHours >= 20 || todayHours >= 8 || (monthOrders >= 2 && (todayOrders > 0 || activeOrders > 0))) {
+    return { key: 'consistent', label: 'ثابت النشاط', className: 'live' };
+  }
+
+  if (monthOrders >= 1 || monthHours >= 6 || todayOrders > 0 || todayHours > 0 || activeOrders > 0) {
+    return { key: 'average', label: 'متوسط', className: 'soon' };
+  }
+
+  return { key: 'inactive', label: 'غير نشط', className: 'idle' };
 }
 
 function buildCourierActivityRows(drivers = [], orders = []) {
@@ -5317,7 +6971,7 @@ function buildCourierActivityRows(drivers = [], orders = []) {
       id: entry.id,
       name: String(entry.data?.name || entry.id),
       phone: String(entry.data?.phone || entry.data?.mobile || '-'),
-      approvalStatus: String(entry.data?.approvalStatus || (entry.data?.isApproved ? 'approved' : 'pending')),
+      approvalStatus: normalizeApprovalStatus(entry.data?.approvalStatus, entry.data?.isApproved),
       available: entry.data?.available === true,
       lastSeenMs: getCourierLastActivityMillis(entry.data || {}),
       todayMs: getCourierAvailableTodayMs(entry.data || {}, nowMs),
@@ -5368,6 +7022,15 @@ function buildCourierActivityRows(drivers = [], orders = []) {
 
   return Array.from(driverMap.values())
     .filter((item) => item.approvalStatus === 'approved' || item.todayMs > 0 || item.monthMs > 0 || item.activeOrders > 0)
+    .map((item) => {
+      const tier = getCourierActivityTier(item);
+      return {
+        ...item,
+        activityTier: tier.key,
+        activityTierLabel: tier.label,
+        activityTierClass: tier.className,
+      };
+    })
     .sort((a, b) => {
       if (b.todayMs !== a.todayMs) return b.todayMs - a.todayMs;
       if (b.monthMs !== a.monthMs) return b.monthMs - a.monthMs;
@@ -5382,17 +7045,27 @@ function renderCourierActivityReport() {
   const totalTodayMs = rowsData.reduce((sum, item) => sum + item.todayMs, 0);
   const totalMonthMs = rowsData.reduce((sum, item) => sum + item.monthMs, 0);
   const activeTodayCount = rowsData.filter((item) => item.todayMs > 0 || item.activeOrders > 0).length;
+  const consistentCount = rowsData.filter((item) => item.activityTier === 'consistent').length;
+  const averageCount = rowsData.filter((item) => item.activityTier === 'average').length;
+  const inactiveCount = rowsData.filter((item) => item.activityTier === 'inactive').length;
 
-  courierActivitySummary.classList.remove('muted');
-  courierActivitySummary.innerHTML = `
-    <div class="stats">
-      <div class="stat"><h4>إجمالي المندوبين</h4><b>${rowsData.length.toLocaleString('ar-EG')}</b></div>
-      <div class="stat"><h4>نشطون اليوم</h4><b>${activeTodayCount.toLocaleString('ar-EG')}</b></div>
-      <div class="stat"><h4>وقت التوفر اليوم</h4><b>${formatDurationHours(totalTodayMs)}</b></div>
-      <div class="stat"><h4>ساعات الشهر</h4><b>${formatDurationHours(totalMonthMs)}</b></div>
-    </div>
-    <div style="margin-top:10px;">وقت اليوم هنا مبني على وقت التوفر الفعلي للمندوب. أما الشهر فيبقى تقديريًا من مدد الطلبات إلى أن نضيف سجل توفر شهري تراكمي.</div>
-  `;
+  preserveViewportPosition(() => {
+    courierActivitySummary.classList.remove('muted');
+    courierActivitySummary.innerHTML = `
+      <div class="stats">
+        <div class="stat"><h4>إجمالي المندوبين</h4><b>${rowsData.length.toLocaleString('ar-EG')}</b></div>
+        <div class="stat"><h4>نشطون اليوم</h4><b>${activeTodayCount.toLocaleString('ar-EG')}</b></div>
+        <div class="stat"><h4>وقت التوفر اليوم</h4><b>${formatDurationHours(totalTodayMs)}</b></div>
+        <div class="stat"><h4>نشاط الشهر</h4><b>${formatDurationHours(totalMonthMs)}</b></div>
+      </div>
+      <div class="stats" style="margin-top:8px;">
+        <div class="stat"><h4>ثابتون</h4><b>${consistentCount.toLocaleString('ar-EG')}</b></div>
+        <div class="stat"><h4>متوسطون</h4><b>${averageCount.toLocaleString('ar-EG')}</b></div>
+        <div class="stat"><h4>غير نشطين</h4><b>${inactiveCount.toLocaleString('ar-EG')}</b></div>
+      </div>
+      <div style="margin-top:10px;">يُحسب نشاط الشهر من عدد الطلبات المتوقعة وساعات التقدير المجمعة، مع تصنيف واضح لكل مندوب إلى ثابت النشاط أو متوسط أو غير نشط.</div>
+    `;
+  }, { enabled: String(document.querySelector('.tab-panel.active')?.id || '') === 'management' && getActiveSubpanelId('management') === 'management-courier-activity' });
 
   if (!rowsData.length) {
     setHtml(courierActivityTable, '<p class="muted">لا توجد بيانات نشاط كافية لعرض التقرير حاليًا.</p>');
@@ -5404,27 +7077,29 @@ function renderCourierActivityReport() {
       <td>${escapeHtml(item.name)}</td>
       <td>${escapeHtml(item.phone)}</td>
       <td>${item.available ? 'متاح الآن' : 'غير متاح'}</td>
+      <td><span class="badge ${escapeHtml(item.activityTierClass)}">${escapeHtml(item.activityTierLabel)}</span></td>
       <td>${formatDurationHours(item.todayMs)}</td>
       <td>${item.todayOrders.toLocaleString('ar-EG')}</td>
-      <td>${formatDurationHours(item.monthMs)}</td>
-      <td>${item.monthOrders.toLocaleString('ar-EG')}</td>
+      <td>${escapeHtml(`${item.monthOrders.toLocaleString('ar-EG')} طلب • ${formatDurationHours(item.monthMs)}`)}</td>
       <td>${item.activeOrders.toLocaleString('ar-EG')}</td>
       <td>${escapeHtml(formatDateTimeLabel(item.lastSeenMs))}</td>
       <td><button class="btn ghost" data-open-activity-driver="${escapeHtml(item.id)}">فتح المندوب</button></td>
     </tr>
   `);
 
-  setHtml(courierActivityTable, table(['المندوب', 'الهاتف', 'الحالة الحالية', 'وقت التوفر اليوم', 'طلبات اليوم', 'نشاط الشهر', 'طلبات الشهر', 'طلبات نشطة', 'آخر ظهور', 'إجراء'], rows));
-  courierActivityTable.querySelectorAll('[data-open-activity-driver]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const driverId = btn.getAttribute('data-open-activity-driver');
-      if (!driverId) return;
-      activateTab('management');
-      activateSubpanel('management', 'management-couriers');
-      await loadCourierDetails(driverId);
-      document.getElementById('courierDetailsPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  preserveViewportPosition(() => {
+    setHtml(courierActivityTable, table(['المندوب', 'الهاتف', 'الحالة الحالية', 'التصنيف', 'وقت التوفر اليوم', 'طلبات اليوم', 'نشاط الشهر', 'طلبات نشطة', 'آخر ظهور', 'إجراء'], rows));
+    courierActivityTable.querySelectorAll('[data-open-activity-driver]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const driverId = btn.getAttribute('data-open-activity-driver');
+        if (!driverId) return;
+        activateTab('management');
+        activateSubpanel('management', 'management-couriers');
+        await loadCourierDetails(driverId);
+        document.getElementById('courierDetailsPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     });
-  });
+  }, { enabled: String(document.querySelector('.tab-panel.active')?.id || '') === 'management' && getActiveSubpanelId('management') === 'management-courier-activity' });
 }
 
 function mountManagement() {
@@ -5433,6 +7108,9 @@ function mountManagement() {
     orderSearchInput?.addEventListener('input', () => renderOperationsOrders());
     operationsOrdersBound = true;
   }
+  bindMockOrderForm();
+  renderMockOrderCouriersSelect();
+  syncMockOrderModeUi();
 
   // Skeletons while waiting for Firestore data
   if (restaurantsTable) setHtml(restaurantsTable, skeletonTable(['المتجر', 'الرصيد', 'الحالة', 'حالة القائمة', 'إجراء']));
@@ -5471,28 +7149,34 @@ function mountManagement() {
       });
       restaurantsTable.querySelectorAll('[data-toggle-store]').forEach((btn) => {
         btn.addEventListener('click', async () => {
-          const id = btn.getAttribute('data-toggle-store');
-          const ref = doc(db, 'restaurants', id);
-          const snapDoc = await getDoc(ref);
-          const current = snapDoc.data()?.temporarilyClosed === true;
-          await updateDoc(ref, {
-            temporarilyClosed: !current,
-            updatedAt: serverTimestamp()
+          await withBtnLoading(btn, async () => {
+            const id = btn.getAttribute('data-toggle-store');
+            const ref = doc(db, 'restaurants', id);
+            const snapDoc = await getDoc(ref);
+            const current = snapDoc.data()?.temporarilyClosed === true;
+            await updateDoc(ref, {
+              temporarilyClosed: !current,
+              updatedAt: serverTimestamp()
+            });
           });
         });
       });
       restaurantsTable.querySelectorAll('[data-direct-menu-approve]').forEach((btn) => {
         btn.addEventListener('click', async () => {
-          const id = btn.getAttribute('data-direct-menu-approve');
-          if (!id) return;
-          await setMenuApprovalDirect({ restaurantId: id, approved: true });
+          await withBtnLoading(btn, async () => {
+            const id = btn.getAttribute('data-direct-menu-approve');
+            if (!id) return;
+            await setMenuApprovalDirect({ restaurantId: id, approved: true });
+          });
         });
       });
       restaurantsTable.querySelectorAll('[data-direct-menu-reject]').forEach((btn) => {
         btn.addEventListener('click', async () => {
-          const id = btn.getAttribute('data-direct-menu-reject');
-          if (!id) return;
-          await setMenuApprovalDirect({ restaurantId: id, approved: false });
+          await withBtnLoading(btn, async () => {
+            const id = btn.getAttribute('data-direct-menu-reject');
+            if (!id) return;
+            await setMenuApprovalDirect({ restaurantId: id, approved: false });
+          });
         });
       });
     })
@@ -5500,27 +7184,58 @@ function mountManagement() {
 
   unsubscribers.push(
     onSnapshot(collection(db, 'drivers'), (snap) => {
-      courierDirectoryCache = snap.docs.map((d) => ({ id: d.id, data: d.data() || {} }));
-      const rows = snap.docs.slice(0, 50).map((d) => {
-        const data = d.data();
-        const status = formatApprovalStatusLabel(data.approvalStatus || (data.isApproved ? 'approved' : 'pending'));
+      courierDirectoryDocsCache = snap.docs
+        .map((d) => ({
+          id: d.id,
+          data: d.data() || {},
+          updatedAtMs: d.data()?.updatedAt?.toMillis?.() || d.data()?.createdAt?.toMillis?.() || 0,
+        }))
+        .sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+      courierDirectoryCache = courierDirectoryDocsCache.map((entry) => ({ id: entry.id, data: entry.data }));
+      renderMockOrderCouriersSelect();
+
+      const prevWrap = couriersTable?.querySelector('.table-wrap');
+      const prevScrollTop = Number(prevWrap?.scrollTop || 0);
+      const prevScrollable = Math.max(1, Number((prevWrap?.scrollHeight || 0) - (prevWrap?.clientHeight || 0)));
+      const prevScrollRatio = prevScrollTop / prevScrollable;
+
+      const rows = courierDirectoryDocsCache.map(({ id, data }) => {
+        const status = formatApprovalStatusLabel(data.approvalStatus, data.isApproved);
         const available = data.available === true;
         const longDistance = available && data.acceptsLongDistance === true;
+        const displayName = String(data.name || '').trim() || id;
+        const phone = String(data.phone || '').trim();
+        const email = String(data.email || '').trim();
+        const searchText = [displayName, phone, email, id, status, available ? 'متاح' : 'غير متاح']
+          .join(' ')
+          .toLowerCase();
         return `<tr>
-          <td>${data.name || d.id}</td>
+          <td>
+            <span class="entity-cell">
+              <span class="entity-cell-name">${escapeHtml(displayName)}</span>
+              <span class="entity-cell-id">${escapeHtml(phone || '-')} • ${escapeHtml(id)}</span>
+            </span>
+          </td>
           <td>${formatAdminMoney(data.walletPendingBalance)}</td>
           <td>${status}</td>
           <td>${available ? 'متاح' : 'غير متاح'}</td>
           <td>${longDistance ? 'نعم' : '-'}</td>
           <td>
-            <button class="btn ghost" data-view-driver="${d.id}">تفاصيل</button>
-            <button class="btn ghost" data-approve-driver="${d.id}">قبول</button>
-            <button class="btn danger" data-reject-driver="${d.id}">رفض</button>
-            <button class="btn danger" data-delete-driver="${d.id}">حذف</button>
+            <button class="btn ghost" data-view-driver="${id}" data-courier-search="${escapeHtml(searchText)}">تفاصيل</button>
           </td>
         </tr>`;
       });
-      setHtml(couriersTable, table(['المندوب', 'الرصيد', 'حالة الموافقة', 'التوفر', 'مسافات بعيدة', 'إجراء'], rows));
+      preserveViewportPosition(() => {
+        setHtml(couriersTable, table(['المندوب', 'الرصيد', 'حالة الموافقة', 'التوفر', 'مسافات بعيدة', 'إجراء'], rows));
+      }, { enabled: String(document.querySelector('.tab-panel.active')?.id || '') === 'management' && getActiveSubpanelId('management') === 'management-couriers' });
+
+      const nextWrap = couriersTable?.querySelector('.table-wrap');
+      if (nextWrap) {
+        requestAnimationFrame(() => {
+          const nextScrollable = Math.max(1, Number(nextWrap.scrollHeight - nextWrap.clientHeight));
+          nextWrap.scrollTop = Math.round(nextScrollable * prevScrollRatio);
+        });
+      }
 
       couriersTable.querySelectorAll('[data-view-driver]').forEach((btn) => {
         btn.addEventListener('click', async () => {
@@ -5529,48 +7244,11 @@ function mountManagement() {
         });
       });
 
-      couriersTable.querySelectorAll('[data-approve-driver]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const id = btn.getAttribute('data-approve-driver');
-          withBtnLoading(btn, () => updateDoc(doc(db, 'drivers', id), {
-            approvalStatus: 'approved',
-            isApproved: true,
-            updatedAt: serverTimestamp()
-          }));
-        });
-      });
-
-      couriersTable.querySelectorAll('[data-reject-driver]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const id = btn.getAttribute('data-reject-driver');
-          withBtnLoading(btn, async () => {
-            await updateDoc(doc(db, 'drivers', id), {
-              ...(await buildDriverAvailabilityPatch(id, false)),
-              approvalStatus: 'rejected',
-              isApproved: false,
-              updatedAt: serverTimestamp()
-            });
-          });
-        });
-      });
-
-      couriersTable.querySelectorAll('[data-delete-driver]').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          const uid = btn.getAttribute('data-delete-driver');
-          if (!uid) return;
-          const item = courierDirectoryCache.find((entry) => entry.id === uid);
-          await handleManagedUserDeletion({
-            role: 'courier',
-            uid,
-            displayName: item?.data?.name || uid,
-          });
-        });
-      });
-
       bindCourierSearchInput();
+      scheduleCourierSearchFilter();
 
-      renderCourierActivityReport();
-      renderOperationsOrders();
+      scheduleCourierActivityReportRender();
+      scheduleOperationsOrdersRender();
     })
   );
 
@@ -5581,8 +7259,8 @@ function mountManagement() {
         data: d.data() || {},
         createdAtMillis: d.data()?.createdAt?.toMillis?.() || d.data()?.updatedAt?.toMillis?.() || 0,
       }));
-      renderCourierActivityReport();
-      renderOperationsOrders();
+      scheduleCourierActivityReportRender();
+      scheduleOperationsOrdersRender();
     })
   );
 
@@ -5596,7 +7274,7 @@ function mountManagement() {
           return bt - at;
         });
       renderClientsDirectoryTable();
-      renderOperationsOrders();
+      scheduleOperationsOrdersRender();
 
       // Wire client search input (once)
       const clientSearchInput = document.getElementById('clientSearchInput');
@@ -5609,21 +7287,56 @@ function mountManagement() {
 }
 
 // Wire courier search input (after couriers table is populated)
+function applyCourierSearchFilter() {
+  const courierSearchInput = document.getElementById('courierSearchInput');
+  const q = String(courierSearchInput?.value || '').trim().toLowerCase();
+  const countEl = document.getElementById('courierSearchCount');
+  const rows = couriersTable?.querySelectorAll('tbody tr') || [];
+  let visible = 0;
+
+  rows.forEach((row) => {
+    const searchMeta = String(row.querySelector('[data-courier-search]')?.getAttribute('data-courier-search') || '');
+    const text = `${searchMeta} ${(row.textContent || '').toLowerCase()}`;
+    const match = !q || text.includes(q);
+    row.style.display = match ? '' : 'none';
+    if (match) visible += 1;
+  });
+
+  if (countEl) {
+    countEl.textContent = q ? `${visible} من ${rows.length}` : `${rows.length} مندوب`;
+  }
+}
+
+function scheduleCourierSearchFilter() {
+  if (courierSearchFilterFrame) cancelAnimationFrame(courierSearchFilterFrame);
+  courierSearchFilterFrame = requestAnimationFrame(() => {
+    courierSearchFilterFrame = 0;
+    applyCourierSearchFilter();
+  });
+}
+
+function scheduleOperationsOrdersRender() {
+  if (managementRenderTimers.operations) return;
+  managementRenderTimers.operations = setTimeout(() => {
+    managementRenderTimers.operations = null;
+    renderOperationsOrders();
+  }, 80);
+}
+
+function scheduleCourierActivityReportRender() {
+  if (managementRenderTimers.courierActivity) return;
+  managementRenderTimers.courierActivity = setTimeout(() => {
+    managementRenderTimers.courierActivity = null;
+    renderCourierActivityReport();
+  }, 120);
+}
+
 function bindCourierSearchInput() {
   const courierSearchInput = document.getElementById('courierSearchInput');
   if (!courierSearchInput || courierSearchInput.dataset.bound) return;
   courierSearchInput.dataset.bound = '1';
   courierSearchInput.addEventListener('input', () => {
-    const q = courierSearchInput.value.trim().toLowerCase();
-    const countEl = document.getElementById('courierSearchCount');
-    const rows = couriersTable?.querySelectorAll('tbody tr') || [];
-    let visible = 0;
-    rows.forEach((row) => {
-      const match = !q || row.textContent.toLowerCase().includes(q);
-      row.style.display = match ? '' : 'none';
-      if (match) visible++;
-    });
-    if (countEl) countEl.textContent = q ? `${visible} من ${rows.length}` : `${rows.length} مندوب`;
+    scheduleCourierSearchFilter();
   });
 }
 
@@ -5675,6 +7388,9 @@ async function loadCourierDetails(driverId) {
       const idImage = driver.idImageUrl
         ? `<div class="entity-media-card"><a class="btn ghost" href="${escapeHtml(driver.idImageUrl)}" target="_blank" rel="noopener">فتح صورة الهوية/الرخصة</a></div>`
         : '<div class="entity-media-card muted">لا توجد صورة هوية/رخصة</div>';
+      const courierProfileImage = driver.profileImage
+        ? `<div class="entity-media-card"><a class="btn ghost" href="${escapeHtml(driver.profileImage)}" target="_blank" rel="noopener">فتح شعار/صورة المندوب</a></div>`
+        : '<div class="entity-media-card muted">لا يوجد شعار للمندوب</div>';
       const workLocalityName = driver.workLocalityName || driver.serviceArea?.localityName || '';
       const workAreaName = driver.workAreaName || driver.serviceArea?.areaName || '';
       const workAreaLabel = driver.workAreaLabel || driver.serviceArea?.label || driver.region || '';
@@ -5702,7 +7418,7 @@ async function loadCourierDetails(driverId) {
             { label: 'محلية العمل', value: workLocalityName || '-' },
             { label: 'منطقة العمل', value: workAreaName || '-' },
             { label: 'نطاق العمل', value: workAreaLabel || '-' },
-            { label: 'الموافقة', value: formatApprovalStatusLabel(driver.approvalStatus || (driver.isApproved ? 'approved' : 'pending')) },
+            { label: 'الموافقة', value: formatApprovalStatusLabel(driver.approvalStatus, driver.isApproved) },
             { label: 'التوفر', value: driver.available === true ? 'متاح' : 'غير متاح', className: driver.available === true ? 'entity-fact-highlight' : '' },
             { label: 'المسافات البعيدة', value: driver.acceptsLongDistance === true ? 'مفعلة' : 'غير مفعلة', className: driver.acceptsLongDistance === true ? 'entity-fact-highlight' : '' },
           ]), { eyebrow: 'الملف' })}
@@ -5725,7 +7441,7 @@ async function loadCourierDetails(driverId) {
             { label: 'الطلبات النشطة', value: activeOrdersCount },
             { label: 'وقت التوفر اليوم', value: formatDurationHours(todayAvailabilityMs), className: 'entity-fact-highlight' },
           ]), { eyebrow: 'النشاط' })}
-          ${buildEntitySection('الهوية والمرفقات', `${idImage}<div class="entity-actions"><button class="btn ghost" id="driverImageChange-${driverDomId}">تعديل صورة الهوية/الرخصة</button><button class="btn ghost" id="driverToggleAvailability-${driverDomId}">${driver.available === true ? 'إيقاف التوفر' : 'تفعيل التوفر'}</button><button class="btn ghost" id="driverApprove-${driverDomId}">قبول</button><button class="btn danger" id="driverReject-${driverDomId}">رفض</button><button class="btn danger" id="driverDelete-${driverDomId}">حذف الحساب</button></div>`, { eyebrow: 'الإجراءات' })}
+          ${buildEntitySection('الهوية والمرفقات', `${idImage}${courierProfileImage}<div class="entity-actions"><button class="btn ghost" id="driverImageChange-${driverDomId}">تعديل صورة الهوية/الرخصة</button><button class="btn ghost" id="driverProfileImageChange-${driverDomId}">رفع شعار/صورة المندوب</button><button class="btn ghost" id="driverProfileImageDownload-${driverDomId}">تنزيل شعار/صورة المندوب</button><button class="btn ghost" id="driverToggleAvailability-${driverDomId}">${driver.available === true ? 'إيقاف التوفر' : 'تفعيل التوفر'}</button><button class="btn ghost" id="driverApprove-${driverDomId}">قبول</button><button class="btn danger" id="driverReject-${driverDomId}">رفض</button><button class="btn danger" id="driverDelete-${driverDomId}">حذف الحساب</button></div>`, { eyebrow: 'الإجراءات' })}
           ${buildEntitySection('تعديل بيانات المندوب', `
             <div class="entity-form-grid">
               <label>الاسم<input id="driverName-${driverDomId}" type="text" value="${escapeHtml(driver.name || '')}" /></label>
@@ -5738,6 +7454,7 @@ async function loadCourierDetails(driverId) {
               <label>منطقة العمل<input id="driverWorkAreaName-${driverDomId}" type="text" value="${escapeHtml(workAreaName)}" /></label>
               <label>نطاق العمل<input id="driverRegion-${driverDomId}" type="text" value="${escapeHtml(workAreaLabel)}" /></label>
               <label>رابط صورة الهوية/الرخصة<input id="driverIdImageUrl-${driverDomId}" type="text" value="${escapeHtml(driver.idImageUrl || '')}" /></label>
+              <label>رابط شعار/صورة المندوب<input id="driverProfileImage-${driverDomId}" type="text" value="${escapeHtml(driver.profileImage || '')}" /></label>
             </div>
             <div class="entity-actions">
               <button class="btn primary" id="driverSave-${driverDomId}">حفظ التعديلات</button>
@@ -5746,7 +7463,7 @@ async function loadCourierDetails(driverId) {
         </div>
       `;
 
-      if (liveDriverId !== driverDomId) return;
+      if (activeOrderDriverId !== driverDomId) return;
       const locationEl = document.getElementById(`driverLiveLocation-${driverDomId}`);
       const updatedEl = document.getElementById(`driverLiveUpdated-${driverDomId}`);
       if (locationEl) locationEl.textContent = liveLocationText;
@@ -5813,6 +7530,7 @@ async function loadCourierDetails(driverId) {
             workAreaLabel: (document.getElementById(`driverRegion-${driverDomId}`)?.value || '').trim(),
             region: (document.getElementById(`driverRegion-${driverDomId}`)?.value || '').trim(),
             idImageUrl: (document.getElementById(`driverIdImageUrl-${driverDomId}`)?.value || '').trim(),
+            profileImage: (document.getElementById(`driverProfileImage-${driverDomId}`)?.value || '').trim(),
           },
         });
         alert('تم حفظ بيانات المندوب بنجاح');
@@ -5888,6 +7606,45 @@ async function loadCourierDetails(driverId) {
         alert(`تعذر تحديث الصورة: ${err.message || err}`);
       }
     });
+
+    document.getElementById(`driverProfileImageChange-${driverDomId}`)?.addEventListener('click', async () => {
+      const pickedFile = await pickSingleImageFile();
+      if (!pickedFile) {
+        alert('لم يتم اختيار صورة');
+        return;
+      }
+      const uploaded = await uploadImageToCloudinary(pickedFile, pickedFile.name || `courier-profile-${driverDomId}.jpg`);
+      if (!uploaded) {
+        alert('تعذر رفع شعار/صورة المندوب');
+        return;
+      }
+
+      try {
+        await updateManagedUserProfile({
+          role: 'courier',
+          uid: driverDomId,
+          fields: {
+            profileImage: uploaded,
+          },
+        });
+        await loadCourierDetails(driverDomId);
+      } catch (err) {
+        alert(`تعذر تحديث شعار المندوب: ${err.message || err}`);
+      }
+    });
+
+    document.getElementById(`driverProfileImageDownload-${driverDomId}`)?.addEventListener('click', async () => {
+      const value = (document.getElementById(`driverProfileImage-${driverDomId}`)?.value || '').trim();
+      if (!value) {
+        alert('لا يوجد شعار/صورة للمندوب لتنزيلها.');
+        return;
+      }
+      try {
+        await downloadImageToDevice(value, `courier-profile-${driverDomId}`);
+      } catch (err) {
+        alert(`تعذر تنزيل الصورة: ${err.message || err}`);
+      }
+    });
   } catch (err) {
     courierDetailsPanel.innerHTML = `<span class="muted">تعذر تحميل التفاصيل: ${escapeHtml(err.message || err)}</span>`;
   }
@@ -5905,6 +7662,17 @@ async function loadStoreDetails(storeId) {
     }
 
     const store = storeSnap.data() || {};
+    const storeLat = Number(
+      store.latitude ?? store.lat ?? store.restaurantLat ?? store.location?.latitude ?? store.location?._latitude
+    );
+    const storeLng = Number(
+      store.longitude ?? store.lng ?? store.restaurantLng ?? store.location?.longitude ?? store.location?._longitude
+    );
+    const currentEmail = String(auth.currentUser?.email || '').toLowerCase().trim();
+    const canHardDeleteStore = hasAdminPermission('admins') && (
+      guaranteedAdminEmails.has(currentEmail)
+      || currentAdminProfile?.canDeleteRestaurants === true
+    );
     const [ordersSnap, addressesSnap, menuDocsSnap, fullMenuDocsSnap] = await Promise.all([
       safeGetDocs(query(collection(db, 'orders'), where('restaurantId', '==', storeId))),
       safeGetDocs(collection(db, 'restaurants', storeId, 'addresses')),
@@ -5916,9 +7684,25 @@ async function loadStoreDetails(storeId) {
     const activeOrderStatuses = new Set(['store_pending', 'courier_searching', 'courier_offer_pending', 'courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client']);
     const activeOrdersCount = orders.filter((o) => activeOrderStatuses.has(String(o.orderStatus || o.status || ''))).length;
 
+    const managerName = String(
+      store.contactPersonName
+      || store.responsibleName
+      || store.managerName
+      || ''
+    ).trim();
+    const managerPhone = String(
+      store.contactPersonPhone
+      || store.responsiblePhone
+      || store.managerPhone
+      || ''
+    ).trim();
+
     const image = store.commercialRecordImageUrl
       ? `<div style="margin-top:8px"><a class="btn ghost" href="${escapeHtml(store.commercialRecordImageUrl)}" target="_blank" rel="noopener">فتح صورة السجل</a></div>`
       : '';
+    const storeLogoMedia = store.logoImageUrl
+      ? `<div style="margin-top:8px"><a class="btn ghost" href="${escapeHtml(store.logoImageUrl)}" target="_blank" rel="noopener">فتح شعار المتجر الأصلي</a></div>`
+      : '<div class="entity-media-card muted">لا يوجد شعار مرفوع للمتجر</div>';
 
     const storeOpenState = store.temporarilyClosed === true ? 'مغلق' : 'مفتوح';
 
@@ -5939,8 +7723,10 @@ async function loadStoreDetails(storeId) {
           { label: 'الاسم', value: store.name || '-' },
           { label: 'البريد', value: store.email || '-' },
           { label: 'الهاتف', value: store.phone || '-' },
+          { label: 'اسم المسؤول عن المطعم', value: managerName || '-' },
+          { label: 'هاتف المسؤول عن المطعم', value: managerPhone || '-' },
           { label: 'صاحب الحساب', value: store.ownerUid || '-' },
-          { label: 'الحالة', value: formatApprovalStatusLabel(store.approvalStatus || (store.isApproved ? 'approved' : 'pending')) },
+          { label: 'الحالة', value: formatApprovalStatusLabel(store.approvalStatus, store.isApproved) },
           { label: 'السجل التجاري', value: store.commercialRecordNumber || '-' },
           { label: 'القبول التلقائي', value: store.autoAcceptOrders === true ? 'مفعل' : 'غير مفعل' },
           { label: 'حالة الظهور', value: storeOpenState, className: store.temporarilyClosed === true ? '' : 'entity-fact-highlight' },
@@ -5956,23 +7742,37 @@ async function loadStoreDetails(storeId) {
           { label: 'أقسام المنيو', value: menuDocsSnap.docs.length },
           { label: 'عناصر full_menu', value: fullMenuDocsSnap.docs.length, className: 'entity-fact-highlight' },
         ]), { eyebrow: 'النشاط' })}
-        ${buildEntitySection('الوثائق والميديا', `${image || '<div class="entity-media-card muted">لا توجد صورة سجل تجاري</div>'}`, { eyebrow: 'المرفقات' })}
+        ${buildEntitySection('الوثائق والميديا', `${image || '<div class="entity-media-card muted">لا توجد صورة سجل تجاري</div>'}${storeLogoMedia}`, { eyebrow: 'المرفقات' })}
         ${buildEntitySection('تعديل بيانات المتجر', `
           <div class="entity-form-grid">
             <label>الاسم<input id="storeName-${storeId}" type="text" value="${escapeHtml(store.name || '')}" /></label>
             <label>الهاتف<input id="storePhone-${storeId}" type="text" value="${escapeHtml(store.phone || '')}" /></label>
+            <label>اسم المسؤول عن المطعم<input id="storeManagerName-${storeId}" type="text" value="${escapeHtml(managerName)}" /></label>
+            <label>هاتف المسؤول عن المطعم<input id="storeManagerPhone-${storeId}" type="text" value="${escapeHtml(managerPhone)}" /></label>
             <label>البريد الإلكتروني<input id="storeEmail-${storeId}" type="email" value="${escapeHtml(store.email || '')}" /></label>
             <label>السجل التجاري<input id="storeCommercialRecord-${storeId}" type="text" value="${escapeHtml(store.commercialRecordNumber || '')}" /></label>
             <label>العنوان<input id="storeAddress-${storeId}" type="text" value="${escapeHtml(store.address || '')}" /></label>
+            <label>خط العرض (Latitude)<input id="storeLatitude-${storeId}" type="number" step="0.000001" value="${Number.isFinite(storeLat) ? escapeHtml(String(storeLat)) : ''}" /></label>
+            <label>خط الطول (Longitude)<input id="storeLongitude-${storeId}" type="number" step="0.000001" value="${Number.isFinite(storeLng) ? escapeHtml(String(storeLng)) : ''}" /></label>
             <label>نسبة الخصم<input id="storeDiscountPct-${storeId}" type="number" step="0.01" value="${escapeHtml(String(store.deliveryDiscountPercentage ?? ''))}" /></label>
             <label>رابط صورة الغلاف<input id="storeCoverImageUrl-${storeId}" type="text" value="${escapeHtml(store.coverImageUrl || '')}" /></label>
             <label>رابط الشعار<input id="storeLogoImageUrl-${storeId}" type="text" value="${escapeHtml(store.logoImageUrl || '')}" /></label>
             <label>وقت تجهيز المطعم المعتاد<input id="storeDeliveryTime-${storeId}" type="text" placeholder="مثال: 20-30 دقيقة" value="${escapeHtml(store.deliveryTime || '')}" /></label>
           </div>
           <div class="entity-actions">
+            <button class="btn ghost" id="storeGeocodeAddress-${storeId}">جلب الموقع من Google حسب العنوان</button>
+            <button class="btn ghost" id="storePickLocationMap-${storeId}">تحديد الموقع من الخريطة</button>
             <button class="btn ghost" id="storeUploadCover-${storeId}">رفع صورة غلاف</button>
             <button class="btn ghost" id="storeUploadLogo-${storeId}">رفع شعار</button>
+            <button class="btn ghost" id="storeDownloadLogo-${storeId}">تنزيل شعار المتجر</button>
             <button class="btn primary" id="storeSaveProfile-${storeId}">حفظ بيانات المتجر</button>
+          </div>
+          <div id="storeMapPickerWrap-${storeId}" class="entity-media-card" style="display:none; margin-top:10px;">
+            <p class="muted" style="margin-bottom:8px;">انقر على الخريطة لتحديد موقع المطعم، وسيتم تعبئة الإحداثيات تلقائيًا.</p>
+            <div id="storeMapPicker-${storeId}" style="height:300px; border-radius:12px; overflow:hidden;"></div>
+            <div class="entity-actions" style="margin-top:10px;">
+              <button class="btn ghost" id="storeMapPickerClose-${storeId}">إغلاق الخريطة</button>
+            </div>
           </div>
         `, { eyebrow: 'التحرير' })}
         ${buildEntitySection('الظهور والدوام', `
@@ -5989,6 +7789,15 @@ async function loadStoreDetails(storeId) {
             <button class="btn ghost" id="storeOpenNow-${storeId}">فتح الآن</button>
           </div>
         `, { eyebrow: 'التشغيل', description: 'تعديل الدوام والظهور من نفس اللوحة بدون الرجوع لشاشات متفرقة.' })}
+        ${canHardDeleteStore ? buildEntitySection('إجراء شديد الحساسية', `
+          <p class="entity-inline-note" style="color:#b91c1c; font-weight:700;">
+            الحذف النهائي يمسح المطعم وبياناته المرتبطة من قاعدة البيانات ولا يمكن التراجع عنه.
+          </p>
+          <p class="entity-inline-note">لن يتم الحذف إذا كانت هناك طلبات نشطة للمطعم.</p>
+          <div class="entity-actions">
+            <button class="btn danger" id="storeHardDelete-${storeId}">حذف المطعم نهائيًا</button>
+          </div>
+        `, { eyebrow: 'خطر' }) : ''}
         ${buildEntitySection('إدارة القائمة الكاملة', `<div id="adminMenuManager-${storeId}"><span class="muted">جاري تحميل أصناف القائمة...</span></div>`, { eyebrow: 'المنيو' })}
       </div>
     `;
@@ -6017,8 +7826,153 @@ async function loadStoreDetails(storeId) {
       if (input) input.value = uploaded;
     });
 
+    document.getElementById(`storeDownloadLogo-${storeId}`)?.addEventListener('click', async () => {
+      const value = (document.getElementById(`storeLogoImageUrl-${storeId}`)?.value || '').trim();
+      if (!value) {
+        alert('لا يوجد شعار لتنزيله حالياً.');
+        return;
+      }
+      try {
+        await downloadImageToDevice(value, `store-logo-${storeId}`);
+      } catch (err) {
+        alert(`تعذر تنزيل الشعار: ${err.message || err}`);
+      }
+    });
+
+    document.getElementById(`storeGeocodeAddress-${storeId}`)?.addEventListener('click', async () => {
+      const btn = document.getElementById(`storeGeocodeAddress-${storeId}`);
+      const addressInput = document.getElementById(`storeAddress-${storeId}`);
+      const latitudeInput = document.getElementById(`storeLatitude-${storeId}`);
+      const longitudeInput = document.getElementById(`storeLongitude-${storeId}`);
+      const address = String(addressInput?.value || '').trim();
+
+      if (!address) {
+        alert('أدخل عنوان المتجر أولًا ثم جرّب الجلب من Google.');
+        return;
+      }
+
+      try {
+        await withBtnLoading(btn, async () => {
+          const response = await adminGeocodeRestaurantAddress({
+            restaurantId: storeId,
+            address,
+          });
+          const data = response?.data || {};
+          if (addressInput && data.address) {
+            addressInput.value = String(data.address || '');
+          }
+          if (latitudeInput && Number.isFinite(Number(data.latitude))) {
+            latitudeInput.value = String(data.latitude);
+          }
+          if (longitudeInput && Number.isFinite(Number(data.longitude))) {
+            longitudeInput.value = String(data.longitude);
+          }
+        });
+        alert('تم جلب الموقع من Google وتحديث بيانات المتجر.');
+      } catch (err) {
+        alert(`تعذر جلب الموقع من Google: ${err.message || err}`);
+      }
+    });
+
+    let storePickerMap = null;
+    let storePickerMarker = null;
+    const mapPickerWrap = document.getElementById(`storeMapPickerWrap-${storeId}`);
+    const latitudeInput = document.getElementById(`storeLatitude-${storeId}`);
+    const longitudeInput = document.getElementById(`storeLongitude-${storeId}`);
+
+    const setPickedStorePoint = (lat, lng) => {
+      if (latitudeInput) latitudeInput.value = String(lat);
+      if (longitudeInput) longitudeInput.value = String(lng);
+
+      if (storePickerMap && window.L) {
+        if (!storePickerMarker) {
+          storePickerMarker = window.L.marker([lat, lng]).addTo(storePickerMap);
+        } else {
+          storePickerMarker.setLatLng([lat, lng]);
+        }
+      }
+    };
+
+    const initStoreMapPicker = async () => {
+      try {
+        await ensureLeaflet();
+      } catch (_) {
+        alert('تعذر تحميل الخريطة حالياً. حاول مرة أخرى.');
+        return;
+      }
+
+      if (!window.L) {
+        alert('تعذر تحميل الخريطة حالياً. حاول مرة أخرى.');
+        return;
+      }
+
+      const startLat = Number.parseFloat(latitudeInput?.value || '') || (Number.isFinite(storeLat) ? storeLat : 15.5007);
+      const startLng = Number.parseFloat(longitudeInput?.value || '') || (Number.isFinite(storeLng) ? storeLng : 32.5599);
+
+      if (!storePickerMap) {
+        storePickerMap = window.L.map(`storeMapPicker-${storeId}`, {
+          zoomControl: true,
+          attributionControl: true,
+        }).setView([startLat, startLng], 13);
+
+        window.L.tileLayer(MAP_STYLE_PRESETS.voyager.url, {
+          attribution: MAP_STYLE_PRESETS.voyager.attribution,
+          subdomains: MAP_STYLE_PRESETS.voyager.subdomains,
+          maxZoom: 20,
+        }).addTo(storePickerMap);
+
+        storePickerMap.on('click', (event) => {
+          const lat = Number(event.latlng?.lat);
+          const lng = Number(event.latlng?.lng);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+          setPickedStorePoint(lat, lng);
+        });
+      } else {
+        storePickerMap.setView([startLat, startLng], Math.max(storePickerMap.getZoom(), 13));
+      }
+
+      setPickedStorePoint(startLat, startLng);
+      setTimeout(() => storePickerMap?.invalidateSize(), 120);
+    };
+
+    document.getElementById(`storePickLocationMap-${storeId}`)?.addEventListener('click', async () => {
+      if (mapPickerWrap) {
+        mapPickerWrap.style.display = 'block';
+      }
+      await initStoreMapPicker();
+      mapPickerWrap?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
+    document.getElementById(`storeMapPickerClose-${storeId}`)?.addEventListener('click', () => {
+      if (mapPickerWrap) {
+        mapPickerWrap.style.display = 'none';
+      }
+    });
+
     document.getElementById(`storeSaveProfile-${storeId}`)?.addEventListener('click', async () => {
       try {
+        const latitudeRaw = String(latitudeInput?.value || '').trim().replace(',', '.');
+        const longitudeRaw = String(longitudeInput?.value || '').trim().replace(',', '.');
+        const hasLat = latitudeRaw !== '';
+        const hasLng = longitudeRaw !== '';
+        const latitude = hasLat ? Number(latitudeRaw) : null;
+        const longitude = hasLng ? Number(longitudeRaw) : null;
+
+        if ((hasLat && !hasLng) || (!hasLat && hasLng)) {
+          alert('أدخل خط العرض والطول معًا أو اتركهما فارغين.');
+          return;
+        }
+        if (hasLat && hasLng) {
+          if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+            alert('إحداثيات الموقع غير صالحة.');
+            return;
+          }
+          if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+            alert('الإحداثيات خارج النطاق المسموح.');
+            return;
+          }
+        }
+
         await updateManagedUserProfile({
           role: 'store',
           uid: storeId,
@@ -6033,11 +7987,30 @@ async function loadStoreDetails(storeId) {
             logoImageUrl: (document.getElementById(`storeLogoImageUrl-${storeId}`)?.value || '').trim(),
           },
         });
-        const deliveryTimeVal = (document.getElementById(`storeDeliveryTime-${storeId}`)?.value || '').trim();
-        await updateDoc(doc(db, 'restaurants', storeId), {
+        const deliveryTimeVal = (document.getElementById(`storeDeliveryTime-${storeId}`)?.value || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const managerNameVal = (document.getElementById(`storeManagerName-${storeId}`)?.value || '').trim();
+        const managerPhoneVal = (document.getElementById(`storeManagerPhone-${storeId}`)?.value || '').trim();
+        const profilePatch = {
+          contactPersonName: managerNameVal,
+          contactPersonPhone: managerPhoneVal,
           deliveryTime: deliveryTimeVal,
+          estimatedDeliveryTime: deliveryTimeVal,
           updatedAt: serverTimestamp(),
-        });
+        };
+
+        if (hasLat && hasLng) {
+          profilePatch.location = new GeoPoint(latitude, longitude);
+          profilePatch.latitude = latitude;
+          profilePatch.longitude = longitude;
+          profilePatch.lat = latitude;
+          profilePatch.lng = longitude;
+          profilePatch.restaurantLat = latitude;
+          profilePatch.restaurantLng = longitude;
+        }
+
+        await updateDoc(doc(db, 'restaurants', storeId), profilePatch);
         alert('تم حفظ بيانات المتجر بنجاح');
         await loadStoreDetails(storeId);
       } catch (err) {
@@ -6109,6 +8082,38 @@ async function loadStoreDetails(storeId) {
       }
     });
 
+    document.getElementById(`storeHardDelete-${storeId}`)?.addEventListener('click', async () => {
+      const button = document.getElementById(`storeHardDelete-${storeId}`);
+      if (!button) return;
+
+      const storeName = String(store.name || storeId).trim();
+      const firstConfirm = window.confirm(
+        `تحذير شديد: سيتم حذف المطعم (${storeName}) نهائيًا مع البيانات المرتبطة. هل تريد المتابعة؟`
+      );
+      if (!firstConfirm) return;
+
+      const expectedToken = 'DELETE';
+      const typedToken = window.prompt(
+        `للتأكيد النهائي اكتب العبارة التالية حرفيًا:\n${expectedToken}`,
+        ''
+      );
+      if (typedToken == null) return;
+      if (String(typedToken).trim() !== expectedToken) {
+        alert('عبارة التأكيد غير صحيحة. تم إلغاء العملية.');
+        return;
+      }
+
+      await withBtnLoading(button, async () => {
+        await adminDeleteRestaurantAccount({
+          restaurantId: storeId,
+          confirmation: expectedToken,
+        });
+
+        alert('تم حذف المطعم نهائيًا بنجاح.');
+        storeDetailsPanel.innerHTML = '<span class="muted">تم حذف المتجر نهائيًا.</span>';
+      });
+    });
+
     await renderAdminMenuManager(storeId);
   } catch (err) {
     storeDetailsPanel.innerHTML = `<span class="muted">تعذر تحميل التفاصيل: ${escapeHtml(err.message || err)}</span>`;
@@ -6129,32 +8134,76 @@ async function renderAdminMenuManager(storeId) {
 
   const normalizeSizes = (sizesRaw) => {
     if (!sizesRaw || typeof sizesRaw !== 'object') return null;
-    const small = parsePositiveOrNull(sizesRaw.small);
-    const medium = parsePositiveOrNull(sizesRaw.medium);
-    const large = parsePositiveOrNull(sizesRaw.large);
-    if (small == null || medium == null || large == null) return null;
-    return { small, medium, large };
+    const normalized = {};
+    Object.entries(sizesRaw).forEach(([rawKey, rawValue]) => {
+      const key = String(rawKey || '').trim().toLowerCase();
+      if (!key) return;
+      const parsed = parsePositiveOrNull(rawValue);
+      if (parsed != null) {
+        normalized[key] = parsed;
+      }
+    });
+    return Object.keys(normalized).length ? normalized : null;
   };
 
-  const buildPricePayload = ({ baseRaw, smallRaw, mediumRaw, largeRaw }) => {
-    const basePrice = parsePositiveOrNull(baseRaw);
-    const small = String(smallRaw || '').trim().replace(',', '.');
-    const medium = String(mediumRaw || '').trim().replace(',', '.');
-    const large = String(largeRaw || '').trim().replace(',', '.');
+  const parseExtraSizesText = (rawText) => {
+    const text = String(rawText || '').trim();
+    if (!text) return { ok: true, sizes: {} };
 
-    const hasAnySize = Boolean(small || medium || large);
-    let sizes = null;
+    const result = {};
+    const parts = text
+      .split(/[\n,،;]+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
 
-    if (hasAnySize) {
-      const sizeCandidate = normalizeSizes({ small, medium, large });
-      if (!sizeCandidate) {
+    for (const part of parts) {
+      const [rawKey, rawValue] = part.split(/[:=]/).map((value) => String(value || '').trim());
+      const key = String(rawKey || '').toLowerCase().replace(/\s+/g, '_');
+      const value = parsePositiveOrNull(rawValue);
+
+      if (!key || value == null) {
         return {
           ok: false,
-          message: 'عند استخدام الأحجام يجب إدخال أسعار صغيرة/وسط/كبيرة وكلها أكبر من صفر',
+          message: 'صيغة الأحجام الإضافية غير صحيحة. استخدم مثال: family:150, jumbo:180',
         };
       }
-      sizes = sizeCandidate;
+
+      result[key] = value;
     }
+
+    return { ok: true, sizes: result };
+  };
+
+  const pickDefaultMenuPrice = (sizes) => {
+    if (!sizes || typeof sizes !== 'object') return null;
+    if (sizes.medium != null) return sizes.medium;
+    if (sizes.small != null) return sizes.small;
+    if (sizes.large != null) return sizes.large;
+    const first = Object.values(sizes)[0];
+    return Number.isFinite(first) ? first : null;
+  };
+
+  const buildPricePayload = ({ baseRaw, smallRaw, mediumRaw, largeRaw, familyRaw, jumboRaw, extraRaw }) => {
+    const basePrice = parsePositiveOrNull(baseRaw);
+    const manualSizes = normalizeSizes({
+      small: smallRaw,
+      medium: mediumRaw,
+      large: largeRaw,
+      family: familyRaw,
+      jumbo: jumboRaw,
+    }) || {};
+
+    const parsedExtra = parseExtraSizesText(extraRaw);
+    if (!parsedExtra.ok) {
+      return parsedExtra;
+    }
+
+    const sizesCandidate = {
+      ...manualSizes,
+      ...parsedExtra.sizes,
+    };
+    const hasAnySize = Object.keys(sizesCandidate).length > 0;
+    const sizes = hasAnySize ? sizesCandidate : null;
 
     if (basePrice == null && !sizes) {
       return {
@@ -6163,7 +8212,14 @@ async function renderAdminMenuManager(storeId) {
       };
     }
 
-    const price = basePrice ?? sizes.medium;
+    const fallbackSizePrice = pickDefaultMenuPrice(sizes);
+    const price = basePrice ?? fallbackSizePrice;
+    if (!price || price <= 0) {
+      return {
+        ok: false,
+        message: 'أدخل سعرًا أساسيًا أو حجمًا بسعر صالح أكبر من صفر',
+      };
+    }
     return { ok: true, price, sizes };
   };
 
@@ -6222,8 +8278,24 @@ async function renderAdminMenuManager(storeId) {
     const image = imageUrl
       ? `<a class="btn ghost" href="${escapeHtml(imageUrl)}" target="_blank" rel="noopener">صورة</a>`
       : '-';
+    const orderedSizeKeys = ['small', 'medium', 'large', 'family', 'jumbo'];
+    const customSizeKeys = sizes
+      ? Object.keys(sizes).filter((key) => !orderedSizeKeys.includes(key)).sort()
+      : [];
+    const displaySizeKeys = sizes
+      ? [...orderedSizeKeys.filter((key) => sizes[key] != null), ...customSizeKeys]
+      : [];
+    const sizeLabelMap = {
+      small: 'صغير',
+      medium: 'وسط',
+      large: 'كبير',
+      family: 'عائلي',
+      jumbo: 'جامبو',
+    };
     const sizesCell = sizes
-      ? `ص:${sizes.small} | و:${sizes.medium} | ك:${sizes.large}`
+      ? displaySizeKeys
+          .map((key) => `${sizeLabelMap[key] || key}:${sizes[key]}`)
+          .join(' | ')
       : '-';
 
     return `<tr>
@@ -6248,7 +8320,7 @@ async function renderAdminMenuManager(storeId) {
         <div class="entity-section-head compact">
           <span class="entity-section-eyebrow">استيراد جماعي</span>
           <h5>استيراد الأصناف من CSV أو Excel</h5>
-          <p>الأعمدة المقترحة: itemId, name, category, price, smallPrice, mediumPrice, largePrice, available, imageUrl, imageFileName.</p>
+          <p>الأعمدة المقترحة: itemId, name, category, price, smallPrice, mediumPrice, largePrice, familyPrice, jumboPrice, available, imageUrl, imageFileName.</p>
           <p class="field-hint">إذا كانت الصور داخل ملف ZIP، ضع اسم الملف في imageFileName. وإذا كانت الروابط جاهزة، استخدم imageUrl مباشرة.</p>
           <p class="field-hint">إذا تركت itemId فارغًا، سيُنشئ النظام معرفًا ثابتًا من الاسم والفئة حتى لا تتكرر الأصناف عند إعادة الاستيراد.</p>
         </div>
@@ -6278,6 +8350,9 @@ async function renderAdminMenuManager(storeId) {
           <label>سعر صغير<input id="newItemSmallPrice-${storeId}" type="number" step="0.01" placeholder="صغير" /></label>
           <label>سعر وسط<input id="newItemMediumPrice-${storeId}" type="number" step="0.01" placeholder="وسط" /></label>
           <label>سعر كبير<input id="newItemLargePrice-${storeId}" type="number" step="0.01" placeholder="كبير" /></label>
+          <label>سعر عائلي<input id="newItemFamilyPrice-${storeId}" type="number" step="0.01" placeholder="عائلي" /></label>
+          <label>سعر جامبو<input id="newItemJumboPrice-${storeId}" type="number" step="0.01" placeholder="جامبو" /></label>
+          <label>أحجام إضافية (اختياري)<input id="newItemExtraSizes-${storeId}" type="text" placeholder="مثال: mega:220, party:260" /></label>
           <label class="admin-menu-file-field">صورة الصنف<input id="newItemImageFile-${storeId}" type="file" accept="image/*" /></label>
         </div>
         <div class="admin-menu-toolbar">
@@ -6297,6 +8372,9 @@ async function renderAdminMenuManager(storeId) {
           <label>سعر صغير<input id="menuEditSmallPrice-${storeId}" type="number" step="0.01" placeholder="صغير" /></label>
           <label>سعر وسط<input id="menuEditMediumPrice-${storeId}" type="number" step="0.01" placeholder="وسط" /></label>
           <label>سعر كبير<input id="menuEditLargePrice-${storeId}" type="number" step="0.01" placeholder="كبير" /></label>
+          <label>سعر عائلي<input id="menuEditFamilyPrice-${storeId}" type="number" step="0.01" placeholder="عائلي" /></label>
+          <label>سعر جامبو<input id="menuEditJumboPrice-${storeId}" type="number" step="0.01" placeholder="جامبو" /></label>
+          <label>أحجام إضافية (اختياري)<input id="menuEditExtraSizes-${storeId}" type="text" placeholder="مثال: mega:220, party:260" /></label>
         </div>
         <div class="admin-menu-edit-actions">
           <button class="btn primary" id="menuEditSave-${storeId}" type="button">حفظ التعديل</button>
@@ -6333,6 +8411,9 @@ async function renderAdminMenuManager(storeId) {
   const menuEditSmallPrice = document.getElementById(`menuEditSmallPrice-${storeId}`);
   const menuEditMediumPrice = document.getElementById(`menuEditMediumPrice-${storeId}`);
   const menuEditLargePrice = document.getElementById(`menuEditLargePrice-${storeId}`);
+  const menuEditFamilyPrice = document.getElementById(`menuEditFamilyPrice-${storeId}`);
+  const menuEditJumboPrice = document.getElementById(`menuEditJumboPrice-${storeId}`);
+  const menuEditExtraSizes = document.getElementById(`menuEditExtraSizes-${storeId}`);
   const menuEditSaveBtn = document.getElementById(`menuEditSave-${storeId}`);
   const menuEditCancelBtn = document.getElementById(`menuEditCancel-${storeId}`);
   const pickMenuImportFileBtn = document.getElementById(`pickMenuImportFile-${storeId}`);
@@ -6371,6 +8452,14 @@ async function renderAdminMenuManager(storeId) {
     if (menuEditSmallPrice) menuEditSmallPrice.value = sizes?.small ?? '';
     if (menuEditMediumPrice) menuEditMediumPrice.value = sizes?.medium ?? '';
     if (menuEditLargePrice) menuEditLargePrice.value = sizes?.large ?? '';
+    if (menuEditFamilyPrice) menuEditFamilyPrice.value = sizes?.family ?? '';
+    if (menuEditJumboPrice) menuEditJumboPrice.value = sizes?.jumbo ?? '';
+    if (menuEditExtraSizes) {
+      const extraEntries = Object.entries(sizes || {})
+        .filter(([key]) => !['small', 'medium', 'large', 'family', 'jumbo'].includes(key))
+        .map(([key, value]) => `${key}:${value}`);
+      menuEditExtraSizes.value = extraEntries.join(', ');
+    }
     if (menuEditCard) menuEditCard.hidden = false;
     menuEditCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     menuEditName?.focus({ preventScroll: true });
@@ -6560,6 +8649,9 @@ async function renderAdminMenuManager(storeId) {
     const smallPriceRaw = (document.getElementById(`newItemSmallPrice-${storeId}`)?.value || '').trim();
     const mediumPriceRaw = (document.getElementById(`newItemMediumPrice-${storeId}`)?.value || '').trim();
     const largePriceRaw = (document.getElementById(`newItemLargePrice-${storeId}`)?.value || '').trim();
+    const familyPriceRaw = (document.getElementById(`newItemFamilyPrice-${storeId}`)?.value || '').trim();
+    const jumboPriceRaw = (document.getElementById(`newItemJumboPrice-${storeId}`)?.value || '').trim();
+    const extraSizesRaw = (document.getElementById(`newItemExtraSizes-${storeId}`)?.value || '').trim();
     const category = (document.getElementById(`newItemCategory-${storeId}`)?.value || '').trim();
     const imageInput = document.getElementById(`newItemImageFile-${storeId}`);
     const imageFile = imageInput?.files && imageInput.files.length ? imageInput.files[0] : null;
@@ -6578,6 +8670,9 @@ async function renderAdminMenuManager(storeId) {
       smallRaw: smallPriceRaw,
       mediumRaw: mediumPriceRaw,
       largeRaw: largePriceRaw,
+      familyRaw: familyPriceRaw,
+      jumboRaw: jumboPriceRaw,
+      extraRaw: extraSizesRaw,
     });
 
     if (!priceResult.ok) {
@@ -6650,13 +8745,12 @@ async function renderAdminMenuManager(storeId) {
 
           const sizes = normalizeSizes(item.sizes);
           if (sizes) {
-            updates.sizes = {
-              small: Math.round(sizes.small * factor * 100) / 100,
-              medium: Math.round(sizes.medium * factor * 100) / 100,
-              large: Math.round(sizes.large * factor * 100) / 100,
-            };
+            updates.sizes = {};
+            Object.entries(sizes).forEach(([sizeKey, sizePrice]) => {
+              updates.sizes[sizeKey] = Math.round(sizePrice * factor * 100) / 100;
+            });
             if (!updates.price) {
-              updates.price = updates.sizes.medium;
+              updates.price = pickDefaultMenuPrice(updates.sizes);
             }
           }
 
@@ -6747,6 +8841,9 @@ async function renderAdminMenuManager(storeId) {
       smallRaw: menuEditSmallPrice?.value || '',
       mediumRaw: menuEditMediumPrice?.value || '',
       largeRaw: menuEditLargePrice?.value || '',
+      familyRaw: menuEditFamilyPrice?.value || '',
+      jumboRaw: menuEditJumboPrice?.value || '',
+      extraRaw: menuEditExtraSizes?.value || '',
     });
 
     if (!nextName) {
@@ -6960,7 +9057,7 @@ function buildPendingFactsMarkup(data = {}, kind = 'store') {
         { label: 'المنطقة', value: geo.area },
         { label: 'التوفر', value: data.available === true ? 'متاح' : 'غير متاح' },
         { label: 'المسافات البعيدة', value: data.acceptsLongDistance === true ? 'مفعلة' : 'غير مفعلة' },
-        { label: 'حالة الاعتماد', value: formatApprovalStatusLabel(data.approvalStatus || (data.isApproved ? 'approved' : 'pending')) },
+        { label: 'حالة الاعتماد', value: formatApprovalStatusLabel(data.approvalStatus, data.isApproved) },
         { label: 'تم الإنشاء', value: formatPendingDateTime(data.createdAt) },
         { label: 'آخر تحديث', value: formatPendingDateTime(data.updatedAt) },
       ]
@@ -6971,7 +9068,7 @@ function buildPendingFactsMarkup(data = {}, kind = 'store') {
         { label: 'المحلية', value: geo.locality },
         { label: 'المنطقة', value: geo.area },
         { label: 'حالة القائمة', value: data.menuApproved === true ? 'معتمدة' : 'غير معتمدة' },
-        { label: 'اعتماد المتجر', value: formatApprovalStatusLabel(data.approvalStatus || (data.isApproved ? 'approved' : 'pending')) },
+        { label: 'اعتماد المتجر', value: formatApprovalStatusLabel(data.approvalStatus, data.isApproved) },
         { label: 'قيد المراجعة', value: data.pendingApproval === true ? 'نعم' : 'لا' },
         { label: 'إغلاق مؤقت', value: data.temporarilyClosed === true ? 'نعم' : 'لا' },
         { label: 'تم الإنشاء', value: formatPendingDateTime(data.createdAt) },
@@ -6984,35 +9081,46 @@ function buildPendingFactsMarkup(data = {}, kind = 'store') {
 
 function buildPendingApplicantCard({ kind, id, data = {}, actions = '', imageUrl = '', title = '' }) {
   const geo = getApplicantGeoMeta(data);
-  const roleLabel = kind === 'courier' ? 'مندوب' : 'متجر';
-  const statusLabel = kind === 'courier'
-    ? formatApprovalStatusLabel(data.approvalStatus || (data.isApproved ? 'approved' : 'pending'))
-    : (data.menuApproved === true ? 'القائمة معتمدة' : 'القائمة غير معتمدة');
+  const roleLabel = kind === 'courier' ? 'مندوب' : 'مطعم';
+  const requestTypeLabel = kind === 'courier' ? 'طلب اعتماد مندوب' : 'طلب اعتماد مطعم';
+  const statusLabel = formatApprovalStatusLabel(data.approvalStatus, data.isApproved);
+  const uidValue = String(data.ownerUid || data.driverId || data.restaurantId || data.uid || id || '-');
+  const phoneValue = String(data.phone || data.mobile || '-');
+  const displayName = title
+    || data.name
+    || data.storeName
+    || data.restaurantName
+    || data.fullName
+    || id;
+  const identityValue = kind === 'courier'
+    ? String(data.nationalIdNumber || '-')
+    : String(data.commercialRecordNumber || '-');
+  const identityLabel = kind === 'courier' ? 'هوية' : 'سجل';
+  const createdAtValue = formatPendingDateTime(data.createdAt);
   const imageBlock = imageUrl
-    ? `<div class="pending-application-media">${imageCell(imageUrl)}</div>`
+    ? `<div class="pending-application-avatar">${imageCell(imageUrl)}</div>`
     : '';
 
   return `
-    <article class="pending-application-card">
-      <div class="pending-application-head">
-        <div>
-          <span class="pending-application-badge">${escapeHtml(roleLabel)}</span>
-          <h4>${escapeHtml(title || data.name || id)}</h4>
-          <div class="pending-application-meta">
-            <span>UID: ${escapeHtml(String(data.ownerUid || data.driverId || data.restaurantId || data.uid || id))}</span>
-            <span>الولاية: ${escapeHtml(geo.state)}</span>
-            <span>المحلية: ${escapeHtml(geo.locality)}</span>
-            <span>المنطقة: ${escapeHtml(geo.area)}</span>
-          </div>
-        </div>
-        <div class="approval-geo-count">${escapeHtml(statusLabel)}</div>
-      </div>
-      ${buildPendingFactsMarkup(data, kind)}
-      <details>
-        <summary>البيانات الخام كاملة</summary>
-        <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
-      </details>
+    <article class="pending-application-card pending-application-card--compact">
       ${imageBlock}
+      <div class="pending-application-main">
+        <span class="pending-application-badge">${escapeHtml(roleLabel)}</span>
+        <strong class="pending-application-title">${escapeHtml(displayName)}</strong>
+      </div>
+      <div class="pending-application-meta pending-application-meta--compact">
+        <span><b>UID:</b> ${escapeHtml(uidValue)}</span>
+        <span><b>${escapeHtml(identityLabel)}:</b> ${escapeHtml(identityValue)}</span>
+        <span><b>الهاتف:</b> ${escapeHtml(phoneValue)}</span>
+        <span><b>الولاية:</b> ${escapeHtml(geo.state)}</span>
+        <span><b>المحلية:</b> ${escapeHtml(geo.locality)}</span>
+        <span><b>المنطقة:</b> ${escapeHtml(geo.area)}</span>
+        <span><b>وقت الطلب:</b> ${escapeHtml(createdAtValue)}</span>
+      </div>
+      <div class="pending-application-status-row">
+        <span class="approval-geo-count">${escapeHtml(statusLabel)}</span>
+        <span class="pending-application-status-hint">${escapeHtml(requestTypeLabel)}</span>
+      </div>
       <div class="pending-application-actions">${actions}</div>
     </article>
   `;
@@ -7155,6 +9263,9 @@ async function setStoreDecision({ appId, restaurantId, decision, ownerUid, appDa
     const menuEverApproved = existing.exists() && existing.data().menuEverApproved === true ? true : true;
     await setDoc(restaurantRef, {
       name: appData.name || '',
+      businessType: ['restaurant', 'brand', 'ecommerce', 'grocery', 'pharmacy'].includes(String(appData.businessType || '').trim())
+        ? String(appData.businessType).trim()
+        : 'restaurant',
       phone: appData.phone || '',
       email: appData.email || '',
       commercialRecordNumber: appData.commercialRecordNumber || '',
@@ -7429,6 +9540,80 @@ function mountSupport() {
     return 'client';
   };
 
+  const getConversationDisplayName = (messages = [], latestMsg = {}) => {
+    const externalMsg = messages.slice().reverse().find((m) => {
+      const senderType = String(m.senderType || '').toLowerCase();
+      return senderType !== 'admin' && senderType !== 'support'
+        && String(m.senderId || '').toLowerCase() !== 'support';
+    });
+    if (externalMsg) {
+      return String(externalMsg.senderName || externalMsg.senderId || externalMsg.senderType || '').trim() || '';
+    }
+    const explicitUser = String(latestMsg.userId || latestMsg.senderId || latestMsg.receiverId || '').trim();
+    if (explicitUser) return explicitUser;
+    return String(latestMsg.senderName || latestMsg.senderType || 'مستخدم').trim() || 'مستخدم';
+  };
+
+  const isSupportAdminMessage = (msg = {}) => {
+    const senderType = String(msg.senderType || '').toLowerCase();
+    const senderId = String(msg.senderId || '').toLowerCase();
+    return senderType === 'admin' || senderType === 'support' || senderId === 'support'
+      || senderId && senderId === String(auth.currentUser?.uid || '').toLowerCase();
+  };
+
+  const getReadableSenderName = (msg = {}) => {
+    const senderType = String(msg.senderType || '').toLowerCase();
+    const senderId = String(msg.senderId || '').trim();
+    const senderName = String(msg.senderName || '').trim();
+    if (senderType === 'admin' || senderType === 'support' || senderId.toLowerCase() === 'support') return 'الدعم الفني';
+    if (senderType === 'client' || senderType === 'customer' || senderType === 'عميل') return senderName || senderId || 'عميل';
+    if (senderType === 'courier' || senderType === 'driver' || senderType === 'مندوب') return senderName || senderId || 'مندوب';
+    if (senderType === 'store' || senderType === 'restaurant' || senderType === 'مطعم') return senderName || senderId || 'متجر';
+    if (senderName) return senderName;
+    if (senderId) return senderId;
+    return String(msg.receiverName || msg.receiverId || msg.senderType || 'مستخدم');
+  };
+
+  const getAppLabel = (sourceApp) => {
+    if (sourceApp === 'client') return 'العملاء';
+    if (sourceApp === 'courier') return 'المندوبون';
+    return 'المتاجر';
+  };
+
+  const getReceiverLabel = (msg = {}) => {
+    const receiverType = String(msg.receiverType || '').toLowerCase();
+    const receiverId = String(msg.receiverId || '').trim();
+    const receiverName = String(msg.receiverName || '').trim();
+    if (receiverType === 'admin' || receiverType === 'support' || receiverId.toLowerCase() === 'support') return 'الدعم الفني';
+    if (receiverType === 'client' || receiverType === 'customer' || receiverType === 'عميل') return receiverName || receiverId || 'عميل';
+    if (receiverType === 'courier' || receiverType === 'driver' || receiverType === 'مندوب') return receiverName || receiverId || 'مندوب';
+    if (receiverType === 'store' || receiverType === 'restaurant' || receiverType === 'مطعم') return receiverName || receiverId || 'مطعم';
+    return receiverName || receiverId || 'غير محدد';
+  };
+
+  const getSupportReference = (msg = {}, convo = {}) => {
+    return String(
+      msg.orderId
+      || msg.requestId
+      || msg.ticketId
+      || msg.caseId
+      || msg.referenceId
+      || msg.conversationId
+      || convo.conversationId
+      || convo.id
+      || '-'
+    ).trim() || '-';
+  };
+
+  const markConversationReadIfNeeded = async (convo) => {
+    if (!convo || !(convo.unreadCount > 0)) return;
+    try {
+      await markSupportConversationRead(convo);
+    } catch (err) {
+      console.error('Failed to auto-mark support conversation as read', err);
+    }
+  };
+
   const fmtTime = (ts) => {
     try {
       const date = ts && typeof ts.toDate === 'function' ? ts.toDate() : null;
@@ -7475,12 +9660,6 @@ function mountSupport() {
     const search = String(supportSearchInput?.value || '').trim().toLowerCase();
     const appFilter = String(supportAppFilter?.value || 'all');
     const statusFilter = String(supportStatusFilter?.value || 'all');
-
-    const getAppLabel = (sourceApp) => {
-      if (sourceApp === 'client') return 'العملاء';
-      if (sourceApp === 'courier') return 'المندوبون';
-      return 'المتاجر';
-    };
 
     const rows = supportConversations
       .filter((item) => {
@@ -7536,6 +9715,11 @@ function mountSupport() {
               <span class="support-item-pill">${escapeHtml(appLabel)}</span>
               <span class="support-item-pill">${escapeHtml(item.actor)}</span>
               <span class="support-item-pill">${item.status === 'closed' ? 'مغلقة' : 'مفتوحة'}</span>
+              <span class="support-item-pill support-item-pill-direction">${escapeHtml(item.latestDirectionLabel || '-')}</span>
+            </div>
+            <div class="support-item-sub support-item-route">
+              <span><b>من:</b> ${escapeHtml(item.latestSenderLabel || item.senderName || '-')}</span>
+              <span><b>إلى:</b> ${escapeHtml(item.latestReceiverLabel || 'الدعم الفني')}</span>
             </div>
             <div class="support-item-sub">المعرف: ${escapeHtml(item.userId || '-')}
             </div>
@@ -7602,7 +9786,7 @@ function mountSupport() {
 
     const messagesMarkup = messages.length
       ? messages.map((msg, index) => {
-          const mine = msg.senderType === 'admin' || msg.senderId === (auth.currentUser?.uid || '');
+          const mine = isSupportAdminMessage(msg);
           const isUnreadForAdmin = !mine && (msg.timestampMillis || 0) > latestReadMillis;
           const textBody = String(msg.message || '').trim()
             ? `<div class="support-bubble-text">${escapeHtml(msg.message || '')}</div>`
@@ -7613,11 +9797,33 @@ function mountSupport() {
           const body = textBody || imageBody
             ? `${textBody}${imageBody}`
             : '<div class="muted">رسالة بدون محتوى.</div>';
+          const senderLabel = getReadableSenderName(msg);
+          const receiverLabel = getReceiverLabel(msg);
+          const directionLabel = mine ? 'صادر من الدعم' : 'وارد إلى الدعم';
+          const messageTypeLabel = msg.imageUrl
+            ? (String(msg.message || '').trim() ? 'نص + صورة' : 'صورة')
+            : 'نص';
+          const refValue = getSupportReference(msg, convo);
+          const appScopeLabel = getAppLabel(convo.sourceApp || normalizeApp(msg.sourceApp || 'client'));
+          const statusText = String(msg.status || convo.status || 'open') === 'closed' ? 'مغلقة' : 'مفتوحة';
           return `
-            <div class="support-bubble ${mine ? 'mine' : ''}" data-support-message-index="${index}" ${isUnreadForAdmin ? 'data-support-unread="true"' : ''}>
-              <div class="support-bubble-head">${escapeHtml(msg.senderName || msg.senderType || msg.senderId || 'مستخدم')}</div>
-              <div>${body}</div>
-              <div class="support-bubble-time">${escapeHtml(msg.timeText)}</div>
+            <div class="support-message-row ${mine ? 'support-message-row--mine' : 'support-message-row--other'}" data-support-message-index="${index}" ${isUnreadForAdmin ? 'data-support-unread="true"' : ''}>
+              <div class="support-bubble ${mine ? 'mine' : 'other'}">
+                <div class="support-bubble-head">${escapeHtml(senderLabel)}</div>
+                <div class="support-bubble-meta">
+                  <span class="support-meta-chip">${escapeHtml(directionLabel)}</span>
+                  <span class="support-meta-chip">${escapeHtml(messageTypeLabel)}</span>
+                  <span class="support-meta-chip">${escapeHtml(appScopeLabel)}</span>
+                  <span class="support-meta-chip ${statusText === 'مغلقة' ? 'closed' : 'open'}">${escapeHtml(statusText)}</span>
+                </div>
+                <div class="support-bubble-identifiers">
+                  <span><b>من:</b> ${escapeHtml(senderLabel)}</span>
+                  <span><b>إلى:</b> ${escapeHtml(receiverLabel)}</span>
+                  <span><b>المرجع:</b> ${escapeHtml(refValue)}</span>
+                </div>
+                <div>${body}</div>
+                <div class="support-bubble-time">${escapeHtml(msg.timeText)}</div>
+              </div>
             </div>
           `;
         }).join('')
@@ -7641,10 +9847,16 @@ function mountSupport() {
     }
 
     supportToggleStatusBtn.disabled = false;
-    if (supportMarkReadBtn) supportMarkReadBtn.disabled = false;
+    if (supportMarkReadBtn) supportMarkReadBtn.disabled = !(convo.unreadCount > 0);
     supportReplyInput.disabled = convo.status === 'closed';
     supportToggleStatusBtn.textContent = convo.status === 'closed' ? 'إعادة فتح المحادثة' : 'إغلاق المحادثة';
     syncComposerState();
+
+    if (convo.unreadCount > 0) {
+      convo.unreadCount = 0;
+      renderConversationList();
+      markConversationReadIfNeeded(convo);
+    }
 
     if (convo.status !== 'closed') {
       requestAnimationFrame(() => {
@@ -7690,7 +9902,7 @@ function mountSupport() {
       }
       await addDoc(collection(db, 'supportMessages'), {
         conversationId: convo.conversationId || convo.id,
-        supportThreadKey: convo.id,
+        supportThreadKey: getSupportThreadBaseKey(convo.id),
         chatKind: 'support',
         sourceApp: convo.sourceApp,
         senderId: auth.currentUser?.uid || '',
@@ -7730,14 +9942,19 @@ function mountSupport() {
       const q = query(collection(db, 'supportMessages'), where('conversationId', '==', convo.conversationId || supportSelectedConversationId));
       const result = await getDocs(q);
       const batch = writeBatch(db);
+      let updates = 0;
       result.docs.forEach((docSnap) => {
+        if (buildSupportThreadKeyFromData(docSnap.data() || {}) !== convo.id) {
+          return;
+        }
         batch.update(doc(db, 'supportMessages', docSnap.id), {
           status: nextStatus,
           updatedAt: serverTimestamp(),
           ...(nextStatus === 'closed' ? { closedAt: serverTimestamp() } : { reopenedAt: serverTimestamp() }),
         });
+        updates += 1;
       });
-      await batch.commit();
+      if (updates > 0) await batch.commit();
     } catch (err) {
       alert(`تعذر تحديث الحالة: ${err.message || err}`);
     }
@@ -7783,7 +10000,11 @@ function mountSupport() {
       if (!supportSelectedConversationId) return;
       try {
         const convo = supportConversations.find((item) => item.id === supportSelectedConversationId);
-        await markSupportConversationRead(convo?.conversationId || supportSelectedConversationId);
+        if (!convo) return;
+        await markSupportConversationRead(convo);
+        convo.unreadCount = 0;
+        renderConversationList();
+        renderSelectedConversation();
       } catch (err) {
         alert(`تعذر تعليم المحادثة كمقروءة: ${err.message || err}`);
       }
@@ -7814,16 +10035,6 @@ function mountSupport() {
       const conversationMap = new Map();
       const messagesMap = new Map();
 
-      const buildSupportThreadKey = (data = {}) => {
-        const conversationId = String(data.conversationId || '').trim();
-        const sourceApp = normalizeApp(data.sourceApp || 'client');
-        const explicitThreadKey = String(
-          data.supportThreadKey || data.supportThreadId || data.threadKey || data.threadId || ''
-        ).trim();
-        const baseKey = explicitThreadKey || conversationId;
-        return `${sourceApp}:${baseKey}`;
-      };
-
       snap.docs.forEach((d) => {
         const data = d.data() || {};
         const conversationId = String(data.conversationId || '');
@@ -7835,7 +10046,8 @@ function mountSupport() {
           || conversationId.endsWith('-support');
         if (!isSupport) return;
 
-        const supportThreadKey = buildSupportThreadKey(data);
+        const supportThreadKey = buildSupportThreadKeyFromData(data);
+        if (!supportThreadKey) return;
 
         const message = {
           id: d.id,
@@ -7876,6 +10088,9 @@ function mountSupport() {
               || latestMsg.senderType
           );
           const sourceApp = normalizeApp(latestMsg.sourceApp || latest.sourceApp || 'client');
+          const latestMine = isSupportAdminMessage(latestMsg);
+          const latestSenderLabel = getReadableSenderName(latestMsg);
+          const latestReceiverLabel = getReceiverLabel(latestMsg);
           const userId = String(latestMsg.userId || latestMsg.senderId || latestMsg.receiverId || '').trim()
             || (String(latestMsg.conversationId || '').endsWith('-support')
               ? String(latestMsg.conversationId || '').slice(0, -'-support'.length)
@@ -7886,10 +10101,13 @@ function mountSupport() {
             actor,
             sourceApp,
             status: String(latestMsg.status || 'open') === 'closed' ? 'closed' : 'open',
-            senderName: latestMsg.senderName || latestMsg.senderId || '',
+            senderName: getConversationDisplayName(all, latestMsg),
             preview: latestMsg.message || (latestMsg.imageUrl ? '📷 صورة مرفقة' : '-'),
             latestMillis: latestMsg.timestampMillis || 0,
             latestTimeText: latestMsg.timeText || '-',
+            latestDirectionLabel: latestMine ? 'آخر رسالة: من الدعم' : 'آخر رسالة: من المستخدم',
+            latestSenderLabel,
+            latestReceiverLabel,
             userId,
             unreadCount,
           };
@@ -7931,6 +10149,44 @@ function mountDiscountCodes() {
     order_total: 'إجمالي الطلب',
     delivery_fee: 'التوصيل فقط',
   };
+  let editingDiscountCode = '';
+
+  const formatDateTimeInput = (value) => {
+    if (!value || typeof value.toDate !== 'function') return '';
+    const date = value.toDate();
+    const pad = (part) => String(part).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+
+  const resetDiscountEditor = () => {
+    editingDiscountCode = '';
+    discountForm.reset();
+    if (discountIsActive) discountIsActive.checked = true;
+    if (discountScope) discountScope.value = 'order_total';
+    if (discountSaveBtn) discountSaveBtn.textContent = 'حفظ الكود';
+    if (discountCancelEditBtn) discountCancelEditBtn.hidden = true;
+  };
+
+  const beginDiscountEdit = (sourceCode, data) => {
+    editingDiscountCode = sourceCode;
+    if (discountCode) discountCode.value = sourceCode;
+    if (discountScope) discountScope.value = String(data.discountScope || 'order_total');
+    if (discountType) discountType.value = String(data.discountType || 'percent');
+    if (discountValue) discountValue.value = String(data.discountValue ?? '');
+    if (discountMinOrder) discountMinOrder.value = String(data.minOrder ?? '');
+    if (discountMaxUsage) discountMaxUsage.value = String(data.maxUsage ?? '');
+    if (discountMaxUsagePerUser) discountMaxUsagePerUser.value = String(data.maxUsagePerUser ?? '');
+    if (discountMaxDiscount) discountMaxDiscount.value = String(data.maxDiscount ?? '');
+    if (discountRestaurantId) discountRestaurantId.value = String(data.restaurantId || '');
+    if (discountItemName) discountItemName.value = String(data.itemName || '');
+    if (discountExpiryDate) discountExpiryDate.value = formatDateTimeInput(data.expiryDate);
+    if (discountIsActive) discountIsActive.checked = data.isActive === true;
+    if (discountOnlyNewOrders) discountOnlyNewOrders.checked = data.onlyForNewOrders === true;
+    if (discountSaveBtn) discountSaveBtn.textContent = 'حفظ التعديلات';
+    if (discountCancelEditBtn) discountCancelEditBtn.hidden = false;
+    if (discountResult) discountResult.textContent = `تعديل الكود ${sourceCode}: يمكنك تغيير الكود أو الشروط ثم الحفظ.`;
+    discountCode?.focus();
+  };
 
   const parseNumberOrNull = (raw) => {
     const value = Number(String(raw || '').trim());
@@ -7947,6 +10203,10 @@ function mountDiscountCodes() {
   };
 
   if (!discountFormBound) {
+    discountCancelEditBtn?.addEventListener('click', () => {
+      resetDiscountEditor();
+      if (discountResult) discountResult.textContent = 'تم إلغاء التعديل.';
+    });
     discountForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const code = String(discountCode?.value || '').trim().toUpperCase();
@@ -7997,38 +10257,31 @@ function mountDiscountCodes() {
       if (discountResult) discountResult.textContent = 'جارٍ حفظ كود الخصم...';
 
       try {
-        const ref = doc(db, 'promocodes', code);
-        const existing = await getDoc(ref);
-        await setDoc(ref, {
-          code,
-          discountScope: payload.discountScope,
-          discountType: payload.discountType,
-          discountValue: payload.discountValue,
-          isActive: payload.isActive,
-          onlyForNewOrders: payload.onlyForNewOrders,
-          restaurantId: payload.restaurantId || '',
-          itemName: payload.itemName || '',
-          minOrder: payload.minOrder,
-          maxUsage: payload.maxUsage,
-          maxUsagePerUser: payload.maxUsagePerUser,
-          maxDiscount: payload.maxDiscount,
-          expiryDate: payload.expiryDate,
-          updatedAt: serverTimestamp(),
-          updatedByAdminUid: auth.currentUser?.uid || '',
-          ...(existing.exists()
-            ? {}
-            : {
-                usedCount: 0,
-                usersUsed: {},
-                createdAt: serverTimestamp(),
-                createdBy: auth.currentUser?.uid || '',
-              }),
-        }, { merge: true });
-
-        if (discountResult) discountResult.textContent = `تم حفظ الكود ${code} بنجاح.`;
-        discountForm.reset();
-        if (discountIsActive) discountIsActive.checked = true;
-        if (discountScope) discountScope.value = 'order_total';
+        if (editingDiscountCode) {
+          const result = await adminUpdatePromocode({
+            sourceCode: editingDiscountCode,
+            promo: {
+              ...payload,
+              expiryMillis,
+            },
+          });
+          const renamed = result.data?.renamed === true;
+          if (discountResult) {
+            discountResult.textContent = renamed
+              ? `تم تغيير الكود من ${editingDiscountCode} إلى ${code} مع الاحتفاظ بعدادات الاستخدام.`
+              : `تم تحديث الكود ${code} بنجاح.`;
+          }
+        } else {
+          await adminUpdatePromocode({
+            sourceCode: '',
+            promo: {
+              ...payload,
+              expiryMillis,
+            },
+          });
+          if (discountResult) discountResult.textContent = `تم حفظ الكود ${code} بنجاح.`;
+        }
+        resetDiscountEditor();
       } catch (err) {
         if (discountResult) discountResult.textContent = `تعذر حفظ الكود: ${err.message || err}`;
       } finally {
@@ -8064,6 +10317,7 @@ function mountDiscountCodes() {
           <td>${formatDateTimeLocal(data.expiryDate)}</td>
           <td><span class="badge ${active ? 'closed' : 'open'}">${active ? 'مفعل' : 'موقوف'}</span></td>
           <td>
+            <button class="btn ghost" data-edit-discount="${escapeHtml(code)}">تعديل</button>
             <button class="btn ghost" data-toggle-discount="${escapeHtml(code)}" data-active="${active ? 'true' : 'false'}">${active ? 'إيقاف' : 'تفعيل'}</button>
             <button class="btn danger" data-delete-discount="${escapeHtml(code)}">حذف</button>
           </td>
@@ -8071,6 +10325,14 @@ function mountDiscountCodes() {
       });
 
       setHtml(discountsTable, table(['الكود', 'النطاق', 'النوع', 'القيمة', 'الاستخدام', 'ينتهي في', 'الحالة', 'إجراء'], rows));
+
+      discountsTable.querySelectorAll('[data-edit-discount]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const code = btn.getAttribute('data-edit-discount');
+          const promoDoc = docs.find((item) => String(item.id) === String(code));
+          if (code && promoDoc) beginDiscountEdit(code, promoDoc.data() || {});
+        });
+      });
 
       discountsTable.querySelectorAll('[data-toggle-discount]').forEach((btn) => {
         btn.addEventListener('click', async () => {
@@ -8218,6 +10480,92 @@ function fillAppRemoteConfigForm() {
   courierRootUrlInput.value = String(getRemoteConfigEntry('courier_root_url')?.value || 'https://speedstar-prod-4c7c5.web.app/sdui/courier/index.json');
 }
 
+const REMOTE_CONFIG_GROUPS = [
+  { id: 'operations', title: 'التحكم التشغيلي العام', description: 'إعدادات مشتركة تؤثر على التطبيقات الثلاثة.' },
+  { id: 'client', title: 'تطبيق العميل', description: 'الواجهة والطلب والتحديثات الخاصة بالعميل.' },
+  { id: 'store', title: 'تطبيق المتجر', description: 'تنبيهات وتشغيل وإصدارات تطبيق المتجر.' },
+  { id: 'courier', title: 'تطبيق المندوب', description: 'العروض والتنبيهات وإصدارات تطبيق المندوب.' },
+  { id: 'pricing', title: 'التسعير والرسوم', description: 'رسوم التوصيل والطلبات الكبيرة.' },
+  { id: 'other', title: 'إعدادات إضافية', description: 'مفاتيح Remote Config الأخرى المتاحة.' },
+];
+
+function remoteConfigGroupId(key) {
+  if (key.startsWith('pricing_')) return 'pricing';
+  if (key.startsWith('client_')) return 'client';
+  if (key.startsWith('store_')) return 'store';
+  if (key.startsWith('courier_')) return 'courier';
+  if (key.startsWith('ops_')) return 'operations';
+  return 'other';
+}
+
+function remoteConfigLabel(key, meta) {
+  if (meta?.label) return String(meta.label);
+  return `إعداد: ${String(key).replaceAll('_', ' ')}`;
+}
+
+function remoteConfigControl(item, valueType) {
+  const key = String(item.key || '');
+  const value = String(item.value ?? '');
+  const escapedKey = escapeHtml(key);
+  const escapedValue = escapeHtml(value);
+  const attributes = `class="remote-control-input" data-remote-key="${escapedKey}" data-remote-type="${escapeHtml(valueType)}"`;
+
+  if (valueType === 'BOOLEAN') {
+    const checked = value.toLowerCase() === 'true' ? 'checked' : '';
+    return `<label class="remote-switch" title="انقر للتشغيل أو الإيقاف">
+      <input ${attributes} type="checkbox" ${checked} />
+      <span class="remote-switch-track" aria-hidden="true"></span>
+      <span class="remote-switch-state">${checked ? 'مفعّل' : 'متوقف'}</span>
+    </label>`;
+  }
+
+  if (key === 'client_delivery_time_mode') {
+    const options = [
+      ['hybrid', 'هجين: إعداد المطعم مع زمن الطريق'],
+      ['admin_only', 'إعداد المطعم فقط'],
+      ['computed', 'محسوب من الطريق فقط'],
+    ];
+    return `<select ${attributes}>${options.map(([optionValue, label]) => `<option value="${optionValue}" ${value === optionValue ? 'selected' : ''}>${label}</option>`).join('')}</select>`;
+  }
+
+  if (key.endsWith('_ringtone_volume')) {
+    const normalized = Math.max(0, Math.min(1, Number(value) || 0));
+    return `<div class="remote-range-control">
+      <input ${attributes} type="range" min="0" max="1" step="0.05" value="${normalized}" />
+      <output data-remote-output="${escapedKey}">${Math.round(normalized * 100)}%</output>
+    </div>`;
+  }
+
+  if (valueType === 'NUMBER') {
+    const min = key.includes('volume') ? ' min="0" max="1" step="0.05"' : ' min="0" step="1"';
+    return `<input ${attributes} type="number"${min} value="${escapedValue}" />`;
+  }
+
+  if (key.includes('message') || key.includes('disabled_message') || key.includes('block_message')) {
+    return `<textarea ${attributes} rows="2">${escapedValue}</textarea>`;
+  }
+
+  const inputType = key.includes('url') ? 'url' : 'text';
+  return `<input ${attributes} type="${inputType}" value="${escapedValue}" />`;
+}
+
+function bindRemoteConfigControls() {
+  remoteConfigTable?.querySelectorAll('.remote-control-input').forEach((input) => {
+    input.addEventListener('input', () => {
+      const item = input.closest('.remote-config-item');
+      item?.classList.add('is-dirty');
+      if (input.type === 'range') {
+        const output = remoteConfigTable.querySelector(`[data-remote-output="${input.dataset.remoteKey}"]`);
+        if (output) output.textContent = `${Math.round(Number(input.value || 0) * 100)}%`;
+      }
+      if (input.type === 'checkbox') {
+        const state = input.closest('.remote-switch')?.querySelector('.remote-switch-state');
+        if (state) state.textContent = input.checked ? 'مفعّل' : 'متوقف';
+      }
+    });
+  });
+}
+
 function renderRemoteConfigTable(filterRaw = '') {
   if (!remoteConfigTable) return;
   const filter = String(filterRaw || '').trim().toLowerCase();
@@ -8236,29 +10584,40 @@ function renderRemoteConfigTable(filterRaw = '') {
     return;
   }
 
-  const rows = filtered.map((item) => {
-    const key = String(item.key || '');
-    const value = String(item.value || '');
-    const meta = REMOTE_CONFIG_METADATA[key] || null;
-    const valueType = String(meta?.valueType || item.valueType || 'STRING').toUpperCase();
-    const desc = String(meta?.description || item.description || '').trim();
-    const label = String(meta?.label || '').trim();
-    const marker = item.hasConditionalValues ? ' | لديه Conditional Values' : '';
+  const grouped = new Map(REMOTE_CONFIG_GROUPS.map((group) => [group.id, []]));
+  for (const item of filtered) grouped.get(remoteConfigGroupId(String(item.key || ''))).push(item);
 
-    return `<tr>
-      <td>
-        ${label ? `<span class="remote-key-label">${escapeHtml(label)}</span>` : ''}
-        <span class="remote-key-text">${escapeHtml(key)}</span>
-        <span class="remote-meta">${escapeHtml(valueType)}${escapeHtml(marker)}</span>
-      </td>
-      <td>
-        <input class="remote-value-input" data-remote-key="${escapeHtml(key)}" data-remote-type="${escapeHtml(valueType)}" type="text" value="${escapeHtml(value)}" />
-        ${desc ? `<span class="remote-meta">${escapeHtml(desc)}</span>` : ''}
-      </td>
-    </tr>`;
-  });
+  const groupsMarkup = REMOTE_CONFIG_GROUPS.map((group) => {
+    const items = grouped.get(group.id) || [];
+    if (!items.length) return '';
+    const itemMarkup = items
+      .sort((left, right) => remoteConfigLabel(String(left.key || ''), REMOTE_CONFIG_METADATA[String(left.key || '')]).localeCompare(remoteConfigLabel(String(right.key || ''), REMOTE_CONFIG_METADATA[String(right.key || '')]), 'ar'))
+      .map((item) => {
+        const key = String(item.key || '');
+        const meta = REMOTE_CONFIG_METADATA[key] || null;
+        const valueType = String(meta?.valueType || item.valueType || 'STRING').toUpperCase();
+        const description = String(meta?.description || item.description || 'إعداد متقدم من Remote Config.').trim();
+        const tags = [valueType, item.isManagedDefault ? 'يحتاج تهيئة' : '', item.hasConditionalValues ? 'له قيم شرطية' : ''].filter(Boolean);
+        return `<article class="remote-config-item" data-remote-item="${escapeHtml(key)}">
+          <div class="remote-config-item-copy">
+            <h4>${escapeHtml(remoteConfigLabel(key, meta))}</h4>
+            <p>${escapeHtml(description)}</p>
+            <div class="remote-config-item-meta">
+              <code>${escapeHtml(key)}</code>
+              ${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}
+            </div>
+          </div>
+          <div class="remote-config-item-control">${remoteConfigControl(item, valueType)}</div>
+        </article>`;
+      }).join('');
+    return `<section class="remote-config-group" data-remote-group="${group.id}">
+      <header><div><h3>${group.title}</h3><p>${group.description}</p></div><b>${items.length}</b></header>
+      <div class="remote-config-items">${itemMarkup}</div>
+    </section>`;
+  }).join('');
 
-  setHtml(remoteConfigTable, `<table><thead><tr><th>المفتاح</th><th>القيمة</th></tr></thead><tbody>${rows.join('')}</tbody></table>`);
+  setHtml(remoteConfigTable, `<div class="remote-config-toolbar"><span>المفاتيح الظاهرة: <strong>${filtered.length}</strong></span><span>التغييرات تُحفظ دفعة واحدة</span></div><div class="remote-config-groups">${groupsMarkup}</div>`);
+  bindRemoteConfigControls();
 }
 
 async function loadRolloutConfigUi() {
@@ -8317,7 +10676,70 @@ async function loadRemoteConfigEditorUi() {
   }
 }
 
+async function loadStoreHomeConfigTargetOptions() {
+  if (!storeHomeConfigTarget) return;
+  const selected = storeHomeConfigTarget.value;
+  const snapshot = await getDocs(collection(db, 'restaurants'));
+  const stores = snapshot.docs
+    .map((entry) => ({ id: entry.id, ...entry.data() }))
+    .filter((entry) => String(entry.approvalStatus || '') === 'approved')
+    .sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), 'ar'));
+  storeHomeConfigTarget.innerHTML = [
+    '<option value="">اختر منشأة</option>',
+    ...stores.map((store) => `<option value="${escapeHtml(store.id)}">${escapeHtml(String(store.name || store.id))}</option>`),
+  ].join('');
+  if (selected) storeHomeConfigTarget.value = selected;
+}
+
+async function loadSelectedStoreHomeConfig() {
+  const storeId = String(storeHomeConfigTarget?.value || '').trim();
+  if (!storeId) return;
+  const snapshot = await getDoc(doc(db, 'restaurants', storeId));
+  const data = snapshot.data() || {};
+  if (storeHomeFeaturedInput) storeHomeFeaturedInput.checked = data.featuredOnHome === true;
+  if (storeHomeOffersInput) storeHomeOffersInput.checked = data.showInHomeOffers === true;
+}
+
+async function saveClientHomeImages() {
+  const inputs = Array.from(clientHomeImagesForm?.querySelectorAll('[data-business-image]') || []);
+  const currentSnapshot = await getDoc(doc(db, 'clientHomeSettings', 'default'));
+  const images = { ...(currentSnapshot.data()?.businessFilterImages || {}) };
+  for (const input of inputs) {
+    const file = input.files?.[0];
+    const key = String(input.dataset.businessImage || '').trim();
+    if (!file || !key) continue;
+    const imageUrl = await uploadImageToCloudinary(file, `client-home-${key}-${Date.now()}.jpg`);
+    if (!imageUrl) throw new Error(`تعذر رفع صورة قسم ${key}`);
+    images[key] = imageUrl;
+  }
+  await setDoc(doc(db, 'clientHomeSettings', 'default'), {
+    businessFilterImages: images,
+    updatedAt: serverTimestamp(),
+    updatedByUid: auth.currentUser?.uid || '',
+  }, { merge: true });
+}
+
+async function loadRewardsConfig() {
+  if (!rewardsConfigForm) return;
+  const snapshot = await getDoc(doc(db, 'clientHomeSettings', 'default'));
+  const config = snapshot.data()?.rewards || {};
+  if (rewardsEnabledInput) rewardsEnabledInput.checked = config.enabled === true;
+  if (rewardsAmountPerPointInput) rewardsAmountPerPointInput.value = Math.max(1, Number(config.amountPerPoint || 100));
+  if (rewardsMinRedeemPointsInput) rewardsMinRedeemPointsInput.value = Math.max(1, Number(config.minRedeemPoints || 100));
+}
+
 function mountAdmins() {
+  const currentEmail = String(auth.currentUser?.email || '').toLowerCase().trim();
+  const canGrantHardDeletePermission = guaranteedAdminEmails.has(currentEmail);
+
+  if (adminCanDeleteRestaurantsInput) {
+    adminCanDeleteRestaurantsInput.disabled = !canGrantHardDeletePermission;
+    adminCanDeleteRestaurantsInput.checked = false;
+    adminCanDeleteRestaurantsInput.title = canGrantHardDeletePermission
+      ? ''
+      : 'هذه الصلاحية يمكن منحها فقط من أدمن أعلى مخوّل.';
+  }
+
   if (hasAdminPermission('admins') && !addAdminFormBound) {
     addAdminForm.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -8332,11 +10754,18 @@ function mountAdmins() {
         return;
       }
       try {
-        await setUserAdminRole({ email, active: true, permissions });
+        const payload = { email, active: true, permissions };
+        if (canGrantHardDeletePermission && adminCanDeleteRestaurantsInput) {
+          payload.canDeleteRestaurants = adminCanDeleteRestaurantsInput.checked;
+        }
+        await setUserAdminRole(payload);
         adminEmailInput.value = '';
         adminPermissionInputs.forEach((input) => {
           input.checked = true;
         });
+        if (adminCanDeleteRestaurantsInput) {
+          adminCanDeleteRestaurantsInput.checked = false;
+        }
         alert('تم حفظ صلاحيات المسؤول بنجاح');
       } catch (err) {
         alert(`تعذر حفظ صلاحيات المسؤول: ${err.message}`);
@@ -8483,9 +10912,10 @@ function mountAdmins() {
         if (!key) return;
 
         const current = currentMap.get(key);
-        const nextValue = normalizeRemoteValueByType(input.value, valueType);
+        const rawValue = input.type === 'checkbox' ? input.checked : input.value;
+        const nextValue = normalizeRemoteValueByType(rawValue, valueType);
         const prevValue = normalizeRemoteValueByType(current?.value || '', valueType);
-        if (nextValue === prevValue) return;
+        if (nextValue === prevValue && !current?.isManagedDefault) return;
 
         updates.push({
           key,
@@ -8519,6 +10949,75 @@ function mountAdmins() {
     });
 
     remoteConfigBulkFormBound = true;
+  }
+
+  if (hasAdminPermission('config') && storeHomeConfigForm?.dataset.bound !== 'true') {
+    loadStoreHomeConfigTargetOptions().catch((error) => {
+      if (storeHomeConfigResult) storeHomeConfigResult.textContent = `تعذر تحميل المنشآت: ${error.message || error}`;
+    });
+    storeHomeConfigTarget?.addEventListener('change', () => {
+      loadSelectedStoreHomeConfig().catch((error) => {
+        if (storeHomeConfigResult) storeHomeConfigResult.textContent = `تعذر تحميل إعدادات المنشأة: ${error.message || error}`;
+      });
+    });
+    storeHomeConfigForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const storeId = String(storeHomeConfigTarget?.value || '').trim();
+      if (!storeId) return;
+      if (storeHomeConfigResult) storeHomeConfigResult.textContent = 'جارٍ حفظ إعدادات المنشأة المختارة...';
+      try {
+        await updateDoc(doc(db, 'restaurants', storeId), {
+          featuredOnHome: storeHomeFeaturedInput?.checked === true,
+          showInHomeOffers: storeHomeOffersInput?.checked === true,
+          updatedAt: serverTimestamp(),
+        });
+        if (storeHomeConfigResult) storeHomeConfigResult.textContent = 'تم حفظ إعدادات المنشأة المختارة فقط.';
+      } catch (error) {
+        if (storeHomeConfigResult) storeHomeConfigResult.textContent = `تعذر الحفظ: ${error.message || error}`;
+      }
+    });
+    storeHomeConfigForm.dataset.bound = 'true';
+  }
+
+  if (hasAdminPermission('config') && clientHomeImagesForm?.dataset.bound !== 'true') {
+    clientHomeImagesForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (clientHomeImagesResult) clientHomeImagesResult.textContent = 'جارٍ رفع صور الأقسام...';
+      try {
+        await saveClientHomeImages();
+        if (clientHomeImagesResult) clientHomeImagesResult.textContent = 'تم حفظ صور الأقسام. ستظهر في الصفحة الرئيسية للعميل.';
+      } catch (error) {
+        if (clientHomeImagesResult) clientHomeImagesResult.textContent = `تعذر حفظ الصور: ${error.message || error}`;
+      }
+    });
+    clientHomeImagesForm.dataset.bound = 'true';
+  }
+
+  if (hasAdminPermission('config') && rewardsConfigForm?.dataset.bound !== 'true') {
+    loadRewardsConfig().catch((error) => {
+      if (rewardsConfigResult) rewardsConfigResult.textContent = `تعذر تحميل إعدادات المكافآت: ${error.message || error}`;
+    });
+    rewardsConfigForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const amountPerPoint = Math.max(1, Math.floor(Number(rewardsAmountPerPointInput?.value || 100)));
+      const minRedeemPoints = Math.max(1, Math.floor(Number(rewardsMinRedeemPointsInput?.value || 100)));
+      if (rewardsConfigResult) rewardsConfigResult.textContent = 'جارٍ حفظ إعدادات المكافآت...';
+      try {
+        await setDoc(doc(db, 'clientHomeSettings', 'default'), {
+          rewards: {
+            enabled: rewardsEnabledInput?.checked === true,
+            amountPerPoint,
+            minRedeemPoints,
+          },
+          updatedAt: serverTimestamp(),
+          updatedByUid: auth.currentUser?.uid || '',
+        }, { merge: true });
+        if (rewardsConfigResult) rewardsConfigResult.textContent = 'تم حفظ برنامج المكافآت. ستُحتسب النقاط للطلبات التي تُسلّم لاحقاً.';
+      } catch (error) {
+        if (rewardsConfigResult) rewardsConfigResult.textContent = `تعذر حفظ المكافآت: ${error.message || error}`;
+      }
+    });
+    rewardsConfigForm.dataset.bound = 'true';
   }
 
   if (hasAdminPermission('config') && !appRemoteConfigFormBound && appRemoteConfigForm) {
@@ -8668,20 +11167,82 @@ function mountAdmins() {
   if (hasAdminPermission('admins')) {
     unsubscribers.push(
       onSnapshot(collection(db, 'admins'), (snap) => {
+        const adminsByUid = new Map();
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data() || {};
+          const uid = String(data.uid || docSnap.id || '').trim();
+          if (!uid) return;
+          adminsByUid.set(uid, data);
+        });
+
         const rows = snap.docs
           .map((d) => {
             const data = d.data() || {};
             const isActive = data.active === true || data.role === 'admin';
             const permissionsSummary = formatAdminPermissionsSummary(data.permissions);
+            const uid = String(data.uid || d.id || '').trim();
+            const canDeleteRestaurants = data.canDeleteRestaurants === true;
+            const hardDeleteBadge = `<span class="badge ${canDeleteRestaurants ? 'closed' : 'open'}">${canDeleteRestaurants ? 'مفعل' : 'غير مفعل'}</span>`;
+            const toggleButton = canGrantHardDeletePermission
+              ? `<button class="btn ${canDeleteRestaurants ? 'ghost' : 'danger'}" data-admin-toggle-hard-delete="${escapeHtml(uid)}">${canDeleteRestaurants ? 'إلغاء صلاحية الحذف النهائي' : 'تفعيل صلاحية الحذف النهائي'}</button>`
+              : '-';
             return `<tr>
               <td>${data.email || '-'}</td>
               <td>${data.uid || d.id}</td>
               <td>${data.role || '-'}</td>
               <td>${escapeHtml(permissionsSummary || 'كامل')}</td>
               <td><span class="badge ${isActive ? 'closed' : 'open'}">${isActive ? 'نشط' : 'غير نشط'}</span></td>
+              <td>${hardDeleteBadge}</td>
+              <td>${toggleButton}</td>
             </tr>`;
           });
-        setHtml(adminsTable, table(['البريد', 'UID', 'الدور', 'الصلاحيات', 'الحالة'], rows));
+        setHtml(adminsTable, table(['البريد', 'UID', 'الدور', 'الصلاحيات', 'الحالة', 'حذف المطاعم نهائيًا', 'إجراء'], rows));
+
+        if (canGrantHardDeletePermission && adminsTable) {
+          adminsTable.querySelectorAll('[data-admin-toggle-hard-delete]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              const uid = String(btn.getAttribute('data-admin-toggle-hard-delete') || '').trim();
+              if (!uid) return;
+
+              const data = adminsByUid.get(uid);
+              if (!data) return;
+
+              const nextValue = data.canDeleteRestaurants !== true;
+              const adminLabel = String(data.email || uid).trim();
+              const confirmText = nextValue
+                ? `هل تريد منح صلاحية الحذف النهائي للمطاعم إلى ${adminLabel}؟`
+                : `هل تريد سحب صلاحية الحذف النهائي للمطاعم من ${adminLabel}؟`;
+
+              if (!window.confirm(confirmText)) return;
+
+              try {
+                await withBtnLoading(btn, async () => {
+                  const permissions = normalizeAdminPermissions(data.permissions, { fallbackToAll: true });
+                  await setUserAdminRole({
+                    uid,
+                    active: data.active !== false,
+                    permissions,
+                    canDeleteRestaurants: nextValue,
+                  });
+                });
+                if (window.showToast) {
+                  window.showToast(
+                    nextValue
+                      ? 'تم تفعيل صلاحية الحذف النهائي بنجاح.'
+                      : 'تم سحب صلاحية الحذف النهائي بنجاح.',
+                    'success'
+                  );
+                }
+              } catch (err) {
+                if (window.showToast) {
+                  window.showToast(`تعذر تعديل الصلاحية: ${err.message || err}`, 'error');
+                } else {
+                  alert(`تعذر تعديل الصلاحية: ${err.message || err}`);
+                }
+              }
+            });
+          });
+        }
       })
     );
   }
@@ -8811,7 +11372,7 @@ function getRestaurantGeo(restaurantId, restaurantData) {
 
 function syncMapUiStateFromInputs() {
   mapUiState.orderStatus = String(mapOrderStatusFilter?.value || 'active');
-  mapUiState.style = String(mapStyleSelect?.value || 'voyager');
+  mapUiState.style = String(mapStyleSelect?.value || 'osm');
   mapUiState.showDrivers = mapLayerDriversInput ? mapLayerDriversInput.checked : true;
   mapUiState.showClients = mapLayerClientsInput ? mapLayerClientsInput.checked : true;
   mapUiState.showRestaurants = mapLayerRestaurantsInput ? mapLayerRestaurantsInput.checked : true;
@@ -8829,7 +11390,7 @@ function requestRefreshMapLayers() {
 
 function applyMapBaseLayer() {
   if (!liveMap || !window.L) return;
-  const preset = MAP_STYLE_PRESETS[mapUiState.style] || MAP_STYLE_PRESETS.voyager;
+  const preset = MAP_STYLE_PRESETS[mapUiState.style] || MAP_STYLE_PRESETS.osm;
   if (mapBaseLayer) {
     liveMap.removeLayer(mapBaseLayer);
   }
@@ -8987,6 +11548,11 @@ function bindMapDetailsActions() {
       }
     });
   });
+  mapDetails.querySelectorAll('[data-map-clear-selection]').forEach((button) => {
+    button.addEventListener('click', () => {
+      clearMapSelection();
+    });
+  });
   mapDetails.querySelectorAll('[data-map-open-order-workspace]').forEach((button) => {
     button.addEventListener('click', () => {
       const orderId = button.getAttribute('data-map-open-order-workspace');
@@ -9027,6 +11593,7 @@ function setMapDetails(html, options = {}) {
   if (!mapDetails) return;
   const actions = `
     <div class="map-details-actions">
+      <button class="btn ghost" type="button" data-map-clear-selection>إظهار الكل</button>
       <button class="btn ghost" type="button" data-map-toggle-pin-details>${mapUiState.pinDetails ? 'إلغاء تثبيت البطاقة' : 'تثبيت البطاقة'}</button>
       ${options.orderId ? `<button class="btn ghost" type="button" data-map-focus-order="${escapeHtml(options.orderId)}">إعادة تتبع الطلب</button>` : ''}
       ${options.orderId ? `<button class="btn primary" type="button" data-map-open-order-workspace="${escapeHtml(options.orderId)}">فتح مكتب الطلبات</button>` : ''}
@@ -9114,8 +11681,22 @@ function refreshMapLegendSummary() {
   }
 
   setMapLegendSummary(
-    `طلبات مطابقة: ${activeOrders} | مندوبون متاحون: ${availableDrivers}/${totalDrivers} | مندوبون مرسومون: ${trackedDrivers}/${totalDrivers} | مطاعم ظاهرة: ${visibleRestaurants}/${totalRestaurants} | مطاعم مخفية: ${hiddenRestaurants} | عملاء نشطون: ${totalClients}${hiddenSummary ? ` | أسباب الإخفاء: ${hiddenSummary}` : ''}`
+    `نشط: ${activeOrders} | مندوبون متاحون: ${availableDrivers} | مطاعم ظاهرة: ${visibleRestaurants} | عملاء نشطون: ${totalClients}${hiddenSummary ? ` | مخفي: ${hiddenRestaurants}` : ''}`
   );
+}
+
+function clearMapSelection() {
+  currentMapSelection = null;
+  clearSelectedOrderOnMap();
+  updateMapSelectionBanner('لا يوجد عنصر محدد.');
+  setMapDetails('<p class="muted">اختر عنصرًا من الخريطة أو البحث.</p>');
+  renderMapSearchResults();
+  requestRefreshMapLayers();
+}
+
+function shouldShowEntityUnderSelection() {
+  // Selection changes details and highlighting only; it must not trap map navigation.
+  return true;
 }
 
 function fitMapToLatLngs(latLngs, maxZoom = 15) {
@@ -9175,19 +11756,26 @@ function focusMapSearchEntity(type, id) {
 
     if (isDriver) {
       const data = mapState.drivers.get(id)?.data;
-      if (data) renderEntityDetails('driver', id, data);
+      if (data) {
+        renderEntityDetails('driver', id, data);
+        requestRefreshMapLayers();
+      }
       return;
     }
 
     if (isClient) {
       const data = mapState.clients.get(id)?.data;
-      if (data) renderEntityDetails('client', id, data);
+      if (data) {
+        renderEntityDetails('client', id, data);
+        requestRefreshMapLayers();
+      }
       return;
     }
 
     const data = mapState.restaurants.get(id)?.data;
     if (data) {
       renderEntityDetails('restaurant', id, data);
+      requestRefreshMapLayers();
     }
   };
 
@@ -9270,7 +11858,11 @@ function renderMapSearchResults() {
 
   setHtml(
     mapSearchResults,
-    limitedMatches.map((match) => `
+    `
+      <div class="map-search-focusbar">
+        <button class="btn primary map-focus-primary" type="button" data-map-search-type="${escapeHtml(limitedMatches[0].type)}" data-map-search-id="${escapeHtml(limitedMatches[0].id)}">تمركز سريع: ${escapeHtml(limitedMatches[0].title)}</button>
+      </div>
+      ${limitedMatches.map((match) => `
       <div class="map-search-item ${currentMapSelection?.type === match.type && currentMapSelection?.id === match.id ? 'active' : ''}">
         <div>
           <div class="map-search-item-meta"><span class="map-search-badge" data-kind="${escapeHtml(match.type)}">${escapeHtml(match.type === 'order' ? 'طلب' : match.type === 'restaurant' ? 'مطعم' : match.type === 'driver' ? 'مندوب' : 'عميل')}</span></div>
@@ -9279,7 +11871,8 @@ function renderMapSearchResults() {
         </div>
         <button class="btn ghost" type="button" data-map-search-type="${escapeHtml(match.type)}" data-map-search-id="${escapeHtml(match.id)}">تمركز</button>
       </div>
-    `).join('')
+      `).join('')}
+    `
   );
 
   mapSearchResults.querySelectorAll('[data-map-search-type]').forEach((button) => {
@@ -9357,26 +11950,15 @@ function normalizeOrderStatus(status) {
 }
 
 function isActiveOrder(order) {
-  const status = normalizeOrderStatus(order.status || order.orderStatus);
-  if (!status) return true;
-  return ![
-    'delivered',
-    'completed',
-    'cancelled',
-    'canceled',
-    'rejected',
-    'failed'
-  ].includes(status);
+  return isActiveOrderStatus(order?.orderStatus || order?.status);
 }
 
 function canDisplayOrderOnMap(orderData, orderId) {
-  if (isActiveOrder(orderData)) return true;
-  return Boolean(allowCompletedSelectedOrderOnMap && selectedOrderOnMapId && selectedOrderOnMapId === orderId);
+  return isActiveOrder(orderData);
 }
 
 function clearSelectedOrderOnMap() {
   selectedOrderOnMapId = '';
-  allowCompletedSelectedOrderOnMap = false;
   if (currentMapSelection?.type === 'order') {
     currentMapSelection = null;
     updateMapSelectionBanner('لا يوجد عنصر مثبت حاليًا.');
@@ -9428,10 +12010,13 @@ function getOrderTrackingInsight(orderData, restaurantGeo, driverGeo, clientGeo)
   return `المتابعة نشطة. مسافة المندوب للمطعم: ${driverToRestaurantKm.toFixed(2)} كم، وللعميل: ${driverToClientKm.toFixed(2)} كم.`;
 }
 
-function describeOrderRouteState(points) {
+function describeOrderRouteState(orderId, points) {
   const routeKey = buildRouteKey(points);
   if (mapRouteCache.has(routeKey)) {
     return 'مسار فعلي على الطرق';
+  }
+  if (mapRouteLastActualByOrder.get(orderId)?.points?.length) {
+    return 'مسار فعلي على الطرق، يجري تحديثه';
   }
   if (mapRoutePending.has(routeKey)) {
     return 'جارٍ جلب المسار الفعلي';
@@ -9474,7 +12059,7 @@ function renderOrderDetails(orderData, orderId) {
   if (restaurantGeo) routeSourcePoints.push([restaurantGeo.lat, restaurantGeo.lng]);
   if (driverGeo) routeSourcePoints.push([driverGeo.lat, driverGeo.lng]);
   if (clientGeo) routeSourcePoints.push([clientGeo.lat, clientGeo.lng]);
-  const routeStateLabel = describeOrderRouteState(routeSourcePoints);
+  const routeStateLabel = describeOrderRouteState(orderId, routeSourcePoints);
   const missingPieces = [
     restaurantGeo ? '' : 'المطعم بلا موقع صالح',
     driverId && !driverGeo ? 'المندوب المعين لا يرسل موقعًا حاليًا' : '',
@@ -9484,7 +12069,7 @@ function renderOrderDetails(orderData, orderId) {
   setMapDetails(`
     <div class="map-order-head">
       <div>
-        <h4>تفاصيل الطلب ${escapeHtml(formatUnifiedOrderCode(orderData.orderNumber, orderData.orderId, orderId))}</h4>
+        <h4>${escapeHtml(formatUnifiedOrderCode(orderData.orderNumber, orderData.orderId, orderId))}</h4>
         <div class="map-order-route-strip">
           <span class="map-route-node map-route-node--store">${escapeHtml(routeSummary[0])}</span>
           <span class="map-route-arrow">←</span>
@@ -9496,23 +12081,19 @@ function renderOrderDetails(orderData, orderId) {
       <span class="map-status-pill">${escapeHtml(orderData.status || orderData.orderStatus || '-')}</span>
     </div>
     <div class="map-detail-grid">
-      <div class="map-detail-metric"><span>المطعم</span><strong>${escapeHtml(restaurant?.name || orderData.restaurantName || restaurantId || '-')}</strong></div>
-      <div class="map-detail-metric"><span>المندوب</span><strong>${escapeHtml(driver?.name || driverId || 'غير معين')}</strong></div>
-      <div class="map-detail-metric"><span>العميل</span><strong>${escapeHtml(client?.name || orderData.clientName || clientId || '-')}</strong></div>
-      <div class="map-detail-metric"><span>الإجمالي</span><strong>${escapeHtml(String(orderData.totalWithDelivery ?? orderData.total ?? orderData.totalPrice ?? '-'))}</strong></div>
+      <div class="map-detail-metric"><span>المسار</span><strong>${escapeHtml(routeStateLabel)}</strong></div>
+      <div class="map-detail-metric"><span>القيمة</span><strong>${escapeHtml(String(orderData.totalWithDelivery ?? orderData.total ?? orderData.totalPrice ?? '-'))}</strong></div>
       <div class="map-detail-metric"><span>من</span><strong>${escapeHtml(routeAddressSummary[0])}</strong></div>
       <div class="map-detail-metric"><span>إلى</span><strong>${escapeHtml(routeAddressSummary[1])}</strong></div>
-      <div class="map-detail-metric"><span>المسار</span><strong>${escapeHtml(routeStateLabel)}</strong></div>
-      <div class="map-detail-metric"><span>التغطية</span><strong>${escapeHtml(`مطعم ${restaurantGeo ? 'نعم' : 'لا'} | مندوب ${driverGeo ? 'نعم' : 'لا'} | عميل ${clientGeo ? 'نعم' : 'لا'}`)}</strong></div>
     </div>
-    <div class="map-insight-card"><b>متابعة ذكية:</b> ${escapeHtml(trackingInsight)}</div>
-    ${missingPieces.length ? `<div class="map-alert-note"><b>تنبيه مكاني:</b> ${escapeHtml(missingPieces.join(' | '))}</div>` : ''}
+    <div class="map-insight-card">${escapeHtml(trackingInsight)}</div>
+    ${missingPieces.length ? `<div class="map-alert-note">${escapeHtml(missingPieces.join(' | '))}</div>` : ''}
     <div class="map-inline-actions">
-      ${restaurantId ? `<button class="btn ghost" type="button" data-map-open-store="${escapeHtml(restaurantId)}">فتح المتجر</button>` : ''}
-      ${driverId ? `<button class="btn ghost" type="button" data-map-open-driver="${escapeHtml(driverId)}">فتح المندوب</button>` : ''}
-      ${clientId ? `<button class="btn ghost" type="button" data-map-open-client="${escapeHtml(clientId)}">فتح العميل</button>` : ''}
+      ${restaurantId ? `<button class="btn ghost" type="button" data-map-open-store="${escapeHtml(restaurantId)}">المتجر</button>` : ''}
+      ${driverId ? `<button class="btn ghost" type="button" data-map-open-driver="${escapeHtml(driverId)}">المندوب</button>` : ''}
+      ${clientId ? `<button class="btn ghost" type="button" data-map-open-client="${escapeHtml(clientId)}">العميل</button>` : ''}
     </div>
-    <div><b>العناصر:</b><ul>${items}</ul></div>
+    <div><b>العناصر</b><ul>${items}</ul></div>
   `, {
     orderId,
     selection: {
@@ -9529,7 +12110,7 @@ function focusMapOnOrder(orderId) {
 
   if (!canDisplayOrderOnMap(orderEntry.data || {}, orderId)) {
     clearSelectedOrderOnMap();
-    setMapDetails('<p class="muted">هذا الطلب مكتمل، لذلك لا يظهر داخل تبويب الخريطة إلا إذا تم فتحه من تبويب إدارة الطلبات.</p>');
+    setMapDetails('<p class="muted">هذا الطلب غير نشط، لذلك لا يظهر داخل الخريطة الحية.</p>');
     return;
   }
 
@@ -9548,10 +12129,14 @@ function focusMapOnOrder(orderId) {
   if (clientGeo) points.push([clientGeo.lat, clientGeo.lng]);
 
   if (points.length === 1) {
-    liveMap.setView(points[0], 15);
+    liveMap.setView(points[0], 15, { animate: true });
   } else if (points.length > 1) {
     const bounds = window.L.latLngBounds(points);
-    liveMap.fitBounds(bounds.pad(0.25), { animate: true, maxZoom: 16 });
+    liveMap.fitBounds(bounds.pad(0.25), {
+      animate: true,
+      maxZoom: 16,
+      padding: [72, 72],
+    });
   }
 
   const orderMarker = markerState.orders.get(orderId);
@@ -9560,10 +12145,10 @@ function focusMapOnOrder(orderId) {
   }
 
   refreshOrderLines();
+  requestRefreshMapLayers();
 }
 
-function openOrderOnMap(orderId, options = {}) {
-  allowCompletedSelectedOrderOnMap = options.allowCompleted === true;
+function openOrderOnMap(orderId) {
   selectedOrderOnMapId = orderId;
   activateTab('map');
   setTimeout(() => {
@@ -9667,7 +12252,7 @@ function getSelectedOrderDriverId() {
   if (!selectedOrderOnMapId) return '';
   const orderData = mapState.orders.get(selectedOrderOnMapId)?.data;
   if (!orderData) return '';
-  return String(orderData.assignedDriverId || orderData.offeredDriverId || '').trim();
+  return String(orderData.assignedDriverId || '').trim();
 }
 
 function setOrUpdateMarker(stateMap, id, latLng, markerOptions, label, onClick) {
@@ -9716,6 +12301,7 @@ function refreshDriverMarkers() {
   const validIds = new Set();
   const highlightedDriverId = getSelectedOrderDriverId();
   mapState.drivers.forEach(({ data }, id) => {
+    if (!shouldShowEntityUnderSelection('driver', id)) return;
     const geo = extractGeo(data, ['location', 'currentLocation', 'lastLocation', 'liveLocation', 'address.location']);
     if (!geo) return;
     validIds.add(id);
@@ -9729,7 +12315,10 @@ function refreshDriverMarkers() {
       [geo.lat, geo.lng],
       { type: 'driver', variant: isCurrentDriver ? 'current' : (available ? 'online' : 'offline') },
       `${available ? 'مندوب متاح' : 'مندوب غير متاح'}: ${data.name || id} | ${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)} | آخر تحديث: ${lastUpdateLabel}`,
-      () => renderEntityDetails('driver', id, data)
+      () => {
+        renderEntityDetails('driver', id, data);
+        requestRefreshMapLayers();
+      }
     );
   });
   removeMissingMarkers(markerState.drivers, validIds);
@@ -9748,6 +12337,7 @@ function refreshClientMarkers() {
 
   const validIds = new Set();
   mapState.clients.forEach(({ data }, id) => {
+    if (!shouldShowEntityUnderSelection('client', id)) return;
     if (!activeClientIds.has(id)) return;
     const geo = extractGeo(data, ['location', 'currentLocation', 'address.location', 'deliveryLocation']);
     if (!geo) return;
@@ -9758,7 +12348,10 @@ function refreshClientMarkers() {
       [geo.lat, geo.lng],
       { type: 'client', variant: 'active' },
       `عميل نشط: ${data.name || id}`,
-      () => renderEntityDetails('client', id, data)
+      () => {
+        renderEntityDetails('client', id, data);
+        requestRefreshMapLayers();
+      }
     );
   });
   removeMissingMarkers(markerState.clients, validIds);
@@ -9773,6 +12366,7 @@ function refreshRestaurantMarkers() {
   const validIds = new Set();
   const hiddenRestaurants = [];
   mapState.restaurants.forEach(({ data }, id) => {
+    if (!shouldShowEntityUnderSelection('restaurant', id)) return;
     const openState = data.temporarilyClosed ? 'closed' : 'open';
     const addresses = mapState.restaurantAddresses.get(id);
 
@@ -9811,12 +12405,15 @@ function refreshRestaurantMarkers() {
       [geo.lat, geo.lng],
       { type: 'restaurant', variant: openState },
       labelParts.join(' | '),
-      () => renderEntityDetails('restaurant', id, data, {
-        geo,
-        addressId: chosenAddressId,
-        addressData: chosenAddressEntry?.data || null,
-        isDefault: Boolean(chosenAddressId && String(data.defaultAddressId || '').trim() === chosenAddressId),
-      })
+      () => {
+        renderEntityDetails('restaurant', id, data, {
+          geo,
+          addressId: chosenAddressId,
+          addressData: chosenAddressEntry?.data || null,
+          isDefault: Boolean(chosenAddressId && String(data.defaultAddressId || '').trim() === chosenAddressId),
+        });
+        requestRefreshMapLayers();
+      }
     );
   });
 
@@ -9866,7 +12463,8 @@ function refreshOrderMarkers() {
   }
   const validIds = new Set();
   mapState.orders.forEach(({ data }, id) => {
-    if ((!matchesMapOrderFilter(data) && id !== selectedOrderOnMapId) || !canDisplayOrderOnMap(data, id)) return;
+    if (!shouldShowEntityUnderSelection('order', id)) return;
+    if (!matchesMapOrderFilter(data) || !canDisplayOrderOnMap(data, id)) return;
     const geo = extractGeo(data, ['deliveryLocation', 'clientLocation', 'address.location']);
     if (!geo) return;
     validIds.add(id);
@@ -9880,6 +12478,7 @@ function refreshOrderMarkers() {
         selectedOrderOnMapId = id;
         renderOrderDetails(data, id);
         refreshOrderLines();
+        requestRefreshMapLayers();
       }
     );
   });
@@ -9947,11 +12546,14 @@ function refreshOrderLines() {
     removeMissingOrderLines(new Set());
     return;
   }
+  if (!selectedOrderOnMapId) {
+    removeMissingOrderLines(new Set());
+    return;
+  }
   const validIds = new Set();
-  const routedOrderBudget = 8;
-  let routedOrderCount = 0;
   mapState.orders.forEach(({ data }, id) => {
-    if ((!matchesMapOrderFilter(data) && id !== selectedOrderOnMapId) || !canDisplayOrderOnMap(data, id)) return;
+    if (id !== selectedOrderOnMapId) return;
+    if (!matchesMapOrderFilter(data) || !canDisplayOrderOnMap(data, id)) return;
 
     const restaurantGeo = getRestaurantGeoByOrder(data);
     const driverGeo = getDriverGeoByOrder(data);
@@ -9976,12 +12578,9 @@ function refreshOrderLines() {
 
     validIds.add(id);
     const withDriver = Boolean(driverGeo);
-    const isSelected = selectedOrderOnMapId && selectedOrderOnMapId === id;
-    const shouldUseActualRoute = Boolean(isSelected || routedOrderCount < routedOrderBudget);
+    const isSelected = true;
+    const shouldUseActualRoute = true;
     const resolvedRoute = resolveOrderRoutePoints(id, points, shouldUseActualRoute);
-    if ((resolvedRoute.mode === 'actual' || resolvedRoute.mode === 'loading') && !isSelected) {
-      routedOrderCount += 1;
-    }
     setOrUpdateOrderLine(id, resolvedRoute.points, {
       routeKey: resolvedRoute.routeKey,
       routeMode: resolvedRoute.mode,
@@ -10067,7 +12666,7 @@ async function mountMap() {
         div.style.lineHeight = '1.6';
         div.style.fontSize = '12px';
         div.innerHTML =
-          'أخضر: مندوب متاح<br/>رمادي: مندوب غير متاح<br/>أزرق: عميل نشط<br/>برتقالي: مطعم مفتوح<br/>بني: مطعم مغلق<br/>أحمر أو أزرق نابض: طلب محدد أو نشط';
+          'مندوب: أخضر/رمادي<br/>عميل: أزرق<br/>مطعم: برتقالي/بني<br/>طلب محدد: أزرق';
         return div;
       };
       legend.addTo(liveMap);
@@ -10118,7 +12717,7 @@ async function mountMap() {
   }
   mapBootstrapped = true;
 
-  setMapDetails('<p class="muted">اختر علامة على الخريطة لعرض التفاصيل.</p>');
+  setMapDetails('<p class="muted">اختر عنصرًا من الخريطة أو نتائج البحث.</p>');
   renderMapEventFeed();
   updateMapSelectionBanner('لا يوجد عنصر مثبت حاليًا.');
   updateMapFullscreenButton();
@@ -10306,6 +12905,16 @@ function refreshPendingApprovalRealtimeState() {
   }));
 }
 
+function schedulePendingMountRefresh(delayMs = 240) {
+  if (pendingMountRefreshTimer) clearTimeout(pendingMountRefreshTimer);
+  pendingMountRefreshTimer = setTimeout(() => {
+    pendingMountRefreshTimer = null;
+    mountPending().catch((err) => {
+      console.warn('pending refresh failed after action', err);
+    });
+  }, delayMs);
+}
+
 function mountPendingApprovalRealtime() {
   if (pendingRealtimeBound) return;
   pendingRealtimeBound = true;
@@ -10386,11 +12995,19 @@ async function mountPending() {
 
   storeApps.forEach((d) => {
     const data = d.data() || {};
+    const businessTypeLabels = {
+      restaurant: 'مطعم',
+      brand: 'براند',
+      ecommerce: 'متجر إلكتروني',
+      grocery: 'بقالة',
+      pharmacy: 'صيدلية',
+    };
+    const businessTypeLabel = businessTypeLabels[data.businessType] || 'مطعم';
     storeCards.push(buildPendingApplicantCard({
       kind: 'store',
       id: d.id,
       data,
-      title: data.name || d.id,
+      title: `${data.name || d.id} - ${businessTypeLabel}`,
       imageUrl: data.commercialRecordImageUrl || '',
       actions: `
         <button class="btn ghost" data-approve-store-app="${d.id}">قبول</button>
@@ -10435,39 +13052,49 @@ async function mountPending() {
   pendingTable.querySelectorAll('[data-approve-courier-app]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const appId = btn.getAttribute('data-approve-courier-app');
-      await approveCourierApplication({ applicationId: appId });
-      await mountPending();
+      await withBtnLoading(btn, async () => {
+        await approveCourierApplication({ applicationId: appId });
+      });
+      btn.closest('.pending-application-card')?.remove();
+      schedulePendingMountRefresh();
     });
   });
 
   pendingTable.querySelectorAll('[data-reject-courier-app]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const appId = btn.getAttribute('data-reject-courier-app');
-      const snap = await getDoc(doc(db, 'courierApplications', appId));
-      if (!snap.exists()) return mountPending();
-      const data = snap.data() || {};
-      await setCourierDecision({
-        appId,
-        driverId: data.driverId || data.ownerUid || data.uid || appId,
-        ownerUid: data.ownerUid,
-        decision: 'rejected'
+      await withBtnLoading(btn, async () => {
+        const appId = btn.getAttribute('data-reject-courier-app');
+        const snap = await getDoc(doc(db, 'courierApplications', appId));
+        if (!snap.exists()) return;
+        const data = snap.data() || {};
+        await setCourierDecision({
+          appId,
+          driverId: data.driverId || data.ownerUid || data.uid || appId,
+          ownerUid: data.ownerUid,
+          decision: 'rejected'
+        });
       });
-      await mountPending();
+      btn.closest('.pending-application-card')?.remove();
+      schedulePendingMountRefresh();
     });
   });
 
   pendingTable.querySelectorAll('[data-approve-store-app]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       try {
-        const appId = btn.getAttribute('data-approve-store-app');
-        const result = await approveRestaurantApplication({ applicationId: appId });
+        let result = null;
+        await withBtnLoading(btn, async () => {
+          const appId = btn.getAttribute('data-approve-store-app');
+          result = await approveRestaurantApplication({ applicationId: appId });
+        });
         const payload = result?.data || {};
         if (payload.authCreated) {
           alert(`تمت الموافقة وإنشاء/تفعيل حساب دخول للمتجر بنجاح.\nالبريد: ${payload.email}`);
         } else {
           alert('تمت الموافقة على طلب المتجر بنجاح.');
         }
-        await mountPending();
+        btn.closest('.pending-application-card')?.remove();
+        schedulePendingMountRefresh();
       } catch (err) {
         alert(`تعذر قبول الطلب: ${err.message || err}`);
       }
@@ -10477,18 +13104,21 @@ async function mountPending() {
   pendingTable.querySelectorAll('[data-reject-store-app]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       try {
-        const appId = btn.getAttribute('data-reject-store-app');
-        const snap = await getDoc(doc(db, 'restaurantApplications', appId));
-        if (!snap.exists()) return mountPending();
-        const data = snap.data() || {};
-        await setStoreDecision({
-          appId,
-          restaurantId: data.restaurantId || data.ownerUid || data.uid || appId,
-          ownerUid: data.ownerUid,
-          appData: data,
-          decision: 'rejected'
+        await withBtnLoading(btn, async () => {
+          const appId = btn.getAttribute('data-reject-store-app');
+          const snap = await getDoc(doc(db, 'restaurantApplications', appId));
+          if (!snap.exists()) return;
+          const data = snap.data() || {};
+          await setStoreDecision({
+            appId,
+            restaurantId: data.restaurantId || data.ownerUid || data.uid || appId,
+            ownerUid: data.ownerUid,
+            appData: data,
+            decision: 'rejected'
+          });
         });
-        await mountPending();
+        btn.closest('.pending-application-card')?.remove();
+        schedulePendingMountRefresh();
       } catch (err) {
         alert(`تعذر رفض الطلب: ${err.message || err}`);
       }
@@ -10497,17 +13127,23 @@ async function mountPending() {
 
   pendingTable.querySelectorAll('[data-approve-store-entity]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const id = btn.getAttribute('data-approve-store-entity');
-      await setStoreDecision({ appId: id, restaurantId: id, ownerUid: id, decision: 'approved' });
-      await mountPending();
+      await withBtnLoading(btn, async () => {
+        const id = btn.getAttribute('data-approve-store-entity');
+        await setStoreDecision({ appId: id, restaurantId: id, ownerUid: id, decision: 'approved' });
+      });
+      btn.closest('.pending-application-card')?.remove();
+      schedulePendingMountRefresh();
     });
   });
 
   pendingTable.querySelectorAll('[data-reject-store-entity]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const id = btn.getAttribute('data-reject-store-entity');
-      await setStoreDecision({ appId: id, restaurantId: id, ownerUid: id, decision: 'rejected' });
-      await mountPending();
+      await withBtnLoading(btn, async () => {
+        const id = btn.getAttribute('data-reject-store-entity');
+        await setStoreDecision({ appId: id, restaurantId: id, ownerUid: id, decision: 'rejected' });
+      });
+      btn.closest('.pending-application-card')?.remove();
+      schedulePendingMountRefresh();
     });
   });
 
@@ -10560,25 +13196,53 @@ async function mountPending() {
 
   pendingMenuTable.querySelectorAll('[data-approve-menu-request]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const restaurantId = btn.getAttribute('data-approve-menu-request');
-      if (!restaurantId) return;
-      await setMenuApprovalDirect({ restaurantId, approved: true });
-      await mountPending();
+      await withBtnLoading(btn, async () => {
+        const restaurantId = btn.getAttribute('data-approve-menu-request');
+        if (!restaurantId) return;
+        await setMenuApprovalDirect({ restaurantId, approved: true });
+      });
+      btn.closest('.pending-application-card')?.remove();
+      schedulePendingMountRefresh();
     });
   });
 
   pendingMenuTable.querySelectorAll('[data-reject-menu-request]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const restaurantId = btn.getAttribute('data-reject-menu-request');
-      if (!restaurantId) return;
-      await setMenuApprovalDirect({ restaurantId, approved: false });
-      await mountPending();
+      await withBtnLoading(btn, async () => {
+        const restaurantId = btn.getAttribute('data-reject-menu-request');
+        if (!restaurantId) return;
+        await setMenuApprovalDirect({ restaurantId, approved: false });
+      });
+      btn.closest('.pending-application-card')?.remove();
+      schedulePendingMountRefresh();
     });
   });
 }
 
 function mountNotifications() {
   if (!notificationForm) return;
+
+  const clearNotificationPendingImage = () => {
+    notificationPendingImageFile = null;
+    if (notificationPendingImagePreviewUrl) {
+      URL.revokeObjectURL(notificationPendingImagePreviewUrl);
+      notificationPendingImagePreviewUrl = '';
+    }
+    if (notificationImageInput) notificationImageInput.value = '';
+    if (notificationImagePreview) notificationImagePreview.hidden = true;
+    notificationImagePreviewImg?.removeAttribute('src');
+  };
+
+  const renderNotificationPendingImage = () => {
+    if (!notificationImagePreview || !notificationImagePreviewImg) return;
+    if (!notificationPendingImageFile || !notificationPendingImagePreviewUrl) {
+      notificationImagePreview.hidden = true;
+      notificationImagePreviewImg.removeAttribute('src');
+      return;
+    }
+    notificationImagePreviewImg.src = notificationPendingImagePreviewUrl;
+    notificationImagePreview.hidden = false;
+  };
 
   const syncUserFields = () => {
     const isUserMode = String(notificationTargetType?.value || '') === 'user';
@@ -10589,6 +13253,29 @@ function mountNotifications() {
 
   if (!notificationFormBound) {
     notificationTargetType?.addEventListener('change', syncUserFields);
+    notificationAttachImageBtn?.addEventListener('click', () => notificationImageInput?.click());
+    notificationImageInput?.addEventListener('change', () => {
+      const file = notificationImageInput.files?.[0] || null;
+      if (!file) {
+        clearNotificationPendingImage();
+        return;
+      }
+      if (!String(file.type || '').startsWith('image/')) {
+        alert('اختر ملف صورة صالحاً.');
+        clearNotificationPendingImage();
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        alert('حجم الصورة يجب ألا يتجاوز 10MB.');
+        clearNotificationPendingImage();
+        return;
+      }
+      if (notificationPendingImagePreviewUrl) URL.revokeObjectURL(notificationPendingImagePreviewUrl);
+      notificationPendingImageFile = file;
+      notificationPendingImagePreviewUrl = URL.createObjectURL(file);
+      renderNotificationPendingImage();
+    });
+    notificationRemoveImageBtn?.addEventListener('click', clearNotificationPendingImage);
     notificationForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const targetType = String(notificationTargetType?.value || 'all');
@@ -10611,13 +13298,20 @@ function mountNotifications() {
       if (notificationResult) notificationResult.textContent = 'جارٍ إرسال الإشعار...';
 
       try {
-        const payload = { targetType, role, userId, title, body };
+        let imageUrl = '';
+        if (notificationPendingImageFile) {
+          if (notificationResult) notificationResult.textContent = 'جارٍ رفع الصورة...';
+          imageUrl = await uploadImageToCloudinary(notificationPendingImageFile) || '';
+          if (!imageUrl) throw new Error('تعذر رفع الصورة المرفقة.');
+        }
+        const payload = { targetType, role, userId, title, body, imageUrl };
         const res = await sendAdminNotification(payload);
         const sent = Number(res?.data?.sentCount || 0);
         if (notificationResult) notificationResult.textContent = `تم الإرسال بنجاح. عدد المستقبلين: ${sent}`;
         if (notificationBody) notificationBody.value = '';
         if (notificationTitle) notificationTitle.value = '';
         if (notificationUserId) notificationUserId.value = '';
+        clearNotificationPendingImage();
       } catch (err) {
         if (notificationResult) notificationResult.textContent = `تعذر إرسال الإشعار: ${err.message || err}`;
       } finally {

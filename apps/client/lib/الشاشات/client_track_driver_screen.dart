@@ -97,9 +97,9 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen>
     });
   }
 
-  String _generateChatId(String user1, String user2) {
+  String _generateChatId(String user1, String user2, String orderId) {
     final sorted = [user1, user2]..sort();
-    return '${sorted[0]}_${sorted[1]}';
+    return '${sorted[0]}_${orderId}_${sorted[1]}';
   }
 
   String _resolveDriverPhone(
@@ -590,7 +590,11 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen>
             driverPhone: driverPhone,
             canCall: driverPhone.isNotEmpty,
             canChat: clientId.isNotEmpty,
-            conversationId: _generateChatId(clientId, driverId),
+            conversationId: _generateChatId(
+              clientId,
+              driverId,
+              widget.orderId,
+            ),
             clientId: clientId,
             onCall: () => _callDriver(driverPhone),
             onChat: () => Navigator.push(
@@ -600,7 +604,11 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen>
                   currentUserId: clientId,
                   otherUserId: driverId,
                   currentUserRole: 'client',
-                  chatId: _generateChatId(clientId, driverId),
+                  chatId: _generateChatId(
+                    clientId,
+                    driverId,
+                    widget.orderId,
+                  ),
                   currentUserName:
                       clientName.isNotEmpty ? clientName : 'العميل',
                 ),

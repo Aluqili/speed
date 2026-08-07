@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
@@ -27,11 +28,20 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
   final _maxDiscountController = TextEditingController();
   final _minOrderController = TextEditingController();
   final _reviewNoteController = TextEditingController();
+  final _buyQtyController = TextEditingController(text: '3');
+  final _freeQtyController = TextEditingController(text: '1');
+  final _bundleQtyController = TextEditingController(text: '2');
+  final _bundlePriceController = TextEditingController();
+  final _nthQtyController = TextEditingController(text: '2');
+  final _nthPercentController = TextEditingController(text: '50');
+  final _spendMinController = TextEditingController();
+  final _spendPercentController = TextEditingController(text: '10');
   final _cloudinary =
       CloudinaryPublic('dvnzloec6', 'flutter_unsigned', cache: false);
 
   String _discountScope = 'order_total';
   String _discountType = 'percent';
+  String _offerKind = 'discount';
   DateTime? _startsAt;
   DateTime? _endsAt;
   String? _uploadedImageUrl;
@@ -40,6 +50,8 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
   final Set<String> _selectedItemIds = <String>{};
   final Map<String, Map<String, dynamic>> _selectedItems =
       <String, Map<String, dynamic>>{};
+
+  String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
 
   @override
   void initState() {
@@ -53,6 +65,19 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
       now.minute - (now.minute % 5),
     );
     _endsAt = _startsAt!.add(const Duration(days: 1));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _repairLegacyOfferOwnership();
+    });
+  }
+
+  Future<void> _repairLegacyOfferOwnership() async {
+    try {
+      await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('repairStoreOfferOwnership')
+          .call({'restaurantId': widget.restaurantId});
+    } catch (_) {
+      // The normal offers query remains available for newly created offers.
+    }
   }
 
   @override
@@ -64,7 +89,56 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
     _maxDiscountController.dispose();
     _minOrderController.dispose();
     _reviewNoteController.dispose();
+    _buyQtyController.dispose();
+    _freeQtyController.dispose();
+    _bundleQtyController.dispose();
+    _bundlePriceController.dispose();
+    _nthQtyController.dispose();
+    _nthPercentController.dispose();
+    _spendMinController.dispose();
+    _spendPercentController.dispose();
     super.dispose();
+  }
+
+  bool get _needsSpecificItems {
+    return _offerKind == 'buy_x_get_y' ||
+        _offerKind == 'bundle_price' ||
+        _offerKind == 'nth_item_percent' ||
+        _discountScope == 'specific_items';
+  }
+
+  Map<String, dynamic> _buildOfferRulePayload() {
+    if (_offerKind == 'buy_x_get_y') {
+      return {
+        'type': 'buy_x_get_y',
+        'buyQty': int.tryParse(_buyQtyController.text.trim()) ?? 3,
+        'freeQty': int.tryParse(_freeQtyController.text.trim()) ?? 1,
+        'applyOn': 'same_item',
+      };
+    }
+    if (_offerKind == 'bundle_price') {
+      return {
+        'type': 'bundle_price',
+        'bundleQty': int.tryParse(_bundleQtyController.text.trim()) ?? 2,
+        'bundlePrice': double.tryParse(_bundlePriceController.text.trim()) ?? 0,
+      };
+    }
+    if (_offerKind == 'nth_item_percent') {
+      return {
+        'type': 'nth_item_percent',
+        'nthQty': int.tryParse(_nthQtyController.text.trim()) ?? 2,
+        'percentOff': double.tryParse(_nthPercentController.text.trim()) ?? 50,
+      };
+    }
+    if (_offerKind == 'spend_x_get_percent') {
+      return {
+        'type': 'spend_x_get_percent',
+        'minSpend': double.tryParse(_spendMinController.text.trim()) ?? 0,
+        'percentOff':
+            double.tryParse(_spendPercentController.text.trim()) ?? 10,
+      };
+    }
+    return {'type': 'discount'};
   }
 
   String _formatDate(DateTime? value) {
@@ -74,7 +148,8 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
 
   String _formatOfferTimestamp(dynamic value) {
     if (value is Timestamp) {
-      return intl.DateFormat('yyyy/MM/dd - hh:mm a', 'ar').format(value.toDate());
+      return intl.DateFormat('yyyy/MM/dd - hh:mm a', 'ar')
+          .format(value.toDate());
     }
     return '-';
   }
@@ -161,11 +236,22 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
       );
       return;
     }
-    if (_discountScope == 'specific_items' && _selectedItemIds.isEmpty) {
+    if (_needsSpecificItems && _selectedItemIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('اختر وجبة واحدة على الأقل لهذا العرض.')),
       );
       return;
+    }
+
+    if (_offerKind == 'discount') {
+      final discountValue =
+          double.tryParse(_discountValueController.text.trim()) ?? 0;
+      if (discountValue <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('أدخل قيمة خصم صحيحة.')),
+        );
+        return;
+      }
     }
 
     setState(() => _submitting = true);
@@ -179,9 +265,12 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
           'title': _titleController.text.trim(),
           'description': _descriptionController.text.trim(),
           'badgeText': _badgeTextController.text.trim(),
+          'offerKind': _offerKind,
+          'offerRule': _buildOfferRulePayload(),
           'discountScope': _discountScope,
           'discountType': _discountType,
-          'discountValue': double.parse(_discountValueController.text.trim()),
+          'discountValue':
+              double.tryParse(_discountValueController.text.trim()) ?? 0,
           'maxDiscount':
               double.tryParse(_maxDiscountController.text.trim()) ?? 0,
           'minOrder': double.tryParse(_minOrderController.text.trim()) ?? 0,
@@ -211,6 +300,7 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
         now.minute - (now.minute % 5),
       );
       setState(() {
+        _offerKind = 'discount';
         _discountScope = 'order_total';
         _discountType = 'percent';
         _startsAt = nextStart;
@@ -334,8 +424,8 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                   SizedBox(height: 6),
                   Text(
                     'اطلب خصمًا على الطلب، التوصيل، أو وجبات محددة — بمجرد موافقة الأدمن يظهر العرض للعملاء فورًا.',
-                    style: TextStyle(
-                        color: Colors.white70, fontFamily: 'Tajawal'),
+                    style:
+                        TextStyle(color: Colors.white70, fontFamily: 'Tajawal'),
                   ),
                 ],
               ),
@@ -362,9 +452,10 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                         labelText: 'عنوان العرض',
                         hintText: 'مثال: خصم 20% على وجبات الغداء',
                       ),
-                      validator: (value) => (value == null || value.trim().isEmpty)
-                          ? 'أدخل عنوان العرض'
-                          : null,
+                      validator: (value) =>
+                          (value == null || value.trim().isEmpty)
+                              ? 'أدخل عنوان العرض'
+                              : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -374,9 +465,10 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                         labelText: 'وصف العرض',
                         hintText: 'اشرح الشروط والمزايا بشكل واضح للعميل',
                       ),
-                      validator: (value) => (value == null || value.trim().isEmpty)
-                          ? 'أدخل وصفًا للعرض'
-                          : null,
+                      validator: (value) =>
+                          (value == null || value.trim().isEmpty)
+                              ? 'أدخل وصفًا للعرض'
+                              : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -385,6 +477,46 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                         labelText: 'وسم قصير اختياري',
                         hintText: 'مثال: لفترة محدودة',
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: _offerKind,
+                      decoration: const InputDecoration(labelText: 'نوع العرض'),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'discount',
+                          child: Text('خصم مباشر'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'buy_x_get_y',
+                          child: Text('اشترِ X وخذ Y مجانًا'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'bundle_price',
+                          child: Text('باقة بسعر ثابت'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'nth_item_percent',
+                          child: Text('خصم على كل قطعة رقم N'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'spend_x_get_percent',
+                          child: Text('خصم عند تجاوز مبلغ شراء'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() {
+                          _offerKind = value;
+                          if (_offerKind != 'discount') {
+                            _discountScope = 'specific_items';
+                          }
+                          if (!_needsSpecificItems) {
+                            _selectedItemIds.clear();
+                            _selectedItems.clear();
+                          }
+                        });
+                      },
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -407,6 +539,7 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                             ],
                             onChanged: (value) {
                               if (value == null) return;
+                              if (_offerKind != 'discount') return;
                               setState(() {
                                 _discountScope = value;
                                 if (value != 'specific_items') {
@@ -430,6 +563,7 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                                   value: 'fixed', child: Text('مبلغ ثابت')),
                             ],
                             onChanged: (value) {
+                              if (_offerKind != 'discount') return;
                               if (value != null) {
                                 setState(() => _discountType = value);
                               }
@@ -439,41 +573,140 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextFormField(
-                            controller: _discountValueController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true),
-                            decoration: InputDecoration(
-                              labelText: _discountType == 'percent'
-                                  ? 'قيمة الخصم (%)'
-                                  : 'قيمة الخصم (ج.س)',
-                            ),
-                            validator: (value) {
-                              final parsed =
-                                  double.tryParse((value ?? '').trim());
-                              if (parsed == null || parsed <= 0) {
-                                return 'أدخل قيمة خصم صحيحة';
-                              }
-                              return null;
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextFormField(
-                            controller: _maxDiscountController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true),
-                            decoration: const InputDecoration(
-                              labelText: 'سقف الخصم اختياري',
+                    if (_offerKind == 'discount')
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _discountValueController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              decoration: InputDecoration(
+                                labelText: _discountType == 'percent'
+                                    ? 'قيمة الخصم (%)'
+                                    : 'قيمة الخصم (ج.س)',
+                              ),
+                              validator: (value) {
+                                final parsed =
+                                    double.tryParse((value ?? '').trim());
+                                if (parsed == null || parsed <= 0) {
+                                  return 'أدخل قيمة خصم صحيحة';
+                                }
+                                return null;
+                              },
                             ),
                           ),
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _maxDiscountController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              decoration: const InputDecoration(
+                                labelText: 'سقف الخصم اختياري',
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    else if (_offerKind == 'buy_x_get_y')
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _buyQtyController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                  labelText: 'اشترِ كمية'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _freeQtyController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                  labelText: 'كمية مجانية'),
+                            ),
+                          ),
+                        ],
+                      )
+                    else if (_offerKind == 'bundle_price')
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _bundleQtyController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                  labelText: 'عدد القطع في الباقة'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _bundlePriceController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              decoration: const InputDecoration(
+                                  labelText: 'سعر الباقة (ج.س)'),
+                            ),
+                          ),
+                        ],
+                      )
+                    else if (_offerKind == 'nth_item_percent')
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _nthQtyController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                  labelText: 'كل قطعة رقم N'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _nthPercentController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              decoration: const InputDecoration(
+                                  labelText: 'نسبة الخصم (%)'),
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _spendMinController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              decoration: const InputDecoration(
+                                  labelText: 'الحد الأدنى للشراء (ج.س)'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _spendPercentController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              decoration: const InputDecoration(
+                                  labelText: 'نسبة الخصم (%)'),
+                            ),
+                          ),
+                        ],
+                      ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _minOrderController,
@@ -543,13 +776,12 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                         ),
                       ),
                     ],
-                    if (_discountScope == 'specific_items') ...[
+                    if (_needsSpecificItems) ...[
                       const SizedBox(height: 16),
                       const Text(
                         'اختر الوجبات المشمولة بالعرض',
                         style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontFamily: 'Tajawal'),
+                            fontWeight: FontWeight.w700, fontFamily: 'Tajawal'),
                       ),
                       const SizedBox(height: 10),
                       StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -559,6 +791,12 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                             .collection('full_menu')
                             .snapshots(),
                         builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return const Text(
+                              'تعذر تحميل أصناف المتجر. أعد فتح الصفحة ثم حاول مرة أخرى.',
+                              style: TextStyle(fontFamily: 'Tajawal'),
+                            );
+                          }
                           if (!snapshot.hasData) {
                             return const Padding(
                               padding: EdgeInsets.symmetric(vertical: 8),
@@ -577,7 +815,8 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                               final data = doc.data();
                               final itemName =
                                   (data['name'] ?? 'صنف').toString();
-                              final selected = _selectedItemIds.contains(doc.id);
+                              final selected =
+                                  _selectedItemIds.contains(doc.id);
                               return FilterChip(
                                 label: Text(itemName),
                                 selected: selected,
@@ -640,15 +879,30 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
             ),
             const SizedBox(height: 12),
             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection('storeOffers')
-                  .where('restaurantId', isEqualTo: widget.restaurantId)
-                  .snapshots(),
+              stream: _currentUserId == null
+                  ? const Stream.empty()
+                  : FirebaseFirestore.instance
+                      .collection('storeOffers')
+                      .where('ownerUid', isEqualTo: _currentUserId)
+                      .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final docs = snapshot.data?.docs.toList() ?? [];
+                if (snapshot.hasError) {
+                  final error = snapshot.error;
+                  return _sectionCard(
+                    child: Text(
+                      'تعذر تحميل العروض: $error',
+                      style: const TextStyle(fontFamily: 'Tajawal'),
+                    ),
+                  );
+                }
+                final docs = (snapshot.data?.docs.toList() ?? [])
+                    .where((doc) =>
+                        doc.data()['restaurantId']?.toString() ==
+                        widget.restaurantId)
+                    .toList();
 
                 // Sort: active first, then pending, then rejected, then by updatedAt
                 int _statusOrder(Map<String, dynamic> d) {
@@ -693,23 +947,19 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                         (data['targetItems'] as List?) ?? const [];
                     final legacyReviewNote =
                         (data['reviewNote'] ?? '').toString().trim();
-                    final merchantReviewNote =
-                        (data['merchantReviewNote'] ??
-                                (status == 'pending' ? legacyReviewNote : ''))
-                            .toString()
-                            .trim();
-                    final adminReviewNote =
-                        (data['adminReviewNote'] ??
-                                (status == 'pending' ? '' : legacyReviewNote))
-                            .toString()
-                            .trim();
+                    final merchantReviewNote = (data['merchantReviewNote'] ??
+                            (status == 'pending' ? legacyReviewNote : ''))
+                        .toString()
+                        .trim();
+                    final adminReviewNote = (data['adminReviewNote'] ??
+                            (status == 'pending' ? '' : legacyReviewNote))
+                        .toString()
+                        .trim();
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: isLive
-                            ? const Color(0xFFF0FDF4)
-                            : Colors.white,
+                        color: isLive ? const Color(0xFFF0FDF4) : Colors.white,
                         borderRadius: BorderRadius.circular(22),
                         border: Border.all(
                           color: color.withValues(alpha: isLive ? 0.45 : 0.24),
@@ -728,8 +978,7 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                               ],
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       (data['title'] ?? '').toString(),
@@ -853,7 +1102,8 @@ class _StorePromocodeScreenState extends State<StorePromocodeScreen> {
                                       'ملاحظتك: $merchantReviewNote',
                                       style: const TextStyle(
                                         fontFamily: 'Tajawal',
-                                        color: AppThemeArabic.storeTextSecondary,
+                                        color:
+                                            AppThemeArabic.storeTextSecondary,
                                       ),
                                     ),
                                   ),

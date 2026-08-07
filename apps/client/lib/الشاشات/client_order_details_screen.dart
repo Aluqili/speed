@@ -2,6 +2,7 @@
 import '../الثيم/client_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:speedstar_core/speedstar_core.dart'
@@ -42,6 +43,281 @@ class ClientOrderDetailsScreen extends StatelessWidget {
 
   final String orderId;
   const ClientOrderDetailsScreen({super.key, required this.orderId});
+
+  Future<void> _respondToSubstitution(
+    BuildContext context,
+    String decision,
+  ) async {
+    try {
+      await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('clientRespondToOrderSubstitution')
+          .call({'orderId': orderId, 'decision': decision});
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          decision == 'accept'
+              ? 'تمت الموافقة على التعديل وتحديث قيمة الطلب.'
+              : 'تم رفض التعديل المقترح وإبلاغ المتجر.',
+        ),
+      ));
+    } on FirebaseFunctionsException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message ?? 'تعذر تنفيذ القرار حالياً')),
+      );
+    }
+  }
+
+  Future<void> _resolveUnavailableItem(
+    BuildContext context, {
+    required String decision,
+    String? menuItemId,
+  }) async {
+    try {
+      await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('clientResolveUnavailableOrderItem')
+          .call({
+        'orderId': orderId,
+        'decision': decision,
+        if (menuItemId != null) 'menuItemId': menuItemId,
+      });
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          decision == 'replacement'
+              ? 'تم اختيار البديل وإبلاغ المطعم.'
+              : 'سيكتمل الطلب بدون الصنف غير المتوفر.',
+        ),
+      ));
+    } on FirebaseFunctionsException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message ?? 'تعذر حفظ الاختيار حالياً')),
+      );
+    }
+  }
+
+  Future<void> _cancelParcelDelivery(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('إلغاء توصيل الغرض'),
+        content: const Text(
+          'سيُعاد مبلغ التوصيل إلى محفظتك إذا لم يقبل المندوب الطلب بعد.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('رجوع'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('إلغاء واسترجاع المبلغ'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final result = await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('cancelClientParcelDelivery')
+          .call({'orderId': orderId});
+      final refund = (result.data['refundAmount'] as num?)?.toDouble() ?? 0;
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(
+                'تم الإلغاء وإعادة ${refund.toStringAsFixed(0)} ج.س إلى محفظتك.')),
+      );
+    } on FirebaseFunctionsException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message ?? 'تعذر إلغاء التوصيل حالياً.')),
+      );
+    }
+  }
+
+  Future<void> _chooseReplacement(
+    BuildContext context,
+    Map<String, dynamic> orderData,
+  ) async {
+    final restaurantId = (orderData['restaurantId'] ?? '').toString().trim();
+    final unavailableItem = Map<String, dynamic>.from(
+      (orderData['unavailableItem'] as Map?) ?? const <String, dynamic>{},
+    );
+    final unavailableMenuItemIds = {
+      (unavailableItem['menuItemId'] ?? '').toString().trim(),
+      (unavailableItem['id'] ?? '').toString().trim(),
+    }..removeWhere((id) => id.isEmpty);
+    if (restaurantId.isEmpty) return;
+    final selectedMenuItemId = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        String? selectedId;
+        return StatefulBuilder(
+          builder: (context, setSheetState) => SafeArea(
+            child: SizedBox(
+              height: MediaQuery.sizeOf(context).height * 0.78,
+              child: Column(children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 20, 16, 10),
+                  child: Text('اختر بديلاً من قائمة المطعم',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                ),
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('restaurants')
+                        .doc(restaurantId)
+                        .collection('full_menu')
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final availableItems = snapshot.data!.docs
+                          .where((doc) =>
+                              doc.data()['available'] != false &&
+                              !unavailableMenuItemIds.contains(doc.id))
+                          .toList();
+                      if (availableItems.isEmpty) {
+                        return const Center(
+                            child: Text('لا توجد بدائل متاحة حالياً.'));
+                      }
+                      return GridView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 0.72,
+                        ),
+                        itemCount: availableItems.length,
+                        itemBuilder: (context, index) {
+                          final document = availableItems[index];
+                          final item = document.data();
+                          final selected = selectedId == document.id;
+                          final imageUrl =
+                              (item['imageUrl'] ?? '').toString().trim();
+                          final name = (item['name'] ?? 'صنف').toString();
+                          final category =
+                              (item['category'] ?? '').toString().trim();
+                          final price = item['price'] is num
+                              ? item['price'] as num
+                              : num.tryParse('${item['price'] ?? ''}') ?? 0;
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => setSheetState(
+                              () => selectedId = document.id,
+                            ),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 160),
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? Theme.of(context)
+                                        .colorScheme
+                                        .primaryContainer
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: selected
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Colors.black12,
+                                  width: selected ? 2 : 1,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: ClipRRect(
+                                      borderRadius: const BorderRadius.vertical(
+                                        top: Radius.circular(15),
+                                      ),
+                                      child: imageUrl.isNotEmpty
+                                          ? Image.network(
+                                              imageUrl,
+                                              width: double.infinity,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) =>
+                                                  const Center(
+                                                child: Icon(
+                                                    Icons.fastfood_rounded),
+                                              ),
+                                            )
+                                          : const Center(
+                                              child:
+                                                  Icon(Icons.fastfood_rounded),
+                                            ),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.all(10),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.w800)),
+                                        if (category.isNotEmpty)
+                                          Text(category,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.black54)),
+                                        const SizedBox(height: 4),
+                                        Text('${price.toStringAsFixed(0)} ج.س',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                            )),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: selectedId == null
+                          ? null
+                          : () => Navigator.pop(sheetContext, selectedId),
+                      child: const Text('تم اختيار البديل'),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+        );
+      },
+    );
+    if (selectedMenuItemId != null && context.mounted) {
+      await _resolveUnavailableItem(
+        context,
+        decision: 'replacement',
+        menuItemId: selectedMenuItemId,
+      );
+    }
+  }
 
   String _normalizeOrderStep(String status) {
     switch (status.trim()) {
@@ -129,9 +405,9 @@ class ClientOrderDetailsScreen extends StatelessWidget {
     return null;
   }
 
-  String _generateChatId(String user1, String user2) {
+  String _generateChatId(String user1, String user2, String orderId) {
     final sorted = [user1, user2]..sort();
-    return '${sorted[0]}_${sorted[1]}';
+    return '${sorted[0]}_${orderId}_${sorted[1]}';
   }
 
   String _resolveDriverPhone(
@@ -168,7 +444,8 @@ class ClientOrderDetailsScreen extends StatelessWidget {
         FirebaseFirestore.instance.collection('orders').doc(orderId);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? ClientColors.surface : Colors.white;
-    final cardBorder = isDark ? const Color(0x22FF6B00) : const Color(0x14000000);
+    final cardBorder =
+        isDark ? const Color(0x22FF6B00) : const Color(0x14000000);
     final cardShadow = ClientColors.softCardShadow(
       dark: isDark,
       opacity: 0.06,
@@ -214,7 +491,8 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                     (total + delivery + largeOrderFee);
             final walletUsedAmount =
                 (data['walletUsedAmount'] as num?)?.toDouble() ??
-                (data['walletRequestedAmount'] as num?)?.toDouble() ?? 0.0;
+                    (data['walletRequestedAmount'] as num?)?.toDouble() ??
+                    0.0;
             final discountAmount =
                 (data['discountAmount'] as num?)?.toDouble() ?? 0.0;
             final amountPaidExternal =
@@ -226,6 +504,8 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                     '';
             final paymentStatus = _normalizePaymentStatus(rawPaymentStatus);
             final orderStatus = _normalizeOrderStep(rawOrderStatus);
+            final isParcelDelivery =
+                data['orderSource'] == 'client_parcel_delivery';
             final assignedDriverId =
                 (data['assignedDriverId'] ?? '').toString().trim();
             final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -303,6 +583,49 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                           ]),
                     ),
 
+                    if (data['substitutionStatus'] ==
+                        'pending_client_response') ...[
+                      const SizedBox(height: 16),
+                      _buildSubstitutionCard(context, data),
+                    ],
+                    if (data['unavailableItemPending'] == true) ...[
+                      const SizedBox(height: 16),
+                      _buildUnavailableItemCard(context, data),
+                    ],
+                    if (isParcelDelivery &&
+                        assignedDriverId.isEmpty &&
+                        (rawOrderStatus == 'courier_searching' ||
+                            rawOrderStatus == 'courier_offer_pending')) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.red.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('لم يقبل مندوب الطلب بعد',
+                                style: TextStyle(fontWeight: FontWeight.w800)),
+                            const SizedBox(height: 8),
+                            const Text(
+                                'يمكنك الإلغاء الآن وسيعاد مبلغ التوصيل إلى محفظتك.'),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: () => _cancelParcelDelivery(context),
+                              icon: const Icon(Icons.cancel_outlined),
+                              label: const Text('إلغاء التوصيل'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
                     if (assignedDriverId.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       StreamBuilder<DocumentSnapshot>(
@@ -349,6 +672,7 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                                           final chatId = _generateChatId(
                                             clientId,
                                             assignedDriverId,
+                                            orderId,
                                           );
                                           Navigator.push(
                                             context,
@@ -486,9 +810,10 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                             color: textPrimary)),
                     const SizedBox(height: 8),
-                    _buildRow(context,
-                        'قيمة الأصناف', '${total.toStringAsFixed(2)} ج.س'),
-                    _buildRow(context,
+                    _buildRow(context, 'قيمة الأصناف',
+                        '${total.toStringAsFixed(2)} ج.س'),
+                    _buildRow(
+                        context,
                         'رسوم التوصيل',
                         delivery == 0
                             ? 'مجانًا'
@@ -658,8 +983,7 @@ class ClientOrderDetailsScreen extends StatelessWidget {
                                   const SizedBox(height: 4),
                                   Text(
                                     'رقم المندوب: $driverPhone',
-                                    style:
-                                        TextStyle(color: textSecondary),
+                                    style: TextStyle(color: textSecondary),
                                   ),
                                 ],
                                 const SizedBox(height: 12),
@@ -747,6 +1071,120 @@ class ClientOrderDetailsScreen extends StatelessWidget {
         ]),
       );
 
+  Widget _buildSubstitutionCard(
+    BuildContext context,
+    Map<String, dynamic> orderData,
+  ) {
+    final difference =
+        (orderData['substitutionPriceDifference'] as num?)?.toDouble() ?? 0;
+    final items = List<Map<String, dynamic>>.from(
+      (orderData['substitutionItems'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item)),
+    );
+    final differenceText = difference == 0
+        ? 'لا يوجد فرق في السعر'
+        : difference > 0
+            ? 'زيادة ${difference.toStringAsFixed(0)} ج.س ستسجل على محفظتك'
+            : 'سيعاد ${difference.abs().toStringAsFixed(0)} ج.س إلى محفظتك';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('تعديل مقترح على طلبك',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+          if ((orderData['substitutionNote'] ?? '')
+              .toString()
+              .trim()
+              .isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text((orderData['substitutionNote']).toString()),
+          ],
+          const SizedBox(height: 8),
+          ...items.map((item) => Text(
+                '${item['quantity'] ?? 1} × ${item['name'] ?? 'صنف'} - ${item['total'] ?? 0} ج.س',
+              )),
+          const SizedBox(height: 10),
+          Text(differenceText,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: difference > 0 ? Colors.deepOrange : Colors.green,
+              )),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+              child: FilledButton(
+                onPressed: () => _respondToSubstitution(context, 'accept'),
+                child: const Text('موافقة'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => _respondToSubstitution(context, 'reject'),
+                child: const Text('رفض التعديل'),
+              ),
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUnavailableItemCard(
+    BuildContext context,
+    Map<String, dynamic> orderData,
+  ) {
+    final item = Map<String, dynamic>.from(
+      (orderData['unavailableItem'] as Map?) ?? const <String, dynamic>{},
+    );
+    final itemName =
+        (item['name'] ?? item['title'] ?? 'أحد أصناف الطلب').toString();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.28)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('صنف غير متوفر',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+        const SizedBox(height: 6),
+        Text(
+            'أبلغك المطعم أن «$itemName» غير متوفر. اختر بديلاً من القائمة أو أكمل طلبك بدونه.'),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: () => _chooseReplacement(context, orderData),
+            icon: const Icon(Icons.restaurant_menu_outlined),
+            label: const Text('اختر بديلاً'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: () => _resolveUnavailableItem(
+              context,
+              decision: 'continue_without',
+            ),
+            child: const Text('الإكمال بدون البديل'),
+          ),
+        ),
+      ]),
+    );
+  }
+
   Widget _buildRatingActionCard(
     BuildContext context, {
     required String orderId,
@@ -758,7 +1196,8 @@ class ClientOrderDetailsScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.primaryColor.withValues(alpha: 0.12)),
+        border:
+            Border.all(color: AppColors.primaryColor.withValues(alpha: 0.12)),
         boxShadow: ClientColors.softCardShadow(
           opacity: 0.06,
           blur: 16,

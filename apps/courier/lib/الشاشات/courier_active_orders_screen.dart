@@ -1,18 +1,26 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:speedstar_core/speedstar_core.dart'
     show OrderStatusPalette, formatUnifiedOrderCode;
+import '../helpers/courier_runtime_helpers.dart';
 
 import 'courier_client_contact_card.dart';
 import 'courier_confirm_delivery_screen.dart';
 import 'courier_order_details_screen.dart';
 import 'courier_ui.dart';
 
-class CourierActiveOrdersScreen extends StatelessWidget {
+class CourierActiveOrdersScreen extends StatefulWidget {
   final String driverId;
 
   const CourierActiveOrdersScreen({super.key, required this.driverId});
+
+  @override
+  State<CourierActiveOrdersScreen> createState() =>
+      _CourierActiveOrdersScreenState();
+}
+
+class _CourierActiveOrdersScreenState extends State<CourierActiveOrdersScreen> {
+  final Set<String> _processingOrderIds = <String>{};
 
   static const List<String> validStatuses = [
     'courier_assigned',
@@ -24,6 +32,55 @@ class CourierActiveOrdersScreen extends StatelessWidget {
     'وصل إلى العميل',
   ];
 
+  bool _isProcessingOrder(String orderId) {
+    return _processingOrderIds.contains(orderId);
+  }
+
+  Future<void> _updateOrderStage({
+    required String orderId,
+    required String nextStage,
+  }) async {
+    if (_isProcessingOrder(orderId)) return;
+    setState(() {
+      _processingOrderIds.add(orderId);
+    });
+    try {
+      await courierInvokeCallable(
+        'courierUpdateOrderStage',
+        {
+          'orderId': orderId,
+          'driverId': widget.driverId,
+          'stage': nextStage,
+        },
+        timeout: const Duration(seconds: 10),
+        maxAttempts: 2,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تم تحديث حالة الطلب إلى "$nextStage"')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            courierFriendlyFunctionsError(
+              e,
+              fallback: 'تعذر تحديث حالة الطلب الآن. حاول مرة أخرى.',
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _processingOrderIds.remove(orderId);
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -32,7 +89,7 @@ class CourierActiveOrdersScreen extends StatelessWidget {
         child: StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('orders')
-              .where('assignedDriverId', isEqualTo: driverId)
+              .where('assignedDriverId', isEqualTo: widget.driverId)
               .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -122,7 +179,8 @@ class CourierActiveOrdersScreen extends StatelessWidget {
                           const SizedBox(height: 10),
                           CourierClientContactCard(
                             orderData: data,
-                            driverId: driverId,
+                            orderId: orderId,
+                            driverId: widget.driverId,
                             compact: true,
                             showPhone: true,
                           ),
@@ -132,7 +190,7 @@ class CourierActiveOrdersScreen extends StatelessWidget {
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(height: 14),
-                          _buildActionButton(context, status, orderId, driverId),
+                          _buildActionButton(context, status, orderId),
                           const SizedBox(height: 10),
                           OutlinedButton.icon(
                             onPressed: () {
@@ -141,7 +199,7 @@ class CourierActiveOrdersScreen extends StatelessWidget {
                                 MaterialPageRoute(
                                   builder: (_) => CourierOrderDetailsScreen(
                                     orderId: orderId,
-                                    driverId: driverId,
+                                    driverId: widget.driverId,
                                   ),
                                 ),
                               );
@@ -166,7 +224,6 @@ class CourierActiveOrdersScreen extends StatelessWidget {
     BuildContext context,
     String status,
     String orderId,
-    String driverId,
   ) {
     String? buttonText;
     String? newStatus;
@@ -191,39 +248,40 @@ class CourierActiveOrdersScreen extends StatelessWidget {
     }
 
     if (buttonText == null || newStatus == null) return const SizedBox();
+    final nextStage = newStatus;
+    final isProcessing = _isProcessingOrder(orderId);
 
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
         onPressed: () async {
-          if (newStatus == 'delivered') {
+          if (isProcessing) return;
+          if (nextStage == 'delivered') {
             Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) => CourierConfirmDeliveryScreen(
                   orderId: orderId,
-                  driverId: driverId,
+                  driverId: widget.driverId,
                 ),
               ),
             );
             return;
           }
 
-          await FirebaseFunctions.instanceFor(region: 'me-central1')
-              .httpsCallable('courierUpdateOrderStage')
-              .call({
-            'orderId': orderId,
-            'driverId': driverId,
-            'stage': newStatus,
-          });
-
-          if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('تم تحديث حالة الطلب إلى "$newStatus"')),
-          );
+          await _updateOrderStage(orderId: orderId, nextStage: nextStage);
         },
-        icon: const Icon(Icons.check_circle_rounded),
-        label: Text(buttonText),
+        icon: isProcessing
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.check_circle_rounded),
+        label: Text(isProcessing ? 'جاري التحديث...' : buttonText),
       ),
     );
   }

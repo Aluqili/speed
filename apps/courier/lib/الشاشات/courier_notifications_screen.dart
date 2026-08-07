@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-
-import 'courier_order_details_screen.dart';
+import 'courier_new_orders_screen.dart';
+import 'courier_notification_details_screen.dart';
 import 'courier_ui.dart';
 
 class CourierNotificationsScreen extends StatefulWidget {
@@ -16,6 +16,42 @@ class CourierNotificationsScreen extends StatefulWidget {
 
 class _CourierNotificationsScreenState
     extends State<CourierNotificationsScreen> {
+  String _extractFirstUrl(String text) {
+    final match =
+        RegExp(r'https?:\/\/[^\s]+', caseSensitive: false).firstMatch(text);
+    if (match == null) return '';
+    return match.group(0)?.replaceAll(RegExp(r'[\]\[\)\(>,،؛!؟.,]+$'), '') ??
+        '';
+  }
+
+  String _firstNonEmpty(List<dynamic> values) {
+    for (final value in values) {
+      final text = (value ?? '').toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return '';
+  }
+
+  String _notificationImageUrl(Map<String, dynamic> data) {
+    return _firstNonEmpty([
+      data['imageUrl'],
+      data['image'],
+      data['photoUrl'],
+      data['proofImageUrl'],
+      data['receiptImageUrl'],
+    ]);
+  }
+
+  String _notificationLink(Map<String, dynamic> data) {
+    final body = (data['body'] ?? '').toString();
+    return _firstNonEmpty([
+      data['receiptUrl'],
+      data['url'],
+      data['link'],
+      _extractFirstUrl(body),
+    ]);
+  }
+
   Future<void> _openNotification(
     BuildContext context,
     DocumentSnapshot<Map<String, dynamic>> doc,
@@ -27,15 +63,30 @@ class _CourierNotificationsScreenState
       'readAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
-    final orderId = (data['orderId'] ?? '').toString().trim();
-    if (!mounted || orderId.isEmpty) return;
-
+    if (!mounted) return;
+    final type = (data['type'] ?? '').toString().toLowerCase();
+    if (type == 'courier_offer_pending') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CourierNewOrdersScreen(driverId: widget.driverId),
+        ),
+      );
+      return;
+    }
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => CourierOrderDetailsScreen(
-          orderId: orderId,
+        builder: (_) => CourierNotificationDetailsScreen(
           driverId: widget.driverId,
+          title: (data['title'] ?? 'إشعار').toString(),
+          body: (data['body'] ?? '').toString(),
+          type: (data['type'] ?? '').toString(),
+          orderId: (data['orderId'] ?? '').toString(),
+          imageUrl: _notificationImageUrl(data),
+          linkUrl: _notificationLink(data),
+          createdAt: CourierNotificationDetailsScreen.parseCreatedAt(
+              data['createdAt']),
         ),
       ),
     );
@@ -78,15 +129,12 @@ class _CourierNotificationsScreenState
               );
             }
 
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return const CourierEmptyState(
-                title: 'لا توجد إشعارات جديدة',
-                message: 'أي تحديث يخص الطلبات أو المحفظة سيظهر هنا.',
-                icon: Icons.notifications_off_outlined,
-              );
-            }
-
-            final notifications = [...snapshot.data!.docs]..sort((a, b) {
+            final notifications = (snapshot.data?.docs ?? const [])
+                .where((doc) =>
+                    (doc.data()['type'] ?? '').toString().toLowerCase() !=
+                    'courier_offer_pending')
+                .toList()
+              ..sort((a, b) {
                 final aDate = a.data()['createdAt'];
                 final bDate = b.data()['createdAt'];
                 final aMs = aDate is Timestamp
@@ -98,6 +146,14 @@ class _CourierNotificationsScreenState
                 return bMs.compareTo(aMs);
               });
 
+            if (notifications.isEmpty) {
+              return const CourierEmptyState(
+                title: 'لا توجد إشعارات جديدة',
+                message: 'أي تحديث يخص الطلبات أو المحفظة سيظهر هنا.',
+                icon: Icons.notifications_off_outlined,
+              );
+            }
+
             final unreadCount = notifications.where((doc) {
               final data = doc.data();
               return !(data['read'] == true || data['isRead'] == true);
@@ -108,7 +164,8 @@ class _CourierNotificationsScreenState
               children: [
                 CourierHeroCard(
                   title: '$unreadCount غير مقروء',
-                  subtitle: 'الإشعارات الأحدث المتعلقة بالعروض والطلبات والحساب.',
+                  subtitle:
+                      'الإشعارات الأحدث المتعلقة بالعروض والطلبات والحساب.',
                   icon: Icons.notifications_active_rounded,
                 ),
                 const SizedBox(height: 16),
@@ -116,6 +173,13 @@ class _CourierNotificationsScreenState
                   final data = doc.data();
                   final isRead = data['read'] == true || data['isRead'] == true;
                   final type = (data['type'] ?? '').toString().toLowerCase();
+                  final body = (data['body'] ?? '').toString();
+                  final imageUrl = _notificationImageUrl(data);
+                  final hasImage =
+                      CourierNotificationDetailsScreen.isLikelyImageUrl(
+                    imageUrl,
+                  );
+                  final hasLink = _notificationLink(data).isNotEmpty;
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -171,7 +235,9 @@ class _CourierNotificationsScreenState
                                   ),
                                   const SizedBox(height: 6),
                                   Text(
-                                    (data['body'] ?? '').toString(),
+                                    body,
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontSize: 14,
                                       height: 1.5,
@@ -179,17 +245,21 @@ class _CourierNotificationsScreenState
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  if ((data['orderId'] ?? '')
-                                      .toString()
-                                      .trim()
-                                      .isNotEmpty)
+                                  if (hasImage ||
+                                      hasLink ||
+                                      (data['orderId'] ?? '')
+                                          .toString()
+                                          .trim()
+                                          .isNotEmpty)
                                     Padding(
                                       padding: const EdgeInsets.only(top: 10),
                                       child: OutlinedButton.icon(
                                         onPressed: () =>
                                             _openNotification(context, doc),
-                                        icon: const Icon(Icons.open_in_new_rounded),
-                                        label: const Text('فتح الطلب'),
+                                        icon: const Icon(
+                                          Icons.visibility_outlined,
+                                        ),
+                                        label: const Text('عرض تفاصيل الإشعار'),
                                       ),
                                     ),
                                 ],
