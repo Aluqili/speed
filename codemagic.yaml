@@ -103,9 +103,6 @@ workflows:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
       - flutter_drive.log
-    publishing:
-      app_store_connect:
-        auth: integration
 
   store_ios_validate:
     name: SpeedStar Store iOS Validate
@@ -211,9 +208,6 @@ workflows:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
       - flutter_drive.log
-    publishing:
-      app_store_connect:
-        auth: integration
 
   courier_ios_validate:
     name: SpeedStar Courier iOS Validate
