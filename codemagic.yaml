@@ -313,6 +313,3 @@ workflows:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
       - flutter_drive.log
-    publishing:
-      app_store_connect:
-        auth: integration
