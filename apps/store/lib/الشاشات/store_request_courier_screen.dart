@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart' show Factory;
 import 'package:flutter/gestures.dart'
     show EagerGestureRecognizer, OneSequenceGestureRecognizer;
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 
@@ -97,6 +96,25 @@ class _StoreRequestCourierScreenState extends State<StoreRequestCourierScreen> {
         host.endsWith('.google.co.uk');
   }
 
+  Future<LatLng?> _resolveGoogleMapsFallback(String value) async {
+    try {
+      final result = await _callable('resolveGoogleMapsLocation').call({
+        'mapUrl': value,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
+      final lat = (data['lat'] as num?)?.toDouble();
+      final lng = (data['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null || lat.abs() > 90 || lng.abs() > 180) {
+        return null;
+      }
+      return LatLng(lat, lng);
+    } on FirebaseFunctionsException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<LatLng?> _coordinatesFromMapInput(String value) async {
     final directCoordinates = _parseGoogleMapsCoordinates(value);
     if (directCoordinates != null) return directCoordinates;
@@ -126,17 +144,19 @@ class _StoreRequestCourierScreenState extends State<StoreRequestCourierScreen> {
               streamedResponse.statusCode < 300 ||
               streamedResponse.statusCode >= 400) {
             final body = await streamedResponse.stream.bytesToString();
-            return _parseGoogleMapsCoordinates(currentUri.toString()) ??
+            final point = _parseGoogleMapsCoordinates(currentUri.toString()) ??
                 _parseGoogleMapsCoordinates(body);
+            return point ?? await _resolveGoogleMapsFallback(value);
           }
           currentUri = currentUri.resolve(redirectTarget);
         }
-        return _parseGoogleMapsCoordinates(currentUri.toString());
+        return _parseGoogleMapsCoordinates(currentUri.toString()) ??
+            await _resolveGoogleMapsFallback(value);
       } finally {
         client.close();
       }
     } catch (_) {
-      return null;
+      return _resolveGoogleMapsFallback(value);
     }
   }
 
@@ -174,39 +194,6 @@ class _StoreRequestCourierScreenState extends State<StoreRequestCourierScreen> {
     await _mapController?.animateCamera(
       CameraUpdate.newCameraPosition(CameraPosition(target: point, zoom: 16)),
     );
-  }
-
-  Future<void> _useCurrentLocation() async {
-    try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        _showMessage('فعّل خدمة الموقع GPS ثم أعد المحاولة');
-        await Geolocator.openLocationSettings();
-        return;
-      }
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        _showMessage('يرجى السماح بصلاحية الموقع لتحديد النقطة');
-        return;
-      }
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        ),
-      );
-      final point = LatLng(position.latitude, position.longitude);
-      if (!mounted) return;
-      setState(() {
-        _destination = point;
-        _preview = null;
-      });
-      await _moveMapTo(point);
-    } catch (_) {
-      _showMessage('تعذر تحديد موقعك الحالي');
-    }
   }
 
   Future<void> _previewDelivery() async {
@@ -330,15 +317,6 @@ class _StoreRequestCourierScreenState extends State<StoreRequestCourierScreen> {
                             : const Icon(Icons.my_location_rounded),
                         tooltip: 'استخدام الرابط',
                         onPressed: _applyMapUrl))),
-            const SizedBox(height: 10),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: OutlinedButton.icon(
-                onPressed: _useCurrentLocation,
-                icon: const Icon(Icons.my_location_rounded),
-                label: const Text('تحديد موقعي GPS'),
-              ),
-            ),
             const SizedBox(height: 8),
             SizedBox(
               height: 260,

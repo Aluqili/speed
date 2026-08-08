@@ -60,6 +60,12 @@ class _ClientParcelDeliveryScreenState
       RegExp(
           r'/(?:maps/(?:place|search)|place)/(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)',
           caseSensitive: false),
+      RegExp(
+          r'(?:destination|location|latlng|coordinates)[=:/](-?\d{1,2}(?:\.\d+)?)[,;%20 ]+(-?\d{1,3}(?:\.\d+)?)',
+          caseSensitive: false),
+      RegExp(
+          r'/(?:place|search|dir)/(?:[^/]+/)?(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)',
+          caseSensitive: false),
       RegExp(r'^\s*(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)\s*$'),
     ];
     for (final pattern in patterns) {
@@ -80,7 +86,28 @@ class _ClientParcelDeliveryScreenState
         host == 'goo.gl' ||
         host == 'google.com' ||
         host.startsWith('google.') ||
-        host.contains('.google.');
+        host.contains('.google.') ||
+        host.endsWith('.google.com') ||
+        host.endsWith('.google.co.uk');
+  }
+
+  Future<LatLng?> _resolveGoogleMapsFallback(String value) async {
+    try {
+      final result = await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('resolveGoogleMapsLocation')
+          .call({'mapUrl': value});
+      final data = Map<String, dynamic>.from(result.data as Map);
+      final lat = (data['lat'] as num?)?.toDouble();
+      final lng = (data['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null || lat.abs() > 90 || lng.abs() > 180) {
+        return null;
+      }
+      return LatLng(lat, lng);
+    } on FirebaseFunctionsException {
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<LatLng?> _coordinatesFromLink(String raw) async {
@@ -106,13 +133,16 @@ class _ClientParcelDeliveryScreenState
         if (location == null ||
             response.statusCode < 300 ||
             response.statusCode >= 400) {
-          return _parseCoordinates(await response.stream.bytesToString());
+          final point =
+              _parseCoordinates(await response.stream.bytesToString());
+          return point ?? await _resolveGoogleMapsFallback(raw);
         }
         currentUri = currentUri.resolve(location);
       }
-      return _parseCoordinates(currentUri.toString());
+      return _parseCoordinates(currentUri.toString()) ??
+          await _resolveGoogleMapsFallback(raw);
     } catch (_) {
-      return null;
+      return _resolveGoogleMapsFallback(raw);
     } finally {
       client.close();
     }

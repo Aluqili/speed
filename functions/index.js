@@ -5169,6 +5169,135 @@ exports.estimateRoute = onCall({ region: REGION, timeoutSeconds: 12, memory: '25
   return fetchGoogleDirectionsRoute(origin, destination);
 });
 
+function googleMapsApiKey() {
+  return String(
+    process.env.GOOGLE_DIRECTIONS_API_KEY ||
+      process.env.GOOGLE_MAPS_API_KEY ||
+      process.env.MAPS_API_KEY ||
+      ''
+  ).trim();
+}
+
+function isGoogleMapsUrl(value) {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname === 'maps.app.goo.gl' ||
+      hostname === 'goo.gl' ||
+      hostname === 'google.com' ||
+      hostname.startsWith('google.') ||
+      hostname.includes('.google.') ||
+      hostname.endsWith('.google.com');
+  } catch (_) {
+    return false;
+  }
+}
+
+function coordinatesFromGoogleMapsText(value) {
+  const rawText = String(value || '');
+  let decodedText = rawText;
+  try {
+    decodedText = decodeURIComponent(rawText);
+  } catch (_) {
+    // Google page markup can contain literal percent signs outside URL encoding.
+  }
+  const text = decodedText
+    .replaceAll('+', ' ')
+    .replaceAll('\\u0026', '&')
+    .replaceAll('\\x26', '&');
+  const patterns = [
+    /(?:[?&](?:q|query|ll|destination|location|center|origin)=|@)(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)/i,
+    /!3d(-?\d{1,2}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/i,
+    /\/(?:maps\/(?:place|search)|place|search)\/(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)/i,
+    /^\s*(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)\s*$/,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const lat = Number(match[1]);
+    const lng = Number(match[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      return { lat, lng };
+    }
+  }
+  return null;
+}
+
+function googleMapsSearchText(value) {
+  try {
+    const url = new URL(value);
+    const query = url.searchParams.get('q') || url.searchParams.get('query');
+    if (query) return query.trim();
+    const pathMatch = url.pathname.match(/\/(?:maps\/)?(?:place|search)\/([^/]+)/i);
+    return pathMatch ? decodeURIComponent(pathMatch[1]).replaceAll('+', ' ').trim() : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+exports.resolveGoogleMapsLocation = onCall(
+  { region: REGION, timeoutSeconds: 20, memory: '256MiB' },
+  async (request) => {
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Authentication is required');
+    const mapUrl = String(request.data?.mapUrl || '').trim();
+    if (!mapUrl || mapUrl.length > 2000 || !isGoogleMapsUrl(mapUrl)) {
+      throw new HttpsError('invalid-argument', 'A valid Google Maps URL is required');
+    }
+
+    let currentUrl = mapUrl;
+    for (let redirectCount = 0; redirectCount < 5; redirectCount += 1) {
+      const directCoordinates = coordinatesFromGoogleMapsText(currentUrl);
+      if (directCoordinates) return { ok: true, ...directCoordinates, source: 'url' };
+
+      const response = await fetch(currentUrl, {
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
+          'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8',
+        },
+      });
+      const location = response.headers.get('location');
+      if (location && response.status >= 300 && response.status < 400) {
+        currentUrl = new URL(location, currentUrl).toString();
+        continue;
+      }
+      const body = await response.text();
+      const bodyCoordinates = coordinatesFromGoogleMapsText(body);
+      if (bodyCoordinates) return { ok: true, ...bodyCoordinates, source: 'page' };
+      break;
+    }
+
+    const searchText = googleMapsSearchText(currentUrl);
+    const apiKey = googleMapsApiKey();
+    if (!searchText || !apiKey) {
+      throw new HttpsError('failed-precondition', 'Google Maps did not return coordinates for this link');
+    }
+    const geocodeUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+    geocodeUrl.searchParams.set('address', searchText);
+    geocodeUrl.searchParams.set('language', 'ar');
+    geocodeUrl.searchParams.set('region', 'sd');
+    geocodeUrl.searchParams.set('key', apiKey);
+    const geocodeResponse = await fetch(geocodeUrl);
+    const geocodeBody = await geocodeResponse.json().catch(() => ({}));
+    const location = geocodeBody.results?.[0]?.geometry?.location;
+    const lat = Number(location?.lat);
+    const lng = Number(location?.lng);
+    if (!geocodeResponse.ok || geocodeBody.status !== 'OK' || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      logger.warn('Google Maps link resolution failed', {
+        status: geocodeBody.status,
+        httpStatus: geocodeResponse.status,
+      });
+      throw new HttpsError('failed-precondition', 'تعذر تحويل رابط Google Maps إلى موقع');
+    }
+    return {
+      ok: true,
+      lat,
+      lng,
+      source: 'geocoding',
+      formattedAddress: String(geocodeBody.results[0].formatted_address || '').trim(),
+    };
+  }
+);
+
 exports.adminGeocodeRestaurantAddress = onCall(
   { region: REGION, timeoutSeconds: 20, memory: '256MiB' },
   async (request) => {
