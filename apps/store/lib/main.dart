@@ -109,6 +109,8 @@ class _InitGateState extends State<_InitGate> {
         ...OpsRuntimeConfig.defaultFlagsFor('store'),
         ...AppUpdateConfig.defaultFlagsFor('store'),
         'accent_seed': '0F766E',
+        'store_recommended_build_ios': 0,
+        'store_update_url_ios': '',
         'store_maintenance_mode': false,
         'store_maintenance_message': 'التطبيق تحت الصيانة. حاول لاحقًا.',
       };

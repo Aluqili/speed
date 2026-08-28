@@ -109,6 +109,11 @@ class _InitGateClientState extends State<_InitGateClient> {
         'accent_seed': 'E85D2A',
         'client_optional_update_enabled': false,
         'client_recommended_build_android': 0,
+        'client_recommended_build_ios': 0,
+        'client_update_url_android':
+            'https://play.google.com/store/apps/details?id=com.aluqili.speedstar.client',
+        'client_update_url_ios':
+            'https://apps.apple.com/sa/app/speedstar/id6761855605?l=ar',
         'client_optional_update_message':
             'يتوفر إصدار جديد من تطبيق SpeedStar. ننصحك بالتحديث للحصول على أفضل تجربة.',
         'client_maintenance_mode': false,

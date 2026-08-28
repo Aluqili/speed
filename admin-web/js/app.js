@@ -253,15 +253,20 @@ const remoteConfigBulkResult = document.getElementById('remoteConfigBulkResult')
 const appRemoteConfigForm = document.getElementById('appRemoteConfigForm');
 const opsForceUpdateEnabledInput = document.getElementById('opsForceUpdateEnabledInput');
 const opsMinBuildAndroidInput = document.getElementById('opsMinBuildAndroidInput');
+const opsMinBuildIosInput = document.getElementById('opsMinBuildIosInput');
 const opsUpdateMessageInput = document.getElementById('opsUpdateMessageInput');
 const opsUpdateUrlAndroidInput = document.getElementById('opsUpdateUrlAndroidInput');
+const opsUpdateUrlIosInput = document.getElementById('opsUpdateUrlIosInput');
 const clientForceUpdateEnabledInput = document.getElementById('clientForceUpdateEnabledInput');
 const clientMinBuildAndroidInput = document.getElementById('clientMinBuildAndroidInput');
+const clientMinBuildIosInput = document.getElementById('clientMinBuildIosInput');
 const clientUpdateMessageInput = document.getElementById('clientUpdateMessageInput');
 const clientUpdateUrlAndroidInput = document.getElementById('clientUpdateUrlAndroidInput');
+const clientUpdateUrlIosInput = document.getElementById('clientUpdateUrlIosInput');
 const clientRootUrlInput = document.getElementById('clientRootUrlInput');
 const clientOptionalUpdateEnabledInput = document.getElementById('clientOptionalUpdateEnabledInput');
 const clientRecommendedBuildAndroidInput = document.getElementById('clientRecommendedBuildAndroidInput');
+const clientRecommendedBuildIosInput = document.getElementById('clientRecommendedBuildIosInput');
 const clientOptionalUpdateMessageInput = document.getElementById('clientOptionalUpdateMessageInput');
 const paymentReceiptPrecheckEnabledInput = document.getElementById('paymentReceiptPrecheckEnabledInput');
 const paymentReceiptPrecheckModeInput = document.getElementById('paymentReceiptPrecheckModeInput');
@@ -276,13 +281,17 @@ const paymentReceiptInvalidAmountMessageInput = document.getElementById('payment
 const paymentReceiptWarningTitleInput = document.getElementById('paymentReceiptWarningTitleInput');
 const storeForceUpdateEnabledInput = document.getElementById('storeForceUpdateEnabledInput');
 const storeMinBuildAndroidInput = document.getElementById('storeMinBuildAndroidInput');
+const storeMinBuildIosInput = document.getElementById('storeMinBuildIosInput');
 const storeUpdateMessageInput = document.getElementById('storeUpdateMessageInput');
 const storeUpdateUrlAndroidInput = document.getElementById('storeUpdateUrlAndroidInput');
+const storeUpdateUrlIosInput = document.getElementById('storeUpdateUrlIosInput');
 const storeRootUrlInput = document.getElementById('storeRootUrlInput');
 const courierForceUpdateEnabledInput = document.getElementById('courierForceUpdateEnabledInput');
 const courierMinBuildAndroidInput = document.getElementById('courierMinBuildAndroidInput');
+const courierMinBuildIosInput = document.getElementById('courierMinBuildIosInput');
 const courierUpdateMessageInput = document.getElementById('courierUpdateMessageInput');
 const courierUpdateUrlAndroidInput = document.getElementById('courierUpdateUrlAndroidInput');
+const courierUpdateUrlIosInput = document.getElementById('courierUpdateUrlIosInput');
 const courierRootUrlInput = document.getElementById('courierRootUrlInput');
 const reloadAppRemoteConfigBtn = document.getElementById('reloadAppRemoteConfigBtn');
 const saveAppRemoteConfigBtn = document.getElementById('saveAppRemoteConfigBtn');
@@ -931,6 +940,11 @@ const REMOTE_CONFIG_METADATA = {
     description: 'أقل رقم بناء يُسمح به قبل إجبار المستخدم على التحديث.',
     valueType: 'NUMBER',
   },
+  ops_min_build_ios: {
+    label: 'أقل بناء iOS عام',
+    description: 'أقل رقم بناء يُسمح به على الآيفون قبل إجبار المستخدم على التحديث.',
+    valueType: 'NUMBER',
+  },
   ops_update_message: {
     label: 'رسالة التحديث العامة',
     description: 'الرسالة العامة التي تظهر عند طلب التحديث.',
@@ -939,6 +953,11 @@ const REMOTE_CONFIG_METADATA = {
   ops_update_url_android: {
     label: 'رابط التحديث العام للأندرويد',
     description: 'رابط بديل عام لتحميل آخر إصدار على أندرويد.',
+    valueType: 'STRING',
+  },
+  ops_update_url_ios: {
+    label: 'رابط التحديث العام للآيفون',
+    description: 'رابط بديل عام لصفحة التطبيق في App Store.',
     valueType: 'STRING',
   },
   client_force_update_enabled: {
@@ -951,14 +970,24 @@ const REMOTE_CONFIG_METADATA = {
     description: 'أقل رقم بناء مسموح لتطبيق العميل على أندرويد.',
     valueType: 'NUMBER',
   },
+  client_min_build_ios: {
+    label: 'أقل بناء iOS للعميل',
+    description: 'أقل رقم بناء مسموح لتطبيق العميل على الآيفون.',
+    valueType: 'NUMBER',
+  },
   client_update_message: {
     label: 'رسالة تحديث العميل',
     description: 'الرسالة التي تظهر لتطبيق العميل عند التحديث الإجباري.',
     valueType: 'STRING',
   },
   client_update_url_android: {
-    label: 'رابط تحديث العميل',
-    description: 'رابط تنزيل آخر APK أو صفحة التحديث لتطبيق العميل.',
+    label: 'رابط تحديث العميل أندرويد',
+    description: 'رابط Google Play أو تنزيل آخر APK لتطبيق العميل.',
+    valueType: 'STRING',
+  },
+  client_update_url_ios: {
+    label: 'رابط تحديث العميل iOS',
+    description: 'رابط تطبيق العميل في App Store.',
     valueType: 'STRING',
   },
   client_optional_update_enabled: {
@@ -967,8 +996,13 @@ const REMOTE_CONFIG_METADATA = {
     valueType: 'BOOLEAN',
   },
   client_recommended_build_android: {
-    label: 'أقل بناء مقترح للعميل',
+    label: 'أقل بناء مقترح أندرويد للعميل',
     description: 'إذا كان بناء تطبيق العميل أقل من هذا الرقم يظهر تحديث اختياري.',
+    valueType: 'NUMBER',
+  },
+  client_recommended_build_ios: {
+    label: 'أقل بناء مقترح iOS للعميل',
+    description: 'إذا كان بناء تطبيق العميل على الآيفون أقل من هذا الرقم يظهر تحديث اختياري.',
     valueType: 'NUMBER',
   },
   client_optional_update_message: {
@@ -1036,14 +1070,24 @@ const REMOTE_CONFIG_METADATA = {
     description: 'أقل رقم بناء مسموح لتطبيق المتجر على أندرويد.',
     valueType: 'NUMBER',
   },
+  store_min_build_ios: {
+    label: 'أقل بناء iOS للمتجر',
+    description: 'أقل رقم بناء مسموح لتطبيق المتجر على الآيفون.',
+    valueType: 'NUMBER',
+  },
   store_update_message: {
     label: 'رسالة تحديث المتجر',
     description: 'الرسالة التي تظهر لتطبيق المتجر عند التحديث الإجباري.',
     valueType: 'STRING',
   },
   store_update_url_android: {
-    label: 'رابط تحديث المتجر',
-    description: 'رابط تنزيل آخر APK أو صفحة التحديث لتطبيق المتجر.',
+    label: 'رابط تحديث المتجر أندرويد',
+    description: 'رابط Google Play أو تنزيل آخر APK لتطبيق المتجر.',
+    valueType: 'STRING',
+  },
+  store_update_url_ios: {
+    label: 'رابط تحديث المتجر iOS',
+    description: 'رابط تطبيق المتجر في App Store.',
     valueType: 'STRING',
   },
   courier_force_update_enabled: {
@@ -1056,14 +1100,24 @@ const REMOTE_CONFIG_METADATA = {
     description: 'أقل رقم بناء مسموح لتطبيق المندوب على أندرويد.',
     valueType: 'NUMBER',
   },
+  courier_min_build_ios: {
+    label: 'أقل بناء iOS للمندوب',
+    description: 'أقل رقم بناء مسموح لتطبيق المندوب على الآيفون.',
+    valueType: 'NUMBER',
+  },
   courier_update_message: {
     label: 'رسالة تحديث المندوب',
     description: 'الرسالة التي تظهر لتطبيق المندوب عند التحديث الإجباري.',
     valueType: 'STRING',
   },
   courier_update_url_android: {
-    label: 'رابط تحديث المندوب',
-    description: 'رابط تنزيل آخر APK أو صفحة التحديث لتطبيق المندوب.',
+    label: 'رابط تحديث المندوب أندرويد',
+    description: 'رابط Google Play أو تنزيل آخر APK لتطبيق المندوب.',
+    valueType: 'STRING',
+  },
+  courier_update_url_ios: {
+    label: 'رابط تحديث المندوب iOS',
+    description: 'رابط تطبيق المندوب في App Store.',
     valueType: 'STRING',
   },
   client_root_url: {
@@ -1336,15 +1390,20 @@ Object.assign(REMOTE_CONFIG_METADATA, OPS_RUNTIME_REMOTE_CONFIG_METADATA);
 const APP_REMOTE_KEYS = [
   'ops_force_update_enabled',
   'ops_min_build_android',
+  'ops_min_build_ios',
   'ops_update_message',
   'ops_update_url_android',
+  'ops_update_url_ios',
   'client_force_update_enabled',
   'client_min_build_android',
+  'client_min_build_ios',
   'client_update_message',
   'client_update_url_android',
+  'client_update_url_ios',
   'client_root_url',
   'client_optional_update_enabled',
   'client_recommended_build_android',
+  'client_recommended_build_ios',
   'client_optional_update_message',
   'payment_receipt_precheck_enabled',
   'payment_receipt_precheck_mode',
@@ -1359,13 +1418,17 @@ const APP_REMOTE_KEYS = [
   'payment_receipt_warning_title',
   'store_force_update_enabled',
   'store_min_build_android',
+  'store_min_build_ios',
   'store_update_message',
   'store_update_url_android',
+  'store_update_url_ios',
   'store_root_url',
   'courier_force_update_enabled',
   'courier_min_build_android',
+  'courier_min_build_ios',
   'courier_update_message',
   'courier_update_url_android',
+  'courier_update_url_ios',
   'courier_root_url',
 ];
 
@@ -11372,15 +11435,20 @@ function fillAppRemoteConfigForm() {
   if (!appRemoteConfigForm) return;
   opsForceUpdateEnabledInput.value = String(getRemoteConfigEntry('ops_force_update_enabled')?.value || 'true');
   opsMinBuildAndroidInput.value = String(getRemoteConfigEntry('ops_min_build_android')?.value || '0');
+  if (opsMinBuildIosInput) opsMinBuildIosInput.value = String(getRemoteConfigEntry('ops_min_build_ios')?.value || '0');
   opsUpdateMessageInput.value = String(getRemoteConfigEntry('ops_update_message')?.value || 'يوجد تحديث جديد مهم لتحسين الأداء. الرجاء التحديث الآن.');
   opsUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('ops_update_url_android')?.value || '');
+  if (opsUpdateUrlIosInput) opsUpdateUrlIosInput.value = String(getRemoteConfigEntry('ops_update_url_ios')?.value || '');
   clientForceUpdateEnabledInput.value = String(getRemoteConfigEntry('client_force_update_enabled')?.value || 'true');
   clientMinBuildAndroidInput.value = String(getRemoteConfigEntry('client_min_build_android')?.value || '11');
+  if (clientMinBuildIosInput) clientMinBuildIosInput.value = String(getRemoteConfigEntry('client_min_build_ios')?.value || '0');
   clientUpdateMessageInput.value = String(getRemoteConfigEntry('client_update_message')?.value || 'يرجى تحديث تطبيق العميل للاستمرار.');
-  clientUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('client_update_url_android')?.value || 'https://speedstarapp.web.app/downloads/client-android.zip');
+  clientUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('client_update_url_android')?.value || 'https://play.google.com/store/apps/details?id=com.aluqili.speedstar.client');
+  if (clientUpdateUrlIosInput) clientUpdateUrlIosInput.value = String(getRemoteConfigEntry('client_update_url_ios')?.value || 'https://apps.apple.com/sa/app/speedstar/id6761855605?l=ar');
   clientRootUrlInput.value = String(getRemoteConfigEntry('client_root_url')?.value || 'https://speedstar-prod-4c7c5.web.app/sdui/client/index.json');
   if (clientOptionalUpdateEnabledInput) clientOptionalUpdateEnabledInput.value = String(getRemoteConfigEntry('client_optional_update_enabled')?.value || 'false');
   if (clientRecommendedBuildAndroidInput) clientRecommendedBuildAndroidInput.value = String(getRemoteConfigEntry('client_recommended_build_android')?.value || '0');
+  if (clientRecommendedBuildIosInput) clientRecommendedBuildIosInput.value = String(getRemoteConfigEntry('client_recommended_build_ios')?.value || '0');
   if (clientOptionalUpdateMessageInput) clientOptionalUpdateMessageInput.value = String(getRemoteConfigEntry('client_optional_update_message')?.value || 'يتوفر إصدار جديد من تطبيق SpeedStar. ننصحك بالتحديث للحصول على أفضل تجربة.');
   if (paymentReceiptPrecheckEnabledInput) paymentReceiptPrecheckEnabledInput.value = String(getRemoteConfigEntry('payment_receipt_precheck_enabled')?.value || 'true');
   if (paymentReceiptPrecheckModeInput) paymentReceiptPrecheckModeInput.value = String(getRemoteConfigEntry('payment_receipt_precheck_mode')?.value || 'block');
@@ -11395,13 +11463,17 @@ function fillAppRemoteConfigForm() {
   if (paymentReceiptWarningTitleInput) paymentReceiptWarningTitleInput.value = String(getRemoteConfigEntry('payment_receipt_warning_title')?.value || 'راجع بيانات الإيصال قبل المتابعة');
   storeForceUpdateEnabledInput.value = String(getRemoteConfigEntry('store_force_update_enabled')?.value || 'true');
   storeMinBuildAndroidInput.value = String(getRemoteConfigEntry('store_min_build_android')?.value || '5');
+  if (storeMinBuildIosInput) storeMinBuildIosInput.value = String(getRemoteConfigEntry('store_min_build_ios')?.value || '0');
   storeUpdateMessageInput.value = String(getRemoteConfigEntry('store_update_message')?.value || 'يرجى تحديث تطبيق المتجر للاستمرار.');
   storeUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('store_update_url_android')?.value || 'https://speedstarapp.web.app/downloads/store-android.zip');
+  if (storeUpdateUrlIosInput) storeUpdateUrlIosInput.value = String(getRemoteConfigEntry('store_update_url_ios')?.value || '');
   storeRootUrlInput.value = String(getRemoteConfigEntry('store_root_url')?.value || 'https://speedstar-prod-4c7c5.web.app/sdui/store/index.json');
   courierForceUpdateEnabledInput.value = String(getRemoteConfigEntry('courier_force_update_enabled')?.value || 'false');
   courierMinBuildAndroidInput.value = String(getRemoteConfigEntry('courier_min_build_android')?.value || '1');
+  if (courierMinBuildIosInput) courierMinBuildIosInput.value = String(getRemoteConfigEntry('courier_min_build_ios')?.value || '0');
   courierUpdateMessageInput.value = String(getRemoteConfigEntry('courier_update_message')?.value || 'يرجى تحديث تطبيق المندوب للاستمرار.');
   courierUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('courier_update_url_android')?.value || 'https://speedstarapp.web.app/downloads/courier-android.zip');
+  if (courierUpdateUrlIosInput) courierUpdateUrlIosInput.value = String(getRemoteConfigEntry('courier_update_url_ios')?.value || '');
   courierRootUrlInput.value = String(getRemoteConfigEntry('courier_root_url')?.value || 'https://speedstar-prod-4c7c5.web.app/sdui/courier/index.json');
 }
 
@@ -11957,15 +12029,20 @@ function mountAdmins() {
       const nextValues = {
         ops_force_update_enabled: normalizeRemoteValueByType(opsForceUpdateEnabledInput?.value || 'true', 'BOOLEAN'),
         ops_min_build_android: normalizeRemoteValueByType(opsMinBuildAndroidInput?.value || '0', 'NUMBER'),
+        ops_min_build_ios: normalizeRemoteValueByType(opsMinBuildIosInput?.value || '0', 'NUMBER'),
         ops_update_message: normalizeRemoteValueByType(opsUpdateMessageInput?.value || '', 'STRING'),
         ops_update_url_android: normalizeRemoteValueByType(opsUpdateUrlAndroidInput?.value || '', 'STRING'),
+        ops_update_url_ios: normalizeRemoteValueByType(opsUpdateUrlIosInput?.value || '', 'STRING'),
         client_force_update_enabled: normalizeRemoteValueByType(clientForceUpdateEnabledInput?.value || 'true', 'BOOLEAN'),
         client_min_build_android: normalizeRemoteValueByType(clientMinBuildAndroidInput?.value || '11', 'NUMBER'),
+        client_min_build_ios: normalizeRemoteValueByType(clientMinBuildIosInput?.value || '0', 'NUMBER'),
         client_update_message: normalizeRemoteValueByType(clientUpdateMessageInput?.value || '', 'STRING'),
         client_update_url_android: normalizeRemoteValueByType(clientUpdateUrlAndroidInput?.value || '', 'STRING'),
+        client_update_url_ios: normalizeRemoteValueByType(clientUpdateUrlIosInput?.value || '', 'STRING'),
         client_root_url: normalizeRemoteValueByType(clientRootUrlInput?.value || '', 'STRING'),
         client_optional_update_enabled: normalizeRemoteValueByType(clientOptionalUpdateEnabledInput?.value || 'false', 'BOOLEAN'),
         client_recommended_build_android: normalizeRemoteValueByType(clientRecommendedBuildAndroidInput?.value || '0', 'NUMBER'),
+        client_recommended_build_ios: normalizeRemoteValueByType(clientRecommendedBuildIosInput?.value || '0', 'NUMBER'),
         client_optional_update_message: normalizeRemoteValueByType(clientOptionalUpdateMessageInput?.value || '', 'STRING'),
         payment_receipt_precheck_enabled: normalizeRemoteValueByType(paymentReceiptPrecheckEnabledInput?.value || 'true', 'BOOLEAN'),
         payment_receipt_precheck_mode: normalizeRemoteValueByType(paymentReceiptPrecheckModeInput?.value || 'block', 'STRING'),
@@ -11980,13 +12057,17 @@ function mountAdmins() {
         payment_receipt_warning_title: normalizeRemoteValueByType(paymentReceiptWarningTitleInput?.value || '', 'STRING'),
         store_force_update_enabled: normalizeRemoteValueByType(storeForceUpdateEnabledInput?.value || 'true', 'BOOLEAN'),
         store_min_build_android: normalizeRemoteValueByType(storeMinBuildAndroidInput?.value || '5', 'NUMBER'),
+        store_min_build_ios: normalizeRemoteValueByType(storeMinBuildIosInput?.value || '0', 'NUMBER'),
         store_update_message: normalizeRemoteValueByType(storeUpdateMessageInput?.value || '', 'STRING'),
         store_update_url_android: normalizeRemoteValueByType(storeUpdateUrlAndroidInput?.value || '', 'STRING'),
+        store_update_url_ios: normalizeRemoteValueByType(storeUpdateUrlIosInput?.value || '', 'STRING'),
         store_root_url: normalizeRemoteValueByType(storeRootUrlInput?.value || '', 'STRING'),
         courier_force_update_enabled: normalizeRemoteValueByType(courierForceUpdateEnabledInput?.value || 'false', 'BOOLEAN'),
         courier_min_build_android: normalizeRemoteValueByType(courierMinBuildAndroidInput?.value || '1', 'NUMBER'),
+        courier_min_build_ios: normalizeRemoteValueByType(courierMinBuildIosInput?.value || '0', 'NUMBER'),
         courier_update_message: normalizeRemoteValueByType(courierUpdateMessageInput?.value || '', 'STRING'),
         courier_update_url_android: normalizeRemoteValueByType(courierUpdateUrlAndroidInput?.value || '', 'STRING'),
+        courier_update_url_ios: normalizeRemoteValueByType(courierUpdateUrlIosInput?.value || '', 'STRING'),
         courier_root_url: normalizeRemoteValueByType(courierRootUrlInput?.value || '', 'STRING'),
       };
 

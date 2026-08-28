@@ -104,6 +104,8 @@ class _InitGateCourierState extends State<_InitGateCourier> {
         ...AppUpdateConfig.defaultFlagsFor('courier'),
         'accent_seed': '0F766E',
         'courier_root_url': '',
+        'courier_recommended_build_ios': 0,
+        'courier_update_url_ios': '',
         'courier_maintenance_mode': false,
         'courier_maintenance_message': 'التطبيق تحت الصيانة. حاول لاحقًا.',
         'pricing_driver_delivery_base_fee': 4000.0,
