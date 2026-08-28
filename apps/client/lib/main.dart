@@ -72,11 +72,12 @@ class _InitGateClientState extends State<_InitGateClient> {
   bool _clientPhoneSignInEnabled = false;
   String _maintenanceMessage = 'التطبيق تحت الصيانة. حاول لاحقًا.';
   bool _forceUpdateRequired = false;
+  bool _optionalUpdateAvailable = false;
   String _forceUpdateMessage =
       'يتوفر إصدار أحدث من التطبيق لتحسين الأداء والاستقرار. الرجاء التحديث للمتابعة.';
+  String _optionalUpdateMessage =
+      'يتوفر إصدار جديد من التطبيق. ننصحك بالتحديث للحصول على أفضل تجربة.';
   String _updateUrl = '';
-  int _currentBuildNumber = 0;
-  int _minBuildNumber = 0;
   bool _firstFrameAllowed = false;
 
   @override
@@ -106,9 +107,22 @@ class _InitGateClientState extends State<_InitGateClient> {
         ...OpsRuntimeConfig.defaultFlagsFor('client'),
         ...AppUpdateConfig.defaultFlagsFor('client'),
         'accent_seed': 'E85D2A',
+        'client_optional_update_enabled': false,
+        'client_recommended_build_android': 0,
+        'client_optional_update_message':
+            'يتوفر إصدار جديد من تطبيق SpeedStar. ننصحك بالتحديث للحصول على أفضل تجربة.',
         'client_maintenance_mode': false,
         'client_maintenance_message': 'التطبيق تحت الصيانة. حاول لاحقًا.',
-        'client_phone_signin_enabled_sudan': false,
+        'client_phone_signin_enabled_sudan': true,
+        'client_phone_otp_enabled': true,
+        'client_phone_otp_ttl_minutes': 10,
+        'client_phone_otp_resend_seconds': 60,
+        'client_phone_otp_max_requests_per_hour': 6,
+        'client_phone_otp_max_attempts': 5,
+        'client_phone_otp_whatsapp_template': 'client_phone_otp',
+        'client_phone_otp_whatsapp_language': 'ar',
+        'client_phone_otp_button_code_enabled': true,
+        'client_phone_otp_debug_code_enabled': false,
         'client_home_open_address_on_start': true,
         'client_home_show_favorites': true,
         'client_home_show_cart_badge': true,
@@ -134,6 +148,22 @@ class _InitGateClientState extends State<_InitGateClient> {
         'pricing_client_delivery_extra_per_km': 700.0,
         'pricing_delivery_platform_margin_fixed': 700.0,
         'pricing_delivery_platform_min_margin': 300.0,
+        'payment_receipt_precheck_enabled': true,
+        'payment_receipt_precheck_mode': 'block',
+        'payment_receipt_require_image': true,
+        'payment_receipt_require_reference': true,
+        'payment_receipt_min_reference_digits': 8,
+        'payment_receipt_requirements_message':
+            'ارفع إيصالاً واضحاً يظهر فيه رقم العملية والمبلغ والحساب المحوّل إليه، ثم أدخل رقم العملية كاملاً.',
+        'payment_receipt_missing_image_message':
+            'ارفع صورة إيصال واضحة قبل إرسال الطلب.',
+        'payment_receipt_missing_reference_message':
+            'أدخل رقم العملية كاملاً كما يظهر في الإيصال.',
+        'payment_receipt_short_reference_message':
+            'رقم العملية يبدو ناقصاً. تأكد من إدخاله كاملاً من الإيصال.',
+        'payment_receipt_invalid_amount_message':
+            'مبلغ الدفع غير واضح. أعد المحاولة أو تواصل مع الدعم.',
+        'payment_receipt_warning_title': 'راجع بيانات الإيصال قبل المتابعة',
       };
       await rc.setDefaults(defaults);
       // استخدام القيم المخزنة فوراً ثم جلب الجديدة في الخلفية
@@ -147,10 +177,10 @@ class _InitGateClientState extends State<_InitGateClient> {
         appKey: 'client',
       );
       _forceUpdateRequired = update.forceUpdateRequired;
+      _optionalUpdateAvailable = update.optionalUpdateAvailable;
       _forceUpdateMessage = update.message;
+      _optionalUpdateMessage = update.optionalMessage;
       _updateUrl = update.updateUrl;
-      _currentBuildNumber = update.currentBuildNumber;
-      _minBuildNumber = update.minBuildNumber;
       final maintenanceText = rc.getString('client_maintenance_message').trim();
       if (maintenanceText.isNotEmpty) {
         _maintenanceMessage = maintenanceText;
@@ -214,8 +244,6 @@ class _InitGateClientState extends State<_InitGateClient> {
           return _ForceUpdateScreen(
             message: _forceUpdateMessage,
             updateUrl: _updateUrl,
-            currentBuildNumber: _currentBuildNumber,
-            minBuildNumber: _minBuildNumber,
             onRetry: () {
               setState(() {
                 _initFuture = _safeInit();
@@ -223,7 +251,12 @@ class _InitGateClientState extends State<_InitGateClient> {
             },
           );
         }
-        return const _ClientHomeEntryPoint();
+        return _OptionalUpdatePrompt(
+          enabled: _optionalUpdateAvailable,
+          message: _optionalUpdateMessage,
+          updateUrl: _updateUrl,
+          child: const _ClientHomeEntryPoint(),
+        );
       },
     );
   }
@@ -255,15 +288,11 @@ class _ForceUpdateScreen extends StatelessWidget {
   const _ForceUpdateScreen({
     required this.message,
     required this.updateUrl,
-    required this.currentBuildNumber,
-    required this.minBuildNumber,
     required this.onRetry,
   });
 
   final String message;
   final String updateUrl;
-  final int currentBuildNumber;
-  final int minBuildNumber;
   final VoidCallback onRetry;
 
   @override
@@ -297,27 +326,9 @@ class _ForceUpdateScreen extends StatelessWidget {
                         textAlign: TextAlign.center,
                         style: const TextStyle(fontSize: 15),
                       ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'إصدارك الحالي: $currentBuildNumber • الحد الأدنى المطلوب: $minBuildNumber',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.grey.shade700,
-                          fontSize: 13,
-                        ),
-                      ),
                       if (updateUrl.trim().isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        SelectableText(
-                          updateUrl,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
                         const SizedBox(height: 10),
-                        OutlinedButton.icon(
+                        FilledButton.icon(
                           onPressed: () async {
                             final uri = Uri.tryParse(updateUrl.trim());
                             if (uri == null) return;
@@ -327,11 +338,11 @@ class _ForceUpdateScreen extends StatelessWidget {
                             );
                           },
                           icon: const Icon(Icons.open_in_new_rounded),
-                          label: const Text('فتح رابط التحديث'),
+                          label: const Text('تحديث الآن'),
                         ),
                       ],
                       const SizedBox(height: 14),
-                      FilledButton.icon(
+                      TextButton.icon(
                         onPressed: onRetry,
                         icon: const Icon(Icons.refresh_rounded),
                         label: const Text('تحقق مرة أخرى'),
@@ -346,6 +357,71 @@ class _ForceUpdateScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _OptionalUpdatePrompt extends StatefulWidget {
+  const _OptionalUpdatePrompt({
+    required this.enabled,
+    required this.message,
+    required this.updateUrl,
+    required this.child,
+  });
+
+  final bool enabled;
+  final String message;
+  final String updateUrl;
+  final Widget child;
+
+  @override
+  State<_OptionalUpdatePrompt> createState() => _OptionalUpdatePromptState();
+}
+
+class _OptionalUpdatePromptState extends State<_OptionalUpdatePrompt> {
+  bool _shown = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_shown || !widget.enabled || widget.updateUrl.trim().isEmpty) return;
+    _shown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (context) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('تحديث متاح'),
+            content: Text(widget.message, textAlign: TextAlign.right),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('لاحقا'),
+              ),
+              FilledButton.icon(
+                onPressed: () async {
+                  final uri = Uri.tryParse(widget.updateUrl.trim());
+                  if (uri != null) {
+                    await launchUrl(
+                      uri,
+                      mode: LaunchMode.externalApplication,
+                    );
+                  }
+                  if (context.mounted) Navigator.pop(context);
+                },
+                icon: const Icon(Icons.system_update_alt_rounded),
+                label: const Text('تحديث الآن'),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _ModeBanner extends StatefulWidget {

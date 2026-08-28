@@ -25,6 +25,7 @@ class _StoreRequestCourierScreenState extends State<StoreRequestCourierScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _whatsappPhoneController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _mapUrlController = TextEditingController();
   GoogleMapController? _mapController;
@@ -42,6 +43,7 @@ class _StoreRequestCourierScreenState extends State<StoreRequestCourierScreen> {
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _whatsappPhoneController.dispose();
     _descriptionController.dispose();
     _mapUrlController.dispose();
     _mapUrlDebounce?.cancel();
@@ -232,13 +234,40 @@ class _StoreRequestCourierScreenState extends State<StoreRequestCourierScreen> {
         'restaurantId': widget.restaurantId,
         'clientName': _nameController.text.trim(),
         'clientPhone': _phoneController.text.trim(),
+        'clientWhatsappPhone': _whatsappPhoneController.text.trim(),
         'packageDescription': _descriptionController.text.trim(),
         'clientMapUrl': _mapUrlController.text.trim(),
         'clientLat': _destination!.latitude,
         'clientLng': _destination!.longitude,
       });
-      final orderId =
-          Map<String, dynamic>.from(result.data as Map)['orderId'] as String;
+      final resultData = Map<String, dynamic>.from(result.data as Map);
+      final orderId = resultData['orderId'] as String;
+      final trackingUrl = (resultData['trackingUrl'] ?? '').toString().trim();
+      if (mounted && trackingUrl.isNotEmpty) {
+        await showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('تم إنشاء الطلب'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'سيتم إرسال رابط التتبع للعميل تلقائياً عند قبول المندوب. يمكنك نسخه يدوياً عند الحاجة.',
+                ),
+                const SizedBox(height: 12),
+                SelectableText(trackingUrl),
+              ],
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('حسناً'),
+              ),
+            ],
+          ),
+        );
+      }
       final order = await FirebaseFirestore.instance
           .collection('orders')
           .doc(orderId)
@@ -267,15 +296,48 @@ class _StoreRequestCourierScreenState extends State<StoreRequestCourierScreen> {
   Widget build(BuildContext context) {
     final destination = _destination;
     return Scaffold(
-      appBar: AppBar(title: const Text('اطلب مندوب الآن')),
+      backgroundColor: const Color(0xFFF7FAFC),
+      appBar: AppBar(title: const Text('وصّلها من المتجر')),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFF6B00), Color(0xFF14B8A6)],
+                  begin: Alignment.topRight,
+                  end: Alignment.bottomLeft,
+                ),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'وصّلها من المتجر',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'أدخل بيانات المستلم وموقعه، يعاين النظام الرسوم، ثم يرسل الطلب للمندوبين ويرسل رابط متابعة للعميل عند القبول.',
+                    style: TextStyle(color: Colors.white, height: 1.45),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            const _DirectDeliverySteps(),
+            const SizedBox(height: 18),
             const Text('بيانات المستلم',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'اسم العميل'),
@@ -285,15 +347,29 @@ class _StoreRequestCourierScreenState extends State<StoreRequestCourierScreen> {
             TextFormField(
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'رقم الهاتف'),
+                decoration: const InputDecoration(
+                  labelText: 'رقم هاتف العميل',
+                  helperText: 'يستخدم للاتصال ورسالة التتبع عند عدم إدخال واتساب منفصل',
+                  prefixIcon: Icon(Icons.phone_outlined),
+                ),
                 validator: (value) =>
                     value!.trim().isEmpty ? 'رقم الهاتف مطلوب' : null),
+            const SizedBox(height: 10),
+            TextFormField(
+                controller: _whatsappPhoneController,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                    labelText: 'رقم واتساب العميل (اختياري)',
+                    helperText: 'اتركه فارغاً إذا كان نفس رقم الهاتف')),
             const SizedBox(height: 10),
             TextFormField(
                 controller: _descriptionController,
                 maxLines: 2,
                 decoration: const InputDecoration(
-                    labelText: 'وصف الإرسالية (اختياري)')),
+                  labelText: 'وصف الإرسالية',
+                  hintText: 'مثال: كيس منتجات، دواء، مستندات، طلب متجر',
+                  prefixIcon: Icon(Icons.inventory_2_outlined),
+                )),
             const SizedBox(height: 22),
             const Text('موقع العميل',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
@@ -306,6 +382,7 @@ class _StoreRequestCourierScreenState extends State<StoreRequestCourierScreen> {
                 decoration: InputDecoration(
                     labelText: 'رابط Google Maps أو إحداثيات العميل',
                     hintText: 'https://maps.google.com/... أو 15.50,32.56',
+                    helperText: 'يمكنك اللصق أو الضغط على الخريطة لتحديد النقطة',
                     suffixIcon: IconButton(
                         icon: _resolvingMapUrl
                             ? const SizedBox(
@@ -320,35 +397,45 @@ class _StoreRequestCourierScreenState extends State<StoreRequestCourierScreen> {
             const SizedBox(height: 8),
             SizedBox(
               height: 260,
-              child: GoogleMap(
-                initialCameraPosition: CameraPosition(
-                    target: destination ?? const LatLng(15.5007, 32.5599),
-                    zoom: destination == null ? 11 : 15),
-                onMapCreated: (controller) {
-                  _mapController = controller;
-                  if (_destination != null) _moveMapTo(_destination!);
-                },
-                onTap: (point) => setState(() {
-                  _destination = point;
-                  _preview = null;
-                }),
-                gestureRecognizers: {
-                  Factory<OneSequenceGestureRecognizer>(
-                    () => EagerGestureRecognizer(),
-                  ),
-                },
-                myLocationEnabled: true,
-                myLocationButtonEnabled: true,
-                zoomControlsEnabled: false,
-                markers: destination == null
-                    ? {}
-                    : {
-                        Marker(
-                            markerId: const MarkerId('client'),
-                            position: destination)
-                      },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: GoogleMap(
+                  initialCameraPosition: CameraPosition(
+                      target: destination ?? const LatLng(15.5007, 32.5599),
+                      zoom: destination == null ? 11 : 15),
+                  onMapCreated: (controller) {
+                    _mapController = controller;
+                    if (_destination != null) _moveMapTo(_destination!);
+                  },
+                  onTap: (point) => setState(() {
+                    _destination = point;
+                    _preview = null;
+                  }),
+                  gestureRecognizers: {
+                    Factory<OneSequenceGestureRecognizer>(
+                      () => EagerGestureRecognizer(),
+                    ),
+                  },
+                  myLocationEnabled: true,
+                  myLocationButtonEnabled: true,
+                  zoomControlsEnabled: false,
+                  markers: destination == null
+                      ? {}
+                      : {
+                          Marker(
+                              markerId: const MarkerId('client'),
+                              position: destination)
+                        },
+                ),
               ),
             ),
+            if (destination != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'النقطة المحددة: ${destination.latitude.toStringAsFixed(5)}, ${destination.longitude.toStringAsFixed(5)}',
+                style: const TextStyle(color: Colors.black54),
+              ),
+            ],
             const SizedBox(height: 14),
             OutlinedButton.icon(
                 onPressed: _loadingPreview ? null : _previewDelivery,
@@ -377,6 +464,72 @@ class _StoreRequestCourierScreenState extends State<StoreRequestCourierScreen> {
   }
 }
 
+class _DirectDeliverySteps extends StatelessWidget {
+  const _DirectDeliverySteps();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: const [
+        Expanded(
+          child: _StepChip(
+            icon: Icons.person_outline_rounded,
+            label: 'المستلم',
+          ),
+        ),
+        SizedBox(width: 8),
+        Expanded(
+          child: _StepChip(
+            icon: Icons.location_on_outlined,
+            label: 'الموقع',
+          ),
+        ),
+        SizedBox(width: 8),
+        Expanded(
+          child: _StepChip(
+            icon: Icons.payments_outlined,
+            label: 'الرسوم',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StepChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _StepChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 17, color: const Color(0xFFFF6B00)),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FeePreview extends StatelessWidget {
   final Map<String, dynamic> data;
   const _FeePreview({required this.data});
@@ -388,24 +541,98 @@ class _FeePreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final fee = _number('deliveryFee');
     final balanceAfter = _number('walletBalanceAfterDebit');
+    final distanceKm = _number('distanceKm');
+    final driverShare = _number('driverShare');
     return Card(
       margin: const EdgeInsets.only(top: 14),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('رسوم التوصيل: ${fee.toStringAsFixed(0)} ج.س',
-              style:
-                  const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
-          Text(
-              'المسافة التقريبية: ${_number('distanceKm').toStringAsFixed(1)} كم'),
-          Text('الرصيد بعد الخصم: ${balanceAfter.toStringAsFixed(0)} ج.س',
-              style: TextStyle(
-                  color: balanceAfter < 0 ? Colors.red : Colors.green,
-                  fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          const Text(
-              'سيتم الخصم من محفظة المتجر عند التأكيد، ويمكن أن يصبح الرصيد سالباً.'),
+          Row(
+            children: [
+              const Icon(Icons.receipt_long_outlined, color: Color(0xFFFF6B00)),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('معاينة وصّلها',
+                    style:
+                        TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+              ),
+              Text('${fee.toStringAsFixed(0)} ج.س',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w900, fontSize: 17)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _PreviewLine(
+            icon: Icons.route_outlined,
+            label: 'المسافة التقريبية',
+            value: '${distanceKm.toStringAsFixed(1)} كم',
+          ),
+          _PreviewLine(
+            icon: Icons.delivery_dining_outlined,
+            label: 'حصة المندوب المتوقعة',
+            value: '${driverShare.toStringAsFixed(0)} ج.س',
+          ),
+          _PreviewLine(
+            icon: Icons.account_balance_wallet_outlined,
+            label: 'رصيد المتجر بعد الخصم',
+            value: '${balanceAfter.toStringAsFixed(0)} ج.س',
+            valueColor: balanceAfter < 0 ? Colors.red : Colors.green,
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFF6B00).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text(
+              'بعد التأكيد سيتم إنشاء طلب مباشر، خصم الرسوم من محفظة المتجر، وإرسال رابط متابعة للعميل عند قبول المندوب.',
+              style: TextStyle(height: 1.45),
+            ),
+          ),
         ]),
+      ),
+    );
+  }
+}
+
+class _PreviewLine extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _PreviewLine({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.black54),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label)),
+          Text(
+            value,
+            style: TextStyle(
+              color: valueColor,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }

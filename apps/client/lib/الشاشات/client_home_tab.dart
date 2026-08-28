@@ -679,8 +679,9 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
         builder: (_) => const LoginScreenArabic(
           allowRegister: true,
           allowGoogleSignIn: false,
-          allowPhoneSignIn: false,
+          allowPhoneSignIn: true,
           allowGuestSignIn: false,
+          phoneRemoteConfigKey: 'client_phone_signin_enabled_sudan',
         ),
       ),
     );
@@ -2306,7 +2307,7 @@ class _ClientHomeTabState extends State<ClientHomeTab> {
               Expanded(
                 child: Text(
                   _recentSearches.isEmpty
-                      ? 'ابحث عن مطعم أو صنف أو عرض'
+                      ? 'ابحث عن متجر أو منتج أو عرض'
                       : _recentSearches.first,
                   textAlign: TextAlign.right,
                   maxLines: 1,
@@ -5119,7 +5120,7 @@ class _CategoryResultsScreen extends StatelessWidget {
                   ],
                   if (restaurants.isNotEmpty) ...[
                     _CategorySectionTitle(
-                      title: 'مطاعم تقدم هذه الفئة',
+                      title: 'متاجر تقدم هذه الفئة',
                       count: restaurants.length,
                     ),
                     const SizedBox(height: 8),
@@ -5211,9 +5212,9 @@ class _CategoryRestaurantTile extends StatelessWidget {
       onTap: () => _openRestaurant(context, restaurant, clientId),
       imageUrl: (restaurant['image'] ?? '').toString(),
       icon: Icons.storefront_rounded,
-      title: (restaurant['name'] ?? 'مطعم').toString(),
+      title: (restaurant['name'] ?? 'متجر').toString(),
       subtitle: (restaurant['offers'] ?? '').toString().trim().isEmpty
-          ? 'اضغط لعرض المنيو'
+          ? 'اضغط لعرض المنتجات'
           : (restaurant['offers'] ?? '').toString(),
     );
   }
@@ -5496,7 +5497,7 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                         autofocus: true,
                         textAlign: TextAlign.right,
                         decoration: InputDecoration(
-                          hintText: 'ابحث عن مطعم أو صنف أو عرض',
+                          hintText: 'ابحث عن متجر أو منتج أو عرض',
                           hintStyle: TextStyle(
                             color: textSecondary,
                             fontSize: 14,
@@ -5550,7 +5551,7 @@ class _ClientHomeSearchSheetState extends State<_ClientHomeSearchSheet> {
                               ),
                               const SizedBox(height: 10),
                               Text(
-                                'لم نجد نتيجة مطابقة. جرب اسم المطعم أو اسم الصنف مباشرة.',
+                                'لم نجد نتيجة مطابقة. جرب اسم المتجر أو اسم المنتج مباشرة.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: textSecondary,

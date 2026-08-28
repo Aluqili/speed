@@ -129,6 +129,7 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
 
       final status = _normalizeStatus(
           ((data['orderStatus'] ?? data['status']) as String? ?? '').trim());
+      final trackingFinished = _isTrackingFinishedStatus(status);
 
       if (status == 'delivered' && !_hasNotifiedArrival) {
         _hasNotifiedArrival = true;
@@ -152,19 +153,27 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
         _refreshRoute();
       }
 
-      final orderDriverLoc = data['driverLocation'];
-      if (orderDriverLoc is GeoPoint) {
-        _driverLocation =
-            LatLng(orderDriverLoc.latitude, orderDriverLoc.longitude);
+      if (trackingFinished) {
+        _driverSub?.cancel();
+        _driverSub = null;
+        _driverLocation = null;
+        _routePoints = const [];
+        _routeDurationMinutes = null;
       } else {
-        final current = data['driverCurrentLocation'];
-        if (current is Map &&
-            current['lat'] != null &&
-            current['lng'] != null) {
-          _driverLocation = LatLng(
-            (current['lat'] as num).toDouble(),
-            (current['lng'] as num).toDouble(),
-          );
+        final orderDriverLoc = data['driverLocation'];
+        if (orderDriverLoc is GeoPoint) {
+          _driverLocation =
+              LatLng(orderDriverLoc.latitude, orderDriverLoc.longitude);
+        } else {
+          final current = data['driverCurrentLocation'];
+          if (current is Map &&
+              current['lat'] != null &&
+              current['lng'] != null) {
+            _driverLocation = LatLng(
+              (current['lat'] as num).toDouble(),
+              (current['lng'] as num).toDouble(),
+            );
+          }
         }
       }
 
@@ -186,7 +195,8 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
         _prepTimeMinutes = nextPrepMinutes;
       }
 
-      if ((status == 'courier_assigned' ||
+      if (!trackingFinished &&
+          (status == 'courier_assigned' ||
               status == 'pickup_ready' ||
               status == 'picked_up' ||
               status == 'arrived_to_client') &&
@@ -349,7 +359,9 @@ class _ClientOrderTrackingScreenState extends State<ClientOrderTrackingScreen> {
                 docId: widget.orderId);
             final restaurantName =
                 (data['restaurantName'] ?? 'المطعم').toString();
-            final showMap = _driverLocation != null || _clientLocation != null;
+            final trackingFinished = _isTrackingFinishedStatus(orderStatus);
+            final showMap = !trackingFinished &&
+                (_driverLocation != null || _clientLocation != null);
             final eta = _calculateETA();
 
             return Stack(
@@ -1062,4 +1074,8 @@ String _normalizeStatus(String status) {
     default:
       return 'store_pending';
   }
+}
+
+bool _isTrackingFinishedStatus(String status) {
+  return status == 'delivered' || status == 'cancelled';
 }

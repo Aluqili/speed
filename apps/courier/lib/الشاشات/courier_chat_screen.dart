@@ -31,11 +31,19 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage() async {
     final messageText = _messageController.text.trim();
     if (messageText.isEmpty) return;
+    final participantsKey = [currentUserId, otherUserId]..sort();
 
     await FirebaseFirestore.instance.collection('chats').add({
+      'conversationId': participantsKey.join('_'),
+      'chatKind': 'direct',
+      'sourceApp': 'courier',
       'senderId': currentUserId,
+      'senderType': currentUserRole.isEmpty ? 'courier' : currentUserRole,
+      'senderName': 'المندوب',
       'receiverId': otherUserId,
+      'receiverType': 'client',
       'participants': [currentUserId, otherUserId],
+      'participantsKey': participantsKey,
       'message': messageText,
       'timestamp': FieldValue.serverTimestamp(),
     });

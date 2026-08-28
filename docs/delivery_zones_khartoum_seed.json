@@ -1,0 +1,40 @@
+{
+  "notes": "Seed data for Firestore collection deliveryZones. Adjust fees, coordinates, and radiusKm from operations before production.",
+  "collection": "deliveryZones",
+  "zones": [
+    { "id": "omdurman_al_thawra", "name": "الثورة", "clusterId": "omdurman_north", "active": true, "fixedDeliveryFee": 6000, "driverPayout": 4500 },
+    { "id": "omdurman_al_muhandisin", "name": "المهندسين", "clusterId": "omdurman_central", "active": true, "fixedDeliveryFee": 7000, "driverPayout": 5000 },
+    { "id": "omdurman_al_arbaeen", "name": "الأربعين", "clusterId": "omdurman_central", "active": true, "fixedDeliveryFee": 6000, "driverPayout": 4500 },
+    { "id": "omdurman_al_morada", "name": "الموردة", "clusterId": "omdurman_central", "active": true, "fixedDeliveryFee": 6000, "driverPayout": 4500 },
+    { "id": "omdurman_wad_nubawi", "name": "ود نوباوي", "clusterId": "omdurman_central", "active": true, "fixedDeliveryFee": 6000, "driverPayout": 4500 },
+    { "id": "omdurman_bait_al_mal", "name": "بيت المال", "clusterId": "omdurman_central", "active": true, "fixedDeliveryFee": 6000, "driverPayout": 4500 },
+    { "id": "omdurman_abu_rof", "name": "أبو روف", "clusterId": "omdurman_central", "active": true, "fixedDeliveryFee": 6000, "driverPayout": 4500 },
+    { "id": "omdurman_al_abbasiya", "name": "العباسية", "clusterId": "omdurman_central", "active": true, "fixedDeliveryFee": 6000, "driverPayout": 4500 },
+    { "id": "omdurman_al_fitaihab", "name": "الفتيحاب", "clusterId": "omdurman_south", "active": true, "fixedDeliveryFee": 7000, "driverPayout": 5200 },
+    { "id": "omdurman_umbadda", "name": "أمبدة", "clusterId": "omdurman_west", "active": true, "fixedDeliveryFee": 8000, "driverPayout": 6000 },
+
+    { "id": "khartoum_riyadh", "name": "الرياض", "clusterId": "khartoum_east", "active": true, "fixedDeliveryFee": 7000, "driverPayout": 5200 },
+    { "id": "khartoum_manshiya", "name": "المنشية", "clusterId": "khartoum_east", "active": true, "fixedDeliveryFee": 7000, "driverPayout": 5200 },
+    { "id": "khartoum_taif", "name": "الطائف", "clusterId": "khartoum_east", "active": true, "fixedDeliveryFee": 7000, "driverPayout": 5200 },
+    { "id": "khartoum_arkawit", "name": "أركويت", "clusterId": "khartoum_east", "active": true, "fixedDeliveryFee": 7000, "driverPayout": 5200 },
+    { "id": "khartoum_al_sahafa", "name": "الصحافة", "clusterId": "khartoum_south", "active": true, "fixedDeliveryFee": 7000, "driverPayout": 5200 },
+    { "id": "khartoum_jabra", "name": "جبرة", "clusterId": "khartoum_south", "active": true, "fixedDeliveryFee": 7500, "driverPayout": 5500 },
+    { "id": "khartoum_al_azhari", "name": "الأزهري", "clusterId": "khartoum_south", "active": true, "fixedDeliveryFee": 8000, "driverPayout": 6000 },
+    { "id": "khartoum_souq_arabi", "name": "السوق العربي", "clusterId": "khartoum_central", "active": true, "fixedDeliveryFee": 6000, "driverPayout": 4500 },
+    { "id": "khartoum_al_amaraat", "name": "العمارات", "clusterId": "khartoum_central", "active": true, "fixedDeliveryFee": 6500, "driverPayout": 4800 },
+    { "id": "khartoum_khartoum_2", "name": "الخرطوم 2", "clusterId": "khartoum_central", "active": true, "fixedDeliveryFee": 6500, "driverPayout": 4800 },
+
+    { "id": "bahri_kafouri", "name": "كافوري", "clusterId": "bahri_north", "active": true, "fixedDeliveryFee": 7500, "driverPayout": 5500 },
+    { "id": "bahri_shambat", "name": "شمبات", "clusterId": "bahri_central", "active": true, "fixedDeliveryFee": 7000, "driverPayout": 5200 },
+    { "id": "bahri_halfaya", "name": "الحلفايا", "clusterId": "bahri_north", "active": true, "fixedDeliveryFee": 8000, "driverPayout": 6000 },
+    { "id": "bahri_al_droshab", "name": "الدروشاب", "clusterId": "bahri_north", "active": true, "fixedDeliveryFee": 8000, "driverPayout": 6000 },
+    { "id": "bahri_al_samrab", "name": "السامراب", "clusterId": "bahri_north", "active": true, "fixedDeliveryFee": 8000, "driverPayout": 6000 },
+    { "id": "bahri_al_mazad", "name": "المزاد", "clusterId": "bahri_central", "active": true, "fixedDeliveryFee": 7000, "driverPayout": 5200 },
+    { "id": "bahri_al_safiya", "name": "الصافية", "clusterId": "bahri_central", "active": true, "fixedDeliveryFee": 7000, "driverPayout": 5200 },
+
+    { "id": "kalakla_al_laffa", "name": "الكلاكلة اللفة", "clusterId": "kalakla", "active": true, "fixedDeliveryFee": 8000, "driverPayout": 6000 },
+    { "id": "kalakla_al_qobba", "name": "الكلاكلة القبة", "clusterId": "kalakla", "active": true, "fixedDeliveryFee": 8000, "driverPayout": 6000 },
+    { "id": "kalakla_sanqaat", "name": "الكلاكلة صنقعت", "clusterId": "kalakla", "active": true, "fixedDeliveryFee": 8500, "driverPayout": 6500 },
+    { "id": "kalakla_al_wahda", "name": "الكلاكلة الوحدة", "clusterId": "kalakla", "active": true, "fixedDeliveryFee": 8500, "driverPayout": 6500 }
+  ]
+}

@@ -17,6 +17,10 @@ import {
   serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 import {
+  getFunctions,
+  httpsCallable
+} from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-functions.js';
+import {
   configForEnv,
   resolveAdminEnv,
   staticAdminEmails
@@ -29,6 +33,7 @@ const firebaseConfig = configForEnv(activeEnv);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app, 'me-central1');
 
 const COLLECTIONS = {
   projects: 'managementProjects',
@@ -64,6 +69,8 @@ const ADMIN_PERMISSION_DEFS = {
 
 const ALL_ADMIN_PERMISSIONS = Object.keys(ADMIN_PERMISSION_DEFS);
 const GUARANTEED_ADMIN_EMAILS = new Set(staticAdminEmails.map((email) => String(email || '').toLowerCase()));
+const SUPER_ADMIN_EMAILS = new Set(['aluqili7@gmail.com', 'speedstarapp0@gmail.com']);
+const THEME_STORAGE_KEY = 'speedstar-management-theme';
 
 const ACTION_PERMISSION_REQUIREMENTS = {
   'project:add': ['orders', 'dashboard'],
@@ -127,7 +134,10 @@ let restaurantsSource = [];
 let restaurantApplicationsSource = [];
 let couriersSource = [];
 let courierApplicationsSource = [];
-const CEO_EMAIL = 'aluqili7@gmail.com';
+let attendanceWorkspace = { profiles: [], sessions: [], dateKey: '', isSupervisor: false };
+let attendanceHeartbeatTimer = null;
+let attendanceDisplayTimer = null;
+let taskNotifications = [];
 
 const el = {
   navLinks: Array.from(document.querySelectorAll('#navLinks a')),
@@ -137,6 +147,7 @@ const el = {
   sessionRoleLabel: document.getElementById('sessionRoleLabel'),
   sessionLastActionLabel: document.getElementById('sessionLastActionLabel'),
   adminBadge: document.getElementById('adminBadge'),
+  themeToggleBtn: document.getElementById('themeToggleBtn'),
   authModal: document.getElementById('authModal'),
   authForm: document.getElementById('authForm'),
   authUsername: document.getElementById('authUsername'),
@@ -164,11 +175,14 @@ const el = {
   taskAssignee: document.getElementById('taskAssignee'),
   taskPriority: document.getElementById('taskPriority'),
   taskDueDate: document.getElementById('taskDueDate'),
+  taskDueTime: document.getElementById('taskDueTime'),
   taskDescription: document.getElementById('taskDescription'),
   taskFilterProject: document.getElementById('taskFilterProject'),
   taskFilterAssignee: document.getElementById('taskFilterAssignee'),
   taskFilterStatus: document.getElementById('taskFilterStatus'),
   taskKanban: document.getElementById('taskKanban'),
+  taskNotificationCount: document.getElementById('taskNotificationCount'),
+  taskNotificationsList: document.getElementById('taskNotificationsList'),
   employeeForm: document.getElementById('employeeForm'),
   employeeId: document.getElementById('employeeId'),
   employeeName: document.getElementById('employeeName'),
@@ -224,6 +238,32 @@ const el = {
   restaurantsPipelineBody: document.getElementById('restaurantsPipelineBody'),
   couriersPipelineBody: document.getElementById('couriersPipelineBody'),
   completedPipelineBody: document.getElementById('completedPipelineBody'),
+  attendanceStartBtn: document.getElementById('attendanceStartBtn'),
+  attendanceEndBtn: document.getElementById('attendanceEndBtn'),
+  attendanceWorkType: document.getElementById('attendanceWorkType'),
+  attendanceSummary: document.getElementById('attendanceSummary'),
+  attendanceSessionStatus: document.getElementById('attendanceSessionStatus'),
+  attendanceSessionDetails: document.getElementById('attendanceSessionDetails'),
+  attendanceActivityForm: document.getElementById('attendanceActivityForm'),
+  attendanceActivityType: document.getElementById('attendanceActivityType'),
+  attendanceActivityNote: document.getElementById('attendanceActivityNote'),
+  attendanceReportForm: document.getElementById('attendanceReportForm'),
+  attendanceReportCompleted: document.getElementById('attendanceReportCompleted'),
+  attendanceReportBlockers: document.getElementById('attendanceReportBlockers'),
+  attendanceReportNextSteps: document.getElementById('attendanceReportNextSteps'),
+  attendanceReportsList: document.getElementById('attendanceReportsList'),
+  attendanceFeedback: document.getElementById('attendanceFeedback'),
+  attendanceSupervisorPanel: document.getElementById('attendanceSupervisorPanel'),
+  attendanceProfileForm: document.getElementById('attendanceProfileForm'),
+  attendanceProfileAdmin: document.getElementById('attendanceProfileAdmin'),
+  attendanceProfileMode: document.getElementById('attendanceProfileMode'),
+  attendanceOfficeStartTime: document.getElementById('attendanceOfficeStartTime'),
+  attendanceOfficeEndTime: document.getElementById('attendanceOfficeEndTime'),
+  attendanceFieldStartTime: document.getElementById('attendanceFieldStartTime'),
+  attendanceFieldEndTime: document.getElementById('attendanceFieldEndTime'),
+  attendanceProfileActive: document.getElementById('attendanceProfileActive'),
+  attendanceRefreshBtn: document.getElementById('attendanceRefreshBtn'),
+  attendanceStaffCards: document.getElementById('attendanceStaffCards'),
   auditLogList: document.getElementById('auditLogList'),
   exportScopeButtons: Array.from(document.querySelectorAll('.export-scope-btn'))
 };
@@ -335,10 +375,14 @@ function normalizeTaskDoc(item) {
     title: String(data.title || ''),
     projectId: String(data.projectId || ''),
     assignee: String(data.assignee || ''),
+    assigneeUid: String(data.assigneeUid || ''),
+    assigneeEmail: String(data.assigneeEmail || ''),
     priority: String(data.priority || 'medium'),
     status: String(data.status || 'todo'),
     dueDate: String(data.dueDate || ''),
+    dueTime: String(data.dueTime || ''),
     description: String(data.description || ''),
+    approvalStatus: String(data.approvalStatus || 'not_submitted'),
     lastEditedBy: String(data.lastEditedBy || data.updatedByEmail || 'النظام'),
     lastEditedAt: parseDateValue(data.lastEditedAt || data.updatedAt)
   };
@@ -595,6 +639,7 @@ function startRealtimeSync() {
             id: item.id,
             uid: String(data.uid || item.id),
             email: String(data.email || ''),
+            name: String(data.name || data.displayName || data.email || ''),
             role: String(data.role || 'admin'),
             active: data.active === true || data.role === 'admin',
             permissions: normalizeAdminPermissions(data.permissions, { fallbackToAll: true })
@@ -607,6 +652,21 @@ function startRealtimeSync() {
       }
     )
   );
+
+  if (currentUser?.uid) {
+    dataUnsubscribers.push(
+      onSnapshot(
+        collection(db, 'managementNotifications', currentUser.uid, 'items'),
+        (snap) => {
+          taskNotifications = snap.docs.map((item) => ({ id: item.id, ...(item.data() || {}) }));
+          renderTaskNotifications();
+        },
+        (error) => {
+          console.warn('Task notifications listener failed', error);
+        }
+      )
+    );
+  }
 
   dataUnsubscribers.push(
     onSnapshot(
@@ -797,6 +857,7 @@ async function loadAdminsFromFirestore() {
       id: item.id,
       uid: String(data.uid || item.id),
       email: String(data.email || ''),
+      name: String(data.name || data.displayName || data.email || ''),
       role: String(data.role || 'admin'),
       active: data.active === true || data.role === 'admin',
       permissions: normalizeAdminPermissions(data.permissions, { fallbackToAll: true })
@@ -854,8 +915,8 @@ async function handleAdminsTableAction(event) {
 
   if (action === 'admin-delete') {
     if (!requirePermission('admins:manage', 'إدارة المسؤولين')) return;
-    if (item.uid === currentUser?.uid || String(item.email || '').toLowerCase() === CEO_EMAIL) {
-      el.adminFormFeedback.textContent = 'لا يمكن حذف حساب الرئيس التنفيذي الحالي.';
+    if (item.uid === currentUser?.uid || SUPER_ADMIN_EMAILS.has(String(item.email || '').toLowerCase())) {
+      el.adminFormFeedback.textContent = 'لا يمكن حذف حساب أحد الرئيسين.';
       return;
     }
     await deleteDoc(doc(db, 'admins', item.uid));
@@ -941,16 +1002,16 @@ function getActorName() {
   return currentUser?.displayName || currentUser?.email || 'غير معروف';
 }
 
-function isCeoEmailUser() {
-  return String(currentUser?.email || '').toLowerCase() === CEO_EMAIL;
+function isSuperAdminUser() {
+  return SUPER_ADMIN_EMAILS.has(String(currentUser?.email || '').toLowerCase());
 }
 
 function canManageAdminsPanel() {
-  return isCeoEmailUser();
+  return isSuperAdminUser();
 }
 
 function canViewEmployeesPanel() {
-  return isCeoEmailUser() || currentAdminExplicitPermissions.has('employees');
+  return isSuperAdminUser() || currentAdminExplicitPermissions.has('employees');
 }
 
 function openAuthModal() {
@@ -974,8 +1035,8 @@ function requirePermission(permission, actionLabel) {
     el.authFeedback.textContent = 'إدارة المسؤولين متاحة للرئيس التنفيذي فقط.';
     return false;
   }
-  if ((permission === 'employee:add' || permission === 'employee:edit') && !isCeoEmailUser()) {
-    el.authFeedback.textContent = 'إدارة بيانات الموظفين متاحة للرئيس التنفيذي فقط.';
+  if ((permission === 'employee:add' || permission === 'employee:edit') && !isSuperAdminUser()) {
+    el.authFeedback.textContent = 'إدارة بيانات الموظفين متاحة للرئيسين فقط.';
     return false;
   }
   if (!hasPermission(permission)) {
@@ -1162,11 +1223,41 @@ function refreshProjectSelectors() {
 }
 
 function refreshEmployeeSelectors() {
-  const options = ['<option value="">اختر موظفًا</option>', ...state.employees.map((employee) => `<option value="${escapeHtml(employee.name)}">${escapeHtml(employee.name)}</option>`)];
+  const taskAssignees = adminProfiles.filter((adminProfile) => adminProfile.active && adminProfile.uid && adminProfile.email);
+  const options = ['<option value="">اختر حساب الأدمن المكلّف</option>', ...taskAssignees.map((adminProfile) => `<option value="${escapeHtml(adminProfile.uid)}">${escapeHtml(adminProfile.name || adminProfile.email)} - ${escapeHtml(adminProfile.email)}</option>`)];
   el.taskAssignee.innerHTML = options.join('');
 
-  const filterOptions = ['<option value="all">كل الموظفين</option>', ...state.employees.map((employee) => `<option value="${escapeHtml(employee.name)}">${escapeHtml(employee.name)}</option>`)];
+  const filterOptions = ['<option value="all">كل المكلّفين</option>', ...taskAssignees.map((adminProfile) => `<option value="${escapeHtml(adminProfile.uid)}">${escapeHtml(adminProfile.name || adminProfile.email)}</option>`)];
   el.taskFilterAssignee.innerHTML = filterOptions.join('');
+}
+
+function taskApprovalLabel(status) {
+  return {
+    not_submitted: 'لم تُسلّم للمراجعة',
+    pending: 'بانتظار اعتماد الرئيس',
+    approved: 'معتمدة',
+    returned: 'أُعيدت للمتابعة'
+  }[status] || 'لم تُسلّم للمراجعة';
+}
+
+function taskActionButtons(task) {
+  const isAssignee = task.assigneeUid === currentUser?.uid;
+  const isSupervisor = isSuperAdminUser();
+  const actions = [];
+  if (isAssignee && task.status === 'todo') {
+    actions.push(`<button class="ghost-btn small" data-action="task-start" data-id="${task.id}">بدء التنفيذ</button>`);
+  }
+  if (isAssignee && task.status === 'in_progress') {
+    actions.push(`<button class="primary-btn small" data-action="task-submit-review" data-id="${task.id}">إرسال للاعتماد</button>`);
+  }
+  if (isSupervisor && task.status === 'review') {
+    actions.push(`<button class="primary-btn small" data-action="task-approve" data-id="${task.id}">اعتماد</button>`);
+    actions.push(`<button class="ghost-btn small" data-action="task-return" data-id="${task.id}">إعادة للمتابعة</button>`);
+  }
+  if (isSupervisor) {
+    actions.push(`<button class="ghost-btn small" data-action="task-delete" data-id="${task.id}">حذف</button>`);
+  }
+  return actions.join('');
 }
 
 function renderTaskKanban() {
@@ -1177,7 +1268,7 @@ function renderTaskKanban() {
   const filtered = state.tasks.filter((task) => {
     const statusOk = filterStatus === 'all' || task.status === filterStatus;
     const projectOk = filterProject === 'all' || task.projectId === filterProject;
-    const assigneeOk = filterAssignee === 'all' || task.assignee === filterAssignee;
+    const assigneeOk = filterAssignee === 'all' || task.assigneeUid === filterAssignee;
     return statusOk && projectOk && assigneeOk;
   });
 
@@ -1195,11 +1286,11 @@ function renderTaskKanban() {
         <div class="task-meta">المشروع: ${escapeHtml(getProjectName(task.projectId))}</div>
         <div class="task-meta">المسؤول: ${escapeHtml(task.assignee || '-')}</div>
         <div class="task-meta">الأولوية: ${escapeHtml(task.priority)}</div>
-        <div class="task-meta">الاستحقاق: ${escapeHtml(task.dueDate)}</div>
+        <div class="task-meta">الاستحقاق: ${escapeHtml(`${task.dueDate} ${task.dueTime || ''}`.trim())}</div>
+        <div class="task-meta">الاعتماد: ${escapeHtml(taskApprovalLabel(task.approvalStatus))}</div>
         <div class="task-meta">آخر تعديل: ${escapeHtml(task.lastEditedBy || '-')}</div>
         <div class="item-actions">
-          <button class="ghost-btn small" data-action="task-advance" data-id="${task.id}">التالي</button>
-          <button class="ghost-btn small" data-action="task-delete" data-id="${task.id}">حذف</button>
+          ${taskActionButtons(task)}
         </div>
       </div>
     `).join('');
@@ -1213,13 +1304,33 @@ function renderTaskKanban() {
   }).join('');
 }
 
+function renderTaskNotifications() {
+  if (!el.taskNotificationsList || !el.taskNotificationCount) return;
+  const ordered = taskNotifications.slice().sort((left, right) => {
+    const leftTime = parseDateValue(left.createdAt) || '';
+    const rightTime = parseDateValue(right.createdAt) || '';
+    return new Date(rightTime).getTime() - new Date(leftTime).getTime();
+  });
+  const unreadCount = ordered.filter((item) => item.read !== true).length;
+  el.taskNotificationCount.textContent = String(unreadCount);
+  el.taskNotificationsList.innerHTML = ordered.length
+    ? ordered.slice(0, 10).map((item) => `
+      <div class="task-notification-item ${item.read === true ? '' : 'unread'}">
+        <strong>${escapeHtml(item.title || 'إشعار مهمة')}</strong>
+        <p>${escapeHtml(item.body || '-')}</p>
+        <span>${escapeHtml(parseDateValue(item.createdAt) ? new Date(parseDateValue(item.createdAt)).toLocaleString('ar-EG') : 'الآن')}</span>
+      </div>
+    `).join('')
+    : '<div class="task-meta">لا توجد إشعارات مهام حالياً.</div>';
+}
+
 function renderEmployees() {
   if (!canViewEmployeesPanel()) {
     el.employeeCards.innerHTML = '<div class="employee-card"><div class="employee-meta">عرض الموظفين متاح فقط للرئيس التنفيذي أو من يمنحه هذه الصلاحية.</div></div>';
     return;
   }
 
-  const canEdit = hasPermission('employee:edit') && isCeoEmailUser();
+  const canEdit = hasPermission('employee:edit') && isSuperAdminUser();
   el.employeeCards.innerHTML = state.employees.map((employee) => `
     <div class="employee-card">
       <h4>${escapeHtml(employee.name)}</h4>
@@ -1259,6 +1370,280 @@ function renderApprovals() {
       </div>
     `;
   }).join('');
+}
+
+function attendanceModeLabel(mode) {
+  return {
+    operational: 'تشغيلي / عن بعد',
+    field: 'ميداني',
+    hybrid: 'هجين',
+    flexible: 'مرن قائم على النتائج'
+  }[String(mode || '').toLowerCase()] || 'تشغيلي / عن بعد';
+}
+
+function attendanceTime(value) {
+  if (!value) return '-';
+  const milliseconds = attendanceTimestampMillis(value);
+  if (!milliseconds) return '-';
+  return new Date(milliseconds).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+}
+
+function attendanceTimestampMillis(value) {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value.toMillis === 'function') return Number(value.toMillis()) || 0;
+  return Number(value?._seconds || value?.seconds || 0) * 1000;
+}
+
+function attendanceHours(minutes) {
+  const total = Math.max(0, Number(minutes || 0));
+  return `${Math.floor(total / 60)} س ${Math.round(total % 60)} د`;
+}
+
+function attendanceClockMinutes(value) {
+  const [hours, minutes] = String(value || '').split(':').map(Number);
+  return Number.isInteger(hours) && Number.isInteger(minutes) ? (hours * 60) + minutes : 0;
+}
+
+function attendanceKhartoumClockMinutes(value) {
+  const milliseconds = attendanceTimestampMillis(value);
+  if (!milliseconds) return null;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Khartoum',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(new Date(milliseconds));
+  const clock = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return (Number(clock.hour) * 60) + Number(clock.minute);
+}
+
+function attendanceLateMinutes(session, scheduledStartTime) {
+  if (!session?.startedAt) return null;
+  const startedMinutes = attendanceKhartoumClockMinutes(session.startedAt);
+  if (startedMinutes == null) return null;
+  return Math.max(0, startedMinutes - attendanceClockMinutes(scheduledStartTime));
+}
+
+function attendanceLateLine(label, session, workType, scheduledStartTime) {
+  if (!session?.startedAt) return `<span>${escapeHtml(label)}: <strong>لم يبدأ</strong></span>`;
+  if (session.workType !== workType) return `<span>${escapeHtml(label)}: <strong>غير مطبق</strong></span>`;
+  const lateMinutes = attendanceLateMinutes(session, scheduledStartTime);
+  if (!lateMinutes) return `<span>${escapeHtml(label)}: <strong>في الموعد</strong></span>`;
+  return `<span class="attendance-late">${escapeHtml(label)}: <strong>${escapeHtml(attendanceHours(lateMinutes))}</strong></span>`;
+}
+
+function attendanceLiveWorkedMinutes(session, now = Date.now()) {
+  if (session?.status !== 'active') return Number(session?.workedMinutes || 0);
+  const startedAt = attendanceTimestampMillis(session.startedAt);
+  if (!startedAt) return 0;
+  const lastPresenceAt = attendanceTimestampMillis(session.lastPresenceAt);
+  const trackedEnd = session.workType === 'office' && lastPresenceAt
+    ? Math.min(now, lastPresenceAt + (5 * 60 * 1000))
+    : now;
+  return Math.max(0, Math.floor((trackedEnd - startedAt) / 60000));
+}
+
+function attendancePresenceStatus(session, now = Date.now()) {
+  if (session?.status === 'closed') return { label: 'منتهٍ', cssClass: 'closed' };
+  if (session?.status !== 'active') return { label: 'لم يبدأ', cssClass: '' };
+  if (session.workType === 'field') return { label: 'نشط ميدانيًا', cssClass: 'active' };
+  const lastPresenceAt = attendanceTimestampMillis(session.lastPresenceAt);
+  const isPresent = lastPresenceAt && now <= lastPresenceAt + (5 * 60 * 1000);
+  return isPresent
+    ? { label: 'نشط الآن', cssClass: 'active' }
+    : { label: 'مفتوح - غير حاضر', cssClass: 'away' };
+}
+
+function attendanceScheduleLine(label, startTime, endTime) {
+  return `<div class="attendance-schedule-line">
+    <span>${escapeHtml(label)}</span>
+    <strong>من <bdi dir="ltr">${escapeHtml(startTime || '09:00')}</bdi> إلى <bdi dir="ltr">${escapeHtml(endTime || '17:00')}</bdi></strong>
+  </div>`;
+}
+
+function attendanceReportCount(session) {
+  return (session?.activities || []).filter((item) => item.type === 'daily_report').length;
+}
+
+function currentAttendanceSession() {
+  return attendanceWorkspace.sessions.find((item) => item.uid === currentUser?.uid) || null;
+}
+
+function setAttendanceFeedback(message, isError = false) {
+  if (!el.attendanceFeedback) return;
+  el.attendanceFeedback.textContent = message;
+  el.attendanceFeedback.style.color = isError ? 'var(--danger)' : 'var(--success)';
+}
+
+async function loadAttendanceWorkspace() {
+  if (!currentUser) return;
+  try {
+    const response = await httpsCallable(functions, 'attendanceGetWorkspace')({});
+    attendanceWorkspace = response.data || { profiles: [], sessions: [], dateKey: '', isSupervisor: false };
+    renderAttendance();
+  } catch (error) {
+    console.warn('Attendance workspace unavailable', error);
+    setAttendanceFeedback('تعذر تحميل الدوام الآن. تحقق من نشر خدمات Firebase.', true);
+  }
+}
+
+function renderAttendance() {
+  const session = currentAttendanceSession();
+  const profiles = Array.isArray(attendanceWorkspace.profiles) ? attendanceWorkspace.profiles : [];
+  const sessions = Array.isArray(attendanceWorkspace.sessions) ? attendanceWorkspace.sessions : [];
+  const now = Date.now();
+  const profile = profiles.find((item) => item.uid === currentUser?.uid);
+  const activeCount = sessions.filter((item) => item.status === 'active').length;
+  const closedCount = sessions.filter((item) => item.status === 'closed').length;
+  const workedToday = sessions.reduce((sum, item) => sum + Number(item.workedMinutes || 0), 0);
+
+  el.attendanceSummary.innerHTML = [
+    { label: 'تاريخ المتابعة', value: attendanceWorkspace.dateKey || '-' },
+    { label: 'جلسات نشطة', value: activeCount },
+    { label: 'جلسات منتهية', value: closedCount },
+    { label: 'إجمالي الساعات الموثقة', value: attendanceHours(workedToday) }
+  ].map((item) => `<div class="attendance-summary-card"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`).join('');
+
+  const sessionStatus = session?.status || 'idle';
+  el.attendanceSessionStatus.textContent = sessionStatus === 'active' ? 'الدوام نشط' : sessionStatus === 'closed' ? 'انتهى الدوام' : 'لم تبدأ';
+  el.attendanceSessionStatus.className = `attendance-status ${sessionStatus === 'idle' ? '' : sessionStatus}`;
+  el.attendanceStartBtn.disabled = sessionStatus === 'active' || sessionStatus === 'closed' || !profile?.active;
+  el.attendanceEndBtn.disabled = sessionStatus !== 'active';
+  el.attendanceStartBtn.hidden = sessionStatus === 'active' || sessionStatus === 'closed';
+  el.attendanceEndBtn.hidden = sessionStatus !== 'active';
+  const fieldOption = el.attendanceWorkType?.querySelector('option[value="field"]');
+  if (fieldOption) fieldOption.disabled = profile?.workMode === 'operational';
+  if (profile?.workMode === 'operational' && el.attendanceWorkType?.value === 'field') {
+    el.attendanceWorkType.value = 'office';
+  }
+  el.attendanceWorkType.disabled = sessionStatus === 'active' || sessionStatus === 'closed' || !profile?.active;
+  el.attendanceReportForm?.querySelectorAll('textarea, button').forEach((item) => {
+    item.disabled = sessionStatus !== 'active';
+  });
+  el.attendanceSessionDetails.innerHTML = profile
+    ? `
+      <div><strong>نمط الدوام:</strong> ${escapeHtml(attendanceModeLabel(profile.workMode))}</div>
+      <div><strong>جدول المكتب:</strong> ${escapeHtml(`${profile.officeStartTime || '09:00'} - ${profile.officeEndTime || '17:00'} (${profile.officeRequiredHours || 0} ساعات)`)}</div>
+      <div><strong>جدول الميدان:</strong> ${escapeHtml(`${profile.fieldStartTime || '09:00'} - ${profile.fieldEndTime || '17:00'} (${profile.fieldRequiredHours || 0} ساعات)`)}</div>
+      <div><strong>جلسة اليوم:</strong> ${escapeHtml(session?.workType === 'field' ? 'ميداني' : 'مكتبي داخل الأدمن')}</div>
+      <div><strong>البداية:</strong> ${escapeHtml(attendanceTime(session?.startedAt))}</div>
+      <div><strong>${session?.status === 'active' ? 'المدة الآن' : 'المنجز'}:</strong> ${escapeHtml(attendanceHours(attendanceLiveWorkedMinutes(session, now)))}</div>
+      <div><strong>الأنشطة:</strong> ${escapeHtml(session?.activityCount || 0)} | <strong>التقارير:</strong> ${escapeHtml(attendanceReportCount(session))}</div>`
+    : '<div>لم يُفعّل ملف دوام لهذا الحساب بعد. يحدده أحد الرئيسين من قسم الإعدادات.</div>';
+
+  el.attendanceSupervisorPanel.style.display = isSuperAdminUser() ? 'block' : 'none';
+  refreshAttendanceAdminSelector();
+  const visibleProfiles = isSuperAdminUser() ? profiles : (profile ? [profile] : []);
+  el.attendanceStaffCards.innerHTML = visibleProfiles.length ? visibleProfiles.map((item) => {
+    const staffSession = sessions.find((entry) => entry.uid === item.uid);
+    const staffStatus = attendancePresenceStatus(staffSession, now);
+    const liveMinutes = attendanceLiveWorkedMinutes(staffSession, now);
+    return `<article class="attendance-staff-card">
+      <header>
+        <div>
+          <h4>${escapeHtml(item.name || item.email || '-')}</h4>
+          <p>${escapeHtml(item.email || '')} · ${escapeHtml(attendanceModeLabel(item.workMode))}</p>
+        </div>
+        <span class="attendance-status ${staffStatus.cssClass}">${escapeHtml(staffStatus.label)}</span>
+      </header>
+      <div class="attendance-schedule">
+        ${attendanceScheduleLine('الدوام المكتبي', item.officeStartTime, item.officeEndTime)}
+        ${attendanceScheduleLine('الدوام الميداني', item.fieldStartTime, item.fieldEndTime)}
+      </div>
+      <footer>
+        <span>بدأ الساعة: <strong>${escapeHtml(attendanceTime(staffSession?.startedAt))}</strong></span>
+        <span>${staffSession?.status === 'active' ? 'المدة الآن' : 'المنجز'}: <strong>${escapeHtml(attendanceHours(liveMinutes))}</strong></span>
+        ${attendanceLateLine('متأخر عن الدوام المكتبي', staffSession, 'office', item.officeStartTime)}
+        ${attendanceLateLine('متأخر عن الدوام الميداني', staffSession, 'field', item.fieldStartTime)}
+        <span>الأنشطة: <strong>${escapeHtml(staffSession?.activityCount || 0)}</strong></span>
+        <span>التقارير: <strong>${escapeHtml(attendanceReportCount(staffSession))}</strong></span>
+        <span>آخر نشاط: <strong>${escapeHtml(attendanceTime(staffSession?.lastActivityAt))}</strong></span>
+      </footer>
+    </article>`;
+  }).join('') : '<div class="attendance-empty-reports">لا توجد ملفات دوام مفعّلة اليوم.</div>';
+  const reportSessions = isSuperAdminUser() ? sessions : sessions.filter((item) => item.uid === currentUser?.uid);
+  const reports = reportSessions.flatMap((item) => (item.activities || [])
+    .filter((activity) => activity.type === 'daily_report')
+    .map((activity) => ({ ...activity, employeeName: item.employeeName || item.email || '-' })))
+    .sort((left, right) => Number(right.atMillis || 0) - Number(left.atMillis || 0));
+  el.attendanceReportsList.innerHTML = reports.length
+    ? reports.slice(0, 8).map((report) => `<article class="attendance-report-entry">
+      <strong>${escapeHtml(report.employeeName)}</strong>
+      <span>${escapeHtml(new Date(Number(report.atMillis || 0)).toLocaleString('ar-EG'))}</span>
+      <p>${escapeHtml(report.note).replace(/\n/g, '<br>')}</p>
+    </article>`).join('')
+    : '<p class="attendance-empty-reports">لا توجد تقارير مرفوعة اليوم.</p>';
+  syncOfficePresenceHeartbeat();
+  syncAttendanceDisplayTimer(sessions);
+}
+
+function syncAttendanceDisplayTimer(sessions) {
+  if (attendanceDisplayTimer) {
+    window.clearInterval(attendanceDisplayTimer);
+    attendanceDisplayTimer = null;
+  }
+  if (!sessions.some((item) => item.status === 'active')) return;
+  attendanceDisplayTimer = window.setInterval(() => renderAttendance(), 60000);
+}
+
+function refreshAttendanceAdminSelector() {
+  if (!el.attendanceProfileAdmin) return;
+  const selectedUid = el.attendanceProfileAdmin.value;
+  const activeAdmins = adminProfiles.filter((item) => item.active && item.uid && item.email);
+  el.attendanceProfileAdmin.innerHTML = [
+    '<option value="">اختر حساب الأدمن</option>',
+    ...activeAdmins.map((item) => `<option value="${escapeHtml(item.uid)}">${escapeHtml(item.name || item.email)} - ${escapeHtml(item.email)}</option>`)
+  ].join('');
+  el.attendanceProfileAdmin.value = activeAdmins.some((item) => item.uid === selectedUid) ? selectedUid : '';
+}
+
+function populateAttendanceProfile(uid) {
+  const profile = attendanceWorkspace.profiles.find((item) => item.uid === uid);
+  if (!profile) return;
+  el.attendanceProfileMode.value = profile.workMode || 'operational';
+  el.attendanceOfficeStartTime.value = profile.officeStartTime || '09:00';
+  el.attendanceOfficeEndTime.value = profile.officeEndTime || '17:00';
+  el.attendanceFieldStartTime.value = profile.fieldStartTime || '09:00';
+  el.attendanceFieldEndTime.value = profile.fieldEndTime || '17:00';
+  el.attendanceProfileActive.checked = profile.active !== false;
+}
+
+function syncOfficePresenceHeartbeat() {
+  if (attendanceHeartbeatTimer) {
+    window.clearInterval(attendanceHeartbeatTimer);
+    attendanceHeartbeatTimer = null;
+  }
+  const session = currentAttendanceSession();
+  if (!currentUser || session?.status !== 'active' || session.workType !== 'office') return;
+
+  const sendHeartbeat = () => {
+    if (document.visibilityState !== 'visible') return;
+    void httpsCallable(functions, 'attendanceHeartbeat')({}).catch((error) => {
+      console.warn('Office attendance heartbeat failed', error);
+    });
+  };
+  sendHeartbeat();
+  attendanceHeartbeatTimer = window.setInterval(sendHeartbeat, 60000);
+}
+
+async function runAttendanceAction(action, payload = {}) {
+  if (!currentUser) return;
+  setAttendanceFeedback('جارٍ الحفظ...');
+  try {
+    const response = await httpsCallable(functions, action)(payload);
+    if (action === 'attendanceEndWork' && response.data?.workedMinutes != null) {
+      setAttendanceFeedback(`تم إنهاء الدوام: ${attendanceHours(response.data.workedMinutes)}.`);
+    } else {
+      setAttendanceFeedback('تم حفظ الإجراء بنجاح.');
+    }
+    await loadAttendanceWorkspace();
+    return true;
+  } catch (error) {
+    console.error('Attendance action failed', action, error);
+    setAttendanceFeedback(error?.message || 'تعذر حفظ الإجراء.', true);
+    return false;
+  }
 }
 
 function renderFinance() {
@@ -1708,8 +2093,9 @@ function render() {
   renderFieldOps();
   renderReports();
   renderAudit();
+  renderAttendance();
 
-  const canManageEmployees = isCeoEmailUser();
+  const canManageEmployees = isSuperAdminUser();
   const canViewEmployees = canViewEmployeesPanel();
   const canManageAdmins = canManageAdminsPanel();
   if (el.employeeForm) {
@@ -1761,31 +2147,30 @@ function handleProjectSubmit(event) {
   render();
 }
 
-function handleTaskSubmit(event) {
+async function handleTaskSubmit(event) {
   event.preventDefault();
   if (!requirePermission('task:add', 'إضافة مهمة')) return;
 
   const task = {
-    id: createId('task'),
     title: el.taskTitle.value.trim(),
     projectId: el.taskProject.value,
-    assignee: el.taskAssignee.value,
+    assigneeUid: el.taskAssignee.value,
     priority: el.taskPriority.value,
-    status: 'todo',
     dueDate: el.taskDueDate.value,
+    dueTime: el.taskDueTime.value,
     description: el.taskDescription.value.trim(),
-    lastEditedBy: getActorName(),
-    lastEditedAt: new Date().toISOString()
   };
 
-  if (!task.title) return;
-
-  state.tasks.unshift(task);
-  void upsertRecord('tasks', task);
-  pushAudit('إضافة مهمة', task.title);
-  saveState();
-  el.taskForm.reset();
-  render();
+  if (!task.title || !task.assigneeUid) return;
+  try {
+    await httpsCallable(functions, 'manageTaskAction')({ action: 'create', task });
+    pushAudit('إضافة مهمة وإشعار المكلّف', task.title);
+    el.taskForm.reset();
+    el.taskDueTime.value = '17:00';
+  } catch (error) {
+    console.error('Task creation failed', error);
+    el.authFeedback.textContent = error?.message || 'تعذر إنشاء المهمة.';
+  }
 }
 
 async function handleEmployeeSubmit(event) {
@@ -1975,7 +2360,7 @@ function handleProjectTableAction(event) {
   render();
 }
 
-function handleTaskBoardAction(event) {
+async function handleTaskBoardAction(event) {
   const button = event.target.closest('button[data-action]');
   if (!button) return;
   const action = button.dataset.action;
@@ -1983,13 +2368,22 @@ function handleTaskBoardAction(event) {
   const task = state.tasks.find((item) => item.id === id);
   if (!task) return;
 
-  if (action === 'task-advance') {
-    if (!requirePermission('task:advance', 'تحريك المهمة')) return;
-    task.status = nextTaskStatus(task.status);
-    task.lastEditedBy = getActorName();
-    task.lastEditedAt = new Date().toISOString();
-    void upsertRecord('tasks', task);
-    pushAudit('تحريك مهمة', task.title);
+  const taskAction = {
+    'task-start': 'start',
+    'task-submit-review': 'submit_review',
+    'task-approve': 'approve',
+    'task-return': 'return'
+  }[action];
+  if (taskAction) {
+    if (!requirePermission('task:advance', 'تحديث حالة المهمة')) return;
+    try {
+      await httpsCallable(functions, 'manageTaskAction')({ action: taskAction, taskId: id });
+      pushAudit('تحديث حالة مهمة', `${task.title} (${taskAction})`);
+    } catch (error) {
+      console.error('Task action failed', error);
+      el.authFeedback.textContent = error?.message || 'تعذر تحديث حالة المهمة.';
+    }
+    return;
   }
 
   if (action === 'task-delete') {
@@ -2258,6 +2652,7 @@ async function handleAuthenticatedUser(user) {
       console.warn('Realtime sync bootstrap failed. Continuing with local state.', syncError);
     }
     await loadAdminsFromFirestore();
+    await loadAttendanceWorkspace();
     closeAuthModal();
     pushAudit('تسجيل دخول', `${currentUser.displayName} (${roleLabel(currentUser.role)})`);
     saveState();
@@ -2327,6 +2722,60 @@ function attachEventHandlers() {
   el.couriersPipelineBody?.addEventListener('click', handleFieldOpsTableAction);
   el.completedPipelineBody?.addEventListener('click', handleFieldOpsTableAction);
 
+  el.themeToggleBtn?.addEventListener('click', () => {
+    applyTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark');
+  });
+  el.attendanceStartBtn?.addEventListener('click', () => void runAttendanceAction('attendanceStartWork', {
+    workType: el.attendanceWorkType.value
+  }));
+  el.attendanceEndBtn?.addEventListener('click', () => void runAttendanceAction('attendanceEndWork'));
+  el.attendanceRefreshBtn?.addEventListener('click', () => void loadAttendanceWorkspace());
+  el.attendanceActivityForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const success = await runAttendanceAction('attendanceRecordActivity', {
+      type: el.attendanceActivityType.value,
+      note: el.attendanceActivityNote.value.trim()
+    });
+    if (success) el.attendanceActivityNote.value = '';
+  });
+  el.attendanceReportForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const completed = el.attendanceReportCompleted.value.trim();
+    const blockers = el.attendanceReportBlockers.value.trim() || 'لا توجد معوقات مذكورة';
+    const nextSteps = el.attendanceReportNextSteps.value.trim();
+    const success = await runAttendanceAction('attendanceRecordActivity', {
+      type: 'daily_report',
+      note: `المنجزات: ${completed}\nالمعوقات: ${blockers}\nالخطوة القادمة: ${nextSteps}`
+    });
+    if (success) el.attendanceReportForm.reset();
+  });
+  el.attendanceProfileForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!isSuperAdminUser()) return;
+    const selectedAdmin = adminProfiles.find((item) => item.uid === el.attendanceProfileAdmin.value);
+    if (!selectedAdmin) {
+      setAttendanceFeedback('اختر حساب أدمن نشطًا من القائمة.', true);
+      return;
+    }
+    await runAttendanceAction('attendanceUpsertProfile', {
+      uid: selectedAdmin.uid,
+      email: selectedAdmin.email,
+      name: selectedAdmin.name || selectedAdmin.email,
+      workMode: el.attendanceProfileMode.value,
+      officeStartTime: el.attendanceOfficeStartTime.value,
+      officeEndTime: el.attendanceOfficeEndTime.value,
+      fieldStartTime: el.attendanceFieldStartTime.value,
+      fieldEndTime: el.attendanceFieldEndTime.value,
+      active: el.attendanceProfileActive.checked
+    });
+  });
+  el.attendanceProfileAdmin?.addEventListener('change', () => {
+    populateAttendanceProfile(el.attendanceProfileAdmin.value);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') syncOfficePresenceHeartbeat();
+  });
+
   el.taskFilterProject.addEventListener('change', renderTaskKanban);
   el.taskFilterAssignee.addEventListener('change', renderTaskKanban);
   el.taskFilterStatus.addEventListener('change', renderTaskKanban);
@@ -2370,7 +2819,19 @@ function attachEventHandlers() {
   });
 }
 
+function applyTheme(theme) {
+  const nextTheme = theme === 'dark' ? 'dark' : 'light';
+  document.body.dataset.theme = nextTheme;
+  localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+  if (el.themeToggleBtn) {
+    el.themeToggleBtn.textContent = nextTheme === 'dark' ? '☀' : '◐';
+    el.themeToggleBtn.title = nextTheme === 'dark' ? 'تفعيل الوضع النهاري' : 'تفعيل الوضع الليلي';
+    el.themeToggleBtn.setAttribute('aria-label', el.themeToggleBtn.title);
+  }
+}
+
 function bootstrap() {
+  applyTheme(localStorage.getItem(THEME_STORAGE_KEY) || 'light');
   attachNavBehavior();
   attachEventHandlers();
   initializeTaskProjectDefaults();

@@ -58,7 +58,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyCbgGPciw_z3b_4K3kqw5IIfCCzwDSviQ4',
-    appId: '1:1092982695441:android:07241533c9871588a733b0',
+    appId: '1:1092982695441:android:e3b23d22af25764fa733b0',
     messagingSenderId: '1092982695441',
     projectId: 'speedstar-prod-4c7c5',
     storageBucket: 'speedstar-prod-4c7c5.firebasestorage.app',

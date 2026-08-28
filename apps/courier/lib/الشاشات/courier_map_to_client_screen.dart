@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'courier_ui.dart';
 
@@ -17,15 +16,6 @@ class CourierMapToClientScreen extends StatelessWidget {
     required this.nextStepButtonText,
     required this.onNext,
   });
-
-  Future<void> _openGoogleMaps() async {
-    final uri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=$clientLat,$clientLng',
-    );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,12 +43,6 @@ class CourierMapToClientScreen extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: _openGoogleMaps,
-                      icon: const Icon(Icons.map_rounded),
-                      label: const Text('فتح الموقع في خرائط Google'),
-                    ),
-                    const SizedBox(height: 10),
                     ElevatedButton.icon(
                       onPressed: onNext,
                       icon: const Icon(Icons.directions_walk_rounded),

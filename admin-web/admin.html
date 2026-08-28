@@ -482,6 +482,9 @@
                         <label>رابط فتح فوري iOS<input id="fawryOpenUrlIosInput" type="text" placeholder="fawry://" /></label>
                         <label>رابط بديل فوري<input id="fawryOpenUrlInput" type="text" placeholder="رابط متجر أو موقع" /></label>
 
+                        <label>رابط صورة السجل التجاري<input id="commercialRegistryImageUrlInput" type="url" placeholder="https://..." /></label>
+                        <label>رابط فتح السجل التجاري<input id="commercialRegistryLinkUrlInput" type="url" placeholder="اختياري: رابط صفحة أو ملف رسمي" /></label>
+
                         <button id="savePaymentSettingsBtn" type="submit" class="btn primary">حفظ إعدادات الدفع</button>
                       </form>
                       <div id="paymentSettingsResult" class="muted normalize-result">جاري تحميل الإعدادات...</div>
@@ -508,11 +511,20 @@
                   <div class="portal-subpanel" data-subpanel="finance-discounts">
                     <div class="card">
                       <h3>إدارة أكواد الخصم</h3>
+                      <p class="muted">خصومات مركزية لكل المطاعم: اختر من يستحق الكود ونوع أثره على رسوم التوصيل بوضوح.</p>
                       <form id="discountForm" class="grid">
-                        <label>الكود<input id="discountCode" type="text" required placeholder="WELCOME20" /></label>
+                        <label>الكود<input id="discountCode" type="text" required placeholder="FIRST1000 أو RETURN50" /></label>
                         <label>نطاق الخصم<select id="discountScope" required><option value="order_total">إجمالي الطلب</option><option value="delivery_fee">رسوم التوصيل</option></select></label>
-                        <label>نوع الخصم<select id="discountType" required><option value="percent">نسبة مئوية</option><option value="fixed">مبلغ ثابت</option></select></label>
-                        <label>قيمة الخصم<input id="discountValue" type="number" min="0" step="0.01" required placeholder="20" /></label>
+                        <label>طريقة الخصم<select id="discountType" required><option value="percent">خصم بنسبة مئوية</option><option value="fixed">خصم بمبلغ ثابت</option><option value="delivery_fixed_price">سعر توصيل نهائي ثابت</option><option value="tiered_order_discount">خصم مختلف للأول والطلبات التالية</option></select></label>
+                        <label id="discountValueLabel">قيمة الخصم<input id="discountValue" type="number" min="0" step="0.01" required placeholder="20" /></label>
+                        <label id="discountEligibilityField">أهلية الكود<select id="discountEligibility" required><option value="all_customers">كل العملاء</option><option value="first_order">أول طلب للعميل فقط</option><option value="returning_customer">العميل العائد: الطلب الثاني فما بعد</option><option value="exact_order_number">رقم طلب محدد</option></select></label>
+                        <label id="discountTargetOrderField" hidden>رقم الطلب المطلوب<input id="discountTargetOrderNumber" type="number" min="1" step="1" value="2" /></label>
+                        <div id="discountTieredFields" class="grid" hidden>
+                          <label>الأول: الطريقة<select id="discountFirstOrderType"><option value="fixed">مبلغ ثابت</option><option value="percent">نسبة مئوية</option><option value="delivery_fixed_price">سعر توصيل نهائي ثابت</option></select></label>
+                          <label>الأول: القيمة<input id="discountFirstOrderValue" type="number" min="0" step="0.01" placeholder="1000" /></label>
+                          <label>الثاني فما بعد: الطريقة<select id="discountReturningType"><option value="percent">نسبة مئوية</option><option value="fixed">مبلغ ثابت</option><option value="delivery_fixed_price">سعر توصيل نهائي ثابت</option></select></label>
+                          <label>الثاني فما بعد: القيمة<input id="discountReturningValue" type="number" min="0" step="0.01" placeholder="50" /></label>
+                        </div>
                         <label>الحد الأدنى للطلب<input id="discountMinOrder" type="number" min="0" step="0.01" placeholder="0" /></label>
                         <label>أقصى عدد استخدام إجمالي<input id="discountMaxUsage" type="number" min="0" step="1" placeholder="0 = بدون حد" /></label>
                         <label>أقصى استخدام لكل مطعم<input id="discountMaxUsagePerRestaurant" type="number" min="0" step="1" placeholder="0 = بدون حد لكل مطعم" /></label>
@@ -523,7 +535,6 @@
                         <label>اسم صنف محدد (اختياري)<input id="discountItemName" type="text" placeholder="مثال: برجر لحم" /></label>
                         <label>تاريخ الانتهاء<input id="discountExpiryDate" type="datetime-local" required /></label>
                         <label><input id="discountIsActive" type="checkbox" checked /> مفعل</label>
-                        <label><input id="discountOnlyNewOrders" type="checkbox" /> للطلبات الجديدة فقط</label>
                         <button id="discountSaveBtn" type="submit" class="btn primary">حفظ الكود</button>
                         <button id="discountCancelEditBtn" type="button" class="btn ghost" hidden>إلغاء التعديل</button>
                       </form>
@@ -752,6 +763,10 @@
                       <strong>المندوبون</strong>
                       <small>متابعة حالات المندوبين</small>
                     </button>
+                    <button class="portal-subtab" type="button" data-subtab="management-delivery-zones">
+                      <strong>مناطق التوصيل</strong>
+                      <small>الأسعار ومجموعات الرحلات</small>
+                    </button>
                     <button class="portal-subtab" type="button" data-subtab="management-courier-activity">
                       <strong>نشاط المندوبين</strong>
                       <small>تقرير ساعات النشاط</small>
@@ -775,6 +790,26 @@
                       </div>
                       <div id="couriersTable"></div>
                       <div id="courierDetailsPanel" class="management-details muted">اختر مندوبًا لعرض التفاصيل.</div>
+                    </div>
+                  </div>
+
+                  <div class="portal-subpanel" data-subpanel="management-delivery-zones">
+                    <div class="card">
+                      <h3>مناطق التوصيل والتسعير</h3>
+                      <form id="deliveryZoneForm" class="grid">
+                        <label>معرّف المنطقة<input id="deliveryZoneId" type="text" required placeholder="khartoum_riyadh" /></label>
+                        <label>اسم المنطقة<input id="deliveryZoneName" type="text" required placeholder="الرياض" /></label>
+                        <label>مجموعة الرحلة<input id="deliveryZoneClusterId" type="text" required placeholder="khartoum_east" /></label>
+                        <label>سعر المتجر<input id="deliveryZoneFee" type="number" min="0" step="100" required placeholder="7000" /></label>
+                        <label>أجر المندوب<input id="deliveryZoneDriverPayout" type="number" min="0" step="100" placeholder="5200" /></label>
+                        <label>خط العرض<input id="deliveryZoneLat" type="number" step="0.000001" placeholder="15.500700" /></label>
+                        <label>خط الطول<input id="deliveryZoneLng" type="number" step="0.000001" placeholder="32.559900" /></label>
+                        <label>نصف القطر كم<input id="deliveryZoneRadiusKm" type="number" min="0" step="0.1" placeholder="3" /></label>
+                        <label><input id="deliveryZoneActive" type="checkbox" checked /> مفعلة</label>
+                        <button class="btn primary" type="submit">حفظ المنطقة</button>
+                      </form>
+                      <div id="deliveryZonesResult" class="muted normalize-result"></div>
+                      <div id="deliveryZonesTable"></div>
                     </div>
                   </div>
 
@@ -892,6 +927,22 @@
                         <label>رسالة تحديث العميل<textarea id="clientUpdateMessageInput" rows="2" placeholder="يرجى تحديث التطبيق..."></textarea></label>
                         <label>رابط تحديث العميل<input id="clientUpdateUrlAndroidInput" type="url" placeholder="https://..." /></label>
                         <label>رابط محتوى العميل<input id="clientRootUrlInput" type="url" placeholder="https://..." /></label>
+                        <label>تفعيل التحديث الاختياري للعميل<select id="clientOptionalUpdateEnabledInput"><option value="false">متوقف</option><option value="true">مفعل</option></select></label>
+                        <label>أقل بناء مقترح للعميل<input id="clientRecommendedBuildAndroidInput" type="number" min="0" step="1" placeholder="0" /></label>
+                        <label>رسالة التحديث الاختياري<textarea id="clientOptionalUpdateMessageInput" rows="2" placeholder="يتوفر إصدار جديد..."></textarea></label>
+
+                        <div class="muted remote-config-section-title">فحص إيصال الدفع للعميل</div>
+                        <label>تفعيل فحص الإيصال<select id="paymentReceiptPrecheckEnabledInput"><option value="true">مفعل</option><option value="false">متوقف</option></select></label>
+                        <label>سلوك الفحص<select id="paymentReceiptPrecheckModeInput"><option value="block">منع الإرسال عند النقص</option><option value="warn">تحذير مع السماح</option><option value="off">متوقف</option></select></label>
+                        <label>طلب صورة الإيصال<select id="paymentReceiptRequireImageInput"><option value="true">إجباري</option><option value="false">اختياري</option></select></label>
+                        <label>طلب رقم العملية<select id="paymentReceiptRequireReferenceInput"><option value="true">إجباري</option><option value="false">اختياري</option></select></label>
+                        <label>أقل عدد أرقام في رقم العملية<input id="paymentReceiptMinReferenceDigitsInput" type="number" min="1" step="1" placeholder="8" /></label>
+                        <label>رسالة التعليمات للعميل<textarea id="paymentReceiptRequirementsMessageInput" rows="2" placeholder="ارفع إيصالاً واضحاً..."></textarea></label>
+                        <label>رسالة نقص الصورة<textarea id="paymentReceiptMissingImageMessageInput" rows="2" placeholder="ارفع صورة إيصال واضحة..."></textarea></label>
+                        <label>رسالة نقص رقم العملية<textarea id="paymentReceiptMissingReferenceMessageInput" rows="2" placeholder="أدخل رقم العملية كاملاً..."></textarea></label>
+                        <label>رسالة رقم العملية الناقص<textarea id="paymentReceiptShortReferenceMessageInput" rows="2" placeholder="رقم العملية يبدو ناقصاً..."></textarea></label>
+                        <label>رسالة مبلغ غير واضح<textarea id="paymentReceiptInvalidAmountMessageInput" rows="2" placeholder="مبلغ الدفع غير واضح..."></textarea></label>
+                        <label>عنوان تحذير السماح<textarea id="paymentReceiptWarningTitleInput" rows="2" placeholder="راجع بيانات الإيصال قبل المتابعة"></textarea></label>
 
                         <div class="muted remote-config-section-title">تطبيق المتجر</div>
                         <label>تفعيل التحديث للمتجر<select id="storeForceUpdateEnabledInput"><option value="true">مفعل</option><option value="false">متوقف</option></select></label>
@@ -930,6 +981,12 @@
                         <label>قيمة الشريحة الإضافية<input id="pricingLargeItemStepAmountInput" type="number" min="1" step="100" placeholder="5000" /></label>
                         <label>الزيادة لكل شريحة<input id="pricingLargeItemStepFeeInput" type="number" min="0" step="50" placeholder="500" /></label>
                         <label>السقف الأعلى للرسم لكل وجبة<input id="pricingLargeItemFeeCapPerUnitInput" type="number" min="0" step="50" placeholder="2500" /></label>
+                        <div class="muted remote-config-section-title">تجميع طلبات المتاجر</div>
+                        <label>أقصى عدد توقفات في الرحلة<input id="storeBatchMaxStopsPerTripInput" type="number" min="1" max="8" step="1" placeholder="8" /></label>
+                        <label>طلبات قليلة تبقى رحلة واحدة حتى<input id="storeBatchSingleTripMaxStopsInput" type="number" min="2" max="30" step="1" placeholder="5" /></label>
+                        <label>أقصى مسافة للرحلة الصغيرة (كم)<input id="storeBatchSingleTripMaxRouteKmInput" type="number" min="1" step="1" placeholder="45" /></label>
+                        <label>أقصى مسافة للمسار قبل التقسيم (كم)<input id="storeBatchMaxRouteKmPerTripInput" type="number" min="1" step="1" placeholder="55" /></label>
+                        <label>تجميع المناطق غير المصنفة<select id="storeBatchGroupUnclusteredZonesInput"><option value="true">نعم</option><option value="false">لا</option></select></label>
                         <div class="rollout-actions-row pricing-config-actions">
                           <button id="reloadPricingConfigBtn" type="button" class="btn ghost">إعادة تحميل</button>
                           <button id="savePricingConfigBtn" type="submit" class="btn primary">حفظ التسعير</button>
@@ -1075,6 +1132,7 @@
                           اختر محادثة من القائمة.
                         </div>
                         <div class="support-conversation-actions">
+                          <button id="supportMobileBackBtn" class="btn ghost support-mobile-back-btn" type="button">كل المحادثات</button>
                           <button id="supportMarkReadBtn" class="btn ghost" type="button">تعليم كمقروءة</button>
                         </div>
                         <div id="supportMessagesPane" class="support-messages-pane"></div>
@@ -1132,7 +1190,7 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script type="module" src="./js/app.js?v=20260802-notification-media"></script>
+    <script type="module" src="./js/app.js?v=20260822-client-update-modes"></script>
     <script>
       // Toast helper (global)
       window.showToast = function(message, type = 'info', duration = 3500) {

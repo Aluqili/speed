@@ -9,7 +9,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../الثيم/client_theme.dart';
-import 'package:speedstar_core/speedstar_core.dart' show LoginScreenArabic;
+import 'package:speedstar_core/speedstar_core.dart'
+    show LoginScreenArabic, SpeedstarBusinessTypeConfig;
 
 import '../الخدمات/guest_location_service.dart';
 import '../الخدمات/promocode_service.dart';
@@ -30,6 +31,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
   double _largeOrderFee = 0.0;
   bool _loadingDelivery = true;
   CartProvider? _prevCart;
+  StreamSubscription<User?>? _authSubscription;
   Timer? _deliveryFeeDebounce;
   int _deliveryFeeGeneration = 0;
   static const double _defaultMaxAllowedCrossCheckDistanceKm = 120;
@@ -259,9 +261,13 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
   }
 
   int? _estimatePrepTimeMinutes(String raw) {
-    final digits = RegExp(r'\d+').allMatches(raw).map((match) {
-      return int.tryParse(match.group(0) ?? '');
-    }).whereType<int>().toList();
+    final digits = RegExp(r'\d+')
+        .allMatches(raw)
+        .map((match) {
+          return int.tryParse(match.group(0) ?? '');
+        })
+        .whereType<int>()
+        .toList();
     if (digits.isEmpty) return null;
     if (digits.length == 1) return digits.first;
     return ((digits.first + digits.last) / 2).round();
@@ -270,6 +276,10 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
   @override
   void initState() {
     super.initState();
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (!mounted || user == null || user.isAnonymous) return;
+      _calculateDeliveryFee();
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         await FirebaseRemoteConfig.instance.fetchAndActivate();
@@ -281,6 +291,7 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
   @override
   void dispose() {
     _deliveryFeeDebounce?.cancel();
+    _authSubscription?.cancel();
     _prevCart?.removeListener(_handleCartChanged);
     super.dispose();
   }
@@ -500,8 +511,9 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         builder: (_) => const LoginScreenArabic(
           allowRegister: true,
           allowGoogleSignIn: false,
-          allowPhoneSignIn: false,
+          allowPhoneSignIn: true,
           allowGuestSignIn: false,
+          phoneRemoteConfigKey: 'client_phone_signin_enabled_sudan',
         ),
       ),
     );
@@ -547,6 +559,10 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       return;
     }
     await _seedAddressFromGuestLocation(user.uid);
+    if (!mounted) {
+      return;
+    }
+    await _calculateDeliveryFee();
     if (!mounted) {
       return;
     }
@@ -678,6 +694,11 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
               'id': i.id,
               'menuItemId': i.menuItemId,
               'name': i.name,
+              if (i.category.isNotEmpty) 'category': i.category,
+              'businessType': i.businessType,
+              if (i.sku.isNotEmpty) 'sku': i.sku,
+              if (i.requiresPrescription) 'requiresPrescription': true,
+              if (i.stockQuantity != null) 'stockQuantity': i.stockQuantity,
               if ((i.sizeKey ?? '').isNotEmpty) 'sizeKey': i.sizeKey,
               if ((i.sizeLabel ?? '').isNotEmpty) 'sizeLabel': i.sizeLabel,
               'description': i.description,
@@ -724,6 +745,8 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         (restData['name'] ?? restData['restaurantName'] ?? '')
             .toString()
             .trim();
+    final businessConfig =
+        SpeedstarBusinessTypeConfig.resolve(restData['businessType']);
     final restaurantStateId = _normalizeStateId(
       restData['stateId'] ??
           restData['state'] ??
@@ -735,8 +758,9 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
     if (restLat == null || restLng == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('موقع المطعم غير مكتمل، لا يمكن متابعة الطلب')),
+        SnackBar(
+            content: Text(
+                'موقع ${businessConfig.placeLabel} غير مكتمل، لا يمكن متابعة الطلب')),
       );
       return;
     }
@@ -755,9 +779,9 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
         restaurantStateId.isEmpty &&
         distanceKm > _maxAllowedCrossCheckDistanceKm) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-              'هذا المطعم خارج نطاق ولايتك (بيانات الولاية غير مكتملة للمطعم).'),
+              '${businessConfig.placeLabel} خارج نطاق ولايتك (بيانات الولاية غير مكتملة).'),
         ),
       );
       return;
@@ -765,9 +789,9 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
     if (distanceKm > _maxAllowedCrossCheckDistanceKm) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('المطعم بعيد جدًا عن موقعك الحالي، لا يمكن إكمال الطلب.'),
+        SnackBar(
+          content: Text(
+              '${businessConfig.placeLabel} بعيد جدًا عن موقعك الحالي، لا يمكن إكمال الطلب.'),
         ),
       );
       return;
@@ -786,14 +810,13 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
 
     final generatedOrderCode = 'ORD-${Random().nextInt(1000000)}';
     final currentLargeOrderFee = _largeOrderFee;
-    final prepTimeText = (restData['deliveryTime'] ??
-        restData['estimatedDeliveryTime'] ??
-        '')
-      .toString()
-      .trim();
+    final prepTimeText =
+        (restData['deliveryTime'] ?? restData['estimatedDeliveryTime'] ?? '')
+            .toString()
+            .trim();
     final prepTimeMinutes = _estimatePrepTimeMinutes(prepTimeText);
     final estimatedDeliveryMinutes =
-      (prepTimeMinutes ?? 0) + route.durationMinutes;
+        (prepTimeMinutes ?? 0) + route.durationMinutes;
 
     final autoOfferPreview = await StoreOfferService().previewAutoOffer(
       subtotal: cart.totalPrice,
@@ -819,6 +842,12 @@ class _ClientCartScreenState extends State<ClientCartScreen> {
       'clientPhone': clientPhone,
       'restaurantId': restaurantId,
       'restaurantName': restaurantName,
+      'businessType': businessConfig.type,
+      'storeType': businessConfig.type,
+      'storeLabel': businessConfig.label,
+      'storePlaceLabel': businessConfig.placeLabel,
+      'requiresPrescription': items.any((item) =>
+          item is Map && item['requiresPrescription'] == true),
       'clientStateId': resolvedClientStateId,
       'restaurantStateId': restaurantStateId,
       'stateId': restaurantStateId.isNotEmpty

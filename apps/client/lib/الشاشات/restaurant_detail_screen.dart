@@ -8,6 +8,8 @@ import '../الثيم/client_theme.dart';
 import 'cart_provider.dart';
 import 'package:intl/intl.dart' show NumberFormat;
 import 'client_cart_screen.dart';
+import 'package:speedstar_core/speedstar_core.dart'
+    show SpeedstarBusinessTypeConfig;
 
 class RestaurantDetailScreen extends StatefulWidget {
   final String restaurantId;
@@ -77,6 +79,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   int _ratingCount = 0;
   List<Map<String, dynamic>> _offerHighlights = [];
   String _restaurantImage = '';
+  SpeedstarBusinessTypeConfig _businessConfig =
+      SpeedstarBusinessTypeConfig.restaurant;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _restaurantSubscription;
 
@@ -128,6 +132,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       final resolved = _resolveRestaurantStatus(doc.data());
       if (!mounted) return;
       final data = doc.data() ?? const <String, dynamic>{};
+      final businessConfig =
+          SpeedstarBusinessTypeConfig.resolve(data['businessType']);
       final rawHighlights = data['offerHighlights'];
       final highlightsSource =
           rawHighlights is Iterable ? rawHighlights : const [];
@@ -158,6 +164,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
             _asInt(data['ratingCount']) ?? _asInt(data['reviewCount']) ?? 0;
         _offerHighlights = highlights;
         _restaurantImage = resolvedImage;
+        _businessConfig = businessConfig;
       });
     });
   }
@@ -382,7 +389,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
 
   String _restaurantRatingText() {
     if (_ratingAverage == null || _ratingAverage! <= 0) {
-      return 'مطعم جديد';
+      return _businessConfig.newPlaceLabel;
     }
     if (_ratingCount > 0) {
       return '${_formatRatingValue(_ratingAverage!)} · $_ratingCount تقييم';
@@ -401,7 +408,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     if (data == null) {
       return {
         'isClosed': true,
-        'text': 'تعذر تحميل حالة المطعم',
+        'text': 'تعذر تحميل حالة ${_businessConfig.placeLabel}',
         'color': closedColor,
       };
     }
@@ -409,7 +416,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     if (data['temporarilyClosed'] == true) {
       return {
         'isClosed': true,
-        'text': 'المطعم مغلق مؤقتًا',
+        'text': '${_businessConfig.placeLabel} مغلق مؤقتًا',
         'color': const Color(0xFFF59E0B),
       };
     }
@@ -420,7 +427,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     if (today == null) {
       return {
         'isClosed': true,
-        'text': 'المطعم مغلق اليوم',
+        'text': '${_businessConfig.placeLabel} مغلق اليوم',
         'color': closedColor,
       };
     }
@@ -429,7 +436,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     if (status == 'مغلق') {
       return {
         'isClosed': true,
-        'text': 'المطعم مغلق اليوم',
+        'text': '${_businessConfig.placeLabel} مغلق اليوم',
         'color': closedColor,
       };
     }
@@ -438,7 +445,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     if (ranges.isEmpty) {
       return {
         'isClosed': true,
-        'text': 'المطعم مغلق - وقت غير معروف',
+        'text': '${_businessConfig.placeLabel} مغلق - وقت غير معروف',
         'color': closedColor,
       };
     }
@@ -451,7 +458,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       if (_isWithinTimeRange(nowMinutes, open, close)) {
         return {
           'isClosed': false,
-          'text': 'المطعم مفتوح الآن',
+          'text': '${_businessConfig.placeLabel} مفتوح الآن',
           'color': openColor,
         };
       }
@@ -461,14 +468,15 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     if (nextOpening != null) {
       return {
         'isClosed': true,
-        'text': 'المطعم مغلق الآن - يفتح الساعة ${nextOpening['label']}',
+        'text':
+            '${_businessConfig.placeLabel} مغلق الآن - يفتح الساعة ${nextOpening['label']}',
         'color': closedColor,
       };
     }
 
     return {
       'isClosed': true,
-      'text': 'المطعم أغلق لهذا اليوم',
+      'text': '${_businessConfig.placeLabel} أغلق لهذا اليوم',
       'color': closedColor,
     };
   }
@@ -747,8 +755,9 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
 
   int _categoryRank(String category) {
     final canonical = _canonicalCategoryLabel(category);
-    final index = _globalCategoryOrder.indexOf(canonical);
-    return index >= 0 ? index : _globalCategoryOrder.length;
+    final order = _businessConfig.categories;
+    final index = order.indexOf(canonical);
+    return index >= 0 ? index : order.length;
   }
 
   List<String> _sortedCategoriesFromDocs(List<QueryDocumentSnapshot> docs) {
@@ -935,6 +944,9 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     final hasSizes = sizes.isNotEmpty;
     final itemPrice = (data['price'] as num?)?.toDouble() ?? 0.0;
     final itemImage = (data['imageUrl'] ?? '').toString();
+    final sku = (data['sku'] ?? data['barcode'] ?? '').toString().trim();
+    final requiresPrescription = data['requiresPrescription'] == true;
+    final stockQuantity = _asInt(data['stockQuantity'] ?? data['stock']);
     final quantity = hasSizes
         ? cartProvider.getQuantityByMenuItem(widget.restaurantId, doc.id)
         : cartProvider.getQuantity(itemId);
@@ -1072,6 +1084,43 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                               ),
                             ),
                           ),
+                        if (requiresPrescription)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF59E0B)
+                                  .withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Text(
+                              'يتطلب وصفة',
+                              style: TextStyle(
+                                color: Color(0xFFF59E0B),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        if (stockQuantity != null && stockQuantity <= 5)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: closedColor.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              stockQuantity <= 0
+                                  ? 'غير متوفر'
+                                  : 'المتبقي $stockQuantity',
+                              style: const TextStyle(
+                                color: closedColor,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                     if (itemDescription.isNotEmpty) ...[
@@ -1159,12 +1208,24 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                           icon: Icons.add_rounded,
                           enabled: !isClosed && data['available'] != false,
                           onTap: () async {
+                            if (stockQuantity != null && stockQuantity <= 0) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('هذا المنتج غير متوفر حالياً'),
+                                ),
+                              );
+                              return;
+                            }
                             if (hasSizes) {
                               await _showSizePickerAndAddToCart(
                                 cartProvider: cartProvider,
                                 docId: doc.id,
                                 itemName: itemName,
                                 sizes: sizes,
+                                category: categoryLabel,
+                                sku: sku,
+                                requiresPrescription: requiresPrescription,
+                                stockQuantity: stockQuantity,
                               );
                               return;
                             }
@@ -1175,6 +1236,10 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                 docId: doc.id,
                                 itemName: itemName,
                                 itemPrice: itemPrice,
+                                category: categoryLabel,
+                                sku: sku,
+                                requiresPrescription: requiresPrescription,
+                                stockQuantity: stockQuantity,
                               );
                             } else {
                               await cartProvider.addToCartSimple(
@@ -1183,6 +1248,11 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                 itemName,
                                 itemPrice,
                                 menuItemId: doc.id,
+                                category: categoryLabel,
+                                businessType: _businessConfig.type,
+                                sku: sku,
+                                requiresPrescription: requiresPrescription,
+                                stockQuantity: stockQuantity,
                               );
                             }
                           },
@@ -1292,6 +1362,10 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     required String docId,
     required String itemName,
     required double itemPrice,
+    required String category,
+    required String sku,
+    required bool requiresPrescription,
+    required int? stockQuantity,
   }) async {
     final notesController = TextEditingController();
     final confirmed = await showDialog<bool>(
@@ -1313,7 +1387,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                 maxLines: 2,
                 autofocus: false,
                 decoration: InputDecoration(
-                  hintText: 'مثال: بدون بصل، حار جداً...',
+                  hintText: _businessConfig.notesHint,
                   hintStyle: const TextStyle(fontSize: 13),
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10)),
@@ -1347,6 +1421,11 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         itemName,
         itemPrice,
         menuItemId: docId,
+        category: category,
+        businessType: _businessConfig.type,
+        sku: sku,
+        requiresPrescription: requiresPrescription,
+        stockQuantity: stockQuantity,
         notes: notesController.text.trim().isEmpty
             ? null
             : notesController.text.trim(),
@@ -1360,6 +1439,10 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     required String docId,
     required String itemName,
     required Map<String, double> sizes,
+    required String category,
+    required String sku,
+    required bool requiresPrescription,
+    required int? stockQuantity,
   }) async {
     final orderedKeys =
         _orderedSizeEntries(sizes).map((entry) => entry.key).toList();
@@ -1410,7 +1493,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                           fontWeight: FontWeight.w900,
                         )),
                     const SizedBox(height: 6),
-                    Text('اختر السعر المناسب ثم أضف الصنف للسلة',
+                    Text('اختر السعر المناسب ثم أضف ${_businessConfig.itemLabel} للسلة',
                         textAlign: TextAlign.right,
                         style: TextStyle(color: _textSecondary)),
                     const SizedBox(height: 16),
@@ -1484,7 +1567,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                       textDirection: TextDirection.rtl,
                       maxLines: 2,
                       decoration: InputDecoration(
-                        hintText: 'مثال: بدون بصل، حار جداً...',
+                        hintText: _businessConfig.notesHint,
                         hintStyle: const TextStyle(fontSize: 13),
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10)),
@@ -1531,6 +1614,11 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       menuItemId: docId,
       sizeKey: picked,
       sizeLabel: _sizeLabel(picked),
+      category: category,
+      businessType: _businessConfig.type,
+      sku: sku,
+      requiresPrescription: requiresPrescription,
+      stockQuantity: stockQuantity,
       notes: notesController.text.trim().isEmpty
           ? null
           : notesController.text.trim(),
@@ -1680,7 +1768,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      'استكشف الأصناف',
+                      'استكشف ${_businessConfig.itemsLabel}',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 17,
@@ -1690,7 +1778,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'القائمة مرتبة تلقائياً حسب التصنيف لسهولة التصفح.',
+                      '${_businessConfig.menuLabel} مرتبة تلقائياً حسب التصنيف لسهولة التصفح.',
                       style: TextStyle(
                         color: _textSecondary,
                         fontSize: 13,
@@ -1706,7 +1794,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                       textDirection: TextDirection.rtl,
                       onChanged: (v) => setState(() => _searchQuery = v),
                       decoration: InputDecoration(
-                        hintText: 'ابحث في القائمة...',
+                        hintText: _businessConfig.searchHint,
                         hintStyle:
                             TextStyle(color: _textSecondary, fontSize: 14),
                         prefixIcon: _searchQuery.isNotEmpty
@@ -1795,8 +1883,9 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
-                    return const Center(
-                      child: Text('تعذر تحميل قائمة المطعم حالياً.'),
+                    return Center(
+                      child:
+                          Text('تعذر تحميل ${_businessConfig.menuLabel} حالياً.'),
                     );
                   }
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {

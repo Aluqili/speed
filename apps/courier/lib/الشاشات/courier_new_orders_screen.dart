@@ -51,6 +51,24 @@ class _CourierNewOrdersScreenState extends State<CourierNewOrdersScreen> {
     return 'غير متاح';
   }
 
+  String _firstText(List<dynamic> values, {String fallback = 'لم يحدد الاسم'}) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty && text != 'غير معروف' && text != 'غير متوفر') {
+        return text;
+      }
+    }
+    return fallback;
+  }
+
+  String _serviceLabel(Map<String, dynamic> data) {
+    final source = (data['orderSource'] ?? '').toString();
+    if (source == 'client_parcel_delivery') return 'وصلها';
+    if (source == 'store_batch_delivery') return 'رحلة مجمعة';
+    if (source == 'store_direct_delivery') return 'توصيل مباشر';
+    return 'طلب متجر';
+  }
+
   Future<void> _acceptOffer(String orderId) async {
     if (_isProcessing(orderId)) return;
     setState(() {
@@ -158,8 +176,7 @@ class _CourierNewOrdersScreenState extends State<CourierNewOrdersScreen> {
               children: [
                 CourierHeroCard(
                   title: '${orders.length} عرض متاح',
-                  subtitle:
-                      'يعرض الطلب لجميع المندوبين. أول قبول ناجح يحجز الطلب فورًا.',
+                  subtitle: 'راجع العروض القريبة واختر المناسب لك.',
                   icon: Icons.notifications_active_rounded,
                 ),
                 const SizedBox(height: 16),
@@ -170,11 +187,31 @@ class _CourierNewOrdersScreenState extends State<CourierNewOrdersScreen> {
                     orderId: data['orderId'],
                     docId: doc.id,
                   );
-                  final restaurantName =
-                      (data['restaurantName'] ?? 'غير معروف').toString();
+                  final restaurantName = _firstText([
+                    data['restaurantName'],
+                    data['storeName'],
+                    data['pickupName'],
+                  ], fallback: 'نقطة الاستلام');
+                  final clientName = _firstText([
+                    data['clientName'],
+                    data['customerName'],
+                    data['recipientName'],
+                  ]);
+                  final serviceLabel = _serviceLabel(data);
                   final isDirectDelivery =
                       data['orderSource'] == 'store_direct_delivery';
+                  final isBatchDelivery =
+                      data['orderSource'] == 'store_batch_delivery';
                   final itemsCount = (data['items'] as List?)?.length ?? 0;
+                  final batchStopCount =
+                      (data['batchStopCount'] as num?)?.toInt() ??
+                          ((data['batchStops'] as List?)?.length ?? 0);
+                  final batchZones = ((data['batchStops'] as List?) ?? const [])
+                      .whereType<Map>()
+                      .map((stop) => (stop['zoneName'] ?? '').toString())
+                      .where((zone) => zone.trim().isNotEmpty)
+                      .toSet()
+                      .join('، ');
                   final isProcessing = _isProcessing(doc.id);
                   final total =
                       (data['totalWithDelivery'] ?? data['total'] ?? 0)
@@ -182,6 +219,12 @@ class _CourierNewOrdersScreenState extends State<CourierNewOrdersScreen> {
                   final courierEarnings =
                       (data['deliveryFeeForDriver'] ?? data['driverShare'] ?? 0)
                           .toString();
+                  final routeNoteText = isBatchDelivery
+                      ? 'استلام مجموعة طلبيات من المتجر وتسليمها حسب خط السير'
+                      : 'الاستلام من نقطة المتجر والتسليم للعميل';
+                  final recipientText = isBatchDelivery
+                      ? 'عدد التوقفات: $batchStopCount${batchZones.isNotEmpty ? ' - $batchZones' : ''}'
+                      : 'العميل: $clientName';
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -224,9 +267,7 @@ class _CourierNewOrdersScreenState extends State<CourierNewOrdersScreen> {
                                   ),
                                 ),
                                 Text(
-                                  isDirectDelivery
-                                      ? 'توصيل مباشر من متجر'
-                                      : 'عرض جديد',
+                                  serviceLabel,
                                   style: const TextStyle(
                                     color: AppThemeArabic.courierAccent,
                                     fontWeight: FontWeight.w800,
@@ -249,7 +290,7 @@ class _CourierNewOrdersScreenState extends State<CourierNewOrdersScreen> {
                                     color: AppThemeArabic.courierTextPrimary,
                                   ),
                                 ),
-                                if (isDirectDelivery) ...[
+                                if (isDirectDelivery || isBatchDelivery) ...[
                                   const SizedBox(height: 5),
                                   const Text(
                                     'الاستلام من نقطة المتجر والتسليم للعميل',
@@ -259,9 +300,30 @@ class _CourierNewOrdersScreenState extends State<CourierNewOrdersScreen> {
                                     ),
                                   ),
                                 ],
+                                if (isBatchDelivery) ...[
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    routeNoteText,
+                                    style: const TextStyle(
+                                      color: AppThemeArabic.courierPrimary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    recipientText,
+                                    style: const TextStyle(
+                                      color:
+                                          AppThemeArabic.courierTextSecondary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
                                 const SizedBox(height: 4),
                                 Text(
-                                  'العميل: ${(data['clientName'] ?? 'غير معروف').toString()}',
+                                  recipientText,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                     color: AppThemeArabic.courierTextSecondary,
                                     fontWeight: FontWeight.w600,

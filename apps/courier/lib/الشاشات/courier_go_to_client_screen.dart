@@ -2,10 +2,9 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:getwidget/getwidget.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -61,29 +60,6 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
   void dispose() {
     _mapController?.dispose();
     super.dispose();
-  }
-
-  Future<void> _openGoogleMaps() async {
-    if (widget.clientLocation == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('لا يوجد موقع عميل في هذا الطلب لفتحه على الخرائط')),
-      );
-      return;
-    }
-    final clientLocation = widget.clientLocation!;
-    final Uri url = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=${clientLocation.latitude},${clientLocation.longitude}&travelmode=driving',
-    );
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-      return;
-    }
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تعذر فتح خرائط Google على هذا الجهاز')),
-    );
   }
 
   LatLng? _resolvePoint(
@@ -335,6 +311,21 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
     final paymentMethod = (orderData['paymentMethod'] ?? 'غير محدد').toString();
     final totalWithDelivery =
         (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
+    final orderSource = (orderData['orderSource'] ?? '').toString();
+    final isParcelDelivery = orderSource == 'client_parcel_delivery';
+    final isStoreDirectDelivery = orderSource == 'store_direct_delivery';
+    final pickupLabel = isParcelDelivery
+        ? 'نقطة الاستلام'
+        : isStoreDirectDelivery
+            ? 'المتجر'
+            : 'المطعم';
+    final pickupName = isParcelDelivery
+        ? 'نقطة الاستلام من العميل'
+        : (orderData['restaurantName'] ?? 'نقطة الاستلام').toString();
+    final packageDescription =
+        (orderData['itemDescription'] ?? orderData['packageDescription'] ?? '')
+            .toString()
+            .trim();
 
     return Card(
       child: ExpansionTile(
@@ -358,22 +349,29 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
             ),
           ),
           _detailRow(
-              'العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
-          _detailRow('المطعم',
-              (orderData['restaurantName'] ?? 'غير معروف').toString()),
+              'العميل', (orderData['clientName'] ?? 'العميل').toString()),
+          _detailRow(pickupLabel, pickupName),
           _detailRow('طريقة الدفع', paymentMethod),
           _detailRow('الإجمالي', '$totalWithDelivery ج.س'),
           const SizedBox(height: 8),
-          const Align(
+          Align(
             alignment: Alignment.centerRight,
             child: Text(
-              'العناصر',
-              style:
-                  TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+              isParcelDelivery || isStoreDirectDelivery ? 'الإرسالية' : 'العناصر',
+              style: const TextStyle(
+                  fontWeight: FontWeight.bold, color: Colors.black87),
             ),
           ),
           const SizedBox(height: 6),
-          if (items.isEmpty)
+          if (isParcelDelivery || isStoreDirectDelivery)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                packageDescription.isEmpty ? 'إرسالية توصيل' : packageDescription,
+                style: const TextStyle(color: Colors.black87),
+              ),
+            )
+          else if (items.isEmpty)
             const Align(
               alignment: Alignment.centerRight,
               child: Text(
@@ -471,7 +469,10 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
 
             final orderData = snapshot.data!;
             final String clientName =
-                orderData['clientName'] ?? 'عميل غير معروف';
+                orderData['clientName'] ?? 'العميل';
+            final orderSource = (orderData['orderSource'] ?? '').toString();
+            final isParcelDelivery = orderSource == 'client_parcel_delivery';
+            final pickupLabel = isParcelDelivery ? 'نقطة الاستلام' : 'المطعم';
             final clientLocation = _resolvePoint(
                   orderData,
                   rawKey: 'clientLocation',
@@ -479,12 +480,19 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                   lngKey: 'clientLng',
                 ) ??
                 widget.clientLocation;
-            final restaurantLocation = _resolvePoint(
-              orderData,
-              rawKey: 'restaurantLocation',
-              latKey: 'restaurantLat',
-              lngKey: 'restaurantLng',
-            );
+            final restaurantLocation = isParcelDelivery
+                ? _resolvePoint(
+                    orderData,
+                    rawKey: 'pickupLocation',
+                    latKey: 'pickupLat',
+                    lngKey: 'pickupLng',
+                  )
+                : _resolvePoint(
+                    orderData,
+                    rawKey: 'restaurantLocation',
+                    latKey: 'restaurantLat',
+                    lngKey: 'restaurantLng',
+                  );
             final driverLocation = _resolvePoint(
               orderData,
               rawKey: 'driverLocation',
@@ -556,28 +564,38 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                Row(
                   children: [
-                    if (driverToClientKm != null)
-                      Chip(
-                        label: Text(
-                          'يبعد العميل عنك: ${courierFormatDistance(driverToClientKm)}',
-                        ),
+                    Expanded(
+                      child: CourierCompactMetric(
+                        icon: Icons.my_location_rounded,
+                        label: 'العميل عنك',
+                        value: driverToClientKm == null
+                            ? 'غير متاح'
+                            : courierFormatDistance(driverToClientKm),
                       ),
-                    if (restaurantToClientKm != null)
-                      Chip(
-                        label: Text(
-                          'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
-                        ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: CourierCompactMetric(
+                        icon: Icons.storefront_rounded,
+                        label: 'عن $pickupLabel',
+                        value: restaurantToClientKm == null
+                            ? 'غير متاح'
+                            : courierFormatDistance(restaurantToClientKm),
+                        tone: AppThemeArabic.courierAccent,
                       ),
-                    if (driverFee > 0)
-                      Chip(
-                        label: Text(
-                          'رسوم التوصيل: ${courierFormatMoney(driverFee)} ج.س',
-                        ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: CourierCompactMetric(
+                        icon: Icons.payments_outlined,
+                        label: 'رسومك',
+                        value: driverFee <= 0
+                            ? 'غير متاح'
+                            : '${courierFormatMoney(driverFee)} ج.س',
                       ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -595,6 +613,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                           restaurantLocation: restaurantLocation,
                           clientLocation: clientLocation,
                           icons: _markerIcons,
+                          pickupLabel: pickupLabel,
                         ),
                         polylines: restaurantLocation == null
                             ? const {}
@@ -648,26 +667,6 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                     ),
                   ),
                 const SizedBox(height: 20),
-                Align(
-                  alignment: Alignment.center,
-                  child: Material(
-                    color: AppThemeArabic.courierPrimary,
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: _openGoogleMaps,
-                      child: const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Icon(
-                          Icons.navigation_rounded,
-                          color: Colors.white,
-                          size: 28,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -680,12 +679,12 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                             .withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(999),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.storefront_rounded, size: 16),
-                          SizedBox(width: 6),
-                          Text('المطعم'),
+                          const Icon(Icons.storefront_rounded, size: 16),
+                          const SizedBox(width: 6),
+                          Text(pickupLabel),
                         ],
                       ),
                     ),

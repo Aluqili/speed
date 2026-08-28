@@ -10,6 +10,11 @@ class CartItem {
   final String? sizeLabel;
   final String name;
   final String description;
+  final String category;
+  final String businessType;
+  final String sku;
+  final bool requiresPrescription;
+  final int? stockQuantity;
   int quantity;
   final double price;
   String? notes;
@@ -22,6 +27,11 @@ class CartItem {
     this.sizeLabel,
     required this.name,
     required this.description,
+    this.category = '',
+    this.businessType = 'restaurant',
+    this.sku = '',
+    this.requiresPrescription = false,
+    this.stockQuantity,
     required this.quantity,
     required this.price,
     this.notes,
@@ -35,6 +45,11 @@ class CartItem {
         'sizeLabel': sizeLabel,
         'name': name,
         'description': description,
+        if (category.isNotEmpty) 'category': category,
+        'businessType': businessType,
+        if (sku.isNotEmpty) 'sku': sku,
+        if (requiresPrescription) 'requiresPrescription': true,
+        if (stockQuantity != null) 'stockQuantity': stockQuantity,
         'quantity': quantity,
         'price': price,
         if (notes != null && notes!.isNotEmpty) 'notes': notes,
@@ -48,6 +63,11 @@ class CartItem {
         sizeLabel: m['sizeLabel']?.toString(),
         name: m['name'] ?? '',
         description: m['description'] ?? '',
+        category: m['category']?.toString() ?? '',
+        businessType: m['businessType']?.toString() ?? 'restaurant',
+        sku: m['sku']?.toString() ?? '',
+        requiresPrescription: m['requiresPrescription'] == true,
+        stockQuantity: (m['stockQuantity'] as num?)?.toInt(),
         quantity: (m['quantity'] as num?)?.toInt() ?? 1,
         price: (m['price'] as num?)?.toDouble() ?? 0.0,
         notes: m['notes']?.toString(),
@@ -103,6 +123,11 @@ class CartProvider extends ChangeNotifier {
           sizeLabel: item.sizeLabel,
           name: item.name,
           description: item.description,
+          category: item.category,
+          businessType: item.businessType,
+          sku: item.sku,
+          requiresPrescription: item.requiresPrescription,
+          stockQuantity: item.stockQuantity,
           quantity: item.quantity,
           price: item.price,
           notes: normalizedNotes,
@@ -156,7 +181,15 @@ class CartProvider extends ChangeNotifier {
   // دوال مساعدة لاستخدامها في restaurant_detail_screen.dart
   Future<void> addToCartSimple(
           String restaurantId, String itemId, String name, double price,
-          {String? menuItemId, String? sizeKey, String? sizeLabel, String? notes}) =>
+          {String? menuItemId,
+          String? sizeKey,
+          String? sizeLabel,
+          String? notes,
+          String category = '',
+          String businessType = 'restaurant',
+          String sku = '',
+          bool requiresPrescription = false,
+          int? stockQuantity}) =>
       addToCart(CartItem(
         id: itemId,
         restaurantId: restaurantId,
@@ -165,6 +198,11 @@ class CartProvider extends ChangeNotifier {
         sizeLabel: sizeLabel,
         name: name,
         description: '',
+        category: category,
+        businessType: businessType,
+        sku: sku,
+        requiresPrescription: requiresPrescription,
+        stockQuantity: stockQuantity,
         quantity: 1,
         price: price,
         notes: notes,

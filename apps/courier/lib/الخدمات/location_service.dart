@@ -17,9 +17,11 @@ class LocationService {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _ordersSub;
   String? _driverId;
   String? _activeOrderId;
+  Position? _lastPosition;
   double? _lastLat;
   double? _lastLng;
   DateTime? _lastWriteAt;
+  bool _hadActiveOrder = false;
   static const double _minimumWriteDistanceMeters = 20;
   static const Duration _minimumWriteInterval = Duration(seconds: 20);
 
@@ -106,7 +108,22 @@ class LocationService {
           return bMs.compareTo(aMs);
         });
 
-      _activeOrderId = activeDocs.isEmpty ? null : activeDocs.first.id;
+      if (activeDocs.isEmpty) {
+        _activeOrderId = null;
+        if (_hadActiveOrder) {
+          unawaited(_clearDriverActiveOrder(driverId));
+          unawaited(stopLocationUpdates());
+        }
+        return;
+      }
+
+      _hadActiveOrder = true;
+      _activeOrderId = activeDocs.first.id;
+      final activeOrderId = _activeOrderId;
+      final lastPosition = _lastPosition;
+      if (activeOrderId != null && lastPosition != null) {
+        unawaited(_writeOrderPosition(activeOrderId, lastPosition));
+      }
     });
   }
 
@@ -137,6 +154,7 @@ class LocationService {
   Future<void> _writePosition(Position position, {bool force = false}) async {
     final id = _driverId;
     if (id == null || id.isEmpty) return;
+    _lastPosition = position;
 
     final lat = position.latitude;
     final lng = position.longitude;
@@ -186,19 +204,63 @@ class LocationService {
 
     final orderId = _activeOrderId;
     if (orderId != null && orderId.isNotEmpty) {
-      await _firestore.collection('orders').doc(orderId).set({
-        'driverLocation': point,
-        'driverCurrentLocation': locationMap,
-        'driverLat': lat,
-        'driverLng': lng,
-        'driverLocationUpdatedAt': FieldValue.serverTimestamp(),
-        'lastLocationUpdate': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await _writeOrderPosition(orderId, position);
     }
 
     _lastLat = lat;
     _lastLng = lng;
     _lastWriteAt = now;
+  }
+
+  Future<void> _writeOrderPosition(String orderId, Position position) async {
+    final lat = position.latitude;
+    final lng = position.longitude;
+    final point = GeoPoint(lat, lng);
+    final locationMap = {
+      'lat': lat,
+      'lng': lng,
+      'latitude': lat,
+      'longitude': lng,
+      'accuracy': position.accuracy,
+      'heading': position.heading,
+      'speed': position.speed,
+    };
+
+    await _firestore.collection('orders').doc(orderId).set({
+      'driverLocation': point,
+      'driverCurrentLocation': locationMap,
+      'driverLat': lat,
+      'driverLng': lng,
+      'driverLocationUpdatedAt': FieldValue.serverTimestamp(),
+      'lastLocationUpdate': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> stopAfterOrderCompletionIfIdle(String driverId) async {
+    final id = driverId.trim();
+    if (id.isEmpty) return;
+
+    final snapshot = await _firestore
+        .collection('orders')
+        .where('assignedDriverId', isEqualTo: id)
+        .get();
+    final hasActiveOrder = snapshot.docs.any((doc) {
+      final data = doc.data();
+      final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
+      return _activeStatuses.contains(status);
+    });
+
+    if (hasActiveOrder) return;
+    await _clearDriverActiveOrder(id);
+    await stopLocationUpdates();
+  }
+
+  Future<void> _clearDriverActiveOrder(String driverId) {
+    return _firestore.collection('drivers').doc(driverId).set({
+      'activeOrderId': FieldValue.delete(),
+      'trackingStoppedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<void> stopLocationUpdates({bool stopNativeService = true}) async {
@@ -213,8 +275,10 @@ class LocationService {
     _ordersSub = null;
     _driverId = null;
     _activeOrderId = null;
+    _lastPosition = null;
     _lastLat = null;
     _lastLng = null;
     _lastWriteAt = null;
+    _hadActiveOrder = false;
   }
 }

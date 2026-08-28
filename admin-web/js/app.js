@@ -137,6 +137,8 @@ const fawryOpenUrlIosInput = document.getElementById('fawryOpenUrlIosInput');
 const bankkOpenUrlInput = document.getElementById('bankkOpenUrlInput');
 const ocashOpenUrlInput = document.getElementById('ocashOpenUrlInput');
 const fawryOpenUrlInput = document.getElementById('fawryOpenUrlInput');
+const commercialRegistryImageUrlInput = document.getElementById('commercialRegistryImageUrlInput');
+const commercialRegistryLinkUrlInput = document.getElementById('commercialRegistryLinkUrlInput');
 const savePaymentSettingsBtn = document.getElementById('savePaymentSettingsBtn');
 const paymentSettingsResult = document.getElementById('paymentSettingsResult');
 const shiftAccountForm = document.getElementById('shiftAccountForm');
@@ -149,11 +151,24 @@ const shiftIncomeSummary = document.getElementById('shiftIncomeSummary');
 const shiftAccountResult = document.getElementById('shiftAccountResult');
 const restaurantsTable = document.getElementById('restaurantsTable');
 const couriersTable = document.getElementById('couriersTable');
+const deliveryZoneForm = document.getElementById('deliveryZoneForm');
+const deliveryZoneId = document.getElementById('deliveryZoneId');
+const deliveryZoneName = document.getElementById('deliveryZoneName');
+const deliveryZoneClusterId = document.getElementById('deliveryZoneClusterId');
+const deliveryZoneFee = document.getElementById('deliveryZoneFee');
+const deliveryZoneDriverPayout = document.getElementById('deliveryZoneDriverPayout');
+const deliveryZoneLat = document.getElementById('deliveryZoneLat');
+const deliveryZoneLng = document.getElementById('deliveryZoneLng');
+const deliveryZoneRadiusKm = document.getElementById('deliveryZoneRadiusKm');
+const deliveryZoneActive = document.getElementById('deliveryZoneActive');
+const deliveryZonesResult = document.getElementById('deliveryZonesResult');
+const deliveryZonesTable = document.getElementById('deliveryZonesTable');
 const adminsTable = document.getElementById('adminsTable');
 const supportRoot = document.getElementById('supportRoot');
 const supportConversationList = document.getElementById('supportConversationList');
 const supportConversationHeader = document.getElementById('supportConversationHeader');
 const supportMessagesPane = document.getElementById('supportMessagesPane');
+const supportMobileBackBtn = document.getElementById('supportMobileBackBtn');
 const supportComposer = document.getElementById('supportComposer');
 const supportReplyInput = document.getElementById('supportReplyInput');
 const supportAttachImageBtn = document.getElementById('supportAttachImageBtn');
@@ -245,6 +260,20 @@ const clientMinBuildAndroidInput = document.getElementById('clientMinBuildAndroi
 const clientUpdateMessageInput = document.getElementById('clientUpdateMessageInput');
 const clientUpdateUrlAndroidInput = document.getElementById('clientUpdateUrlAndroidInput');
 const clientRootUrlInput = document.getElementById('clientRootUrlInput');
+const clientOptionalUpdateEnabledInput = document.getElementById('clientOptionalUpdateEnabledInput');
+const clientRecommendedBuildAndroidInput = document.getElementById('clientRecommendedBuildAndroidInput');
+const clientOptionalUpdateMessageInput = document.getElementById('clientOptionalUpdateMessageInput');
+const paymentReceiptPrecheckEnabledInput = document.getElementById('paymentReceiptPrecheckEnabledInput');
+const paymentReceiptPrecheckModeInput = document.getElementById('paymentReceiptPrecheckModeInput');
+const paymentReceiptRequireImageInput = document.getElementById('paymentReceiptRequireImageInput');
+const paymentReceiptRequireReferenceInput = document.getElementById('paymentReceiptRequireReferenceInput');
+const paymentReceiptMinReferenceDigitsInput = document.getElementById('paymentReceiptMinReferenceDigitsInput');
+const paymentReceiptRequirementsMessageInput = document.getElementById('paymentReceiptRequirementsMessageInput');
+const paymentReceiptMissingImageMessageInput = document.getElementById('paymentReceiptMissingImageMessageInput');
+const paymentReceiptMissingReferenceMessageInput = document.getElementById('paymentReceiptMissingReferenceMessageInput');
+const paymentReceiptShortReferenceMessageInput = document.getElementById('paymentReceiptShortReferenceMessageInput');
+const paymentReceiptInvalidAmountMessageInput = document.getElementById('paymentReceiptInvalidAmountMessageInput');
+const paymentReceiptWarningTitleInput = document.getElementById('paymentReceiptWarningTitleInput');
 const storeForceUpdateEnabledInput = document.getElementById('storeForceUpdateEnabledInput');
 const storeMinBuildAndroidInput = document.getElementById('storeMinBuildAndroidInput');
 const storeUpdateMessageInput = document.getElementById('storeUpdateMessageInput');
@@ -271,6 +300,11 @@ const pricingLargeItemFeeBaseInput = document.getElementById('pricingLargeItemFe
 const pricingLargeItemStepAmountInput = document.getElementById('pricingLargeItemStepAmountInput');
 const pricingLargeItemStepFeeInput = document.getElementById('pricingLargeItemStepFeeInput');
 const pricingLargeItemFeeCapPerUnitInput = document.getElementById('pricingLargeItemFeeCapPerUnitInput');
+const storeBatchMaxStopsPerTripInput = document.getElementById('storeBatchMaxStopsPerTripInput');
+const storeBatchSingleTripMaxStopsInput = document.getElementById('storeBatchSingleTripMaxStopsInput');
+const storeBatchSingleTripMaxRouteKmInput = document.getElementById('storeBatchSingleTripMaxRouteKmInput');
+const storeBatchMaxRouteKmPerTripInput = document.getElementById('storeBatchMaxRouteKmPerTripInput');
+const storeBatchGroupUnclusteredZonesInput = document.getElementById('storeBatchGroupUnclusteredZonesInput');
 const reloadPricingConfigBtn = document.getElementById('reloadPricingConfigBtn');
 const savePricingConfigBtn = document.getElementById('savePricingConfigBtn');
 const pricingConfigResult = document.getElementById('pricingConfigResult');
@@ -291,6 +325,16 @@ const discountCode = document.getElementById('discountCode');
 const discountScope = document.getElementById('discountScope');
 const discountType = document.getElementById('discountType');
 const discountValue = document.getElementById('discountValue');
+const discountValueLabel = document.getElementById('discountValueLabel');
+const discountEligibility = document.getElementById('discountEligibility');
+const discountEligibilityField = document.getElementById('discountEligibilityField');
+const discountTargetOrderField = document.getElementById('discountTargetOrderField');
+const discountTargetOrderNumber = document.getElementById('discountTargetOrderNumber');
+const discountTieredFields = document.getElementById('discountTieredFields');
+const discountFirstOrderType = document.getElementById('discountFirstOrderType');
+const discountFirstOrderValue = document.getElementById('discountFirstOrderValue');
+const discountReturningType = document.getElementById('discountReturningType');
+const discountReturningValue = document.getElementById('discountReturningValue');
 const discountMinOrder = document.getElementById('discountMinOrder');
 const discountMaxUsage = document.getElementById('discountMaxUsage');
 const discountMaxUsagePerRestaurant = document.getElementById('discountMaxUsagePerRestaurant');
@@ -302,7 +346,6 @@ const discountRestaurantsField = document.getElementById('discountRestaurantsFie
 const discountItemName = document.getElementById('discountItemName');
 const discountExpiryDate = document.getElementById('discountExpiryDate');
 const discountIsActive = document.getElementById('discountIsActive');
-const discountOnlyNewOrders = document.getElementById('discountOnlyNewOrders');
 const discountSaveBtn = document.getElementById('discountSaveBtn');
 const discountCancelEditBtn = document.getElementById('discountCancelEditBtn');
 const discountResult = document.getElementById('discountResult');
@@ -918,6 +961,71 @@ const REMOTE_CONFIG_METADATA = {
     description: 'رابط تنزيل آخر APK أو صفحة التحديث لتطبيق العميل.',
     valueType: 'STRING',
   },
+  client_optional_update_enabled: {
+    label: 'تفعيل التحديث الاختياري للعميل',
+    description: 'إظهار تذكير تحديث اختياري للعميل مع خيار لاحقا.',
+    valueType: 'BOOLEAN',
+  },
+  client_recommended_build_android: {
+    label: 'أقل بناء مقترح للعميل',
+    description: 'إذا كان بناء تطبيق العميل أقل من هذا الرقم يظهر تحديث اختياري.',
+    valueType: 'NUMBER',
+  },
+  client_optional_update_message: {
+    label: 'رسالة التحديث الاختياري للعميل',
+    description: 'الرسالة التي تظهر للعميل في نافذة التحديث الاختياري.',
+    valueType: 'STRING',
+  },
+  client_phone_signin_enabled_sudan: {
+    label: 'تسجيل العميل برقم الهاتف',
+    description: 'تشغيل أو إيقاف تسجيل ودخول العميل برقم سوداني عبر كود SMS من Firebase.',
+    valueType: 'BOOLEAN',
+  },
+  client_phone_otp_enabled: {
+    label: 'تفعيل رمز الهاتف عبر واتساب',
+    description: 'تشغيل أو إيقاف تسجيل ودخول العميل برمز واتساب من السيرفر.',
+    valueType: 'BOOLEAN',
+  },
+  client_phone_otp_ttl_minutes: {
+    label: 'مدة صلاحية رمز الهاتف',
+    description: 'عدد الدقائق التي يبقى فيها رمز واتساب صالحا قبل طلب رمز جديد.',
+    valueType: 'NUMBER',
+  },
+  client_phone_otp_resend_seconds: {
+    label: 'مهلة إعادة إرسال الرمز',
+    description: 'عدد الثواني قبل السماح للعميل بطلب رمز جديد لنفس الرقم.',
+    valueType: 'NUMBER',
+  },
+  client_phone_otp_max_requests_per_hour: {
+    label: 'حد إرسال رموز الهاتف',
+    description: 'أقصى عدد رموز يمكن إرسالها لنفس الرقم خلال ساعة.',
+    valueType: 'NUMBER',
+  },
+  client_phone_otp_max_attempts: {
+    label: 'حد محاولات رمز الهاتف',
+    description: 'أقصى عدد محاولات إدخال خاطئة قبل طلب رمز جديد.',
+    valueType: 'NUMBER',
+  },
+  client_phone_otp_whatsapp_template: {
+    label: 'قالب واتساب لرمز الهاتف',
+    description: 'اسم قالب Meta المعتمد لإرسال رمز الدخول، مثلا client_phone_otp.',
+    valueType: 'STRING',
+  },
+  client_phone_otp_whatsapp_language: {
+    label: 'لغة قالب رمز الهاتف',
+    description: 'كود لغة قالب واتساب المعتمد، مثلا ar.',
+    valueType: 'STRING',
+  },
+  client_phone_otp_button_code_enabled: {
+    label: 'إرسال كود زر OTP',
+    description: 'فعله لقوالب واتساب Authentication التي فيها زر نسخ الرمز أو الملء التلقائي.',
+    valueType: 'BOOLEAN',
+  },
+  client_phone_otp_debug_code_enabled: {
+    label: 'إظهار رمز الهاتف للتجربة',
+    description: 'للاختبار فقط. عند تفعيله ترجع الدالة الرمز للتطبيق. أوقفه في الإنتاج.',
+    valueType: 'BOOLEAN',
+  },
   store_force_update_enabled: {
     label: 'تفعيل تحديث المتجر',
     description: 'تشغيل أو إيقاف التحديث الإجباري لتطبيق المتجر.',
@@ -961,6 +1069,61 @@ const REMOTE_CONFIG_METADATA = {
   client_root_url: {
     label: 'رابط محتوى العميل',
     description: 'الرابط الجذري الذي يجلب منه تطبيق العميل المحتوى البعيد.',
+    valueType: 'STRING',
+  },
+  payment_receipt_precheck_enabled: {
+    label: 'تفعيل فحص إيصال الدفع',
+    description: 'تشغيل أو إيقاف فحص الإيصال قبل إرسال طلب الدفع من تطبيق العميل.',
+    valueType: 'BOOLEAN',
+  },
+  payment_receipt_precheck_mode: {
+    label: 'وضع فحص إيصال الدفع',
+    description: 'block يمنع الطلب عند النقص، warn يحذر ويسمح، off يعطل الفحص.',
+    valueType: 'STRING',
+  },
+  payment_receipt_require_image: {
+    label: 'طلب صورة إيصال الدفع',
+    description: 'يجعل صورة الإيصال مطلوبة قبل إرسال الدفع.',
+    valueType: 'BOOLEAN',
+  },
+  payment_receipt_require_reference: {
+    label: 'طلب رقم العملية',
+    description: 'يجعل رقم العملية مطلوبا قبل إرسال الدفع.',
+    valueType: 'BOOLEAN',
+  },
+  payment_receipt_min_reference_digits: {
+    label: 'أقل أرقام لرقم العملية',
+    description: 'الحد الأدنى لعدد الأرقام داخل رقم العملية قبل قبوله.',
+    valueType: 'NUMBER',
+  },
+  payment_receipt_requirements_message: {
+    label: 'رسالة تعليمات الإيصال',
+    description: 'النص الذي يظهر للعميل تحت خانة رفع الإيصال.',
+    valueType: 'STRING',
+  },
+  payment_receipt_missing_image_message: {
+    label: 'رسالة نقص صورة الإيصال',
+    description: 'الرسالة التي تظهر إذا لم يرفع العميل صورة الإيصال.',
+    valueType: 'STRING',
+  },
+  payment_receipt_missing_reference_message: {
+    label: 'رسالة نقص رقم العملية',
+    description: 'الرسالة التي تظهر إذا ترك العميل رقم العملية فارغا.',
+    valueType: 'STRING',
+  },
+  payment_receipt_short_reference_message: {
+    label: 'رسالة رقم العملية الناقص',
+    description: 'الرسالة التي تظهر إذا كان رقم العملية أقصر من الحد الأدنى.',
+    valueType: 'STRING',
+  },
+  payment_receipt_invalid_amount_message: {
+    label: 'رسالة مبلغ الدفع غير الواضح',
+    description: 'الرسالة التي تظهر إذا لم يستطع التطبيق تحديد مبلغ الدفع المطلوب.',
+    valueType: 'STRING',
+  },
+  payment_receipt_warning_title: {
+    label: 'عنوان تحذير الإيصال',
+    description: 'عنوان نافذة التحذير عند استخدام وضع warn.',
     valueType: 'STRING',
   },
   store_root_url: {
@@ -1103,6 +1266,31 @@ const REMOTE_CONFIG_METADATA = {
     description: 'الحد الأقصى للرسم لكل وجبة.',
     valueType: 'NUMBER',
   },
+  store_batch_max_stops_per_trip: {
+    label: 'أقصى توقفات رحلة المتجر',
+    description: 'أكبر عدد عملاء يمكن وضعهم في رحلة مجمعة واحدة للمتجر.',
+    valueType: 'NUMBER',
+  },
+  store_batch_single_trip_max_stops: {
+    label: 'حد الرحلة الواحدة للطلبات القليلة',
+    description: 'إذا كان عدد طلبات المتجر أقل من هذا الحد، يحاول النظام إبقاءها مع مندوب واحد.',
+    valueType: 'NUMBER',
+  },
+  store_batch_single_trip_max_route_km: {
+    label: 'مسافة الرحلة الواحدة للطلبات القليلة',
+    description: 'أقصى طول مسار يسمح بإبقاء الطلبات القليلة في رحلة واحدة.',
+    valueType: 'NUMBER',
+  },
+  store_batch_max_route_km_per_trip: {
+    label: 'أقصى مسافة للرحلة المجمعة',
+    description: 'عند تجاوز المسار هذه المسافة يقسم النظام التوقفات إلى رحلة أخرى.',
+    valueType: 'NUMBER',
+  },
+  store_batch_group_unclustered_zones: {
+    label: 'تجميع المناطق غير المصنفة',
+    description: 'يجمع المناطق التي لا تملك clusterId واضحا بدل فصل كل منطقة وحدها.',
+    valueType: 'BOOLEAN',
+  },
 };
 
 const PRICING_REMOTE_KEYS = [
@@ -1118,6 +1306,11 @@ const PRICING_REMOTE_KEYS = [
   'pricing_large_item_step_amount',
   'pricing_large_item_step_fee',
   'pricing_large_item_fee_cap_per_unit',
+  'store_batch_max_stops_per_trip',
+  'store_batch_single_trip_max_stops',
+  'store_batch_single_trip_max_route_km',
+  'store_batch_max_route_km_per_trip',
+  'store_batch_group_unclustered_zones',
 ];
 
 const OPS_RUNTIME_REMOTE_CONFIG_METADATA = {
@@ -1150,6 +1343,20 @@ const APP_REMOTE_KEYS = [
   'client_update_message',
   'client_update_url_android',
   'client_root_url',
+  'client_optional_update_enabled',
+  'client_recommended_build_android',
+  'client_optional_update_message',
+  'payment_receipt_precheck_enabled',
+  'payment_receipt_precheck_mode',
+  'payment_receipt_require_image',
+  'payment_receipt_require_reference',
+  'payment_receipt_min_reference_digits',
+  'payment_receipt_requirements_message',
+  'payment_receipt_missing_image_message',
+  'payment_receipt_missing_reference_message',
+  'payment_receipt_short_reference_message',
+  'payment_receipt_invalid_amount_message',
+  'payment_receipt_warning_title',
   'store_force_update_enabled',
   'store_min_build_android',
   'store_update_message',
@@ -3876,6 +4083,8 @@ function mountDashboard() {
       <div><span class="kv"><b>المندوب:</b> ${data.assignedDriverId ? resolveDriverDisplay(data.assignedDriverId, data.assignedDriverName || '') : '<span class="muted">غير معين</span>'}</span><span class="kv"><b>الهاتف:</b> ${escapeHtml(data.clientPhone || '-')}</span></div>
       <div><span class="kv"><b>الإجمالي:</b> ${formatMoney(financial.totalWithDelivery)}</span><span class="kv"><b>حصة المطعم:</b> ${formatMoney(financial.restaurantShare)}</span><span class="kv"><b>حصة المندوب:</b> ${formatMoney(financial.driverShare)}</span><span class="kv"><b>حصة المنصة:</b> ${formatMoney(financial.platformShare)}</span></div>
       ${renderOrderFinancialBreakdown(financial)}
+      ${renderPaymentReceiptMarkup(data)}
+      ${renderDeliveryProofMarkup(data)}
       ${renderUnavailableItemAlert(data)}
       ${renderCourierIssueAlert(data)}
       ${items ? `
@@ -4137,6 +4346,8 @@ function mountFinance() {
     bankkOpenUrl: String(bankkOpenUrlInput?.value || '').trim(),
     ocashOpenUrl: String(ocashOpenUrlInput?.value || '').trim(),
     fawryOpenUrl: String(fawryOpenUrlInput?.value || '').trim(),
+    commercialRegistryImageUrl: String(commercialRegistryImageUrlInput?.value || '').trim(),
+    commercialRegistryLinkUrl: String(commercialRegistryLinkUrlInput?.value || '').trim(),
   });
 
   const applyPaymentSettingsToForm = (data = {}) => {
@@ -4170,6 +4381,8 @@ function mountFinance() {
     if (bankkOpenUrlInput) bankkOpenUrlInput.value = String(data.bankkOpenUrl || '');
     if (ocashOpenUrlInput) ocashOpenUrlInput.value = String(data.ocashOpenUrl || '');
     if (fawryOpenUrlInput) fawryOpenUrlInput.value = String(data.fawryOpenUrl || '');
+    if (commercialRegistryImageUrlInput) commercialRegistryImageUrlInput.value = String(data.commercialRegistryImageUrl || '');
+    if (commercialRegistryLinkUrlInput) commercialRegistryLinkUrlInput.value = String(data.commercialRegistryLinkUrl || '');
   };
 
   const renderShiftSummary = async (paymentDocData = null) => {
@@ -4326,6 +4539,8 @@ function mountFinance() {
           bankkOpenUrl: shiftData.bankkOpenUrl,
           ocashOpenUrl: shiftData.ocashOpenUrl,
           fawryOpenUrl: shiftData.fawryOpenUrl,
+          commercialRegistryImageUrl: shiftData.commercialRegistryImageUrl,
+          commercialRegistryLinkUrl: shiftData.commercialRegistryLinkUrl,
           activeShiftOwnerUid: currentAdminUid,
           activeShiftOwnerName: ownerName,
           activeShiftStartedAt: serverTimestamp(),
@@ -4441,6 +4656,8 @@ function mountFinance() {
           bankkOpenUrl: String(bankkOpenUrlInput?.value || '').trim(),
           ocashOpenUrl: String(ocashOpenUrlInput?.value || '').trim(),
           fawryOpenUrl: String(fawryOpenUrlInput?.value || '').trim(),
+          commercialRegistryImageUrl: String(commercialRegistryImageUrlInput?.value || '').trim(),
+          commercialRegistryLinkUrl: String(commercialRegistryLinkUrlInput?.value || '').trim(),
           updatedAt: serverTimestamp(),
           updatedByAdminUid: currentAdminUid,
           adminUid: currentAdminUid,
@@ -5009,6 +5226,7 @@ function mountFinance() {
       })
       .map((d) => {
         const data = d.data() || {};
+        const receiptUrl = resolvePaymentReceiptUrl(data);
         const txRef = String(data.transactionReference || '').trim();
         const duplicateCount = txRef ? Number(transactionRefs.get(txRef) || 0) : 0;
         const duplicateLabel = duplicateCount > 1 ? `<span class="badge open">مكرر ${duplicateCount}</span>` : '';
@@ -5032,7 +5250,7 @@ function mountFinance() {
           <td>${escapeHtml(String(data.paymentMethod || '-'))}</td>
           <td>${amountLabel}</td>
           <td>${escapeHtml(txRef || '-')} ${duplicateLabel}</td>
-          <td>${data.proofImageUrl ? `<a class="btn ghost" href="${escapeHtml(data.proofImageUrl)}" target="_blank" rel="noopener">عرض</a>` : '-'}</td>
+          <td>${receiptUrl ? `<a class="btn ghost" href="${escapeHtml(receiptUrl)}" target="_blank" rel="noopener">عرض</a>` : '-'}</td>
           <td>${formatDateTimeCell(data.paymentReviewAutoFlaggedAt || data.updatedAt || data.paidAt)}</td>
           <td>
             <details class="review-details-toggle">
@@ -5182,13 +5400,14 @@ function mountFinance() {
 
     const rows = pendingDocs.map((docSnap) => {
       const data = docSnap.data() || {};
+      const receiptUrl = resolvePaymentReceiptUrl(data);
       return `<tr>
         <td>${escapeHtml(String(data.clientName || data.clientId || '-'))}</td>
         <td>${escapeHtml(String(data.clientPhone || '-'))}</td>
         <td>${formatMoney(data.amount || 0)}</td>
         <td>${escapeHtml(String(data.paymentMethod || '-'))}</td>
         <td>${escapeHtml(String(data.transactionReference || '-'))}</td>
-        <td>${data.proofImageUrl ? `<a class="btn ghost" href="${escapeHtml(data.proofImageUrl)}" target="_blank" rel="noopener">عرض</a>` : '-'}</td>
+        <td>${receiptUrl ? `<a class="btn ghost" href="${escapeHtml(receiptUrl)}" target="_blank" rel="noopener">عرض</a>` : '-'}</td>
         <td>${formatDateTimeCell(data.createdAt || data.updatedAt)}</td>
         <td>
           <button class="btn ghost" data-approve-wallet-recharge="${escapeHtml(docSnap.id)}">قبول</button>
@@ -6458,6 +6677,335 @@ function destroyOrderInlineMap() {
   orderInlineMap = null;
 }
 
+function getBatchDeliveryStops(orderData = {}) {
+  if (!['store_batch_delivery', 'store_direct_delivery'].includes(String(orderData.orderSource || ''))) return [];
+  return Array.isArray(orderData.batchStops)
+    ? orderData.batchStops
+        .map((stop, index) => ({ index, data: stop || {} }))
+        .sort((a, b) => Number(a.data.sequence ?? a.index) - Number(b.data.sequence ?? b.index))
+    : [];
+}
+
+function getBatchStopGeo(stop = {}) {
+  return (
+    extractGeo(stop, ['clientLocation', 'location', 'address.location']) ||
+    extractGeoByPairs(stop, [
+      ['clientLat', 'clientLng'],
+      ['lat', 'lng'],
+      ['latitude', 'longitude'],
+    ])
+  );
+}
+
+function formatBatchStopStatus(status = '') {
+  const value = String(status || 'pending').trim();
+  const labels = {
+    pending: 'بانتظار التنفيذ',
+    next: 'التالي',
+    on_the_way: 'في الطريق',
+    delivered: 'تم التسليم',
+    failed: 'تعذر التسليم',
+    deferred: 'مؤجل/لم يستلم',
+    returned: 'مرتجع',
+    removal_requested: 'طلب إزالة بانتظار المتجر',
+    removal_rejected: 'رفض المتجر الإزالة',
+    removed_by_store: 'أزيلت بموافقة المتجر',
+  };
+  return labels[value] || value || '-';
+}
+
+function getBatchTripCode(orderData = {}, fallback = '') {
+  return String(
+    orderData.publicBatchCode ||
+    orderData.batchCode ||
+    orderData.tripCode ||
+    orderData.batchCodeSeed ||
+    fallback ||
+    ''
+  ).trim();
+}
+
+function getBatchStopCode(stop = {}, fallback = '') {
+  return String(stop.publicStopCode || stop.stopCode || fallback || '').trim();
+}
+
+function getRemovedBatchDeliveryStops(orderData = {}) {
+  if (!['store_batch_delivery', 'store_direct_delivery'].includes(String(orderData.orderSource || ''))) return [];
+  return Array.isArray(orderData.removedBatchStops)
+    ? orderData.removedBatchStops
+        .map((stop, index) => ({ index, data: stop || {} }))
+        .sort((a, b) => Number(a.data.removedAt || a.index) - Number(b.data.removedAt || b.index))
+    : [];
+}
+
+function summarizeBatchStops(stops = [], removedStops = []) {
+  return stops.reduce((summary, item) => {
+    const status = String(item?.data?.status || 'pending').trim();
+    if (status === 'delivered') summary.delivered += 1;
+    else if (['failed', 'deferred', 'returned'].includes(status)) summary.exceptions += 1;
+    else if (status === 'removal_requested') summary.removalPending += 1;
+    else summary.active += 1;
+    return summary;
+  }, {
+    total: stops.length,
+    active: 0,
+    delivered: 0,
+    exceptions: 0,
+    removalPending: 0,
+    removed: removedStops.length,
+  });
+}
+
+function getBatchStopRowClass(status = '') {
+  const value = String(status || '').trim();
+  if (value === 'delivered') return 'batch-stop-row--delivered';
+  if (['failed', 'deferred', 'returned'].includes(value)) return 'batch-stop-row--issue';
+  if (['removal_requested', 'removal_rejected', 'removed_by_store'].includes(value)) return 'batch-stop-row--removal';
+  return '';
+}
+
+function formatOrderSourceLabel(orderData = {}) {
+  const source = String(orderData.orderSource || '').trim();
+  const fulfillment = String(orderData.fulfillmentMode || orderData.deliveryMode || '').trim();
+  if (source === 'store_batch_delivery') return 'رحلة متجر مجمعة';
+  if (source === 'store_direct_delivery') return 'وصّلها من متجر';
+  if (source === 'client_parcel_delivery') return 'وصّلها من عميل';
+  if (fulfillment === 'merchant_delivery') return 'توصيل متجر';
+  return 'طلب متجر/مطعم';
+}
+
+function isClientParcelOrder(orderData = {}) {
+  return String(orderData.orderSource || '').trim() === 'client_parcel_delivery';
+}
+
+function getPickupGeoByOrder(orderData = {}) {
+  if (isClientParcelOrder(orderData)) {
+    const fromPickup = extractGeo(orderData, ['pickupLocation']);
+    if (fromPickup) return fromPickup;
+    const lat = Number(orderData.pickupLat);
+    const lng = Number(orderData.pickupLng);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  }
+  return getRestaurantGeoByOrder(orderData);
+}
+
+function getDropoffGeoByOrder(orderData = {}) {
+  return getClientGeoByOrder(orderData);
+}
+
+function getPickupLabelByOrder(orderData = {}) {
+  if (isClientParcelOrder(orderData)) return 'نقطة الاستلام';
+  if (String(orderData.orderSource || '').trim() === 'store_direct_delivery') return 'المتجر';
+  return 'المتجر/المطعم';
+}
+
+function getPickupNameByOrder(orderData = {}, fallback = '') {
+  if (isClientParcelOrder(orderData)) {
+    return String(orderData.pickupAddress || orderData.pickupMapUrl || 'نقطة الاستلام من العميل').trim();
+  }
+  return String(orderData.restaurantName || fallback || 'نقطة الاستلام').trim();
+}
+
+function renderBatchStopsMarkup(orderData = {}) {
+  const stops = getBatchDeliveryStops(orderData);
+  const removedStops = getRemovedBatchDeliveryStops(orderData);
+  if (!stops.length && !removedStops.length) return '';
+  const batchCode = getBatchTripCode(orderData, orderData.orderNumber || orderData.orderId || '');
+  const sourceLabel = formatOrderSourceLabel(orderData);
+  const summary = summarizeBatchStops(stops, removedStops);
+  const rows = stops.map(({ index, data }, displayIndex) => {
+    const geo = getBatchStopGeo(data);
+    const status = String(data.status || 'pending').trim();
+    const reason = String(data.failureReason || data.removalReason || data.removalRejectNote || data.returnReason || '').trim();
+    const stopCode = getBatchStopCode(data, String(displayIndex + 1));
+    const trackingUrl = String(data.trackingUrl || data.publicTrackingUrl || '').trim();
+    const rowClass = getBatchStopRowClass(status);
+    return `
+      <tr class="${rowClass}">
+        <td><span class="batch-stop-code">${escapeHtml(stopCode)}</span><br /><span class="muted">#${escapeHtml(String(index + 1))}</span></td>
+        <td><b>${escapeHtml(data.clientName || 'عميل')}</b><br /><span class="muted">${escapeHtml(data.clientPhone || '-')}</span></td>
+        <td>${escapeHtml(data.zoneName || '-')}<br /><span class="muted">${escapeHtml(data.addressText || '')}</span></td>
+        <td>${escapeHtml(formatBatchStopStatus(status))}</td>
+        <td>${reason ? escapeHtml(reason) : '<span class="muted">لا توجد</span>'}</td>
+        <td>${trackingUrl ? `<a href="${escapeHtml(trackingUrl)}" target="_blank" rel="noopener">فتح الرابط</a>` : '<span class="muted">لا يوجد</span>'}</td>
+        <td>${geo ? escapeHtml(`${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}`) : '<span class="muted">لا يوجد</span>'}</td>
+      </tr>
+    `;
+  }).join('');
+  const removedRows = removedStops.map(({ data }, displayIndex) => {
+    const stopCode = getBatchStopCode(data, String(displayIndex + 1));
+    const reason = String(data.removalReason || data.removalApproveNote || '').trim();
+    return `
+      <tr class="batch-stop-row--removal">
+        <td><span class="batch-stop-code">${escapeHtml(stopCode)}</span></td>
+        <td>${escapeHtml(data.clientName || 'عميل')}<br /><span class="muted">${escapeHtml(data.clientPhone || '-')}</span></td>
+        <td>${escapeHtml(data.zoneName || '-')}</td>
+        <td>${escapeHtml(reason || 'أزيل قبل الاستلام بموافقة المتجر')}</td>
+      </tr>
+    `;
+  }).join('');
+  return `
+    <div class="order-detail-card" style="grid-column:1/-1">
+      <strong>تفاصيل ${escapeHtml(sourceLabel)} ${batchCode ? `- ${escapeHtml(batchCode)}` : ''}</strong>
+      <div class="batch-summary-grid">
+        <span class="batch-summary-pill">الحالية <b>${summary.total}</b></span>
+        <span class="batch-summary-pill">قيد التنفيذ <b>${summary.active}</b></span>
+        <span class="batch-summary-pill">تم التسليم <b>${summary.delivered}</b></span>
+        <span class="batch-summary-pill">متعذر/مرتجع <b>${summary.exceptions}</b></span>
+        <span class="batch-summary-pill">طلبات إزالة <b>${summary.removalPending}</b></span>
+        <span class="batch-summary-pill">أزيلت <b>${summary.removed}</b></span>
+      </div>
+      <div class="table-scroll" style="margin-top:10px">
+        <table class="data-table compact">
+          <thead><tr><th>رقم الطلب</th><th>العميل</th><th>المنطقة والعنوان</th><th>الحالة</th><th>الملاحظة</th><th>التتبع</th><th>الإحداثيات</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${removedRows ? `
+        <div class="batch-removed-box">
+          <b>طلبات أزيلت قبل استلام المندوب</b>
+          <div class="table-scroll" style="margin-top:8px">
+            <table class="data-table compact">
+              <thead><tr><th>رقم الطلب</th><th>العميل</th><th>المنطقة</th><th>السبب</th></tr></thead>
+              <tbody>${removedRows}</tbody>
+            </table>
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function resolvePaymentReceiptUrl(orderData = {}) {
+  const status = String(orderData.orderStatus || orderData.status || '').trim().toLowerCase();
+  const courierStage = String(orderData.courierLastStage || '').trim().toLowerCase();
+  const proofImageUrl = String(orderData.proofImageUrl || '').trim();
+  const proofLooksLikeDelivery = Boolean(
+    proofImageUrl
+    && (status === 'delivered' || status === 'completed' || courierStage === 'delivered')
+  );
+  const candidates = [
+    orderData.paymentReceiptUrl,
+    orderData.paymentReceiptImageUrl,
+    orderData.paymentProofUrl,
+    orderData.paymentProofImageUrl,
+    orderData.paymentEvidenceUrl,
+    orderData.paymentEvidenceImageUrl,
+    orderData.receiptUrl,
+    orderData.receiptImageUrl,
+    orderData.transferReceiptUrl,
+    orderData.transferReceiptImageUrl,
+    orderData.evidenceImageUrl,
+    orderData.bankReceiptUrl,
+    orderData.bankReceiptImageUrl,
+    orderData.imageUrl,
+    orderData.paymentEvidence?.proofImageUrl,
+    orderData.paymentEvidence?.imageUrl,
+    orderData.paymentEvidence?.receiptUrl,
+    orderData.payment?.proofImageUrl,
+    orderData.payment?.imageUrl,
+    orderData.payment?.receiptUrl,
+  ];
+  const explicitReceiptUrl = String(candidates.find((value) => String(value || '').trim()) || '').trim();
+  if (explicitReceiptUrl) return explicitReceiptUrl;
+
+  const hasPaymentReviewContext = Boolean(
+    String(orderData.transactionReference || '').trim()
+    && (
+      orderData.paymentReviewRequired === true
+      || String(orderData.paymentReviewDecision || '').trim()
+      || ['payment_review', 'under_review'].includes(status)
+      || ['under_review', 'pending'].includes(String(orderData.paymentStatus || '').trim().toLowerCase())
+    )
+  );
+  return hasPaymentReviewContext && !proofLooksLikeDelivery ? proofImageUrl : '';
+}
+
+function resolveDeliveryProofUrl(orderData = {}) {
+  const status = String(orderData.orderStatus || orderData.status || '').trim().toLowerCase();
+  const courierStage = String(orderData.courierLastStage || '').trim().toLowerCase();
+  const explicitProofUrl = String(
+    orderData.deliveryProofImageUrl
+    || orderData.deliveryEvidenceImageUrl
+    || orderData.deliveredProofImageUrl
+    || orderData.deliveryProofUrl
+    || orderData.deliveryEvidenceUrl
+    || orderData.delivery?.proofImageUrl
+    || orderData.delivery?.imageUrl
+    || ''
+  ).trim();
+  if (explicitProofUrl) return explicitProofUrl;
+  const proofImageUrl = String(orderData.proofImageUrl || '').trim();
+  return proofImageUrl && (status === 'delivered' || status === 'completed' || courierStage === 'delivered')
+    ? proofImageUrl
+    : '';
+}
+
+function renderPaymentReceiptMarkup(orderData = {}) {
+  const proofImageUrl = resolvePaymentReceiptUrl(orderData);
+  const transactionReference = String(orderData.transactionReference || '').trim();
+  const paymentMethod = String(orderData.paymentMethod || orderData.method || '').trim();
+  const reviewedAt = orderData.paymentReviewedAt || orderData.paymentReviewAutoApprovedAt || orderData.paidAt;
+  const reviewedBy = String(orderData.paymentReviewedByAdminEmail || orderData.paymentReviewedByAdminUid || '').trim();
+  const decision = String(orderData.paymentReviewDecision || '').trim();
+  const precheck = orderData.paymentReceiptPrecheck || orderData.receiptPrecheck || {};
+  const precheckIssues = Array.isArray(precheck.issues) ? precheck.issues : [];
+  const precheckStatus = String(orderData.paymentReceiptValidationStatus || '').trim();
+
+  if (!proofImageUrl && !transactionReference && !paymentMethod) return '';
+
+  const reviewLabel = decision
+    ? formatOrderStatusLabel(decision)
+    : String(orderData.paymentStatus || '-');
+
+  return `
+    <div class="order-detail-card" style="grid-column:1/-1">
+      <strong>إيصال الدفع</strong>
+      <div class="order-detail-grid" style="margin-top:10px">
+        <div><b>طريقة الدفع:</b> ${escapeHtml(paymentMethod || '-')}</div>
+        <div><b>رقم العملية:</b> ${escapeHtml(transactionReference || '-')}</div>
+        <div><b>حالة المراجعة:</b> ${escapeHtml(reviewLabel || '-')}</div>
+        <div><b>وقت الاعتماد:</b> ${escapeHtml(formatDateTimeLabel(reviewedAt))}</div>
+        <div><b>اعتمد بواسطة:</b> ${escapeHtml(reviewedBy || '-')}</div>
+        <div><b>فحص الإيصال:</b> ${escapeHtml(precheckStatus || (precheck.passed === true ? 'passed_local' : precheck.mode ? 'checked' : '-'))}</div>
+      </div>
+      ${precheckIssues.length ? `<div class="muted" style="margin-top:10px">ملاحظات الفحص: ${precheckIssues.map((item) => escapeHtml(String(item || '').trim())).filter(Boolean).join(' | ')}</div>` : ''}
+      ${proofImageUrl ? `
+        <div style="margin-top:12px; display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap">
+          <a class="btn primary" href="${escapeHtml(proofImageUrl)}" target="_blank" rel="noopener">فتح الإيصال</a>
+          <a href="${escapeHtml(proofImageUrl)}" target="_blank" rel="noopener" style="display:block; max-width:220px">
+            <img src="${escapeHtml(proofImageUrl)}" alt="إيصال الدفع" loading="lazy" style="width:100%; max-height:180px; object-fit:contain; border:1px solid #e5e7eb; border-radius:8px; background:#fff" />
+          </a>
+        </div>
+      ` : '<div class="muted" style="margin-top:10px">لا توجد صورة إيصال محفوظة لهذا الطلب.</div>'}
+    </div>
+  `;
+}
+
+function renderDeliveryProofMarkup(orderData = {}) {
+  const deliveryProofUrl = resolveDeliveryProofUrl(orderData);
+  if (!deliveryProofUrl) return '';
+  const deliveredAt = orderData.deliveredAt || orderData.courierLastStageAt || orderData.completedAt;
+  const driverLabel = orderData.assignedDriverId
+    ? resolveDriverDisplay(orderData.assignedDriverId, orderData.assignedDriverName || '')
+    : '<span class="muted">غير معين</span>';
+  return `
+    <div class="order-detail-card" style="grid-column:1/-1">
+      <strong>إثبات التسليم</strong>
+      <div class="order-detail-grid" style="margin-top:10px">
+        <div><b>المندوب:</b> ${driverLabel}</div>
+        <div><b>وقت التسليم:</b> ${escapeHtml(formatDateTimeLabel(deliveredAt))}</div>
+      </div>
+      <div style="margin-top:12px; display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap">
+        <a class="btn primary" href="${escapeHtml(deliveryProofUrl)}" target="_blank" rel="noopener">فتح إثبات التسليم</a>
+        <a href="${escapeHtml(deliveryProofUrl)}" target="_blank" rel="noopener" style="display:block; max-width:220px">
+          <img src="${escapeHtml(deliveryProofUrl)}" alt="إثبات التسليم" loading="lazy" style="width:100%; max-height:180px; object-fit:contain; border:1px solid #e5e7eb; border-radius:8px; background:#fff" />
+        </a>
+      </div>
+    </div>
+  `;
+}
+
 async function renderInlineOrderMap(orderId, orderData = {}) {
   const mapShell = document.getElementById(`orderInlineMapShell-${orderId}`);
   const mapCanvas = document.getElementById(`orderInlineMap-${orderId}`);
@@ -6513,7 +7061,80 @@ async function renderInlineOrderMap(orderId, orderData = {}) {
     marker.bindPopup(title);
   };
 
-  pushPoint(restaurantGeo, `المتجر: ${resolveRestaurantDisplay(orderData.restaurantId, orderData.restaurantName)}`, 'restaurant', 'online');
+  const batchStops = getBatchDeliveryStops(orderData);
+  if (batchStops.length) {
+    pushPoint(restaurantGeo, `${pickupLabel}: ${pickupName}`, 'restaurant', 'online');
+    pushPoint(driverGeo, `المندوب: ${resolveDriverDisplay(orderData.assignedDriverId, orderData.assignedDriverName || '')}`, 'driver', 'current');
+
+    batchStops.forEach(({ data }, displayIndex) => {
+      const geo = getBatchStopGeo(data);
+      if (!geo) return;
+      const latLng = [geo.lat, geo.lng];
+      points.push(latLng);
+      const last = routePoints[routePoints.length - 1];
+      if (!last || last[0] !== latLng[0] || last[1] !== latLng[1]) {
+        routePoints.push(latLng);
+      }
+      const status = String(data.status || 'pending').trim();
+      const markerVariant = status === 'delivered'
+        ? 'active'
+        : (['failed', 'deferred', 'returned'].includes(status) ? 'offline' : 'selected');
+      const stopCode = getBatchStopCode(data, String(displayIndex + 1));
+      const reason = String(data.failureReason || data.removalReason || data.removalRejectNote || data.returnReason || '').trim();
+      const trackingUrl = String(data.trackingUrl || data.publicTrackingUrl || '').trim();
+      const title = `${stopCode}. ${data.clientName || 'عميل'} | ${formatBatchStopStatus(status)} | ${data.clientPhone || '-'}`;
+      const marker = window.L.marker(latLng, {
+        icon: buildMarkerIcon({ type: 'client', variant: markerVariant })
+      }).addTo(orderInlineMap);
+      marker.bindTooltip(title);
+      marker.bindPopup(`
+        <b>${escapeHtml(stopCode)}</b><br />
+        <b>${escapeHtml(data.clientName || 'عميل')}</b><br />
+        ${escapeHtml(data.clientPhone || '-')}<br />
+        ${escapeHtml(data.zoneName || '-')}<br />
+        ${escapeHtml(formatBatchStopStatus(status))}
+        ${reason ? `<br /><span>${escapeHtml(reason)}</span>` : ''}
+        ${trackingUrl ? `<br /><a href="${escapeHtml(trackingUrl)}" target="_blank" rel="noopener">فتح تتبع العميل</a>` : ''}
+      `);
+    });
+
+    if (routePoints.length >= 2) {
+      window.L.polyline(routePoints, {
+        color: '#2563eb',
+        weight: 5,
+        opacity: 0.95,
+        lineCap: 'round',
+      }).addTo(orderInlineMap);
+    }
+
+    if (!points.length) {
+      orderInlineMap.setView([15.5007, 32.5599], 11);
+      if (mapMeta) {
+        mapMeta.textContent = `لا تتوفر نقاط جغرافية كافية لهذه الخدمة حالياً: ${formatOrderSourceLabel(orderData)}.`;
+        mapMeta.classList.remove('muted');
+      }
+      return;
+    }
+
+    if (points.length === 1) {
+      orderInlineMap.setView(points[0], 15);
+    } else {
+      const bounds = window.L.latLngBounds(points);
+      orderInlineMap.fitBounds(bounds.pad(0.24), { animate: true, maxZoom: 16 });
+    }
+
+    if (mapMeta) {
+      const withGeo = batchStops.filter(({ data }) => getBatchStopGeo(data)).length;
+      mapMeta.textContent = `${formatOrderSourceLabel(orderData)}: ${withGeo} نقطة مرسومة من ${batchStops.length} عميل.`;
+      mapMeta.classList.remove('muted');
+    }
+    mapShell.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    requestAnimationFrame(() => orderInlineMap?.invalidateSize());
+    setTimeout(() => orderInlineMap?.invalidateSize(), 160);
+    return;
+  }
+
+  pushPoint(restaurantGeo, `${pickupLabel}: ${pickupName}`, 'restaurant', 'online');
   pushPoint(driverGeo, `المندوب: ${resolveDriverDisplay(orderData.assignedDriverId, orderData.assignedDriverName || '')}`, 'driver', 'current');
   pushPoint(clientGeo, `العميل: ${resolveClientDisplay(orderData.clientId, orderData.clientName)}`, 'client', 'default');
 
@@ -6638,7 +7259,7 @@ function renderOperationsOrderDetails(orderId) {
     driverIdFromOrder,
     data.assignedDriverPhone || data.driverPhone || data.offeredDriverPhone || ''
   );
-  const liveDriverId = assignedDriverId;
+  const liveDriverId = isActiveOrderStatus(lifecycleStatus) ? assignedDriverId : '';
   const liveDriverName = String(data.assignedDriverName || '').trim();
   const isAwaitingOfferDecision = String(data.orderStatus || data.status || '').trim() === 'courier_offer_pending';
   const offerAudienceCount = getOfferAudienceCount(data);
@@ -6649,7 +7270,7 @@ function renderOperationsOrderDetails(orderId) {
   const offerSummaryMarkup = isAwaitingOfferDecision
     ? `<div><b>المعروض عليهم الآن:</b> ${offerAudienceCount || '-'}</div>${offerAudienceSummary}<div class="muted">العرض ما زال بانتظار قبول أحد المناديب.</div>`
     : assignedDriverId
-      ? `<div><b>المندوب الذي قبل الطلب:</b> ${resolveDriverDisplay(liveDriverId, liveDriverName || data.assignedDriverName || '')}</div>${offerAudienceSummary}<div class="muted">النطاق السابق: ${escapeHtml(`${courierRadiusKm || 20} كم`)}</div>`
+      ? `<div><b>المندوب الذي قبل الطلب:</b> ${resolveDriverDisplay(assignedDriverId, liveDriverName || data.assignedDriverName || '')}</div>${offerAudienceSummary}<div class="muted">النطاق السابق: ${escapeHtml(`${courierRadiusKm || 20} كم`)}</div>`
       : `${offerAudienceSummary}<div><b>النطاق السابق:</b> ${escapeHtml(`${courierRadiusKm || 20} كم`)}</div>${offeredDriverId ? '<div class="muted">يوجد مندوب مرشح للعرض، لكن لم يتم إسناد الطلب بعد.</div>' : '<div class="muted">لا يوجد مندوب معين حاليًا.</div>'}`;
 
   operationsOrderDetails.classList.remove('muted');
@@ -6687,6 +7308,9 @@ function renderOperationsOrderDetails(orderId) {
         </div>
         <div class="order-detail-card"><strong>نطاق العرض</strong>${offerSummaryMarkup}</div>
         <div class="order-detail-card"><strong>العنوان</strong>${escapeHtml(data.deliveryAddress || data.address || '-')}</div>
+        ${renderPaymentReceiptMarkup(data)}
+        ${renderDeliveryProofMarkup(data)}
+        ${renderBatchStopsMarkup(data)}
       </div>
       ${renderOrderFinancialBreakdown(financial)}
       ${renderUnavailableItemAlert(data)}
@@ -6892,6 +7516,16 @@ function renderOperationsOrders() {
     const data = item.data || {};
     const bucket = getOperationsOrderBucket(data);
     const isSelected = currentOperationsOrderId && currentOperationsOrderId === item.id;
+    const batchStops = getBatchDeliveryStops(data);
+    const removedBatchStops = getRemovedBatchDeliveryStops(data);
+    const batchSummary = summarizeBatchStops(batchStops, removedBatchStops);
+    const sourceLabel = formatOrderSourceLabel(data);
+    const orderCode = batchStops.length || removedBatchStops.length
+      ? getBatchTripCode(data, formatUnifiedOrderCode(data.orderNumber, data.orderId, item.id))
+      : formatUnifiedOrderCode(data.orderNumber, data.orderId, item.id);
+    const orderMeta = batchStops.length || removedBatchStops.length
+      ? `<br /><span class="muted">${escapeHtml(sourceLabel)}: ${batchSummary.total} حالية، ${batchSummary.delivered} تم، ${batchSummary.exceptions} متعذر، ${batchSummary.removalPending} إزالة</span>`
+      : `<br /><span class="muted">${escapeHtml(sourceLabel)}</span>`;
     const bucketLabel = bucket === 'review'
       ? 'مراجعة'
       : bucket === 'cancelled'
@@ -6902,7 +7536,7 @@ function renderOperationsOrders() {
             ? 'نشط'
             : 'أخرى';
     return `<tr class="${isSelected ? 'is-selected-row' : ''}">
-      <td>${escapeHtml(formatUnifiedOrderCode(data.orderNumber, data.orderId, item.id))}</td>
+      <td><span class="batch-stop-code">${escapeHtml(orderCode)}</span>${orderMeta}</td>
       <td>${resolveClientDisplay(data.clientId, data.clientName)}</td>
       <td>${resolveRestaurantDisplay(data.restaurantId, data.restaurantName)}</td>
       <td>${data.assignedDriverId ? resolveDriverDisplay(data.assignedDriverId, data.assignedDriverName || '') : '<span class="muted">غير معين</span>'}</td>
@@ -7105,7 +7739,108 @@ function renderCourierActivityReport() {
   }, { enabled: String(document.querySelector('.tab-panel.active')?.id || '') === 'management' && getActiveSubpanelId('management') === 'management-courier-activity' });
 }
 
+let deliveryZonesBound = false;
+
+function parseAdminOptionalNumber(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function fillDeliveryZoneForm(id, data = {}) {
+  if (deliveryZoneId) deliveryZoneId.value = id || '';
+  if (deliveryZoneName) deliveryZoneName.value = String(data.name || '');
+  if (deliveryZoneClusterId) deliveryZoneClusterId.value = String(data.clusterId || '');
+  if (deliveryZoneFee) deliveryZoneFee.value = String(data.fixedDeliveryFee ?? data.deliveryFee ?? '');
+  if (deliveryZoneDriverPayout) deliveryZoneDriverPayout.value = String(data.driverPayout ?? data.driverFee ?? '');
+  if (deliveryZoneLat) deliveryZoneLat.value = String(data.centerLat ?? data.lat ?? '');
+  if (deliveryZoneLng) deliveryZoneLng.value = String(data.centerLng ?? data.lng ?? '');
+  if (deliveryZoneRadiusKm) deliveryZoneRadiusKm.value = String(data.radiusKm ?? '');
+  if (deliveryZoneActive) deliveryZoneActive.checked = data.active !== false;
+}
+
+function bindDeliveryZonesManagement() {
+  if (!deliveryZoneForm || deliveryZonesBound) return;
+  deliveryZoneForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const id = String(deliveryZoneId?.value || '').trim();
+    const name = String(deliveryZoneName?.value || '').trim();
+    const clusterId = String(deliveryZoneClusterId?.value || '').trim();
+    const fixedDeliveryFee = Number(deliveryZoneFee?.value || 0);
+    const driverPayout = Number(deliveryZoneDriverPayout?.value || 0);
+    if (!id || !name || !clusterId || !Number.isFinite(fixedDeliveryFee)) {
+      if (deliveryZonesResult) deliveryZonesResult.textContent = 'أدخل معرفًا واسمًا ومجموعة وسعرًا صحيحًا.';
+      return;
+    }
+    try {
+      if (deliveryZonesResult) deliveryZonesResult.textContent = 'جارٍ حفظ المنطقة...';
+      const centerLat = parseAdminOptionalNumber(deliveryZoneLat?.value);
+      const centerLng = parseAdminOptionalNumber(deliveryZoneLng?.value);
+      const radiusKm = parseAdminOptionalNumber(deliveryZoneRadiusKm?.value);
+      await setDoc(doc(db, 'deliveryZones', id), {
+        name,
+        clusterId,
+        fixedDeliveryFee,
+        driverPayout: Number.isFinite(driverPayout) ? driverPayout : 0,
+        ...(centerLat != null ? { centerLat } : {}),
+        ...(centerLng != null ? { centerLng } : {}),
+        ...(radiusKm != null ? { radiusKm } : {}),
+        active: deliveryZoneActive?.checked !== false,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      if (deliveryZonesResult) deliveryZonesResult.textContent = 'تم حفظ المنطقة.';
+      fillDeliveryZoneForm('', { active: true });
+    } catch (err) {
+      if (deliveryZonesResult) deliveryZonesResult.textContent = `تعذر حفظ المنطقة: ${err.message || err}`;
+    }
+  });
+  deliveryZonesBound = true;
+  renderDeliveryZones();
+}
+
+function renderDeliveryZones() {
+  if (!deliveryZonesTable) return;
+  onSnapshot(query(collection(db, 'deliveryZones'), orderBy('name')), (snap) => {
+    const rows = snap.docs.map((d) => {
+      const data = d.data() || {};
+      const active = data.active !== false;
+      return `<tr>
+        <td>${escapeHtml(data.name || d.id)}</td>
+        <td>${escapeHtml(d.id)}</td>
+        <td>${escapeHtml(data.clusterId || '-')}</td>
+        <td>${formatAdminMoney(data.fixedDeliveryFee || data.deliveryFee || 0)}</td>
+        <td>${formatAdminMoney(data.driverPayout || data.driverFee || 0)}</td>
+        <td><span class="badge ${active ? 'closed' : 'open'}">${active ? 'مفعلة' : 'متوقفة'}</span></td>
+        <td>
+          <button class="btn ghost" data-edit-delivery-zone="${escapeHtml(d.id)}">تعديل</button>
+          <button class="btn ghost" data-toggle-delivery-zone="${escapeHtml(d.id)}" data-active="${active ? 'true' : 'false'}">${active ? 'إيقاف' : 'تفعيل'}</button>
+        </td>
+      </tr>`;
+    });
+    setHtml(deliveryZonesTable, table(['المنطقة', 'المعرف', 'المجموعة', 'سعر المتجر', 'أجر المندوب', 'الحالة', 'إجراء'], rows));
+    deliveryZonesTable.querySelectorAll('[data-edit-delivery-zone]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-edit-delivery-zone');
+        const snapDoc = await getDoc(doc(db, 'deliveryZones', id));
+        fillDeliveryZoneForm(id, snapDoc.data() || {});
+      });
+    });
+    deliveryZonesTable.querySelectorAll('[data-toggle-delivery-zone]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-toggle-delivery-zone');
+        const active = btn.getAttribute('data-active') === 'true';
+        await setDoc(doc(db, 'deliveryZones', id), {
+          active: !active,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      });
+    });
+  });
+}
+
 function mountManagement() {
+  bindDeliveryZonesManagement();
   if (!operationsOrdersBound) {
     orderStatusFilter?.addEventListener('change', () => renderOperationsOrders());
     orderSearchInput?.addEventListener('input', () => renderOperationsOrders());
@@ -7389,7 +8124,7 @@ async function loadCourierDetails(driverId) {
         ? formatDateTimeLabel(driver.lastLocationUpdate || driver.lastUpdated || driver.updatedAt || driver.createdAt)
         : '-';
       const idImage = driver.idImageUrl
-        ? `<div class="entity-media-card"><a class="btn ghost" href="${escapeHtml(driver.idImageUrl)}" target="_blank" rel="noopener">فتح صورة الهوية/الرخصة</a></div>`
+        ? `<div class="entity-media-card"><a class="btn ghost" href="${escapeHtml(driver.idImageUrl)}" target="_blank" rel="noopener">فتح صورة إثبات الشخصية</a></div>`
         : '<div class="entity-media-card muted">لا توجد صورة هوية/رخصة</div>';
       const courierProfileImage = driver.profileImage
         ? `<div class="entity-media-card"><a class="btn ghost" href="${escapeHtml(driver.profileImage)}" target="_blank" rel="noopener">فتح شعار/صورة المندوب</a></div>`
@@ -7417,7 +8152,7 @@ async function loadCourierDetails(driverId) {
             { label: 'الهاتف', value: driver.phone || '-' },
             { label: 'نوع المركبة', value: driver.vehicleType || '-' },
             { label: 'رقم اللوحة', value: driver.vehiclePlate || '-' },
-            { label: 'رقم الهوية/الرخصة', value: driver.nationalIdNumber || '-' },
+            { label: 'رقم إثبات الشخصية', value: driver.nationalIdNumber || '-' },
             { label: 'محلية العمل', value: workLocalityName || '-' },
             { label: 'منطقة العمل', value: workAreaName || '-' },
             { label: 'نطاق العمل', value: workAreaLabel || '-' },
@@ -7444,7 +8179,7 @@ async function loadCourierDetails(driverId) {
             { label: 'الطلبات النشطة', value: activeOrdersCount },
             { label: 'وقت التوفر اليوم', value: formatDurationHours(todayAvailabilityMs), className: 'entity-fact-highlight' },
           ]), { eyebrow: 'النشاط' })}
-          ${buildEntitySection('الهوية والمرفقات', `${idImage}${courierProfileImage}<div class="entity-actions"><button class="btn ghost" id="driverImageChange-${driverDomId}">تعديل صورة الهوية/الرخصة</button><button class="btn ghost" id="driverProfileImageChange-${driverDomId}">رفع شعار/صورة المندوب</button><button class="btn ghost" id="driverProfileImageDownload-${driverDomId}">تنزيل شعار/صورة المندوب</button><button class="btn ghost" id="driverToggleAvailability-${driverDomId}">${driver.available === true ? 'إيقاف التوفر' : 'تفعيل التوفر'}</button><button class="btn ghost" id="driverApprove-${driverDomId}">قبول</button><button class="btn danger" id="driverReject-${driverDomId}">رفض</button><button class="btn danger" id="driverDelete-${driverDomId}">حذف الحساب</button></div>`, { eyebrow: 'الإجراءات' })}
+          ${buildEntitySection('إثبات الشخصية والمرفقات', `${idImage}${courierProfileImage}<div class="entity-actions"><button class="btn ghost" id="driverImageChange-${driverDomId}">تعديل صورة إثبات الشخصية</button><button class="btn ghost" id="driverProfileImageChange-${driverDomId}">رفع شعار/صورة المندوب</button><button class="btn ghost" id="driverProfileImageDownload-${driverDomId}">تنزيل شعار/صورة المندوب</button><button class="btn ghost" id="driverToggleAvailability-${driverDomId}">${driver.available === true ? 'إيقاف التوفر' : 'تفعيل التوفر'}</button><button class="btn ghost" id="driverApprove-${driverDomId}">قبول</button><button class="btn danger" id="driverReject-${driverDomId}">رفض</button><button class="btn danger" id="driverDelete-${driverDomId}">حذف الحساب</button></div>`, { eyebrow: 'الإجراءات' })}
           ${buildEntitySection('تعديل بيانات المندوب', `
             <div class="entity-form-grid">
               <label>الاسم<input id="driverName-${driverDomId}" type="text" value="${escapeHtml(driver.name || '')}" /></label>
@@ -7452,11 +8187,11 @@ async function loadCourierDetails(driverId) {
               <label>البريد الإلكتروني<input id="driverEmail-${driverDomId}" type="email" value="${escapeHtml(driver.email || '')}" /></label>
               <label>نوع المركبة<input id="driverVehicleType-${driverDomId}" type="text" value="${escapeHtml(driver.vehicleType || '')}" /></label>
               <label>رقم اللوحة<input id="driverVehiclePlate-${driverDomId}" type="text" value="${escapeHtml(driver.vehiclePlate || '')}" /></label>
-              <label>رقم الهوية/الرخصة<input id="driverNationalId-${driverDomId}" type="text" value="${escapeHtml(driver.nationalIdNumber || '')}" /></label>
+              <label>رقم إثبات الشخصية<input id="driverNationalId-${driverDomId}" type="text" value="${escapeHtml(driver.nationalIdNumber || '')}" /></label>
               <label>محلية العمل<input id="driverWorkLocalityName-${driverDomId}" type="text" value="${escapeHtml(workLocalityName)}" /></label>
               <label>منطقة العمل<input id="driverWorkAreaName-${driverDomId}" type="text" value="${escapeHtml(workAreaName)}" /></label>
               <label>نطاق العمل<input id="driverRegion-${driverDomId}" type="text" value="${escapeHtml(workAreaLabel)}" /></label>
-              <label>رابط صورة الهوية/الرخصة<input id="driverIdImageUrl-${driverDomId}" type="text" value="${escapeHtml(driver.idImageUrl || '')}" /></label>
+              <label>رابط صورة إثبات الشخصية<input id="driverIdImageUrl-${driverDomId}" type="text" value="${escapeHtml(driver.idImageUrl || '')}" /></label>
               <label>رابط شعار/صورة المندوب<input id="driverProfileImage-${driverDomId}" type="text" value="${escapeHtml(driver.profileImage || '')}" /></label>
             </div>
             <div class="entity-actions">
@@ -9052,7 +9787,7 @@ function buildPendingFactsMarkup(data = {}, kind = 'store') {
   const facts = kind === 'courier'
     ? [
         { label: 'UID', value: data.ownerUid || data.driverId || data.uid || '-' },
-        { label: 'رقم الهوية', value: data.nationalIdNumber || '-' },
+        { label: 'رقم إثبات الشخصية', value: data.nationalIdNumber || '-' },
         { label: 'نوع المركبة', value: data.vehicleType || '-' },
         { label: 'رقم اللوحة', value: data.vehiclePlate || '-' },
         { label: 'الولاية', value: geo.state },
@@ -9493,6 +10228,10 @@ function mountSupport() {
     }
   };
 
+  const showSupportMobileThread = (showThread) => {
+    supportRoot.classList.toggle('support-mobile-thread', showThread);
+  };
+
   const renderSupportPendingImage = () => {
     if (!supportImagePreview || !supportImagePreviewImg) return;
     if (!supportPendingImageFile || !supportPendingImagePreviewUrl) {
@@ -9736,6 +10475,7 @@ function mountSupport() {
     supportConversationList.querySelectorAll('[data-support-conversation]').forEach((btn) => {
       btn.addEventListener('click', () => {
         supportSelectedConversationId = btn.getAttribute('data-support-conversation') || '';
+        showSupportMobileThread(true);
         renderConversationList();
         renderSelectedConversation();
       });
@@ -10012,6 +10752,10 @@ function mountSupport() {
         alert(`تعذر تعليم المحادثة كمقروءة: ${err.message || err}`);
       }
     });
+    supportMobileBackBtn?.addEventListener('click', () => {
+      showSupportMobileThread(false);
+      renderConversationList();
+    });
     supportMarkAllReadBtn?.addEventListener('click', async () => {
       try {
         await markAllSupportConversationsRead();
@@ -10160,6 +10904,32 @@ function mountDiscountCodes() {
     if (discountRestaurantIds) discountRestaurantIds.required = isSelectedScope;
   };
 
+  const syncDiscountPolicyFields = () => {
+    const isFixedDeliveryPrice = discountType?.value === 'delivery_fixed_price';
+    const isTieredDiscount = discountType?.value === 'tiered_order_discount';
+    const tierUsesFixedDeliveryPrice = discountFirstOrderType?.value === 'delivery_fixed_price'
+      || discountReturningType?.value === 'delivery_fixed_price';
+    if ((isFixedDeliveryPrice || (isTieredDiscount && tierUsesFixedDeliveryPrice)) && discountScope) {
+      discountScope.value = 'delivery_fee';
+    }
+    if (discountTieredFields) discountTieredFields.hidden = !isTieredDiscount;
+    if (discountValueLabel) discountValueLabel.hidden = isTieredDiscount;
+    if (discountValue) discountValue.required = !isTieredDiscount;
+    if (discountEligibilityField) discountEligibilityField.hidden = isTieredDiscount;
+    if (isTieredDiscount && discountEligibility) discountEligibility.value = 'all_customers';
+    if (discountValueLabel) {
+      discountValueLabel.firstChild.textContent = isFixedDeliveryPrice
+        ? 'سعر التوصيل بعد الخصم '
+        : 'قيمة الخصم ';
+    }
+    if (discountValue && !isTieredDiscount) {
+      discountValue.placeholder = isFixedDeliveryPrice ? '1000' : '20';
+    }
+    const needsOrderNumber = !isTieredDiscount && discountEligibility?.value === 'exact_order_number';
+    if (discountTargetOrderField) discountTargetOrderField.hidden = !needsOrderNumber;
+    if (discountTargetOrderNumber) discountTargetOrderNumber.required = needsOrderNumber;
+  };
+
   const selectedDiscountRestaurantIds = () => Array.from(discountRestaurantIds?.selectedOptions || [])
     .map((option) => String(option.value || '').trim())
     .filter(Boolean);
@@ -10176,9 +10946,17 @@ function mountDiscountCodes() {
     discountForm.reset();
     if (discountIsActive) discountIsActive.checked = true;
     if (discountScope) discountScope.value = 'order_total';
+    if (discountType) discountType.value = 'percent';
+    if (discountEligibility) discountEligibility.value = 'all_customers';
+    if (discountTargetOrderNumber) discountTargetOrderNumber.value = '2';
+    if (discountFirstOrderType) discountFirstOrderType.value = 'fixed';
+    if (discountFirstOrderValue) discountFirstOrderValue.value = '';
+    if (discountReturningType) discountReturningType.value = 'percent';
+    if (discountReturningValue) discountReturningValue.value = '';
     if (discountRestaurantScope) discountRestaurantScope.value = 'all';
     if (discountRestaurantIds) Array.from(discountRestaurantIds.options).forEach((option) => { option.selected = false; });
     syncDiscountRestaurantField();
+    syncDiscountPolicyFields();
     if (discountSaveBtn) discountSaveBtn.textContent = 'حفظ الكود';
     if (discountCancelEditBtn) discountCancelEditBtn.hidden = true;
   };
@@ -10189,6 +10967,17 @@ function mountDiscountCodes() {
     if (discountScope) discountScope.value = String(data.discountScope || 'order_total');
     if (discountType) discountType.value = String(data.discountType || 'percent');
     if (discountValue) discountValue.value = String(data.discountValue ?? '');
+    if (discountEligibility) {
+      discountEligibility.value = String(
+        data.eligibility || (data.onlyForNewOrders === true ? 'first_order' : 'all_customers')
+      );
+    }
+    if (discountTargetOrderNumber) discountTargetOrderNumber.value = String(data.targetOrderNumber || 2);
+    const tieredDiscount = data.tieredDiscount || {};
+    if (discountFirstOrderType) discountFirstOrderType.value = String(tieredDiscount.firstOrder?.type || 'fixed');
+    if (discountFirstOrderValue) discountFirstOrderValue.value = String(tieredDiscount.firstOrder?.value ?? '');
+    if (discountReturningType) discountReturningType.value = String(tieredDiscount.returning?.type || 'percent');
+    if (discountReturningValue) discountReturningValue.value = String(tieredDiscount.returning?.value ?? '');
     if (discountMinOrder) discountMinOrder.value = String(data.minOrder ?? '');
     if (discountMaxUsage) discountMaxUsage.value = String(data.maxUsage ?? '');
     if (discountMaxUsagePerRestaurant) discountMaxUsagePerRestaurant.value = String(data.maxUsagePerRestaurant ?? '');
@@ -10204,10 +10993,10 @@ function mountDiscountCodes() {
       });
     }
     syncDiscountRestaurantField();
+    syncDiscountPolicyFields();
     if (discountItemName) discountItemName.value = String(data.itemName || '');
     if (discountExpiryDate) discountExpiryDate.value = formatDateTimeInput(data.expiryDate);
     if (discountIsActive) discountIsActive.checked = data.isActive === true;
-    if (discountOnlyNewOrders) discountOnlyNewOrders.checked = data.onlyForNewOrders === true;
     if (discountSaveBtn) discountSaveBtn.textContent = 'حفظ التعديلات';
     if (discountCancelEditBtn) discountCancelEditBtn.hidden = false;
     if (discountResult) discountResult.textContent = `تعديل الكود ${sourceCode}: يمكنك تغيير الكود أو الشروط ثم الحفظ.`;
@@ -10230,6 +11019,10 @@ function mountDiscountCodes() {
 
   if (!discountFormBound) {
     discountRestaurantScope?.addEventListener('change', syncDiscountRestaurantField);
+    discountType?.addEventListener('change', syncDiscountPolicyFields);
+    discountEligibility?.addEventListener('change', syncDiscountPolicyFields);
+    discountFirstOrderType?.addEventListener('change', syncDiscountPolicyFields);
+    discountReturningType?.addEventListener('change', syncDiscountPolicyFields);
     discountCancelEditBtn?.addEventListener('click', () => {
       resetDiscountEditor();
       if (discountResult) discountResult.textContent = 'تم إلغاء التعديل.';
@@ -10239,17 +11032,31 @@ function mountDiscountCodes() {
       const code = String(discountCode?.value || '').trim().toUpperCase();
       const scope = String(discountScope?.value || 'order_total').trim().toLowerCase();
       const type = String(discountType?.value || 'percent').trim().toLowerCase();
+      const eligibility = String(discountEligibility?.value || 'all_customers').trim().toLowerCase();
+      const targetOrderNumber = Math.max(1, Math.floor(Number(discountTargetOrderNumber?.value || 2)));
       const value = parseNumberOrNull(discountValue?.value);
       const expiryRaw = String(discountExpiryDate?.value || '').trim();
       const expiryMillis = Date.parse(expiryRaw);
       const restaurantScope = String(discountRestaurantScope?.value || 'all');
       const restaurantIds = restaurantScope === 'selected' ? selectedDiscountRestaurantIds() : [];
+      const tieredDiscount = type === 'tiered_order_discount'
+        ? {
+          firstOrder: {
+            type: String(discountFirstOrderType?.value || '').trim().toLowerCase(),
+            value: parseNumberOrNull(discountFirstOrderValue?.value),
+          },
+          returning: {
+            type: String(discountReturningType?.value || '').trim().toLowerCase(),
+            value: parseNumberOrNull(discountReturningValue?.value),
+          },
+        }
+        : null;
 
       if (!code) {
         if (discountResult) discountResult.textContent = 'يرجى إدخال كود الخصم.';
         return;
       }
-      if (type !== 'percent' && type !== 'fixed') {
+      if (!['percent', 'fixed', 'delivery_fixed_price', 'tiered_order_discount'].includes(type)) {
         if (discountResult) discountResult.textContent = 'نوع الخصم غير صالح.';
         return;
       }
@@ -10257,7 +11064,27 @@ function mountDiscountCodes() {
         if (discountResult) discountResult.textContent = 'نطاق الخصم غير صالح.';
         return;
       }
-      if (value == null || value <= 0) {
+      if (type === 'delivery_fixed_price' && scope !== 'delivery_fee') {
+        if (discountResult) discountResult.textContent = 'السعر النهائي ثابت متاح لرسوم التوصيل فقط.';
+        return;
+      }
+      if (type === 'tiered_order_discount') {
+        const tiers = [tieredDiscount?.firstOrder, tieredDiscount?.returning];
+        const tierIsValid = tiers.every((tier) => tier
+          && ['percent', 'fixed', 'delivery_fixed_price'].includes(tier.type)
+          && Number.isFinite(tier.value)
+          && tier.value > 0
+          && (tier.type !== 'delivery_fixed_price' || scope === 'delivery_fee'));
+        if (!tierIsValid) {
+          if (discountResult) discountResult.textContent = 'أدخل نوعًا وقيمة صحيحة للأول وللطلب الثاني فما بعد. سعر التوصيل الثابت يتطلب نطاق التوصيل.';
+          return;
+        }
+      }
+      if (eligibility === 'exact_order_number' && !Number.isFinite(targetOrderNumber)) {
+        if (discountResult) discountResult.textContent = 'أدخل رقم طلب صحيحًا.';
+        return;
+      }
+      if (type !== 'tiered_order_discount' && (value == null || value <= 0)) {
         if (discountResult) discountResult.textContent = 'قيمة الخصم يجب أن تكون أكبر من صفر.';
         return;
       }
@@ -10274,9 +11101,11 @@ function mountDiscountCodes() {
         code,
         discountScope: scope,
         discountType: type,
-        discountValue: value,
+        discountValue: type === 'tiered_order_discount' ? 0 : value,
         isActive: discountIsActive?.checked === true,
-        onlyForNewOrders: discountOnlyNewOrders?.checked === true,
+        eligibility: type === 'tiered_order_discount' ? 'all_customers' : eligibility,
+        targetOrderNumber,
+        tieredDiscount,
         restaurantIds,
         itemName: scope === 'delivery_fee' ? '' : String(discountItemName?.value || '').trim(),
         minOrder: parseNumberOrNull(discountMinOrder?.value),
@@ -10326,6 +11155,7 @@ function mountDiscountCodes() {
   }
 
   syncDiscountRestaurantField();
+  syncDiscountPolicyFields();
   unsubscribers.push(
     onSnapshot(query(collection(db, 'restaurants'), limit(500)), (snap) => {
       if (!discountRestaurantIds) return;
@@ -10362,12 +11192,32 @@ function mountDiscountCodes() {
         const maxUsagePerRestaurant = Number(data.maxUsagePerRestaurant || 0);
         const capText = Number(data.maxDiscount || 0) > 0 ? ` (سقف ${Number(data.maxDiscount)})` : '';
         const scopeLabel = DISCOUNT_SCOPE_LABELS[String(data.discountScope || 'order_total').trim().toLowerCase()] || 'إجمالي الطلب';
+        const eligibilityLabels = {
+          all_customers: 'كل العملاء',
+          first_order: 'أول طلب فقط',
+          returning_customer: 'الطلب الثاني فما بعد',
+          exact_order_number: `الطلب رقم ${Number(data.targetOrderNumber || 2)}`,
+        };
+        const eligibility = String(data.eligibility || (data.onlyForNewOrders ? 'first_order' : 'all_customers'));
+        const typeLabel = data.discountType === 'delivery_fixed_price'
+          ? 'توصيل بسعر ثابت'
+          : data.discountType === 'tiered_order_discount'
+            ? 'خصم متدرج حسب الطلب'
+            : String(data.discountType || '-');
+        const tieredDiscount = data.tieredDiscount || {};
+        const formatTier = (tier) => `${tier?.type === 'percent' ? '%' : tier?.type === 'delivery_fixed_price' ? 'سعر توصيل' : 'ثابت'} ${Number(tier?.value || 0)}`;
+        const valueLabel = data.discountType === 'tiered_order_discount'
+          ? `الأول: ${formatTier(tieredDiscount.firstOrder)} | الثاني+: ${formatTier(tieredDiscount.returning)}`
+          : data.discountType === 'delivery_fixed_price'
+          ? `${Number(data.discountValue || 0)} ج.س نهائيًا`
+          : `${Number(data.discountValue || 0)}${capText}`;
 
         return `<tr>
           <td>${escapeHtml(code)}</td>
           <td>${escapeHtml(scopeLabel)}</td>
-          <td>${escapeHtml(String(data.discountType || '-'))}</td>
-          <td>${Number(data.discountValue || 0)}${capText}</td>
+          <td>${escapeHtml(typeLabel)}</td>
+          <td>${escapeHtml(valueLabel)}</td>
+          <td>${escapeHtml(eligibilityLabels[eligibility] || 'كل العملاء')}</td>
           <td>${usedCount}${maxUsage > 0 ? ` / ${maxUsage}` : ''}</td>
           <td>${Array.isArray(data.restaurantIds) && data.restaurantIds.length ? `${data.restaurantIds.length} مطاعم` : 'كل المطاعم'}${maxUsagePerRestaurant > 0 ? ` · ${maxUsagePerRestaurant} لكل مطعم` : ''}</td>
           <td>${formatDateTimeLocal(data.expiryDate)}</td>
@@ -10380,7 +11230,7 @@ function mountDiscountCodes() {
         </tr>`;
       });
 
-      setHtml(discountsTable, table(['الكود', 'النطاق', 'النوع', 'القيمة', 'الاستخدام', 'المطاعم', 'ينتهي في', 'الحالة', 'إجراء'], rows));
+      setHtml(discountsTable, table(['الكود', 'النطاق', 'النوع', 'القيمة', 'الأهلية', 'الاستخدام', 'المطاعم', 'ينتهي في', 'الحالة', 'إجراء'], rows));
 
       discountsTable.querySelectorAll('[data-edit-discount]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -10511,6 +11361,11 @@ function fillPricingConfigForm() {
   pricingLargeItemStepAmountInput.value = String(getRemoteConfigEntry('pricing_large_item_step_amount')?.value || '5000');
   pricingLargeItemStepFeeInput.value = String(getRemoteConfigEntry('pricing_large_item_step_fee')?.value || '500');
   pricingLargeItemFeeCapPerUnitInput.value = String(getRemoteConfigEntry('pricing_large_item_fee_cap_per_unit')?.value || '2500');
+  if (storeBatchMaxStopsPerTripInput) storeBatchMaxStopsPerTripInput.value = String(getRemoteConfigEntry('store_batch_max_stops_per_trip')?.value || '8');
+  if (storeBatchSingleTripMaxStopsInput) storeBatchSingleTripMaxStopsInput.value = String(getRemoteConfigEntry('store_batch_single_trip_max_stops')?.value || '5');
+  if (storeBatchSingleTripMaxRouteKmInput) storeBatchSingleTripMaxRouteKmInput.value = String(getRemoteConfigEntry('store_batch_single_trip_max_route_km')?.value || '45');
+  if (storeBatchMaxRouteKmPerTripInput) storeBatchMaxRouteKmPerTripInput.value = String(getRemoteConfigEntry('store_batch_max_route_km_per_trip')?.value || '55');
+  if (storeBatchGroupUnclusteredZonesInput) storeBatchGroupUnclusteredZonesInput.value = String(getRemoteConfigEntry('store_batch_group_unclustered_zones')?.value || 'true');
 }
 
 function fillAppRemoteConfigForm() {
@@ -10522,17 +11377,31 @@ function fillAppRemoteConfigForm() {
   clientForceUpdateEnabledInput.value = String(getRemoteConfigEntry('client_force_update_enabled')?.value || 'true');
   clientMinBuildAndroidInput.value = String(getRemoteConfigEntry('client_min_build_android')?.value || '11');
   clientUpdateMessageInput.value = String(getRemoteConfigEntry('client_update_message')?.value || 'يرجى تحديث تطبيق العميل للاستمرار.');
-  clientUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('client_update_url_android')?.value || 'https://speedstarapp.web.app/downloads/client-android.apk');
+  clientUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('client_update_url_android')?.value || 'https://speedstarapp.web.app/downloads/client-android.zip');
   clientRootUrlInput.value = String(getRemoteConfigEntry('client_root_url')?.value || 'https://speedstar-prod-4c7c5.web.app/sdui/client/index.json');
+  if (clientOptionalUpdateEnabledInput) clientOptionalUpdateEnabledInput.value = String(getRemoteConfigEntry('client_optional_update_enabled')?.value || 'false');
+  if (clientRecommendedBuildAndroidInput) clientRecommendedBuildAndroidInput.value = String(getRemoteConfigEntry('client_recommended_build_android')?.value || '0');
+  if (clientOptionalUpdateMessageInput) clientOptionalUpdateMessageInput.value = String(getRemoteConfigEntry('client_optional_update_message')?.value || 'يتوفر إصدار جديد من تطبيق SpeedStar. ننصحك بالتحديث للحصول على أفضل تجربة.');
+  if (paymentReceiptPrecheckEnabledInput) paymentReceiptPrecheckEnabledInput.value = String(getRemoteConfigEntry('payment_receipt_precheck_enabled')?.value || 'true');
+  if (paymentReceiptPrecheckModeInput) paymentReceiptPrecheckModeInput.value = String(getRemoteConfigEntry('payment_receipt_precheck_mode')?.value || 'block');
+  if (paymentReceiptRequireImageInput) paymentReceiptRequireImageInput.value = String(getRemoteConfigEntry('payment_receipt_require_image')?.value || 'true');
+  if (paymentReceiptRequireReferenceInput) paymentReceiptRequireReferenceInput.value = String(getRemoteConfigEntry('payment_receipt_require_reference')?.value || 'true');
+  if (paymentReceiptMinReferenceDigitsInput) paymentReceiptMinReferenceDigitsInput.value = String(getRemoteConfigEntry('payment_receipt_min_reference_digits')?.value || '8');
+  if (paymentReceiptRequirementsMessageInput) paymentReceiptRequirementsMessageInput.value = String(getRemoteConfigEntry('payment_receipt_requirements_message')?.value || 'ارفع إيصالاً واضحاً يظهر فيه رقم العملية والمبلغ والحساب المحوّل إليه، ثم أدخل رقم العملية كاملاً.');
+  if (paymentReceiptMissingImageMessageInput) paymentReceiptMissingImageMessageInput.value = String(getRemoteConfigEntry('payment_receipt_missing_image_message')?.value || 'ارفع صورة إيصال واضحة قبل إرسال الطلب.');
+  if (paymentReceiptMissingReferenceMessageInput) paymentReceiptMissingReferenceMessageInput.value = String(getRemoteConfigEntry('payment_receipt_missing_reference_message')?.value || 'أدخل رقم العملية كاملاً كما يظهر في الإيصال.');
+  if (paymentReceiptShortReferenceMessageInput) paymentReceiptShortReferenceMessageInput.value = String(getRemoteConfigEntry('payment_receipt_short_reference_message')?.value || 'رقم العملية يبدو ناقصاً. تأكد من إدخاله كاملاً من الإيصال.');
+  if (paymentReceiptInvalidAmountMessageInput) paymentReceiptInvalidAmountMessageInput.value = String(getRemoteConfigEntry('payment_receipt_invalid_amount_message')?.value || 'مبلغ الدفع غير واضح. أعد المحاولة أو تواصل مع الدعم.');
+  if (paymentReceiptWarningTitleInput) paymentReceiptWarningTitleInput.value = String(getRemoteConfigEntry('payment_receipt_warning_title')?.value || 'راجع بيانات الإيصال قبل المتابعة');
   storeForceUpdateEnabledInput.value = String(getRemoteConfigEntry('store_force_update_enabled')?.value || 'true');
   storeMinBuildAndroidInput.value = String(getRemoteConfigEntry('store_min_build_android')?.value || '5');
   storeUpdateMessageInput.value = String(getRemoteConfigEntry('store_update_message')?.value || 'يرجى تحديث تطبيق المتجر للاستمرار.');
-  storeUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('store_update_url_android')?.value || 'https://speedstarapp.web.app/downloads/store-android.apk');
+  storeUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('store_update_url_android')?.value || 'https://speedstarapp.web.app/downloads/store-android.zip');
   storeRootUrlInput.value = String(getRemoteConfigEntry('store_root_url')?.value || 'https://speedstar-prod-4c7c5.web.app/sdui/store/index.json');
   courierForceUpdateEnabledInput.value = String(getRemoteConfigEntry('courier_force_update_enabled')?.value || 'false');
   courierMinBuildAndroidInput.value = String(getRemoteConfigEntry('courier_min_build_android')?.value || '1');
   courierUpdateMessageInput.value = String(getRemoteConfigEntry('courier_update_message')?.value || 'يرجى تحديث تطبيق المندوب للاستمرار.');
-  courierUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('courier_update_url_android')?.value || 'https://speedstarapp.web.app/downloads/courier-android.apk');
+  courierUpdateUrlAndroidInput.value = String(getRemoteConfigEntry('courier_update_url_android')?.value || 'https://speedstarapp.web.app/downloads/courier-android.zip');
   courierRootUrlInput.value = String(getRemoteConfigEntry('courier_root_url')?.value || 'https://speedstar-prod-4c7c5.web.app/sdui/courier/index.json');
 }
 
@@ -10547,6 +11416,7 @@ const REMOTE_CONFIG_GROUPS = [
 
 function remoteConfigGroupId(key) {
   if (key.startsWith('pricing_')) return 'pricing';
+  if (key.startsWith('store_batch_')) return 'pricing';
   if (key.startsWith('client_')) return 'client';
   if (key.startsWith('store_')) return 'store';
   if (key.startsWith('courier_')) return 'courier';
@@ -11094,6 +11964,20 @@ function mountAdmins() {
         client_update_message: normalizeRemoteValueByType(clientUpdateMessageInput?.value || '', 'STRING'),
         client_update_url_android: normalizeRemoteValueByType(clientUpdateUrlAndroidInput?.value || '', 'STRING'),
         client_root_url: normalizeRemoteValueByType(clientRootUrlInput?.value || '', 'STRING'),
+        client_optional_update_enabled: normalizeRemoteValueByType(clientOptionalUpdateEnabledInput?.value || 'false', 'BOOLEAN'),
+        client_recommended_build_android: normalizeRemoteValueByType(clientRecommendedBuildAndroidInput?.value || '0', 'NUMBER'),
+        client_optional_update_message: normalizeRemoteValueByType(clientOptionalUpdateMessageInput?.value || '', 'STRING'),
+        payment_receipt_precheck_enabled: normalizeRemoteValueByType(paymentReceiptPrecheckEnabledInput?.value || 'true', 'BOOLEAN'),
+        payment_receipt_precheck_mode: normalizeRemoteValueByType(paymentReceiptPrecheckModeInput?.value || 'block', 'STRING'),
+        payment_receipt_require_image: normalizeRemoteValueByType(paymentReceiptRequireImageInput?.value || 'true', 'BOOLEAN'),
+        payment_receipt_require_reference: normalizeRemoteValueByType(paymentReceiptRequireReferenceInput?.value || 'true', 'BOOLEAN'),
+        payment_receipt_min_reference_digits: normalizeRemoteValueByType(paymentReceiptMinReferenceDigitsInput?.value || '8', 'NUMBER'),
+        payment_receipt_requirements_message: normalizeRemoteValueByType(paymentReceiptRequirementsMessageInput?.value || '', 'STRING'),
+        payment_receipt_missing_image_message: normalizeRemoteValueByType(paymentReceiptMissingImageMessageInput?.value || '', 'STRING'),
+        payment_receipt_missing_reference_message: normalizeRemoteValueByType(paymentReceiptMissingReferenceMessageInput?.value || '', 'STRING'),
+        payment_receipt_short_reference_message: normalizeRemoteValueByType(paymentReceiptShortReferenceMessageInput?.value || '', 'STRING'),
+        payment_receipt_invalid_amount_message: normalizeRemoteValueByType(paymentReceiptInvalidAmountMessageInput?.value || '', 'STRING'),
+        payment_receipt_warning_title: normalizeRemoteValueByType(paymentReceiptWarningTitleInput?.value || '', 'STRING'),
         store_force_update_enabled: normalizeRemoteValueByType(storeForceUpdateEnabledInput?.value || 'true', 'BOOLEAN'),
         store_min_build_android: normalizeRemoteValueByType(storeMinBuildAndroidInput?.value || '5', 'NUMBER'),
         store_update_message: normalizeRemoteValueByType(storeUpdateMessageInput?.value || '', 'STRING'),
@@ -11169,6 +12053,11 @@ function mountAdmins() {
         pricing_large_item_step_amount: normalizeRemoteValueByType(pricingLargeItemStepAmountInput?.value || '5000', 'NUMBER'),
         pricing_large_item_step_fee: normalizeRemoteValueByType(pricingLargeItemStepFeeInput?.value || '500', 'NUMBER'),
         pricing_large_item_fee_cap_per_unit: normalizeRemoteValueByType(pricingLargeItemFeeCapPerUnitInput?.value || '2500', 'NUMBER'),
+        store_batch_max_stops_per_trip: normalizeRemoteValueByType(storeBatchMaxStopsPerTripInput?.value || '8', 'NUMBER'),
+        store_batch_single_trip_max_stops: normalizeRemoteValueByType(storeBatchSingleTripMaxStopsInput?.value || '5', 'NUMBER'),
+        store_batch_single_trip_max_route_km: normalizeRemoteValueByType(storeBatchSingleTripMaxRouteKmInput?.value || '45', 'NUMBER'),
+        store_batch_max_route_km_per_trip: normalizeRemoteValueByType(storeBatchMaxRouteKmPerTripInput?.value || '55', 'NUMBER'),
+        store_batch_group_unclustered_zones: normalizeRemoteValueByType(storeBatchGroupUnclusteredZonesInput?.value || 'true', 'BOOLEAN'),
       };
 
       const updates = PRICING_REMOTE_KEYS
@@ -12097,11 +12986,37 @@ function renderOrderDetails(orderData, orderId) {
         .map((item) => `<li>${escapeHtml(item?.name || item?.title || 'عنصر')} × ${escapeHtml(item?.quantity ?? 1)}</li>`)
         .join('')
     : '<li>لا توجد عناصر مفصلة</li>';
+  const batchStops = getBatchDeliveryStops(orderData);
+  const removedBatchStops = getRemovedBatchDeliveryStops(orderData);
+  const batchSummary = summarizeBatchStops(batchStops, removedBatchStops);
+  const batchCode = getBatchTripCode(orderData, formatUnifiedOrderCode(orderData.orderNumber, orderData.orderId, orderId));
+  const sourceLabel = formatOrderSourceLabel(orderData);
+  const batchStopsList = batchStops.length
+    ? `<div class="map-batch-summary">
+        <b>${escapeHtml(sourceLabel)} ${escapeHtml(batchCode)}</b>
+        <div class="batch-summary-grid batch-summary-grid--compact">
+          <span class="batch-summary-pill">الحالية <b>${batchSummary.total}</b></span>
+          <span class="batch-summary-pill">قيد التنفيذ <b>${batchSummary.active}</b></span>
+          <span class="batch-summary-pill">تم التسليم <b>${batchSummary.delivered}</b></span>
+          <span class="batch-summary-pill">متعذر <b>${batchSummary.exceptions}</b></span>
+          <span class="batch-summary-pill">إزالة <b>${batchSummary.removalPending}</b></span>
+        </div>
+        <ul>${batchStops.slice(0, 12).map(({ data }, index) => {
+          const stopCode = getBatchStopCode(data, String(index + 1));
+          const status = String(data.status || 'pending').trim();
+          return `<li><span class="batch-stop-code">${escapeHtml(stopCode)}</span> - ${escapeHtml(data.clientName || 'عميل')} - ${escapeHtml(data.zoneName || '-')} - ${escapeHtml(formatBatchStopStatus(status))}</li>`;
+        }).join('')}</ul>
+        ${batchStops.length > 12 ? `<div class="muted">+ ${batchStops.length - 12} طلبات أخرى داخل الرحلة</div>` : ''}
+        ${removedBatchStops.length ? `<div class="muted">أزيلت قبل الاستلام: ${removedBatchStops.length}</div>` : ''}
+      </div>`
+    : '';
 
-  const restaurantGeo = getRestaurantGeoByOrder(orderData);
+  const restaurantGeo = getPickupGeoByOrder(orderData);
   const driverGeo = getDriverGeoByOrder(orderData);
-  const clientGeo = getClientGeoByOrder(orderData);
+  const clientGeo = getDropoffGeoByOrder(orderData);
   const trackingInsight = getOrderTrackingInsight(orderData, restaurantGeo, driverGeo, clientGeo);
+  const pickupLabel = getPickupLabelByOrder(orderData);
+  const pickupName = getPickupNameByOrder(orderData, restaurant?.name || orderData.restaurantName || restaurantId);
   const routeSummary = [
     restaurant?.name || orderData.restaurantName || restaurantId || 'مطعم غير محدد',
     driver?.name || driverId || 'بدون مندوب',
@@ -12149,6 +13064,7 @@ function renderOrderDetails(orderData, orderId) {
       ${driverId ? `<button class="btn ghost" type="button" data-map-open-driver="${escapeHtml(driverId)}">المندوب</button>` : ''}
       ${clientId ? `<button class="btn ghost" type="button" data-map-open-client="${escapeHtml(clientId)}">العميل</button>` : ''}
     </div>
+    ${batchStopsList}
     <div><b>العناصر</b><ul>${items}</ul></div>
   `, {
     orderId,
@@ -12176,13 +13092,21 @@ function focusMapOnOrder(orderId) {
   renderMapSearchResults();
 
   const points = [];
-  const restaurantGeo = getRestaurantGeoByOrder(orderData);
+  const restaurantGeo = getPickupGeoByOrder(orderData);
   const driverGeo = getDriverGeoByOrder(orderData);
-  const clientGeo = getClientGeoByOrder(orderData);
+  const clientGeo = getDropoffGeoByOrder(orderData);
+  const pickupLabel = getPickupLabelByOrder(orderData);
+  const pickupName = getPickupNameByOrder(orderData, resolveRestaurantDisplay(orderData.restaurantId, orderData.restaurantName));
+  const batchStops = getBatchDeliveryStops(orderData);
+  const batchPoints = batchStops.map((item) => getBatchStopGeo(item.data)).filter(Boolean);
 
   if (restaurantGeo) points.push([restaurantGeo.lat, restaurantGeo.lng]);
   if (driverGeo) points.push([driverGeo.lat, driverGeo.lng]);
-  if (clientGeo) points.push([clientGeo.lat, clientGeo.lng]);
+  if (batchPoints.length) {
+    batchPoints.forEach((geo) => points.push([geo.lat, geo.lng]));
+  } else if (clientGeo) {
+    points.push([clientGeo.lat, clientGeo.lng]);
+  }
 
   if (points.length === 1) {
     liveMap.setView(points[0], 15, { animate: true });
@@ -12203,7 +13127,6 @@ function focusMapOnOrder(orderId) {
   refreshOrderLines();
   requestRefreshMapLayers();
 }
-
 function openOrderOnMap(orderId) {
   selectedOrderOnMapId = orderId;
   activateTab('map');
@@ -12521,7 +13444,9 @@ function refreshOrderMarkers() {
   mapState.orders.forEach(({ data }, id) => {
     if (!shouldShowEntityUnderSelection('order', id)) return;
     if (!matchesMapOrderFilter(data) || !canDisplayOrderOnMap(data, id)) return;
-    const geo = extractGeo(data, ['deliveryLocation', 'clientLocation', 'address.location']);
+    const batchStops = getBatchDeliveryStops(data);
+    const firstBatchGeo = batchStops.map((item) => getBatchStopGeo(item.data)).find(Boolean);
+    const geo = firstBatchGeo || extractGeo(data, ['deliveryLocation', 'clientLocation', 'address.location']);
     if (!geo) return;
     validIds.add(id);
     setOrUpdateMarker(
@@ -12542,6 +13467,15 @@ function refreshOrderMarkers() {
 }
 
 function getRestaurantGeoByOrder(orderData) {
+  if (isClientParcelOrder(orderData)) {
+    const fromPickup = extractGeo(orderData, ['pickupLocation']);
+    if (fromPickup) return fromPickup;
+    const pickupLat = Number(orderData.pickupLat);
+    const pickupLng = Number(orderData.pickupLng);
+    if (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
+      return { lat: pickupLat, lng: pickupLng };
+    }
+  }
   const fromOrder = extractGeo(orderData, ['restaurantLocation']);
   if (fromOrder) return fromOrder;
   const lat = Number(orderData.restaurantLat);
@@ -12555,6 +13489,7 @@ function getRestaurantGeoByOrder(orderData) {
 }
 
 function getDriverGeoByOrder(orderData) {
+  if (!isActiveOrderStatus(getOrderLifecycleStatus(orderData))) return null;
   const driverId = orderData.assignedDriverId;
   if (!driverId) return null;
   const driver = mapState.drivers.get(driverId)?.data;
@@ -12562,6 +13497,9 @@ function getDriverGeoByOrder(orderData) {
 }
 
 function getClientGeoByOrder(orderData) {
+  const batchStops = getBatchDeliveryStops(orderData);
+  const firstBatchGeo = batchStops.map((item) => getBatchStopGeo(item.data)).find(Boolean);
+  if (firstBatchGeo) return firstBatchGeo;
   const clientId = orderData.clientId;
   const client = clientId ? mapState.clients.get(clientId)?.data : null;
   return (
@@ -12614,6 +13552,8 @@ function refreshOrderLines() {
     const restaurantGeo = getRestaurantGeoByOrder(data);
     const driverGeo = getDriverGeoByOrder(data);
     const clientGeo = getClientGeoByOrder(data);
+    const batchStops = getBatchDeliveryStops(data);
+    const batchPoints = batchStops.map((item) => getBatchStopGeo(item.data)).filter(Boolean);
 
     const points = [];
     if (restaurantGeo) points.push([restaurantGeo.lat, restaurantGeo.lng]);
@@ -12623,7 +13563,14 @@ function refreshOrderLines() {
         points.push([driverGeo.lat, driverGeo.lng]);
       }
     }
-    if (clientGeo) {
+    if (batchPoints.length) {
+      batchPoints.forEach((geo) => {
+        const lastPoint = points[points.length - 1];
+        if (!lastPoint || lastPoint[0] !== geo.lat || lastPoint[1] !== geo.lng) {
+          points.push([geo.lat, geo.lng]);
+        }
+      });
+    } else if (clientGeo) {
       const lastPoint = points[points.length - 1];
       if (!lastPoint || lastPoint[0] !== clientGeo.lat || lastPoint[1] !== clientGeo.lng) {
         points.push([clientGeo.lat, clientGeo.lng]);
@@ -13420,5 +14367,5 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
 
-  await handleAuthenticatedUser(user);
+await handleAuthenticatedUser(user);
 });

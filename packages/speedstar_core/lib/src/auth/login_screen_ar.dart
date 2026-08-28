@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -11,12 +12,14 @@ class LoginScreenArabic extends StatefulWidget {
     this.allowGoogleSignIn = true,
     this.allowPhoneSignIn = true,
     this.allowGuestSignIn = true,
+    this.phoneRemoteConfigKey = 'allow_phone',
   });
 
   final bool allowRegister;
   final bool allowGoogleSignIn;
   final bool allowPhoneSignIn;
   final bool allowGuestSignIn;
+  final String phoneRemoteConfigKey;
 
   @override
   State<LoginScreenArabic> createState() => _LoginScreenArabicState();
@@ -31,8 +34,6 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
   bool _loading = false;
   bool _codeSent = false;
 
-  String? _verificationId;
-  int? _resendToken;
   String _defaultDialCode = '+249';
   bool _obscurePassword = true;
 
@@ -58,8 +59,10 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
             all.containsKey('allow_guest') ? rc.getBool('allow_guest') : false;
         _allowGoogle =
             all.containsKey('allow_google') ? rc.getBool('allow_google') : true;
-        _allowPhone =
-            all.containsKey('allow_phone') ? rc.getBool('allow_phone') : true;
+        final phoneKey = widget.phoneRemoteConfigKey.trim();
+        _allowPhone = phoneKey.isNotEmpty && all.containsKey(phoneKey)
+            ? rc.getBool(phoneKey)
+            : (all.containsKey('allow_phone') ? rc.getBool('allow_phone') : true);
         if (all.containsKey('default_country_code')) {
           final v = rc.getString('default_country_code').trim();
           if (v.isNotEmpty) {
@@ -242,7 +245,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
                     ),
                     const SizedBox(height: 24),
                     if (_allowPhone && widget.allowPhoneSignIn) ...[
-                      const Text('أو الدخول برقم الهاتف'),
+                      const Text('أو الدخول برقم الهاتف عبر واتساب'),
                       const SizedBox(height: 12),
                       TextField(
                         controller: _phone,
@@ -251,8 +254,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
                         decoration: InputDecoration(
                           labelText: 'رقم الهاتف',
                           hintText:
-                              'مثال: +9665XXXXXXXX أو اكتب رقمك المحلي وسيُضاف رمز $_defaultDialCode',
-                          prefixText: '$_defaultDialCode ',
+                              'مثال: 01XXXXXXXX أو +2491XXXXXXXX',
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -263,7 +265,7 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
                             onPressed: _loading
                                 ? null
                                 : () => _sendSmsCode(resend: false),
-                            child: const Text('إرسال الرمز'),
+                            child: const Text('إرسال رمز واتساب'),
                           ),
                         ],
                       ),
@@ -380,6 +382,10 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
     if (p.isEmpty) return p;
     if (p.startsWith('+')) return p;
     if (p.startsWith('00')) return '+${p.substring(2)}';
+    final dialDigits = _defaultDialCode.replaceAll(RegExp(r'[^0-9]'), '');
+    if (dialDigits.isNotEmpty && p.startsWith(dialDigits)) {
+      return '+$p';
+    }
     while (p.startsWith('0')) {
       p = p.substring(1);
     }
@@ -394,37 +400,17 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
         _showError('الرجاء إدخال رقم الهاتف');
         return;
       }
-      await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: phone,
-        timeout: const Duration(seconds: 60),
-        verificationCompleted: (PhoneAuthCredential credential) async {
-          await FirebaseAuth.instance.signInWithCredential(credential);
-          _closeIfPresentedAsRoute();
-        },
-        verificationFailed: (FirebaseAuthException e) {
-          if (!mounted) return;
-          final em = e.message ?? '';
-          _showError(
-              '${_messageForCode(e.code)}${em.isNotEmpty ? ' - $em' : ''}');
-        },
-        forceResendingToken: resend ? _resendToken : null,
-        codeSent: (String verificationId, int? resendToken) {
-          if (!mounted) return;
-          _verificationId = verificationId;
-          _resendToken = resendToken;
-          _codeSent = true;
-          _showError('تم إرسال الرمز إلى $phone، تحقق من الرسائل');
-          setState(() {});
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {
-          if (!mounted) return;
-          _verificationId = verificationId;
-          _showError(
-              'انتهت مهلة الاسترجاع الآلي، يمكنك إدخال الرمز يدويًا أو إعادة الإرسال');
-        },
-      );
+      await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('requestClientPhoneOtp')
+          .call<Map<String, dynamic>>({'phone': phone});
+      if (!mounted) return;
+      _codeSent = true;
+      _showError('تم إرسال رمز واتساب إلى $phone');
+      setState(() {});
+    } on FirebaseFunctionsException catch (e) {
+      _showError(e.message ?? 'تعذر إرسال رمز واتساب');
     } catch (e) {
-      _showError('تعذّر إرسال الرمز');
+      _showError('تعذر إرسال رمز واتساب');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -434,16 +420,27 @@ class _LoginScreenArabicState extends State<LoginScreenArabic> {
     setState(() => _loading = true);
     try {
       final code = _smsCode.text.trim();
-      if (code.isEmpty || _verificationId == null) {
+      if (code.isEmpty) {
         _showError('أدخل الرمز أولًا');
         return;
       }
-      final credential = PhoneAuthProvider.credential(
-        verificationId: _verificationId!,
-        smsCode: code,
-      );
-      await FirebaseAuth.instance.signInWithCredential(credential);
+      final phone = _normalizePhone(_phone.text);
+      final result = await FirebaseFunctions.instanceFor(region: 'me-central1')
+          .httpsCallable('verifyClientPhoneOtp')
+          .call<Map<String, dynamic>>({
+        'phone': phone,
+        'code': code,
+      });
+      final data = Map<String, dynamic>.from(result.data);
+      final token = (data['token'] ?? '').toString();
+      if (token.isEmpty) {
+        _showError('تعذر تسجيل الدخول بهذا الرمز');
+        return;
+      }
+      await FirebaseAuth.instance.signInWithCustomToken(token);
       _closeIfPresentedAsRoute();
+    } on FirebaseFunctionsException catch (e) {
+      _showError(e.message ?? 'تعذر تأكيد الرمز');
     } on FirebaseAuthException catch (e) {
       _showError(_messageForCode(e.code));
     } catch (e) {
@@ -504,17 +501,22 @@ class _RegisterScreenArabic extends StatefulWidget {
 class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
+  final _whatsappPhone = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
+  final _confirmPassword = TextEditingController();
   bool _loading = false;
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
   @override
   void dispose() {
     _name.dispose();
     _phone.dispose();
+    _whatsappPhone.dispose();
     _email.dispose();
     _password.dispose();
+    _confirmPassword.dispose();
     super.dispose();
   }
 
@@ -540,6 +542,10 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
     if (p.isEmpty) return p;
     if (p.startsWith('+')) return p;
     if (p.startsWith('00')) return '+${p.substring(2)}';
+    final dialDigits = widget.defaultDialCode.replaceAll(RegExp(r'[^0-9]'), '');
+    if (dialDigits.isNotEmpty && p.startsWith(dialDigits)) {
+      return '+$p';
+    }
     while (p.startsWith('0')) {
       p = p.substring(1);
     }
@@ -550,6 +556,7 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
     required User user,
     required String name,
     required String phone,
+    required String whatsappPhone,
     required String email,
   }) async {
     final docRef =
@@ -562,6 +569,8 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
       'displayName': name,
       'phone': phone,
       'phoneNumber': phone,
+      'whatsappPhone': whatsappPhone,
+      'clientWhatsappPhone': whatsappPhone,
       'email': email,
       'ownerUid': user.uid,
       'uid': user.uid,
@@ -590,8 +599,10 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
     try {
       final name = _name.text.trim();
       final phone = _normalizePhone(_phone.text);
+      final whatsappPhone = _normalizePhone(_whatsappPhone.text);
       final email = _email.text.trim();
       final pass = _password.text;
+      final confirmPass = _confirmPassword.text;
 
       if (name.isEmpty) {
         _showError('الرجاء إدخال الاسم');
@@ -607,6 +618,10 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
       }
       if (pass.length < 6) {
         _showError('الحد الأدنى لطول كلمة المرور هو 6 أحرف');
+        return;
+      }
+      if (pass != confirmPass) {
+        _showError('كلمتا المرور غير متطابقتين');
         return;
       }
 
@@ -647,6 +662,7 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
           user: user,
           name: name,
           phone: phone,
+          whatsappPhone: whatsappPhone,
           email: email,
         );
       }
@@ -714,11 +730,23 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
                     decoration: InputDecoration(
                       labelText: 'رقم الهاتف',
                       hintText:
-                          'مثال: +2499XXXXXXX أو اكتب رقمك المحلي وسيُضاف رمز ${widget.defaultDialCode}',
-                      prefixText: '${widget.defaultDialCode} ',
+                          'مثال: 01XXXXXXXX أو +2491XXXXXXXX',
                       filled: true,
                       border: const OutlineInputBorder(),
                       prefixIcon: Icon(Icons.phone_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _whatsappPhone,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'رقم واتساب (اختياري)',
+                      hintText:
+                          'اتركه فارغًا إذا كان نفس رقم الهاتف أو لا تريد إضافته الآن',
+                      filled: true,
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.chat_outlined),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -746,6 +774,25 @@ class _RegisterScreenArabicState extends State<_RegisterScreenArabic> {
                         onPressed: () => setState(
                             () => _obscurePassword = !_obscurePassword),
                         icon: Icon(_obscurePassword
+                            ? Icons.visibility
+                            : Icons.visibility_off),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _confirmPassword,
+                    obscureText: _obscureConfirmPassword,
+                    decoration: InputDecoration(
+                      labelText: 'تأكيد كلمة المرور',
+                      filled: true,
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.lock_reset_outlined),
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(() =>
+                            _obscureConfirmPassword =
+                                !_obscureConfirmPassword),
+                        icon: Icon(_obscureConfirmPassword
                             ? Icons.visibility
                             : Icons.visibility_off),
                       ),

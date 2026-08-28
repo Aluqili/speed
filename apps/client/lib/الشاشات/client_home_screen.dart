@@ -483,8 +483,10 @@ class _GuestLockedTab extends StatelessWidget {
                           builder: (_) => const LoginScreenArabic(
                             allowRegister: true,
                             allowGoogleSignIn: false,
-                            allowPhoneSignIn: false,
+                            allowPhoneSignIn: true,
                             allowGuestSignIn: false,
+                            phoneRemoteConfigKey:
+                                'client_phone_signin_enabled_sudan',
                           ),
                         ),
                       ),

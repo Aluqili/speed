@@ -1143,22 +1143,6 @@ class StoreOrderDetailsScreen extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 18),
-              if (storePerspectiveDone)
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Text(
-                    '✅ من منظور المتجر: الطلب انتهى عند الاستلام من المطعم، ولا يلزمك تتبّع الحالات اللاحقة.',
-                    style: TextStyle(
-                      color: Colors.green,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'Tajawal',
-                    ),
-                  ),
-                ),
               if (showAcceptReject)
                 sectionCard(
                   title: 'قرار المتجر',

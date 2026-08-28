@@ -60,13 +60,14 @@ Set<Marker> buildCourierTripMarkers({
   LatLng? driverLocation,
   bool showDriverMarker = false,
   CourierMarkerIcons? icons,
+  String pickupLabel = 'المتجر',
 }) {
   return {
     if (restaurantLocation != null)
       Marker(
         markerId: const MarkerId('restaurant'),
         position: restaurantLocation,
-        infoWindow: const InfoWindow(title: 'المطعم'),
+        infoWindow: InfoWindow(title: pickupLabel),
         icon: icons?.restaurant ??
             BitmapDescriptor.defaultMarkerWithHue(
               BitmapDescriptor.hueOrange,

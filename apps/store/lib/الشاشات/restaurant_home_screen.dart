@@ -24,6 +24,7 @@ import 'store_notifications_screen.dart';
 import 'store_order_details_screen.dart';
 import 'store_promocode_screen.dart';
 import 'store_request_courier_screen.dart';
+import 'store_batch_delivery_screen.dart';
 import 'chat_screen.dart';
 import '../الخدمات/push_notification_service.dart';
 
@@ -956,10 +957,24 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
             });
 
             if (docs.isEmpty) {
-              return const Center(
-                child: Text('🕒 لا توجد طلبات حالياً',
-                    style:
-                        TextStyle(fontFamily: 'Tajawal', color: Colors.grey)),
+              return ListView(
+                padding: const EdgeInsets.all(14),
+                children: [
+                  _buildStoreHeroCard(
+                    restaurantName: restaurantName,
+                    totalCount: 0,
+                    newCount: 0,
+                    finishedCount: 0,
+                  ),
+                  const SizedBox(height: 14),
+                  _buildQuickActionsPanel(),
+                  const SizedBox(height: 28),
+                  const Center(
+                    child: Text('لا توجد طلبات حالياً',
+                        style: TextStyle(
+                            fontFamily: 'Tajawal', color: Colors.grey)),
+                  ),
+                ],
               );
             }
 
@@ -1245,15 +1260,25 @@ class _StoreDashboardScreenState extends State<StoreDashboardScreen> {
   }
 
   Widget _buildQuickActionsPanel() {
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton.icon(
-        onPressed: () => _openPage(
-          StoreRequestCourierScreen(restaurantId: widget.restaurantId),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FilledButton.icon(
+          onPressed: () => _openPage(
+            StoreRequestCourierScreen(restaurantId: widget.restaurantId),
+          ),
+          icon: const Icon(Icons.local_shipping_outlined),
+          label: const Text('اطلب مندوباً لتوصيل مباشر'),
         ),
-        icon: const Icon(Icons.local_shipping_outlined),
-        label: const Text('اطلب مندوباً لتوصيل مباشر'),
-      ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: () => _openPage(
+            StoreBatchDeliveryScreen(restaurantId: widget.restaurantId),
+          ),
+          icon: const Icon(Icons.route_outlined),
+          label: const Text('توصيل مجمّع لعدة طلبيات'),
+        ),
+      ],
     );
   }
 

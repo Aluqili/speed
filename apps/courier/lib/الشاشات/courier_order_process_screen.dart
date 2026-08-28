@@ -2,8 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:speedstar_core/speedstar_core.dart'
-    show OrderStatusPalette, formatUnifiedOrderCode;
+import 'package:speedstar_core/speedstar_core.dart' show OrderStatusPalette;
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import 'courier_confirm_delivery_screen.dart';
@@ -29,12 +28,6 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
   bool _navigated = false;
   String? _routeError;
 
-  static const List<String> _stageFlow = <String>[
-    'going_to_restaurant',
-    'going_to_client',
-    'arrived_to_client',
-  ];
-
   String _statusFromData(Map<String, dynamic> data) {
     return (data['orderStatus'] ?? data['status'] ?? '').toString();
   }
@@ -59,7 +52,7 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
   String _stageLabel(String stage) {
     switch (stage) {
       case 'going_to_restaurant':
-        return 'التوجه إلى المطعم';
+        return 'التوجه إلى نقطة الاستلام';
       case 'going_to_client':
         return 'التوجه إلى العميل';
       case 'arrived_to_client':
@@ -67,37 +60,6 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
       default:
         return 'متابعة الطلب';
     }
-  }
-
-  String _stageDescription(String stage) {
-    switch (stage) {
-      case 'going_to_restaurant':
-        return 'تجهيز الملاحة والوصول إلى المطعم لاستلام الطلب.';
-      case 'going_to_client':
-        return 'عرض خط السير إلى العميل وتحديث الرحلة بشكل مباشر.';
-      case 'arrived_to_client':
-        return 'التأكد من بيانات العميل وإتمام التسليم بنجاح.';
-      default:
-        return 'جار تجهيز تفاصيل الرحلة الحالية.';
-    }
-  }
-
-  IconData _stageIcon(String stage) {
-    switch (stage) {
-      case 'going_to_restaurant':
-        return Icons.storefront_rounded;
-      case 'going_to_client':
-        return Icons.route_rounded;
-      case 'arrived_to_client':
-        return Icons.verified_rounded;
-      default:
-        return Icons.delivery_dining_rounded;
-    }
-  }
-
-  int _stageIndex(String stage) {
-    final index = _stageFlow.indexOf(stage);
-    return index == -1 ? 0 : index;
   }
 
   Widget _buildCenteredState({
@@ -172,92 +134,6 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildStageTimeline(String currentStage) {
-    final activeIndex = _stageIndex(currentStage);
-    return Column(
-      children: List.generate(_stageFlow.length, (index) {
-        final stage = _stageFlow[index];
-        final isActive = index == activeIndex;
-        final isCompleted = index < activeIndex;
-        final markerColor = isCompleted || isActive
-            ? AppThemeArabic.courierPrimary
-            : AppThemeArabic.courierTextSecondary.withValues(alpha: 0.35);
-
-        return Padding(
-          padding:
-              EdgeInsets.only(bottom: index == _stageFlow.length - 1 ? 0 : 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Column(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: (isCompleted || isActive)
-                          ? markerColor.withValues(alpha: 0.12)
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: markerColor, width: 1.4),
-                    ),
-                    child: Icon(
-                      isCompleted ? Icons.check_rounded : _stageIcon(stage),
-                      color: markerColor,
-                      size: 20,
-                    ),
-                  ),
-                  if (index != _stageFlow.length - 1)
-                    Container(
-                      width: 2,
-                      height: 28,
-                      color: isCompleted
-                          ? AppThemeArabic.courierPrimary
-                              .withValues(alpha: 0.45)
-                          : AppThemeArabic.courierTextSecondary
-                              .withValues(alpha: 0.18),
-                    ),
-                ],
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _stageLabel(stage),
-                        style: TextStyle(
-                          fontFamily: 'Tajawal',
-                          fontWeight:
-                              isActive ? FontWeight.w800 : FontWeight.w700,
-                          fontSize: 15,
-                          color: isActive
-                              ? AppThemeArabic.courierTextPrimary
-                              : AppThemeArabic.courierTextSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _stageDescription(stage),
-                        style: const TextStyle(
-                          fontFamily: 'Tajawal',
-                          fontSize: 13,
-                          color: AppThemeArabic.courierTextSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      }),
     );
   }
 
@@ -339,263 +215,82 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
       appBar: buildCourierAppBar('مسار الطلب'),
       body: CourierPageBackground(
         child: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        future: _fetchOrder(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          future: _fetchOrder(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          final doc = snapshot.data!;
-          if (!doc.exists) {
-            GetStorage().remove('current_order');
-            return const Center(child: Text('الطلب غير موجود.'));
-          }
+            final doc = snapshot.data!;
+            if (!doc.exists) {
+              GetStorage().remove('current_order');
+              return const Center(child: Text('الطلب غير موجود.'));
+            }
 
-          final data = doc.data() ?? <String, dynamic>{};
-          final status = _statusFromData(data);
+            final data = doc.data() ?? <String, dynamic>{};
+            final status = _statusFromData(data);
 
-          if (_routeError != null) {
-            return _buildCenteredState(
-              icon: Icons.warning_amber_rounded,
-              title: 'تعذر فتح مرحلة التنفيذ',
-              message: _routeError!,
-              iconColor: OrderStatusPalette.pending,
-            );
-          }
+            if (_routeError != null) {
+              return _buildCenteredState(
+                icon: Icons.warning_amber_rounded,
+                title: 'تعذر فتح مرحلة التنفيذ',
+                message: _routeError!,
+                iconColor: OrderStatusPalette.pending,
+              );
+            }
 
-          if (status == 'delivered' || status == 'تم التوصيل') {
-            GetStorage().remove('current_order');
-            return _buildCenteredState(
-              icon: Icons.check_circle,
-              title: 'تم إنهاء هذا الطلب بالفعل',
-              message:
-                  'تم تسليم الطلب أو إغلاقه، ولن تظهر لك مرحلة تنفيذ جديدة له.',
-              iconColor: OrderStatusPalette.delivered,
-            );
-          }
+            if (status == 'delivered' || status == 'تم التوصيل') {
+              GetStorage().remove('current_order');
+              return _buildCenteredState(
+                icon: Icons.check_circle,
+                title: 'تم إنهاء هذا الطلب بالفعل',
+                message:
+                    'تم تسليم الطلب أو إغلاقه، ولن تظهر لك مرحلة تنفيذ جديدة له.',
+                iconColor: OrderStatusPalette.delivered,
+              );
+            }
 
-          final stage = _stageFromStatus(status);
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _goToStage(data, stage);
-          });
+            final stage = _stageFromStatus(status);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _goToStage(data, stage);
+            });
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [
-                      AppThemeArabic.courierPrimary,
-                      AppThemeArabic.courierAccent,
-                    ],
-                    begin: Alignment.topRight,
-                    end: Alignment.bottomLeft,
-                  ),
-                  borderRadius: BorderRadius.circular(22),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 18,
-                      offset: Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(
-                            _stageIcon(stage),
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'رحلة الطلب الجارية',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontFamily: 'Tajawal',
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _stageLabel(stage),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontFamily: 'Tajawal',
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      formatUnifiedOrderCode(
-                        orderNumber: data['orderNumber'],
-                        orderId: data['orderId'],
-                        docId: widget.orderId,
-                      ),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontFamily: 'Tajawal',
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            'الحالة: ${OrderStatusPalette.displayText(status)}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontFamily: 'Tajawal',
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        if ((data['clientName'] ?? '')
-                            .toString()
-                            .trim()
-                            .isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.16),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              'العميل: ${data['clientName']}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontFamily: 'Tajawal',
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
+            return Center(
+              child: Container(
+                margin: const EdgeInsets.all(24),
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 14,
-                      offset: Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'سير التنفيذ',
-                      style: TextStyle(
-                        fontFamily: 'Tajawal',
-                        fontWeight: FontWeight.w800,
-                        fontSize: 18,
-                        color: AppThemeArabic.courierTextPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _stageDescription(stage),
-                      style: const TextStyle(
-                        fontFamily: 'Tajawal',
-                        fontSize: 14,
-                        color: AppThemeArabic.courierTextSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    _buildStageTimeline(stage),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(18),
                   border: Border.all(
-                    color:
-                        AppThemeArabic.courierPrimary.withValues(alpha: 0.08),
+                    color: AppThemeArabic.courierPrimary.withValues(alpha: 0.10),
                   ),
                 ),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     const SizedBox(
-                      width: 28,
-                      height: 28,
+                      width: 24,
+                      height: 24,
                       child: CircularProgressIndicator(strokeWidth: 3),
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'جار فتح شاشة التنفيذ المناسبة',
-                            style: TextStyle(
-                              fontFamily: 'Tajawal',
-                              fontWeight: FontWeight.w800,
-                              color: AppThemeArabic.courierTextPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'سيتم تحويلك تلقائيًا إلى ${_stageLabel(stage)} خلال لحظات.',
-                            style: const TextStyle(
-                              fontFamily: 'Tajawal',
-                              color: AppThemeArabic.courierTextSecondary,
-                            ),
-                          ),
-                        ],
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        'جار فتح ${_stageLabel(stage)}...',
+                        style: const TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontWeight: FontWeight.w800,
+                          color: AppThemeArabic.courierTextPrimary,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-            ],
-          );
-        },
-      ),
+            );
+          },
+        ),
       ),
     );
   }

@@ -31,9 +31,11 @@ class CourierLocationForegroundService : Service() {
     private var activeOrdersListener: ListenerRegistration? = null
     private var driverId: String = ""
     private var activeOrderId: String? = null
+    private var lastKnownLocation: Location? = null
     private var lastLat: Double? = null
     private var lastLng: Double? = null
     private var lastWriteMs: Long = 0L
+    private var hadActiveOrder: Boolean = false
 
     override fun onCreate() {
         super.onCreate()
@@ -119,8 +121,20 @@ class CourierLocationForegroundService : Service() {
                             ?: 0L
                     }
                     .orEmpty()
+                val nextActiveOrderId = active.firstOrNull()?.id
+                if (nextActiveOrderId == null) {
+                    activeOrderId = null
+                    if (hadActiveOrder) {
+                        clearDriverActiveOrder()
+                        clearStoredDriverId()
+                        stopSelf()
+                    }
+                    return@addSnapshotListener
+                }
 
-                activeOrderId = active.firstOrNull()?.id
+                hadActiveOrder = true
+                activeOrderId = nextActiveOrderId
+                lastKnownLocation?.let { writeOrderLocation(nextActiveOrderId, it) }
             }
     }
 
@@ -136,6 +150,7 @@ class CourierLocationForegroundService : Service() {
     private fun writeLocation(location: Location) {
         val id = driverId.trim()
         if (id.isEmpty()) return
+        lastKnownLocation = location
 
         val lat = location.latitude
         val lng = location.longitude
@@ -174,23 +189,51 @@ class CourierLocationForegroundService : Service() {
 
         firestore.collection("drivers").document(id).set(driverPatch, com.google.firebase.firestore.SetOptions.merge())
 
-        activeOrderId?.let { orderId ->
-            firestore.collection("orders").document(orderId).set(
-                hashMapOf(
-                    "driverLocation" to point,
-                    "driverCurrentLocation" to locationMap,
-                    "driverLat" to lat,
-                    "driverLng" to lng,
-                    "driverLocationUpdatedAt" to FieldValue.serverTimestamp(),
-                    "lastLocationUpdate" to FieldValue.serverTimestamp()
-                ),
-                com.google.firebase.firestore.SetOptions.merge()
-            )
-        }
+        activeOrderId?.let { orderId -> writeOrderLocation(orderId, location) }
 
         lastLat = lat
         lastLng = lng
         lastWriteMs = nowMs
+    }
+
+    private fun writeOrderLocation(orderId: String, location: Location) {
+        val lat = location.latitude
+        val lng = location.longitude
+        val point = GeoPoint(lat, lng)
+        val locationMap = hashMapOf(
+            "lat" to lat,
+            "lng" to lng,
+            "latitude" to lat,
+            "longitude" to lng,
+            "accuracy" to location.accuracy,
+            "heading" to location.bearing,
+            "speed" to location.speed
+        )
+
+        firestore.collection("orders").document(orderId).set(
+            hashMapOf(
+                "driverLocation" to point,
+                "driverCurrentLocation" to locationMap,
+                "driverLat" to lat,
+                "driverLng" to lng,
+                "driverLocationUpdatedAt" to FieldValue.serverTimestamp(),
+                "lastLocationUpdate" to FieldValue.serverTimestamp()
+            ),
+            com.google.firebase.firestore.SetOptions.merge()
+        )
+    }
+
+    private fun clearDriverActiveOrder() {
+        val id = driverId.trim()
+        if (id.isEmpty()) return
+        firestore.collection("drivers").document(id).set(
+            hashMapOf<String, Any>(
+                "activeOrderId" to FieldValue.delete(),
+                "trackingStoppedAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            ),
+            com.google.firebase.firestore.SetOptions.merge()
+        )
     }
 
     private fun buildNotification() =

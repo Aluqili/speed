@@ -66,7 +66,7 @@ class CourierProfileScreen extends StatelessWidget {
                     children: [
                       const CourierSectionTitle(
                         title: 'بيانات المندوب',
-                        subtitle: 'مراجعة بيانات الحساب والهوية والمنطقة.',
+                        subtitle: 'مراجعة بيانات الحساب وإثبات الشخصية والمنطقة.',
                       ),
                       const SizedBox(height: 16),
                       _ProfileRow(
@@ -80,8 +80,11 @@ class CourierProfileScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 10),
                       _ProfileRow(
-                        title: 'رقم الهوية',
-                        value: (data['idNumber'] ?? 'غير متاح').toString(),
+                        title: 'رقم إثبات الشخصية',
+                        value: (data['nationalIdNumber'] ??
+                                data['idNumber'] ??
+                                'غير متاح')
+                            .toString(),
                       ),
                     ],
                   ),

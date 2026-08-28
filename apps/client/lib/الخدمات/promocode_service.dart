@@ -18,6 +18,7 @@ class PromocodeService {
     required String restaurantId,
     required List<Map<String, dynamic>> items,
     bool isNewOrder = true,
+    String orderSource = '',
   }) async {
     final response = await _validateCallable.call(<String, dynamic>{
       'code': code.trim().toUpperCase(),
@@ -26,6 +27,7 @@ class PromocodeService {
         'deliveryFee': deliveryFee,
         'largeOrderFee': largeOrderFee,
         'restaurantId': restaurantId,
+        'orderSource': orderSource,
         'items': items,
         'isNewOrder': isNewOrder,
       },
@@ -44,6 +46,7 @@ class PromocodeService {
     required List<Map<String, dynamic>> items,
     required String orderReference,
     bool isNewOrder = true,
+    String orderSource = '',
   }) async {
     final response = await _redeemCallable.call(<String, dynamic>{
       'code': code.trim().toUpperCase(),
@@ -52,6 +55,7 @@ class PromocodeService {
         'deliveryFee': deliveryFee,
         'largeOrderFee': largeOrderFee,
         'restaurantId': restaurantId,
+        'orderSource': orderSource,
         'items': items,
         'orderReference': orderReference,
         'isNewOrder': isNewOrder,

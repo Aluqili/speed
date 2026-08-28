@@ -224,6 +224,11 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
     final total =
         (data['totalWithDelivery'] as num? ?? 0).toStringAsFixed(2);
     final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+    final isParcelDelivery = data['orderSource'] == 'client_parcel_delivery';
+    final itemDescription =
+        (data['itemDescription'] ?? data['packageDescription'] ?? '')
+            .toString()
+            .trim();
     final restaurantName =
         (data['restaurantName'] ?? 'غير معروف').toString();
     final restaurantImage =
@@ -319,7 +324,7 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'الإجمالي',
+                      isParcelDelivery ? 'رسوم التوصيل' : 'الإجمالي',
                       style: TextStyle(
                           color: textSec,
                           fontSize: 11),
@@ -342,7 +347,11 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        restaurantName.isEmpty ? 'غير معروف' : restaurantName,
+                        isParcelDelivery
+                            ? 'وصّلها من عميل'
+                            : (restaurantName.isEmpty
+                                ? 'غير معروف'
+                                : restaurantName),
                         textAlign: TextAlign.right,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -354,7 +363,11 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        displayOrderNumber.isEmpty ? orderId : displayOrderNumber,
+                        isParcelDelivery && itemDescription.isNotEmpty
+                            ? itemDescription
+                            : (displayOrderNumber.isEmpty
+                                ? orderId
+                                : displayOrderNumber),
                         textAlign: TextAlign.right,
                         style: TextStyle(color: textSec, fontSize: 12),
                       ),
@@ -366,6 +379,7 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: restaurantImage.isNotEmpty
+                      && !isParcelDelivery
                       ? CachedNetworkImage(
                           imageUrl: restaurantImage,
                           width: 38,
@@ -373,7 +387,11 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
                           fit: BoxFit.cover,
                           errorWidget: (_, __, ___) => _RestaurantIconBox(),
                         )
-                      : _RestaurantIconBox(),
+                      : _RestaurantIconBox(
+                          icon: isParcelDelivery
+                              ? Icons.local_shipping_outlined
+                              : Icons.storefront_outlined,
+                        ),
                 ),
               ],
             ),
@@ -595,6 +613,10 @@ class _ClientOrdersTabState extends State<ClientOrdersTab>
 // ─── أيقونة بديلة للمطعم ──────────────────────────────────────────────────
 
 class _RestaurantIconBox extends StatelessWidget {
+  final IconData icon;
+
+  const _RestaurantIconBox({this.icon = Icons.storefront_rounded});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -604,8 +626,7 @@ class _RestaurantIconBox extends StatelessWidget {
         color: ClientColors.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: const Icon(Icons.storefront_rounded,
-          color: ClientColors.primary, size: 20),
+      child: Icon(icon, color: ClientColors.primary, size: 20),
     );
   }
 }

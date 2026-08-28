@@ -26,6 +26,7 @@
           <a href="#approvals">الموافقات</a>
           <a href="#finance">المالية</a>
           <a href="#employees">الموظفون</a>
+          <a href="#attendance">الدوام</a>
           <a href="#admins-panel">المسؤولون</a>
           <a href="#reports">التقارير</a>
           <a href="#activity">السجل التشغيلي</a>
@@ -50,6 +51,7 @@
           </div>
           <div class="topbar-actions">
             <div id="adminBadge" class="auth-badge">تسجيل الدخول مطلوب</div>
+            <button id="themeToggleBtn" class="ghost-btn icon-command" type="button" title="تبديل الوضع الليلي" aria-label="تبديل الوضع الليلي">◐</button>
             <button id="logoutBtn" class="ghost-btn" type="button">تسجيل الخروج</button>
             <button id="openTaskQuickBtn" class="ghost-btn" type="button">مهمة سريعة</button>
             <button id="openProjectQuickBtn" class="ghost-btn" type="button">مشروع سريع</button>
@@ -136,6 +138,7 @@
                 <option value="low">منخفضة</option>
               </select>
               <input id="taskDueDate" type="date" title="الاستحقاق" required />
+              <input id="taskDueTime" type="time" value="17:00" title="وقت الاستحقاق" required />
               <textarea id="taskDescription" rows="3" placeholder="وصف مختصر للمهمة"></textarea>
               <button class="primary-btn" type="submit">حفظ المهمة</button>
             </form>
@@ -158,6 +161,13 @@
               </select>
             </div>
             <div class="kanban-grid" id="taskKanban"></div>
+            <div class="task-notifications">
+              <div class="section-header">
+                <h3>إشعاراتي</h3>
+                <span id="taskNotificationCount" class="attendance-status">0</span>
+              </div>
+              <div id="taskNotificationsList" class="list-stack"></div>
+            </div>
           </article>
         </section>
 
@@ -258,6 +268,119 @@
                 <button id="employeeCancelEditBtn" class="ghost-btn" type="button">إلغاء التعديل</button>
               </div>
             </form>
+          </article>
+        </section>
+
+        <section class="section-grid tab-panel" id="attendance">
+          <article class="attendance-hero">
+            <div>
+              <p class="eyebrow">Work Presence</p>
+              <h3>الدوام والإنجاز</h3>
+            </div>
+            <div class="attendance-hero-actions">
+              <select id="attendanceWorkType" title="نوع جلسة الدوام">
+                <option value="office">دوام مكتبي داخل الأدمن</option>
+                <option value="field">دوام ميداني</option>
+              </select>
+              <button id="attendanceStartBtn" class="primary-btn" type="button">بدء الدوام</button>
+              <button id="attendanceEndBtn" class="ghost-btn" type="button">إنهاء الدوام</button>
+            </div>
+          </article>
+
+          <div id="attendanceSummary" class="attendance-summary"></div>
+
+          <div class="attendance-grid">
+            <article class="section-card">
+              <div class="section-header">
+                <h3>جلسة اليوم</h3>
+                <span id="attendanceSessionStatus" class="attendance-status">لم تبدأ</span>
+              </div>
+              <div id="attendanceSessionDetails" class="attendance-session-details"></div>
+            </article>
+
+            <article class="section-card">
+              <div class="section-header">
+                <h3>توثيق نشاط</h3>
+              </div>
+              <form id="attendanceActivityForm" class="stack-form">
+                <select id="attendanceActivityType" title="نوع النشاط">
+                  <option value="client_contact">تواصل مع عميل</option>
+                  <option value="task_update">تحديث مهمة</option>
+                  <option value="campaign">حملة أو محتوى</option>
+                  <option value="field_visit">زيارة ميدانية</option>
+                  <option value="work_note">ملاحظة عمل</option>
+                </select>
+                <textarea id="attendanceActivityNote" rows="3" maxlength="500" placeholder="ما الذي أُنجز أو ما نتيجة التواصل؟" required></textarea>
+                <button class="primary-btn" type="submit">تسجيل النشاط</button>
+                <p id="attendanceFeedback" class="auth-feedback"></p>
+              </form>
+            </article>
+          </div>
+
+          <article class="section-card attendance-report-card">
+            <div class="section-header">
+              <div>
+                <h3>التقرير اليومي</h3>
+                <p class="section-subtitle">ملخص واضح لما تم إنجازه، وما يحتاج متابعة في يوم العمل.</p>
+              </div>
+            </div>
+            <form id="attendanceReportForm" class="attendance-report-form">
+              <textarea id="attendanceReportCompleted" rows="3" maxlength="800" placeholder="المنجزات: المهام أو الاتصالات أو الزيارات التي اكتملت" required></textarea>
+              <textarea id="attendanceReportBlockers" rows="3" maxlength="500" placeholder="المعوقات أو ما يحتاج قرارًا (اختياري)"></textarea>
+              <textarea id="attendanceReportNextSteps" rows="3" maxlength="500" placeholder="الخطوة القادمة وموعد المتابعة" required></textarea>
+              <button class="primary-btn" type="submit">رفع التقرير اليومي</button>
+            </form>
+            <div id="attendanceReportsList" class="attendance-reports-list"></div>
+          </article>
+
+          <article id="attendanceSupervisorPanel" class="section-card">
+            <div class="section-header">
+              <div>
+                <h3>إعداد دوام الموظفين</h3>
+                <p class="section-subtitle">متاح فقط للرئيسين لتحديد الساعات والنمط لكل حساب أدمن.</p>
+              </div>
+            </div>
+            <form id="attendanceProfileForm" class="attendance-profile-form">
+              <div class="attendance-profile-identity">
+                <label>حساب الأدمن
+                  <select id="attendanceProfileAdmin" required>
+                    <option value="">اختر حساب الأدمن</option>
+                  </select>
+                </label>
+                <label>نمط الدوام
+                  <select id="attendanceProfileMode">
+                    <option value="operational">تشغيلي / عن بعد</option>
+                    <option value="field">ميداني</option>
+                    <option value="hybrid">هجين</option>
+                    <option value="flexible">مرن قائم على النتائج</option>
+                  </select>
+                </label>
+                <label class="attendance-checkbox"><input id="attendanceProfileActive" type="checkbox" checked /> دوام مفعّل</label>
+              </div>
+              <div class="attendance-time-groups">
+                <fieldset class="attendance-time-group">
+                  <legend>الدوام المكتبي</legend>
+                  <label>من الساعة<input id="attendanceOfficeStartTime" type="time" value="09:00" required /></label>
+                  <label>إلى الساعة<input id="attendanceOfficeEndTime" type="time" value="17:00" required /></label>
+                </fieldset>
+                <fieldset class="attendance-time-group">
+                  <legend>الدوام الميداني</legend>
+                  <label>من الساعة<input id="attendanceFieldStartTime" type="time" value="09:00" required /></label>
+                  <label>إلى الساعة<input id="attendanceFieldEndTime" type="time" value="17:00" required /></label>
+                </fieldset>
+              </div>
+              <div class="attendance-profile-submit">
+                <button class="primary-btn" type="submit">حفظ إعداد الدوام</button>
+              </div>
+            </form>
+          </article>
+
+          <article class="section-card">
+            <div class="section-header">
+              <h3>متابعة اليوم</h3>
+              <button id="attendanceRefreshBtn" class="ghost-btn small" type="button">تحديث</button>
+            </div>
+            <div id="attendanceStaffCards" class="attendance-staff-cards"></div>
           </article>
         </section>
 

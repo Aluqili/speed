@@ -4,7 +4,7 @@ import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'dart:math';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart'
-    show formatUnifiedOrderCode, OrderStatusPalette;
+    show formatUnifiedOrderCode, OrderStatusPalette, SpeedstarBusinessTypeConfig;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../helpers/courier_runtime_helpers.dart';
 
@@ -42,6 +42,7 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   double? _restaurantClientRoadKm;
   String _loadedRouteKey = '';
   bool _fetchingRoutes = false;
+  bool _detailsExpanded = false;
   GoogleMapController? _orderMapController;
 
   double _toDouble(dynamic value) {
@@ -517,15 +518,51 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     return LatLng(lat, lng);
   }
 
-  Future<void> _openProfessionalFlow() async {
-    if (orderData == null || !mounted) return;
-    final status = _getOrderStatus(orderData!);
-    final clientLoc = _resolvePoint(
-      orderData!,
+  LatLng? _pickupPointForOrder(Map<String, dynamic> data) {
+    final source = (data['orderSource'] ?? '').toString().trim();
+    if (source == 'client_parcel_delivery') {
+      return _resolvePoint(
+        data,
+        rawKey: 'pickupLocation',
+        latKey: 'pickupLat',
+        lngKey: 'pickupLng',
+      );
+    }
+    return _resolvePoint(
+      data,
+      rawKey: 'restaurantLocation',
+      latKey: 'restaurantLat',
+      lngKey: 'restaurantLng',
+    );
+  }
+
+  LatLng? _dropoffPointForOrder(Map<String, dynamic> data) {
+    return _resolvePoint(
+      data,
       rawKey: 'clientLocation',
       latKey: 'clientLat',
       lngKey: 'clientLng',
     );
+  }
+
+  String _pickupNameForOrder(Map<String, dynamic> data) {
+    final source = (data['orderSource'] ?? '').toString().trim();
+    if (source == 'client_parcel_delivery') return 'نقطة الاستلام';
+    return (data['restaurantName'] ?? 'نقطة الاستلام').toString();
+  }
+
+  String _serviceLabelForOrder(Map<String, dynamic> data) {
+    final source = (data['orderSource'] ?? '').toString().trim();
+    if (source == 'client_parcel_delivery') return 'وصّلها من عميل';
+    if (source == 'store_direct_delivery') return 'وصّلها من متجر';
+    if (source == 'store_batch_delivery') return 'رحلة متجر مجمعة';
+    return 'طلب توصيل';
+  }
+
+  Future<void> _openProfessionalFlow() async {
+    if (orderData == null || !mounted) return;
+    final status = _getOrderStatus(orderData!);
+    final clientLoc = _dropoffPointForOrder(orderData!);
 
     if (status == 'courier_assigned' ||
         status == 'pickup_ready' ||
@@ -608,10 +645,13 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
   Future<void> _reportOrderIssue() async {
     if (_reportingIssue) return;
 
-    const reasons = {
+    final storeClosedLabel = orderData == null
+        ? 'المتجر مغلق'
+        : _businessConfigForOrder(orderData!).closedLabel;
+    final reasons = {
       'client_not_responding': 'العميل لا يرد',
       'incorrect_address': 'العنوان غير صحيح',
-      'store_closed': 'المطعم مغلق',
+      'store_closed': storeClosedLabel,
       'cannot_complete_delivery': 'تعذر إتمام التوصيل',
       'other': 'مشكلة أخرى',
     };
@@ -715,6 +755,12 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
         status.trim() == 'ملغي';
   }
 
+  SpeedstarBusinessTypeConfig _businessConfigForOrder(Map<String, dynamic> data) {
+    return SpeedstarBusinessTypeConfig.resolve(
+      data['businessType'] ?? data['storeType'],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = orderData;
@@ -750,13 +796,22 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                 final isAssignedToMe =
                     (data['assignedDriverId'] ?? '').toString() ==
                         widget.driverId;
+                final businessConfig = _businessConfigForOrder(data);
+                final isDirectDelivery =
+                    data['orderSource'] == 'store_direct_delivery';
+                final isParcelDelivery =
+                    data['orderSource'] == 'client_parcel_delivery';
+                final serviceLabel = _serviceLabelForOrder(data);
+                final pickupLabel = isDirectDelivery || isParcelDelivery
+                    ? 'نقطة الاستلام'
+                    : businessConfig.placeLabel;
                 final executionLabel =
                     status == 'picked_up' || status == 'قيد التوصيل'
                         ? 'الذهاب إلى العميل'
                         : status == 'arrived_to_client' ||
                                 status == 'وصل إلى العميل'
                             ? 'تأكيد تسليم الطلب'
-                            : 'الذهاب إلى المطعم';
+                            : 'الذهاب إلى $pickupLabel';
                 final courierIssue = data['courierIssue'];
                 final issueResolved = courierIssue is Map &&
                     (courierIssue['status'] ?? '').toString() == 'resolved';
@@ -765,18 +820,8 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                         .toString()
                         .trim();
 
-                final restaurantLocation = _resolvePoint(
-                  data,
-                  rawKey: 'restaurantLocation',
-                  latKey: 'restaurantLat',
-                  lngKey: 'restaurantLng',
-                );
-                final clientLocation = _resolvePoint(
-                  data,
-                  rawKey: 'clientLocation',
-                  latKey: 'clientLat',
-                  lngKey: 'clientLng',
-                );
+                final restaurantLocation = _pickupPointForOrder(data);
+                final clientLocation = _dropoffPointForOrder(data);
                 final driverLocation = _resolvePoint(
                   data,
                   rawKey: 'driverLocation',
@@ -810,17 +855,18 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                   driverLocation: driverLocation,
                   showDriverMarker: true,
                   icons: _markerIcons,
+                  pickupLabel: pickupLabel,
                 );
 
                 final total = (data['totalWithDelivery'] ?? data['total'] ?? 0)
                     .toString();
                 final itemsCount = (data['items'] as List?)?.length ?? 0;
                 final restaurantName =
-                    (data['restaurantName'] ?? 'غير معروف').toString();
-                final isDirectDelivery =
-                    data['orderSource'] == 'store_direct_delivery';
+                    _pickupNameForOrder(data);
                 final packageDescription =
-                    (data['packageDescription'] ?? '').toString().trim();
+                    (data['packageDescription'] ?? data['itemDescription'] ?? '')
+                        .toString()
+                        .trim();
                 final courierEarnings =
                     (data['deliveryFeeForDriver'] ?? data['driverShare'] ?? 0)
                         .toString();
@@ -883,6 +929,16 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                           ),
                           const SizedBox(height: 6),
                           Text(
+                            serviceLabel,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: AppThemeArabic.courierAccent,
+                              fontFamily: 'Tajawal',
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
                             'العميل: ${data['clientName'] ?? 'غير متوفر'}',
                             style: const TextStyle(
                                 fontSize: 16,
@@ -908,38 +964,82 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          const Divider(height: 1),
-                          const SizedBox(height: 10),
-                          _OrderInfoRow(
-                            label:
-                                isDirectDelivery ? 'نقطة الاستلام' : 'المطعم',
-                            value: restaurantName,
-                          ),
-                          const SizedBox(height: 8),
-                          _OrderInfoRow(
-                            label:
-                                isDirectDelivery ? 'أجرك المتوقع' : 'الإجمالي',
-                            value:
-                                '${isDirectDelivery ? courierEarnings : total} ج.س',
-                          ),
-                          const SizedBox(height: 8),
-                          _OrderInfoRow(
-                            label: isDirectDelivery ? 'الإرسالية' : 'العناصر',
-                            value: isDirectDelivery
-                                ? (packageDescription.isEmpty
-                                    ? 'إرسالية توصيل مباشر'
-                                    : packageDescription)
-                                : '$itemsCount',
-                          ),
-                          const SizedBox(height: 8),
-                          _OrderInfoRow(
-                            label: 'المسافة',
-                            value: _distanceText(routeDistanceKm),
-                          ),
-                          const SizedBox(height: 8),
-                          _OrderInfoRow(
-                            label: 'الزمن',
-                            value: _etaText(data),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF7FAF8),
+                              borderRadius: BorderRadius.circular(12),
+                              border:
+                                  Border.all(color: const Color(0xFFD7E4DD)),
+                            ),
+                            child: Theme(
+                              data: Theme.of(context)
+                                  .copyWith(dividerColor: Colors.transparent),
+                              child: ExpansionTile(
+                                initiallyExpanded: _detailsExpanded,
+                                onExpansionChanged: (value) => setState(
+                                    () => _detailsExpanded = value),
+                                tilePadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 0),
+                                childrenPadding: const EdgeInsets.fromLTRB(
+                                    12, 0, 12, 12),
+                                title: const Text(
+                                  'تفاصيل الطلب',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: AppThemeArabic.courierTextPrimary,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  _detailsExpanded
+                                      ? 'اضغط للإخفاء'
+                                      : 'اضغط لعرض الأصناف والمبالغ',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color:
+                                        AppThemeArabic.courierTextSecondary,
+                                  ),
+                                ),
+                                children: [
+                                  _OrderInfoRow(
+                                    label: pickupLabel,
+                                    value: restaurantName,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _OrderInfoRow(
+                                    label: isDirectDelivery ||
+                                            isParcelDelivery
+                                        ? 'أجرك المتوقع'
+                                        : 'الإجمالي',
+                                    value:
+                                        '${isDirectDelivery || isParcelDelivery ? courierEarnings : total} ج.س',
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _OrderInfoRow(
+                                    label: isDirectDelivery ||
+                                            isParcelDelivery
+                                        ? 'الإرسالية'
+                                        : 'العناصر',
+                                    value: isDirectDelivery ||
+                                            isParcelDelivery
+                                        ? (packageDescription.isEmpty
+                                            ? serviceLabel
+                                            : packageDescription)
+                                        : '$itemsCount',
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _OrderInfoRow(
+                                    label: 'المسافة',
+                                    value: _distanceText(routeDistanceKm),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _OrderInfoRow(
+                                    label: 'الزمن',
+                                    value: _etaText(data),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                           const SizedBox(height: 10),
                           if (restaurantLocation != null ||
@@ -995,12 +1095,13 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                                         .withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(999),
                                   ),
-                                  child: const Row(
+                                  child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.storefront_rounded, size: 16),
-                                      SizedBox(width: 6),
-                                      Text('المطعم'),
+                                      const Icon(Icons.storefront_rounded,
+                                          size: 16),
+                                      const SizedBox(width: 6),
+                                      Text(pickupLabel),
                                     ],
                                   ),
                                 ),
@@ -1026,25 +1127,39 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                           if (restaurantLocation != null ||
                               clientLocation != null)
                             const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
+                          Row(
                             children: [
-                              if (driverToRestaurantKm != null)
-                                Chip(
-                                  label: Text(
-                                    'يبعد المطعم عنك: ${courierFormatDistance(driverToRestaurantKm)}',
-                                  ),
+                              Expanded(
+                                child: CourierCompactMetric(
+                                  icon: Icons.my_location_rounded,
+                                  label: '$pickupLabel عنك',
+                                  value: driverToRestaurantKm == null
+                                      ? 'غير متاح'
+                                      : courierFormatDistance(
+                                          driverToRestaurantKm),
                                 ),
-                              if (restaurantToClientKm != null)
-                                Chip(
-                                  label: Text(
-                                    'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
-                                  ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: CourierCompactMetric(
+                                  icon: Icons.person_pin_circle_outlined,
+                                  label: 'العميل عن $pickupLabel',
+                                  value: restaurantToClientKm == null
+                                      ? 'غير متاح'
+                                      : courierFormatDistance(
+                                          restaurantToClientKm),
+                                  tone: AppThemeArabic.courierAccent,
                                 ),
-                              Chip(
-                                  label: Text(
-                                      'رسومك: ${courierFormatMoney(deliveryFee)} ج.س')),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: CourierCompactMetric(
+                                  icon: Icons.payments_outlined,
+                                  label: 'رسومك',
+                                  value:
+                                      '${courierFormatMoney(deliveryFee)} ج.س',
+                                ),
+                              ),
                             ],
                           ),
                         ],

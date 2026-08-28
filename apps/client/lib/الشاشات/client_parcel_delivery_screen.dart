@@ -19,6 +19,101 @@ class ClientParcelDeliveryScreen extends StatefulWidget {
       _ClientParcelDeliveryScreenState();
 }
 
+class _ParcelSteps extends StatelessWidget {
+  const _ParcelSteps();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: const [
+        Expanded(
+          child: _StepChip(
+            icon: Icons.call_received_rounded,
+            label: 'استلام',
+          ),
+        ),
+        SizedBox(width: 8),
+        Expanded(
+          child: _StepChip(
+            icon: Icons.outbound_rounded,
+            label: 'تسليم',
+          ),
+        ),
+        SizedBox(width: 8),
+        Expanded(
+          child: _StepChip(
+            icon: Icons.payments_outlined,
+            label: 'دفع',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StepChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _StepChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: ClientColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: ClientColors.primary.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 17, color: ClientColors.primary),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreviewLine extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _PreviewLine({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: ClientColors.primary),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ],
+      ),
+    );
+  }
+}
+
 class _ClientParcelDeliveryScreenState
     extends State<ClientParcelDeliveryScreen> {
   final _itemController = TextEditingController();
@@ -53,7 +148,7 @@ class _ClientParcelDeliveryScreenState
         .replaceAll('\\x26', '&');
     final patterns = [
       RegExp(
-          r'(?:[?&](?:q|query|ll|destination|location|center)=|@)(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)',
+          r'[?&](?:q|query|ll|destination|location)=(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)',
           caseSensitive: false),
       RegExp(r'!3d(-?\d{1,2}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)',
           caseSensitive: false),
@@ -65,6 +160,11 @@ class _ClientParcelDeliveryScreenState
           caseSensitive: false),
       RegExp(
           r'/(?:place|search|dir)/(?:[^/]+/)?(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)',
+          caseSensitive: false),
+      RegExp(r'@(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)',
+          caseSensitive: false),
+      RegExp(
+          r'[?&](?:center|origin)=(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)',
           caseSensitive: false),
       RegExp(r'^\s*(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)\s*$'),
     ];
@@ -111,10 +211,12 @@ class _ClientParcelDeliveryScreenState
   }
 
   Future<LatLng?> _coordinatesFromLink(String raw) async {
+    final uri = Uri.tryParse(raw.trim());
+    if (uri == null || !_isGoogleMapsUrl(uri)) return _parseCoordinates(raw);
+    final resolvedByServer = await _resolveGoogleMapsFallback(raw);
+    if (resolvedByServer != null) return resolvedByServer;
     final direct = _parseCoordinates(raw);
     if (direct != null) return direct;
-    final uri = Uri.tryParse(raw.trim());
-    if (uri == null || !_isGoogleMapsUrl(uri)) return null;
     final client = http.Client();
     try {
       var currentUri = uri;
@@ -312,10 +414,35 @@ class _ClientParcelDeliveryScreenState
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(title: const Text('وصّلها')),
+        appBar: AppBar(title: const Text('وصّلها من عميل')),
         body: ListView(padding: const EdgeInsets.all(16), children: [
-          Text('أرسل غرضك من أي نقطة إلى أي نقطة',
-              style: Theme.of(context).textTheme.titleLarge),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: ClientColors.primary,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'وصّلها',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'أرسل غرضك من أي نقطة إلى أي نقطة. حدد الاستلام والتسليم، راجع الرسوم، ثم أكمل الدفع لتبدأ متابعة المندوب.',
+                  style: TextStyle(color: Colors.white, height: 1.45),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const _ParcelSteps(),
           const SizedBox(height: 16),
           TextField(
             controller: _itemController,
@@ -350,8 +477,27 @@ class _ClientParcelDeliveryScreenState
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('رسوم التوصيل: ${fee.toStringAsFixed(0)} ج.س',
-                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                    Row(
+                      children: [
+                        const Icon(Icons.receipt_long_outlined,
+                            color: ClientColors.primary),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text('معاينة وصّلها',
+                              style: TextStyle(fontWeight: FontWeight.w900)),
+                        ),
+                        Text('${fee.toStringAsFixed(0)} ج.س',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w900)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    _PreviewLine(
+                      icon: Icons.route_outlined,
+                      label: 'المسافة التقريبية',
+                      value:
+                          '${((_preview?['distanceKm'] as num?)?.toDouble() ?? 0).toStringAsFixed(1)} كم',
+                    ),
                     const Text(
                         'بعد المتابعة ستختار طريقة الدفع وترفع الإيصال عند الدفع الإلكتروني.'),
                     const SizedBox(height: 12),

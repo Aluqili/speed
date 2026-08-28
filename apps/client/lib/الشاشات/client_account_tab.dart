@@ -31,8 +31,9 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
         builder: (_) => const LoginScreenArabic(
           allowRegister: true,
           allowGoogleSignIn: false,
-          allowPhoneSignIn: false,
+          allowPhoneSignIn: true,
           allowGuestSignIn: false,
+          phoneRemoteConfigKey: 'client_phone_signin_enabled_sudan',
         ),
       ),
     );
@@ -84,8 +85,9 @@ class _ClientAccountTabState extends State<ClientAccountTab> {
         builder: (_) => const LoginScreenArabic(
           allowRegister: true,
           allowGoogleSignIn: false,
-          allowPhoneSignIn: false,
+          allowPhoneSignIn: true,
           allowGuestSignIn: false,
+          phoneRemoteConfigKey: 'client_phone_signin_enabled_sudan',
         ),
       ),
       (route) => false,

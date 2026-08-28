@@ -1,6 +1,7 @@
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
@@ -15,6 +16,7 @@ const ASSIGNMENT_CYCLE_RESET_SECONDS = 120;
 const MAX_DRIVER_RESTAURANT_DISTANCE_KM = 20;
 const MAX_ASSIGNMENT_DRIVER_SCAN = 500;
 const BOOTSTRAP_ADMIN_EMAILS = ['admin@speedstar.com', 'speedstarapp0@gmail.com', 'aluqili7@gmail.com'];
+const ATTENDANCE_SUPERVISOR_EMAILS = new Set(['aluqili7@gmail.com', 'speedstarapp0@gmail.com']);
 const ADMIN_PERMISSION_KEYS = [
   'dashboard',
   'finance',
@@ -44,6 +46,15 @@ const LANDING_PUBLIC_EVENTS = new Set([
 const ENFORCE_MANUAL_PAYMENT_REVIEW = true;
 const PAYMENT_REVIEW_STATUS = 'قيد المراجعة';
 const PAYMENT_REJECTED_STATUS = 'مرفوض';
+const AUTO_APPROVE_PAYMENT_REVIEW_AFTER_MINUTES = 7;
+const WHATSAPP_ACCESS_TOKEN = defineSecret('WHATSAPP_ACCESS_TOKEN');
+const WHATSAPP_PHONE_NUMBER_ID = '1276638195532904';
+const WHATSAPP_WABA_ID = '2002950903749440';
+const WHATSAPP_ORDER_TRACKING_TEMPLATE_NAME = 'order_tracking_link_ar';
+const WHATSAPP_ORDER_TRACKING_TEMPLATE_LANGUAGE = 'ar';
+const CLIENT_PHONE_OTP_COLLECTION = 'clientPhoneOtps';
+const CLIENT_PHONE_OTP_DEFAULT_TEMPLATE_NAME = 'client_phone_otp';
+const CLIENT_PHONE_OTP_DEFAULT_TEMPLATE_LANGUAGE = 'ar';
 
 const DEFAULT_PRICING_CONFIG = {
   largeItemFeeEnabled: true,
@@ -60,6 +71,11 @@ const DEFAULT_PRICING_CONFIG = {
   driverDeliveryExtraPerKm: 500,
   deliveryPlatformMarginFixed: 700,
   deliveryPlatformMinMargin: 300,
+  batchMaxStopsPerTrip: 8,
+  batchSingleTripMaxStops: 5,
+  batchSingleTripMaxRouteKm: 45,
+  batchMaxRouteKmPerTrip: 55,
+  batchGroupUnclusteredZones: true,
 };
 
 let pricingRemoteConfigCache = {
@@ -512,9 +528,30 @@ function normalizePaymentStatus(raw) {
   return normalized;
 }
 
+function resolvePaymentEvidenceUrl(order) {
+  return String(
+    order?.paymentReceiptUrl
+    || order?.paymentReceiptImageUrl
+    || order?.paymentProofUrl
+    || order?.paymentProofImageUrl
+    || order?.paymentEvidenceUrl
+    || order?.paymentEvidenceImageUrl
+    || order?.receiptUrl
+    || order?.receiptImageUrl
+    || order?.paymentEvidence?.proofImageUrl
+    || order?.paymentEvidence?.imageUrl
+    || order?.paymentEvidence?.receiptUrl
+    || order?.payment?.proofImageUrl
+    || order?.payment?.imageUrl
+    || order?.payment?.receiptUrl
+    || order?.proofImageUrl
+    || ''
+  ).trim();
+}
+
 function hasPaymentEvidence(order) {
   return Boolean(
-    String(order?.proofImageUrl || '').trim()
+    resolvePaymentEvidenceUrl(order)
     && String(order?.transactionReference || '').trim()
   );
 }
@@ -544,7 +581,7 @@ async function sendTelegramPaymentReviewAlert(orderId, after) {
   const amountLabel = formatTelegramMoney(
     after.totalWithDelivery || after.totalBeforeDiscount || after.total || after.totalPrice || after.orderTotal || 0
   );
-  const proofImageUrl = String(after.proofImageUrl || '').trim();
+  const proofImageUrl = resolvePaymentEvidenceUrl(after);
   const htmlLines = [
     'تم استلام إيصال دفع جديد ويحتاج إلى مراجعة مالية من لوحة الأدمن.',
     '',
@@ -1207,8 +1244,10 @@ function buildPromoOrderContext(input) {
   const largeOrderFee = Math.max(0, Math.round(toSafeNumber(context.largeOrderFee)));
   const baseTotal = Math.max(0, subtotal + deliveryFee + largeOrderFee);
   const restaurantId = String(context.restaurantId || '').trim();
+  const orderSource = String(context.orderSource || context.source || '').trim();
   const orderReference = String(context.orderReference || context.orderId || context.orderNumber || '').trim();
   const isNewOrder = context.isNewOrder !== false;
+  const priorOrderCount = Math.max(0, Math.floor(toSafeNumber(context.priorOrderCount)));
 
   let itemNames = [];
   if (Array.isArray(context.items)) {
@@ -1223,10 +1262,44 @@ function buildPromoOrderContext(input) {
     largeOrderFee,
     baseTotal,
     restaurantId,
+    orderSource,
     isNewOrder,
+    priorOrderCount,
     itemNames,
     orderReference,
   };
+}
+
+async function getClientEligibleOrderCount(uid) {
+  const ordersSnap = await db.collection('orders')
+    .where('clientId', '==', String(uid || '').trim())
+    .limit(300)
+    .get();
+  return ordersSnap.docs.filter((orderSnap) => {
+    const order = orderSnap.data() || {};
+    const status = getStatus(order).toLowerCase();
+    return !['cancelled', 'canceled', 'payment_rejected', 'rejected', 'store_rejected', 'rejected_by_store'].includes(status);
+  }).length;
+}
+
+function normalizePromoEligibility(value, onlyForNewOrders = false) {
+  const eligibility = String(value || '').trim().toLowerCase();
+  if (['first_order', 'returning_customer', 'exact_order_number'].includes(eligibility)) {
+    return eligibility;
+  }
+  return onlyForNewOrders ? 'first_order' : 'all_customers';
+}
+
+function normalizePromoDiscountTier(value, discountScope) {
+  const type = String(value?.type || '').trim().toLowerCase();
+  const amount = Math.max(0, toSafeNumber(value?.value));
+  if (!['percent', 'fixed', 'delivery_fixed_price'].includes(type) || amount <= 0) {
+    return null;
+  }
+  if (type === 'delivery_fixed_price' && discountScope !== 'delivery_fee') {
+    return null;
+  }
+  return { type, value: amount };
 }
 
 function evaluatePromocode(promo, context, userId) {
@@ -1269,7 +1342,8 @@ function evaluatePromocode(promo, context, userId) {
   const restaurantUsage = promo.restaurantUsage && typeof promo.restaurantUsage === 'object'
     ? promo.restaurantUsage
     : {};
-  const restaurantUsedCount = Math.max(0, Math.floor(toSafeNumber(restaurantUsage[context.restaurantId])));
+  const restaurantUsageKey = context.restaurantId || context.orderSource || 'general';
+  const restaurantUsedCount = Math.max(0, Math.floor(toSafeNumber(restaurantUsage[restaurantUsageKey])));
   if (maxUsagePerRestaurant > 0 && restaurantUsedCount >= maxUsagePerRestaurant) {
     return { ok: false, reason: 'max-usage-per-restaurant' };
   }
@@ -1281,8 +1355,17 @@ function evaluatePromocode(promo, context, userId) {
     return { ok: false, reason: 'max-usage-per-user' };
   }
 
-  if (promo.onlyForNewOrders === true && context.isNewOrder !== true) {
-    return { ok: false, reason: 'new-orders-only' };
+  const eligibility = normalizePromoEligibility(promo.eligibility, promo.onlyForNewOrders === true);
+  const targetOrderNumber = Math.max(1, Math.floor(toSafeNumber(promo.targetOrderNumber, 2)));
+  const customerOrderNumber = context.priorOrderCount + 1;
+  if (eligibility === 'first_order' && context.priorOrderCount !== 0) {
+    return { ok: false, reason: 'first-order-only' };
+  }
+  if (eligibility === 'returning_customer' && context.priorOrderCount < 1) {
+    return { ok: false, reason: 'returning-customers-only' };
+  }
+  if (eligibility === 'exact_order_number' && customerOrderNumber !== targetOrderNumber) {
+    return { ok: false, reason: 'specific-order-only' };
   }
 
   const discountScope = String(promo.discountScope || 'order_total').trim().toLowerCase();
@@ -1307,10 +1390,28 @@ function evaluatePromocode(promo, context, userId) {
     return { ok: false, reason: 'invalid-base-total' };
   }
 
-  const discountType = String(promo.discountType || '').trim().toLowerCase();
-  const discountValue = toSafeNumber(promo.discountValue);
+  let discountType = String(promo.discountType || '').trim().toLowerCase();
+  let discountValue = toSafeNumber(promo.discountValue);
+  let appliedTier = '';
+  if (discountType === 'tiered_order_discount') {
+    const tieredDiscount = promo.tieredDiscount && typeof promo.tieredDiscount === 'object'
+      ? promo.tieredDiscount
+      : {};
+    const tier = normalizePromoDiscountTier(
+      context.priorOrderCount === 0 ? tieredDiscount.firstOrder : tieredDiscount.returning,
+      discountScope
+    );
+    if (!tier) {
+      return { ok: false, reason: 'invalid-discount-value' };
+    }
+    discountType = tier.type;
+    discountValue = tier.value;
+    appliedTier = context.priorOrderCount === 0 ? 'first_order' : 'returning_customer';
+  }
   let discountAmount = 0;
-  if (discountType === 'percent') {
+  if (discountType === 'delivery_fixed_price' && discountScope === 'delivery_fee') {
+    discountAmount = Math.max(0, discountBase - Math.round(Math.max(0, discountValue)));
+  } else if (discountType === 'percent') {
     const boundedPercent = Math.max(0, Math.min(100, discountValue));
     discountAmount = Math.round((discountBase * boundedPercent) / 100);
   } else {
@@ -1341,7 +1442,10 @@ function evaluatePromocode(promo, context, userId) {
       restaurantId: promoRestaurantId || null,
       maxUsagePerRestaurant: maxUsagePerRestaurant || null,
       itemName: itemName || null,
-      onlyForNewOrders: promo.onlyForNewOrders === true,
+      eligibility,
+      targetOrderNumber: eligibility === 'exact_order_number' ? targetOrderNumber : null,
+      customerOrderNumber,
+      appliedTier: appliedTier || null,
       promoId: String(promo.id || ''),
     },
   };
@@ -2201,7 +2305,7 @@ exports.validatePromocodeForClient = onCall({ region: REGION }, async (request) 
   }
 
   const context = buildPromoOrderContext(request.data?.order || {});
-  if (!context.restaurantId) {
+  if (!context.restaurantId && context.orderSource !== 'client_parcel_delivery') {
     throw new HttpsError('invalid-argument', 'order.restaurantId is required');
   }
 
@@ -2211,6 +2315,7 @@ exports.validatePromocodeForClient = onCall({ region: REGION }, async (request) 
     return { ok: false, reason: 'not-found' };
   }
 
+  context.priorOrderCount = await getClientEligibleOrderCount(request.auth.uid);
   const promo = promoSnap.data() || {};
   const result = evaluatePromocode({ ...promo, id: promoSnap.id }, context, request.auth.uid);
   if (!result.ok) {
@@ -2237,6 +2342,10 @@ exports.adminUpdatePromocode = onCall({ region: REGION }, async (request) => {
   const code = normalizePromoCode(promoInput.code);
   const discountScope = String(promoInput.discountScope || 'order_total').trim().toLowerCase();
   const discountType = String(promoInput.discountType || 'percent').trim().toLowerCase();
+  const eligibility = discountType === 'tiered_order_discount'
+    ? 'all_customers'
+    : normalizePromoEligibility(promoInput.eligibility, promoInput.onlyForNewOrders === true);
+  const targetOrderNumber = Math.max(1, Math.floor(toSafeNumber(promoInput.targetOrderNumber, 2)));
   const discountValue = Math.max(0, toSafeNumber(promoInput.discountValue));
   const minOrder = Math.max(0, toSafeNumber(promoInput.minOrder));
   const maxUsage = Math.max(0, Math.floor(toSafeNumber(promoInput.maxUsage)));
@@ -2247,6 +2356,15 @@ exports.adminUpdatePromocode = onCall({ region: REGION }, async (request) => {
   const restaurantIds = Array.isArray(promoInput.restaurantIds)
     ? Array.from(new Set(promoInput.restaurantIds.map((id) => String(id || '').trim()).filter(Boolean)))
     : [];
+  const tieredDiscountInput = promoInput.tieredDiscount && typeof promoInput.tieredDiscount === 'object'
+    ? promoInput.tieredDiscount
+    : {};
+  const tieredDiscount = discountType === 'tiered_order_discount'
+    ? {
+      firstOrder: normalizePromoDiscountTier(tieredDiscountInput.firstOrder, discountScope),
+      returning: normalizePromoDiscountTier(tieredDiscountInput.returning, discountScope),
+    }
+    : null;
 
   if (!code || code.length > 80) {
     throw new HttpsError('invalid-argument', 'A valid promocode is required');
@@ -2254,8 +2372,17 @@ exports.adminUpdatePromocode = onCall({ region: REGION }, async (request) => {
   if (!['order_total', 'delivery_fee'].includes(discountScope)) {
     throw new HttpsError('invalid-argument', 'Invalid discount scope');
   }
-  if (!['percent', 'fixed'].includes(discountType) || discountValue <= 0) {
+  if (!['percent', 'fixed', 'delivery_fixed_price', 'tiered_order_discount'].includes(discountType)) {
+    throw new HttpsError('invalid-argument', 'Invalid discount type');
+  }
+  if (discountType === 'tiered_order_discount' && (!tieredDiscount?.firstOrder || !tieredDiscount?.returning)) {
+    throw new HttpsError('invalid-argument', 'Both first-order and returning-customer discount rules are required');
+  }
+  if (discountType !== 'tiered_order_discount' && discountValue <= 0) {
     throw new HttpsError('invalid-argument', 'Invalid discount value');
+  }
+  if (discountType === 'delivery_fixed_price' && discountScope !== 'delivery_fee') {
+    throw new HttpsError('invalid-argument', 'Fixed delivery price is only valid for delivery fees');
   }
   if (!Number.isFinite(expiryMillis) || expiryMillis <= Date.now()) {
     throw new HttpsError('invalid-argument', 'A future expiry date is required');
@@ -2290,9 +2417,12 @@ exports.adminUpdatePromocode = onCall({ region: REGION }, async (request) => {
       code,
       discountScope,
       discountType,
-      discountValue,
+      discountValue: discountType === 'tiered_order_discount' ? 0 : discountValue,
+      tieredDiscount,
       isActive: promoInput.isActive === true,
-      onlyForNewOrders: promoInput.onlyForNewOrders === true,
+      onlyForNewOrders: eligibility === 'first_order',
+      eligibility,
+      targetOrderNumber: eligibility === 'exact_order_number' ? targetOrderNumber : null,
       restaurantIds,
       restaurantId: restaurantIds.length === 1 ? restaurantIds[0] : '',
       itemName: discountScope === 'delivery_fee'
@@ -2340,7 +2470,7 @@ exports.previewAutoStoreOffer = onCall({ region: REGION }, async (request) => {
 
   const orderInput = request.data?.order || {};
   const context = buildPromoOrderContext(orderInput);
-  if (!context.restaurantId) {
+  if (!context.restaurantId && context.orderSource !== 'client_parcel_delivery') {
     throw new HttpsError('invalid-argument', 'order.restaurantId is required');
   }
 
@@ -2386,6 +2516,7 @@ exports.redeemPromocodeForClientOrder = onCall({ region: REGION }, async (reques
 
   const promoRef = db.collection('promocodes').doc(code);
   const redemptionRef = db.collection('promocodeRedemptions').doc(redemptionKey);
+  context.priorOrderCount = await getClientEligibleOrderCount(uid);
 
   const result = await db.runTransaction(async (tx) => {
     const [promoSnap, redemptionSnap] = await Promise.all([
@@ -2422,9 +2553,10 @@ exports.redeemPromocodeForClientOrder = onCall({ region: REGION }, async (reques
     const restaurantUsage = promo.restaurantUsage && typeof promo.restaurantUsage === 'object'
       ? { ...promo.restaurantUsage }
       : {};
-    restaurantUsage[context.restaurantId] = Math.max(
+    const restaurantUsageKey = context.restaurantId || context.orderSource || 'general';
+    restaurantUsage[restaurantUsageKey] = Math.max(
       0,
-      Math.floor(toSafeNumber(restaurantUsage[context.restaurantId]))
+      Math.floor(toSafeNumber(restaurantUsage[restaurantUsageKey]))
     ) + 1;
 
     tx.update(promoRef, {
@@ -2441,6 +2573,7 @@ exports.redeemPromocodeForClientOrder = onCall({ region: REGION }, async (reques
       orderReference,
       userId: uid,
       restaurantId: context.restaurantId,
+      orderSource: context.orderSource,
       discountAmount: evaluated.discountAmount,
       totalAfterDiscount: evaluated.totalAfterDiscount,
       promo: evaluated.promoSnapshot,
@@ -3283,6 +3416,7 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
 
   if (afterStatus === 'courier_assigned') {
     sendClient('🛵 تم تعيين مندوب', `تم تعيين مندوب لطلبك رقم ${orderNumber}.`, 'client_courier_assigned');
+    tasks.push(sendWhatsAppTrackingLinksForAssignedOrder(orderId, afterData));
     sendCourier(
       assignedDriverId || offeredDriverId,
       '✅ تم إسناد الطلب لك',
@@ -3341,11 +3475,545 @@ async function dispatchOrderStatusNotifications(orderId, afterData) {
   return { sent, status: afterStatus };
 }
 
+function normalizeWhatsAppRecipientPhone(rawPhone) {
+  let digits = String(rawPhone || '').trim();
+  if (!digits) return '';
+  digits = digits
+    .replace(/[٠-٩]/g, (char) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(char)))
+    .replace(/[۰-۹]/g, (char) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(char)))
+    .replace(/[^0-9+]/g, '');
+  if (digits.startsWith('+')) digits = digits.slice(1);
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.startsWith('0')) digits = `249${digits.slice(1)}`;
+  if ((digits.startsWith('9') || digits.startsWith('1')) && digits.length === 9) {
+    digits = `249${digits}`;
+  }
+  if (!/^[1-9][0-9]{7,14}$/.test(digits)) return '';
+  return digits;
+}
+
+function whatsappTokenValue() {
+  return String(WHATSAPP_ACCESS_TOKEN.value() || process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
+}
+
+function publicDriverContactFromOrder(order) {
+  const name = String(order?.assignedDriverName || order?.driverName || '').trim();
+  const phone = String(
+    order?.assignedDriverWhatsappPhone ||
+    order?.assignedDriverPhone ||
+    order?.driverWhatsappPhone ||
+    order?.driverPhone ||
+    ''
+  ).trim();
+  return {
+    name: name || 'مندوب SpeedStar',
+    phone,
+  };
+}
+
+function publicDriverContactFromDriverData(driverData) {
+  const name = String(driverData?.name || driverData?.displayName || '').trim();
+  const phone = String(
+    driverData?.whatsappPhone ||
+    driverData?.phone ||
+    driverData?.phoneNumber ||
+    driverData?.mobile ||
+    ''
+  ).trim();
+  return {
+    name,
+    phone,
+  };
+}
+
+async function sendWhatsAppTemplateMessage({ to, clientName, trackingUrl, driverName, driverPhone }) {
+  const token = whatsappTokenValue();
+  const recipient = normalizeWhatsAppRecipientPhone(to);
+  if (!token || !recipient || !trackingUrl) {
+    return {
+      sent: false,
+      reason: !token ? 'missing-token' : (!recipient ? 'invalid-phone' : 'missing-tracking-url'),
+      recipient,
+    };
+  }
+
+  const response = await fetch(`https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: recipient,
+      type: 'template',
+      template: {
+        name: WHATSAPP_ORDER_TRACKING_TEMPLATE_NAME,
+        language: { code: WHATSAPP_ORDER_TRACKING_TEMPLATE_LANGUAGE },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: String(clientName || 'عميلنا').trim() || 'عميلنا' },
+              { type: 'text', text: String(trackingUrl || '').trim() },
+              { type: 'text', text: String(driverName || 'مندوب SpeedStar').trim() || 'مندوب SpeedStar' },
+              { type: 'text', text: String(driverPhone || '').trim() || 'غير متاح' },
+            ],
+          },
+        ],
+      },
+    }),
+  });
+
+  const body = await response.json().catch(async () => {
+    const text = await response.text().catch(() => '');
+    return text ? { raw: text } : {};
+  });
+
+  if (!response.ok) {
+    const metaError = body?.error || {};
+    return {
+      sent: false,
+      reason: `http-${response.status}`,
+      recipient,
+      error: metaError.message || body?.raw || '',
+      errorCode: metaError.code || '',
+      errorSubcode: metaError.error_subcode || '',
+      errorType: metaError.type || '',
+      errorTraceId: metaError.fbtrace_id || '',
+    };
+  }
+
+  return {
+    sent: true,
+    recipient,
+    messageId: body?.messages?.[0]?.id || '',
+    waId: body?.contacts?.[0]?.wa_id || '',
+  };
+}
+
+async function sendWhatsAppTrackingLinksForAssignedOrder(orderId, order) {
+  const orderRef = db.collection('orders').doc(orderId);
+  let lockedOrder = order || {};
+  const lockResult = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(orderRef);
+    const current = snap.exists ? (snap.data() || {}) : (order || {});
+    const orderSource = String(current?.orderSource || '');
+    if (!['store_batch_delivery', 'store_direct_delivery'].includes(orderSource)) {
+      return { acquired: false, reason: 'unsupported-order-source', orderSource };
+    }
+    const lastAttemptMs = getTimestampMillis(current.whatsappTrackingLastAttemptAt);
+    const inProgressIsFresh = current.whatsappTrackingSendInProgress === true &&
+      lastAttemptMs > 0 &&
+      Date.now() - lastAttemptMs < 2 * 60 * 1000;
+    if (current.whatsappTrackingSentAt || inProgressIsFresh) {
+      return {
+        acquired: false,
+        reason: current.whatsappTrackingSentAt ? 'already-sent' : 'send-in-progress',
+      };
+    }
+    const stops = Array.isArray(current.batchStops) ? current.batchStops : [];
+    const hasTargets = stops.some((stop) =>
+      String(stop?.clientWhatsappPhone || stop?.whatsappPhone || stop?.clientPhone || '').trim() &&
+      String(stop?.trackingUrl || '').trim()
+    );
+    if (!hasTargets) {
+      return {
+        acquired: false,
+        reason: 'no-valid-targets',
+        stopsCount: stops.length,
+        stops: stops.slice(0, 5).map((stop, index) => ({
+          index,
+          hasPhone: Boolean(String(stop?.clientWhatsappPhone || stop?.whatsappPhone || stop?.clientPhone || '').trim()),
+          hasTrackingUrl: Boolean(String(stop?.trackingUrl || '').trim()),
+        })),
+      };
+    }
+    tx.set(orderRef, {
+      whatsappTrackingSendInProgress: true,
+      whatsappTrackingLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    lockedOrder = current;
+    return { acquired: true };
+  });
+
+  if (!lockResult.acquired) {
+    const logPayload = { orderId, reason: lockResult.reason };
+    if (lockResult.orderSource) logPayload.orderSource = lockResult.orderSource;
+    if (lockResult.stopsCount != null) {
+      logPayload.stopsCount = lockResult.stopsCount;
+      logPayload.stops = lockResult.stops;
+    }
+    logger.info('WhatsApp tracking skipped', {
+      ...logPayload,
+    });
+    return 0;
+  }
+  const stops = Array.isArray(lockedOrder.batchStops) ? lockedOrder.batchStops : [];
+  const driverContact = publicDriverContactFromOrder(lockedOrder);
+  const targets = stops
+    .map((stop, index) => ({
+      index,
+      clientName: String(stop?.clientName || '').trim(),
+      phone: String(stop?.clientWhatsappPhone || stop?.whatsappPhone || stop?.clientPhone || '').trim(),
+      trackingUrl: String(stop?.trackingUrl || '').trim(),
+    }))
+    .filter((item) => item.phone && item.trackingUrl);
+
+  const results = [];
+  for (const target of targets) {
+    try {
+      const result = await sendWhatsAppTemplateMessage({
+        to: target.phone,
+        clientName: target.clientName,
+        trackingUrl: target.trackingUrl,
+        driverName: driverContact.name,
+        driverPhone: driverContact.phone,
+      });
+      results.push({ ...target, ...result });
+    } catch (error) {
+      results.push({
+        ...target,
+        sent: false,
+        reason: 'exception',
+        error: error?.message || String(error),
+      });
+    }
+  }
+
+  const sentCount = results.filter((item) => item.sent === true).length;
+  const failedCount = results.length - sentCount;
+  await orderRef.set({
+    whatsappTrackingSendInProgress: admin.firestore.FieldValue.delete(),
+    whatsappTrackingSentAt: sentCount > 0 ? admin.firestore.FieldValue.serverTimestamp() : admin.firestore.FieldValue.delete(),
+    whatsappTrackingLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+    whatsappTrackingSentCount: sentCount,
+    whatsappTrackingFailedCount: failedCount,
+    whatsappTrackingResults: results.map((item) => ({
+      stopIndex: item.index,
+      clientName: item.clientName,
+      recipient: item.recipient || normalizeWhatsAppRecipientPhone(item.phone),
+      sent: item.sent === true,
+      reason: item.reason || '',
+      messageId: item.messageId || '',
+      waId: item.waId || '',
+      error: String(item.error || '').slice(0, 500),
+      errorCode: item.errorCode || '',
+      errorSubcode: item.errorSubcode || '',
+      errorType: item.errorType || '',
+      errorTraceId: item.errorTraceId || '',
+    })),
+    whatsappTrackingDriverName: driverContact.name,
+    whatsappTrackingDriverPhone: driverContact.phone,
+    whatsappTrackingPhoneNumberId: WHATSAPP_PHONE_NUMBER_ID,
+    whatsappTrackingWabaId: WHATSAPP_WABA_ID,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  if (failedCount > 0) {
+    logger.warn('WhatsApp tracking messages partially failed', {
+      orderId,
+      sentCount,
+      failedCount,
+      failures: results
+        .filter((item) => item.sent !== true)
+        .map((item) => ({
+          stopIndex: item.index,
+          recipient: item.recipient || normalizeWhatsAppRecipientPhone(item.phone),
+          reason: item.reason || '',
+          error: String(item.error || '').slice(0, 500),
+          errorCode: item.errorCode || '',
+          errorSubcode: item.errorSubcode || '',
+          errorType: item.errorType || '',
+          errorTraceId: item.errorTraceId || '',
+        })),
+    });
+  } else {
+    logger.info('WhatsApp tracking messages sent', {
+      orderId,
+      sentCount,
+      recipients: results.map((item) => item.recipient || normalizeWhatsAppRecipientPhone(item.phone)),
+    });
+  }
+  return sentCount;
+}
+
+function normalizeSudanClientPhone(rawPhone) {
+  let digits = String(rawPhone || '').trim().replace(/[^0-9+]/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('+')) digits = digits.slice(1);
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.startsWith('0')) digits = `249${digits.slice(1)}`;
+  if (digits.startsWith('1') && digits.length === 9) digits = `249${digits}`;
+  if (!/^2491[0-9]{8}$/.test(digits)) return '';
+  return `+${digits}`;
+}
+
+function clientPhoneOtpHash(phone, code) {
+  return crypto
+    .createHash('sha256')
+    .update(`speedstar-client-phone-otp-v1:${phone}:${code}`)
+    .digest('hex');
+}
+
+function clientPhoneOtpDocId(phone) {
+  return crypto.createHash('sha256').update(`speedstar-phone:${phone}`).digest('hex');
+}
+
+function remoteParamString(parameters, key, fallbackValue) {
+  const value = String(parameters?.[key]?.defaultValue?.value ?? '').trim();
+  return value || fallbackValue;
+}
+
+async function getClientPhoneOtpConfig() {
+  const fallback = {
+    enabled: true,
+    ttlMinutes: 10,
+    resendSeconds: 60,
+    maxRequestsPerHour: 6,
+    maxAttempts: 5,
+    whatsappTemplate: CLIENT_PHONE_OTP_DEFAULT_TEMPLATE_NAME,
+    whatsappLanguage: CLIENT_PHONE_OTP_DEFAULT_TEMPLATE_LANGUAGE,
+    includeButtonCode: true,
+    debugCodeEnabled: false,
+  };
+  try {
+    const template = await admin.remoteConfig().getTemplate();
+    const parameters = template?.parameters || {};
+    return {
+      enabled: parseRemoteBooleanParam(parameters.client_phone_otp_enabled, fallback.enabled),
+      ttlMinutes: Math.max(2, Math.min(30, Math.round(parseRemoteNumberParam(parameters.client_phone_otp_ttl_minutes, fallback.ttlMinutes)))),
+      resendSeconds: Math.max(30, Math.min(180, Math.round(parseRemoteNumberParam(parameters.client_phone_otp_resend_seconds, fallback.resendSeconds)))),
+      maxRequestsPerHour: Math.max(1, Math.min(20, Math.round(parseRemoteNumberParam(parameters.client_phone_otp_max_requests_per_hour, fallback.maxRequestsPerHour)))),
+      maxAttempts: Math.max(3, Math.min(10, Math.round(parseRemoteNumberParam(parameters.client_phone_otp_max_attempts, fallback.maxAttempts)))),
+      whatsappTemplate: remoteParamString(parameters, 'client_phone_otp_whatsapp_template', fallback.whatsappTemplate),
+      whatsappLanguage: remoteParamString(parameters, 'client_phone_otp_whatsapp_language', fallback.whatsappLanguage),
+      includeButtonCode: parseRemoteBooleanParam(parameters.client_phone_otp_button_code_enabled, fallback.includeButtonCode),
+      debugCodeEnabled: parseRemoteBooleanParam(parameters.client_phone_otp_debug_code_enabled, fallback.debugCodeEnabled),
+    };
+  } catch (error) {
+    logger.warn('client phone otp config load failed', { error: error?.message || String(error) });
+    return fallback;
+  }
+}
+
+async function sendWhatsAppOtpTemplate({ to, code, templateName, languageCode, includeButtonCode = true }) {
+  const token = whatsappTokenValue();
+  const recipient = normalizeWhatsAppRecipientPhone(to);
+  if (!token || !recipient || !code) {
+    return {
+      sent: false,
+      reason: !token ? 'missing-token' : (!recipient ? 'invalid-phone' : 'missing-code'),
+      recipient,
+    };
+  }
+
+  const response = await fetch(`https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: recipient,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: languageCode },
+        components: [
+          {
+            type: 'body',
+            parameters: [{ type: 'text', text: String(code) }],
+          },
+          ...(includeButtonCode ? [{
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: String(code) }],
+          }] : []),
+        ],
+      },
+    }),
+  });
+
+  const body = await response.json().catch(async () => {
+    const text = await response.text().catch(() => '');
+    return text ? { raw: text } : {};
+  });
+
+  if (!response.ok) {
+    return {
+      sent: false,
+      reason: `http-${response.status}`,
+      recipient,
+      error: body?.error?.message || body?.raw || '',
+    };
+  }
+
+  return {
+    sent: true,
+    recipient,
+    messageId: body?.messages?.[0]?.id || '',
+    waId: body?.contacts?.[0]?.wa_id || '',
+  };
+}
+
+exports.requestClientPhoneOtp = onCall(
+  { region: REGION, timeoutSeconds: 20, memory: '256MiB', secrets: [WHATSAPP_ACCESS_TOKEN] },
+  async (request) => {
+    const phone = normalizeSudanClientPhone(request.data?.phone);
+    if (!phone) {
+      throw new HttpsError('invalid-argument', 'اكتب رقم سوداني صحيح مثل 0113777644 أو +249113777644.');
+    }
+
+    const config = await getClientPhoneOtpConfig();
+    if (!config.enabled) {
+      throw new HttpsError('failed-precondition', 'الدخول برقم الهاتف متوقف مؤقتا.');
+    }
+
+    const now = Date.now();
+    const docRef = db.collection(CLIENT_PHONE_OTP_COLLECTION).doc(clientPhoneOtpDocId(phone));
+    const snap = await docRef.get();
+    const previous = snap.exists ? (snap.data() || {}) : {};
+    const lastSentAtMillis = Number(previous.lastSentAtMillis || 0);
+    if (lastSentAtMillis && now - lastSentAtMillis < config.resendSeconds * 1000) {
+      throw new HttpsError('resource-exhausted', `انتظر ${config.resendSeconds} ثانية قبل إعادة إرسال الرمز.`);
+    }
+
+    const hourWindowStartedAtMillis = Number(previous.hourWindowStartedAtMillis || 0);
+    const sameHourWindow = hourWindowStartedAtMillis && now - hourWindowStartedAtMillis < 60 * 60 * 1000;
+    const requestCount = sameHourWindow ? Number(previous.requestCount || 0) : 0;
+    if (requestCount >= config.maxRequestsPerHour) {
+      throw new HttpsError('resource-exhausted', 'تم تجاوز عدد محاولات إرسال الرمز لهذا الرقم. حاول لاحقا.');
+    }
+
+    const code = String(crypto.randomInt(100000, 1000000));
+    const sent = await sendWhatsAppOtpTemplate({
+      to: phone,
+      code,
+      templateName: config.whatsappTemplate,
+      languageCode: config.whatsappLanguage,
+      includeButtonCode: config.includeButtonCode,
+    });
+    if (!sent.sent) {
+      logger.warn('client phone otp whatsapp send failed', { phone, reason: sent.reason, error: sent.error || '' });
+      throw new HttpsError(
+        'unavailable',
+        'تعذر إرسال رمز واتساب الآن. تأكد من اعتماد قالب OTP في Meta ومن صلاحية التوكن.'
+      );
+    }
+
+    await docRef.set({
+      phone,
+      otpHash: clientPhoneOtpHash(phone, code),
+      channel: 'whatsapp',
+      expiresAtMillis: now + config.ttlMinutes * 60 * 1000,
+      attempts: 0,
+      requestCount: requestCount + 1,
+      hourWindowStartedAtMillis: sameHourWindow ? hourWindowStartedAtMillis : now,
+      lastSentAtMillis: now,
+      lastMessageId: sent.messageId || '',
+      lastWaId: sent.waId || '',
+      createdAt: previous.createdAt || admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return {
+      ok: true,
+      phone,
+      channel: 'whatsapp',
+      expiresInSeconds: config.ttlMinutes * 60,
+      debugCode: config.debugCodeEnabled ? code : undefined,
+    };
+  }
+);
+
+exports.verifyClientPhoneOtp = onCall({ region: REGION, timeoutSeconds: 20, memory: '256MiB' }, async (request) => {
+  const phone = normalizeSudanClientPhone(request.data?.phone);
+  const code = String(request.data?.code || '').trim();
+  if (!phone || !/^[0-9]{6}$/.test(code)) {
+    throw new HttpsError('invalid-argument', 'أدخل رقم الهاتف ورمز التحقق المكون من 6 أرقام.');
+  }
+
+  const config = await getClientPhoneOtpConfig();
+  if (!config.enabled) {
+    throw new HttpsError('failed-precondition', 'الدخول برقم الهاتف متوقف مؤقتا.');
+  }
+
+  const docRef = db.collection(CLIENT_PHONE_OTP_COLLECTION).doc(clientPhoneOtpDocId(phone));
+  const snap = await docRef.get();
+  if (!snap.exists) {
+    throw new HttpsError('not-found', 'اطلب رمز تحقق جديد أولا.');
+  }
+
+  const data = snap.data() || {};
+  const attempts = Number(data.attempts || 0);
+  if (attempts >= config.maxAttempts) {
+    await docRef.delete().catch(() => null);
+    throw new HttpsError('resource-exhausted', 'انتهت محاولات التحقق. اطلب رمزا جديدا.');
+  }
+  if (Number(data.expiresAtMillis || 0) < Date.now()) {
+    await docRef.delete().catch(() => null);
+    throw new HttpsError('deadline-exceeded', 'انتهت صلاحية الرمز. اطلب رمزا جديدا.');
+  }
+
+  if (data.otpHash !== clientPhoneOtpHash(phone, code)) {
+    await docRef.set({
+      attempts: attempts + 1,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    throw new HttpsError('permission-denied', 'رمز التحقق غير صحيح.');
+  }
+
+  let userRecord;
+  try {
+    userRecord = await admin.auth().getUserByPhoneNumber(phone);
+  } catch (error) {
+    if (error?.code !== 'auth/user-not-found') throw error;
+    userRecord = await admin.auth().createUser({
+      phoneNumber: phone,
+      disabled: false,
+    });
+  }
+
+  const uid = userRecord.uid;
+  await db.collection('clients').doc(uid).set({
+    name: userRecord.displayName || '',
+    fullName: userRecord.displayName || '',
+    displayName: userRecord.displayName || '',
+    phone,
+    phoneNumber: phone,
+    ownerUid: uid,
+    uid,
+    userId: uid,
+    userType: 'client',
+    role: 'client',
+    isActive: true,
+    isApproved: true,
+    approvalStatus: 'approved',
+    phoneVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  await docRef.delete().catch(() => null);
+
+  const token = await admin.auth().createCustomToken(uid, {
+    role: 'client',
+    userType: 'client',
+    phoneVerified: true,
+  });
+  return { ok: true, token, uid, phone };
+});
+
 exports.notifyOnOrderStatusChange = onSchedule(
   {
     region: SCHEDULE_REGION,
     schedule: 'every 1 minutes',
     timeZone: 'Africa/Khartoum',
+    secrets: [WHATSAPP_ACCESS_TOKEN],
   },
   async () => {
     const windowStart = admin.firestore.Timestamp.fromMillis(Date.now() - 15 * 60 * 1000);
@@ -3361,6 +4029,13 @@ exports.notifyOnOrderStatusChange = onSchedule(
       const data = docSnap.data() || {};
       const status = normalizeOrderStatusForNotification(data.orderStatus || data.status);
       const lastNotifiedStatus = String(data.lastNotifiedStatus || '').trim();
+      if (
+        status === 'courier_assigned' &&
+        !data.whatsappTrackingSentAt &&
+        ['store_batch_delivery', 'store_direct_delivery'].includes(String(data.orderSource || ''))
+      ) {
+        await sendWhatsAppTrackingLinksForAssignedOrder(docSnap.id, data);
+      }
       if (!status || status === lastNotifiedStatus) continue;
 
       const result = await dispatchOrderStatusNotifications(docSnap.id, data);
@@ -3378,6 +4053,7 @@ exports.notifyOnOrderCreatedRealtime = onDocumentCreated(
   {
     region: SCHEDULE_REGION,
     document: 'orders/{orderId}',
+    secrets: [WHATSAPP_ACCESS_TOKEN],
   },
   async (event) => {
     const afterData = event.data?.data() || {};
@@ -3403,6 +4079,7 @@ exports.notifyOnOrderStatusUpdatedRealtime = onDocumentUpdated(
   {
     region: SCHEDULE_REGION,
     document: 'orders/{orderId}',
+    secrets: [WHATSAPP_ACCESS_TOKEN],
   },
   async (event) => {
     const beforeData = event.data?.before?.data() || {};
@@ -3543,6 +4220,116 @@ exports.notifyTelegramOnPaymentReviewCreated = onDocumentCreated(
     await sendTelegramPaymentReviewAlert(orderId, after);
   }
 );
+
+exports.autoApproveStalePaymentReviews = onSchedule({
+  schedule: 'every 1 minutes',
+  region: SCHEDULE_REGION,
+}, async () => {
+  const cutoffMillis = Date.now() - (AUTO_APPROVE_PAYMENT_REVIEW_AFTER_MINUTES * 60 * 1000);
+  const [byOrderStatus, byLegacyStatus] = await Promise.all([
+    db.collection('orders').where('orderStatus', '==', 'payment_review').limit(100).get(),
+    db.collection('orders').where('status', '==', 'payment_review').limit(100).get(),
+  ]);
+
+  const pendingMap = new Map();
+  for (const docSnap of byOrderStatus.docs) pendingMap.set(docSnap.id, docSnap);
+  for (const docSnap of byLegacyStatus.docs) pendingMap.set(docSnap.id, docSnap);
+
+  let approvedCount = 0;
+  let skippedCount = 0;
+  let tooFreshCount = 0;
+
+  for (const docSnap of pendingMap.values()) {
+    const order = docSnap.data() || {};
+    if (!isPendingPaymentReviewOrder(order)) continue;
+    if (!hasPaymentEvidence(order) || order.paymentReviewAutoApprovalSkippedAt) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const reviewStartedAt = getTimestampMillis(
+      order.paymentReviewAutoFlaggedAt || order.updatedAt || order.createdAt
+    );
+    if (!reviewStartedAt || reviewStartedAt > cutoffMillis) {
+      tooFreshCount += 1;
+      continue;
+    }
+
+    try {
+      const approved = await db.runTransaction(async (tx) => {
+        const freshSnap = await tx.get(docSnap.ref);
+        if (!freshSnap.exists) return false;
+        const fresh = freshSnap.data() || {};
+        if (!isPendingPaymentReviewOrder(fresh)) return false;
+        if (!hasPaymentEvidence(fresh) || fresh.paymentReviewAutoApprovalSkippedAt) return false;
+
+        const freshStartedAt = getTimestampMillis(
+          fresh.paymentReviewAutoFlaggedAt || fresh.updatedAt || fresh.createdAt
+        );
+        if (!freshStartedAt || freshStartedAt > cutoffMillis) return false;
+
+        const transactionReference = String(fresh.transactionReference || '').trim();
+        if (transactionReference) {
+          const duplicateSnap = await tx.get(
+            db.collection('orders')
+              .where('transactionReference', '==', transactionReference)
+              .limit(25)
+          );
+
+          const duplicateApproved = duplicateSnap.docs.find((candidate) => {
+            if (candidate.id === freshSnap.id) return false;
+            const data = candidate.data() || {};
+            return String(data.paymentReviewDecision || '').toLowerCase() === 'approved'
+              || normalizePaymentStatus(data.paymentStatus) === 'paid';
+          });
+
+          if (duplicateApproved) {
+            tx.set(docSnap.ref, {
+              paymentReviewAutoApprovalSkippedAt: admin.firestore.FieldValue.serverTimestamp(),
+              paymentReviewAutoApprovalSkipReason: 'duplicate_transaction_reference',
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+            return false;
+          }
+        }
+
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        tx.set(docSnap.ref, {
+          paymentStatus: 'paid',
+          paymentReviewDecision: 'approved',
+          paymentReviewRequired: false,
+          paymentReviewedByAdminUid: 'system:auto_approve_payment_review',
+          paymentReviewedByAdminEmail: 'system@speedstar.auto',
+          paymentReviewedAt: now,
+          paymentReviewNote: `Auto approved after ${AUTO_APPROVE_PAYMENT_REVIEW_AFTER_MINUTES} minutes without admin action`,
+          paymentReviewAutoApprovedAt: now,
+          paymentReviewAutoApprovedAfterMinutes: AUTO_APPROVE_PAYMENT_REVIEW_AFTER_MINUTES,
+          orderStatus: 'store_pending',
+          status: 'store_pending',
+          paidAt: now,
+          updatedAt: now,
+        }, { merge: true });
+        return true;
+      });
+      if (approved) approvedCount += 1;
+      else skippedCount += 1;
+    } catch (error) {
+      skippedCount += 1;
+      logger.warn('autoApproveStalePaymentReviews order failed', {
+        orderId: docSnap.id,
+        error: error?.message || String(error),
+      });
+    }
+  }
+
+  logger.info('autoApproveStalePaymentReviews complete', {
+    scanned: pendingMap.size,
+    approvedCount,
+    skippedCount,
+    tooFreshCount,
+    afterMinutes: AUTO_APPROVE_PAYMENT_REVIEW_AFTER_MINUTES,
+  });
+});
 
 exports.notifyTelegramOnSupportMessageCreated = onDocumentCreated(
   {
@@ -3856,7 +4643,7 @@ async function autoDispatchPreparedStoreOrder(orderRef, order) {
   if (!restaurantId) return false;
   const restaurantSnap = await db.collection('restaurants').doc(restaurantId).get();
   const businessType = String(restaurantSnap.data()?.businessType || 'restaurant').trim().toLowerCase();
-  if (!['restaurant', 'grocery'].includes(businessType)) return false;
+  if (!['restaurant', 'grocery', 'brand', 'ecommerce', 'pharmacy'].includes(businessType)) return false;
 
   await orderRef.set({
     orderStatus: 'courier_searching',
@@ -4424,6 +5211,364 @@ async function ensureStaticSuperAdminCallable(request, deniedMessage = '') {
   }
 }
 
+function isAttendanceSupervisor(auth) {
+  return ATTENDANCE_SUPERVISOR_EMAILS.has(String(auth?.token?.email || '').toLowerCase().trim());
+}
+
+function attendanceDateKey(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Khartoum',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function normalizeAttendanceWorkMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  return ['operational', 'field', 'hybrid', 'flexible'].includes(mode) ? mode : 'operational';
+}
+
+function normalizeClockTime(value, fallback) {
+  const text = String(value || '').trim();
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(text) ? text : fallback;
+}
+
+function scheduledHoursBetween(startTime, endTime) {
+  const [startHour, startMinute] = String(startTime || '00:00').split(':').map(Number);
+  const [endHour, endMinute] = String(endTime || '00:00').split(':').map(Number);
+  const startMinutes = (startHour * 60) + startMinute;
+  const endMinutes = (endHour * 60) + endMinute;
+  return Math.max(1, Math.round((((endMinutes - startMinutes + 1440) % 1440) || 1440) / 60));
+}
+
+function attendanceSessionId(uid, dateKey) {
+  return `${String(uid || '').trim()}_${String(dateKey || '').trim()}`;
+}
+
+function asAttendanceTimestamp(value) {
+  return value?.toDate instanceof Function ? value.toDate() : null;
+}
+
+exports.attendanceUpsertProfile = onCall({ region: REGION }, async (request) => {
+  if (!isAttendanceSupervisor(request.auth)) {
+    throw new HttpsError('permission-denied', 'Only attendance supervisors can manage staff schedules');
+  }
+
+  const uid = String(request.data?.uid || '').trim();
+  const email = String(request.data?.email || '').toLowerCase().trim();
+  const name = String(request.data?.name || '').trim();
+  const workMode = normalizeAttendanceWorkMode(request.data?.workMode);
+  const active = request.data?.active !== false;
+  const officeStartTime = normalizeClockTime(request.data?.officeStartTime, '09:00');
+  const officeEndTime = normalizeClockTime(request.data?.officeEndTime, '17:00');
+  const fieldStartTime = normalizeClockTime(request.data?.fieldStartTime, '09:00');
+  const fieldEndTime = normalizeClockTime(request.data?.fieldEndTime, '17:00');
+  const officeRequiredHours = scheduledHoursBetween(officeStartTime, officeEndTime);
+  const fieldRequiredHours = scheduledHoursBetween(fieldStartTime, fieldEndTime);
+  const workDays = Array.isArray(request.data?.workDays)
+    ? Array.from(new Set(request.data.workDays.map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)))
+    : [0, 1, 2, 3, 4];
+
+  if (!uid || !email || !name) {
+    throw new HttpsError('invalid-argument', 'Valid employee identity is required');
+  }
+
+  const targetUser = await admin.auth().getUser(uid).catch(() => null);
+  if (!targetUser || String(targetUser.email || '').toLowerCase().trim() !== email) {
+    throw new HttpsError('invalid-argument', 'The supplied admin UID and email do not match');
+  }
+  const access = await getAdminAccessProfileByUid(uid);
+  if (!access.allowed) {
+    throw new HttpsError('failed-precondition', 'Attendance profiles can only be created for active admin accounts');
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await db.collection('staffAttendanceProfiles').doc(uid).set({
+    uid,
+    email,
+    name,
+    workMode,
+    officeStartTime,
+    officeEndTime,
+    officeRequiredHours,
+    fieldStartTime,
+    fieldEndTime,
+    fieldRequiredHours,
+    workDays,
+    active,
+    updatedAt: now,
+    updatedByUid: request.auth.uid,
+    updatedByEmail: String(request.auth.token?.email || '').toLowerCase().trim(),
+    createdAt: now,
+  }, { merge: true });
+
+  return { ok: true, uid };
+});
+
+exports.attendanceStartWork = onCall({ region: REGION }, async (request) => {
+  await ensureAdminCallable(request, 'Only active admins can start attendance');
+  const uid = request.auth.uid;
+  const profileSnap = await db.collection('staffAttendanceProfiles').doc(uid).get();
+  if (!profileSnap.exists || profileSnap.data()?.active !== true) {
+    throw new HttpsError('failed-precondition', 'Your attendance schedule is not active yet');
+  }
+  const profile = profileSnap.data() || {};
+  const workType = String(request.data?.workType || 'office').trim().toLowerCase() === 'field' ? 'field' : 'office';
+  if (workType === 'field' && profile.workMode === 'operational') {
+    throw new HttpsError('failed-precondition', 'This profile is configured for office work only');
+  }
+  const requiredHours = workType === 'field'
+    ? Number(profile.fieldRequiredHours || 0)
+    : Number(profile.officeRequiredHours || 0);
+  const dateKey = attendanceDateKey();
+  const sessionRef = db.collection('staffAttendanceSessions').doc(attendanceSessionId(uid, dateKey));
+  const sessionSnap = await sessionRef.get();
+  const current = sessionSnap.data() || {};
+  if (current.status === 'active') return { ok: true, status: 'active', dateKey };
+  if (current.status === 'closed') {
+    throw new HttpsError('failed-precondition', 'Today attendance session has already been closed');
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await sessionRef.set({
+    uid,
+    email: String(request.auth.token?.email || '').toLowerCase().trim(),
+    employeeName: String(profile.name || ''),
+    workMode: normalizeAttendanceWorkMode(profile.workMode),
+    workType,
+    requiredHours,
+    scheduledStartTime: workType === 'field' ? profile.fieldStartTime : profile.officeStartTime,
+    scheduledEndTime: workType === 'field' ? profile.fieldEndTime : profile.officeEndTime,
+    dateKey,
+    status: 'active',
+    startedAt: now,
+    lastActivityAt: now,
+    lastPresenceAt: now,
+    activityCount: 1,
+    activities: [{ type: 'start_work', note: 'بدء الدوام', atMillis: Date.now() }],
+    updatedAt: now,
+  }, { merge: true });
+  return { ok: true, status: 'active', dateKey };
+});
+
+exports.attendanceHeartbeat = onCall({ region: REGION }, async (request) => {
+  await ensureAdminCallable(request, 'Only active admins can confirm office presence');
+  const dateKey = attendanceDateKey();
+  const sessionRef = db.collection('staffAttendanceSessions').doc(attendanceSessionId(request.auth.uid, dateKey));
+  const sessionSnap = await sessionRef.get();
+  if (!sessionSnap.exists || sessionSnap.data()?.status !== 'active') return { ok: true, active: false };
+  const session = sessionSnap.data() || {};
+  if (session.workType !== 'office') return { ok: true, active: true, tracked: false };
+  await sessionRef.update({
+    lastPresenceAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { ok: true, active: true, tracked: true };
+});
+
+exports.attendanceRecordActivity = onCall({ region: REGION }, async (request) => {
+  await ensureAdminCallable(request, 'Only active admins can record work activity');
+  const type = String(request.data?.type || '').trim();
+  const note = String(request.data?.note || '').trim().slice(0, 500);
+  if (!['client_contact', 'task_update', 'campaign', 'field_visit', 'work_note', 'daily_report'].includes(type) || !note) {
+    throw new HttpsError('invalid-argument', 'A valid activity type and note are required');
+  }
+  const dateKey = attendanceDateKey();
+  const sessionRef = db.collection('staffAttendanceSessions').doc(attendanceSessionId(request.auth.uid, dateKey));
+  const sessionSnap = await sessionRef.get();
+  if (!sessionSnap.exists || sessionSnap.data()?.status !== 'active') {
+    throw new HttpsError('failed-precondition', 'Start your work session before recording activity');
+  }
+  const session = sessionSnap.data() || {};
+  const activities = Array.isArray(session.activities) ? session.activities.slice(-39) : [];
+  activities.push({ type, note, atMillis: Date.now() });
+  await sessionRef.update({
+    activities,
+    activityCount: activities.length,
+    lastActivityAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { ok: true, activityCount: activities.length };
+});
+
+exports.attendanceEndWork = onCall({ region: REGION }, async (request) => {
+  await ensureAdminCallable(request, 'Only active admins can end attendance');
+  const dateKey = attendanceDateKey();
+  const sessionRef = db.collection('staffAttendanceSessions').doc(attendanceSessionId(request.auth.uid, dateKey));
+  const sessionSnap = await sessionRef.get();
+  if (!sessionSnap.exists || sessionSnap.data()?.status !== 'active') {
+    throw new HttpsError('failed-precondition', 'There is no active work session to end');
+  }
+  const session = sessionSnap.data() || {};
+  const startedAt = asAttendanceTimestamp(session.startedAt);
+  if (!startedAt) throw new HttpsError('failed-precondition', 'The start time is still being saved, try again shortly');
+  const lastPresenceAt = asAttendanceTimestamp(session.lastPresenceAt);
+  const trackedEnd = session.workType === 'office' && lastPresenceAt
+    ? Math.min(Date.now(), lastPresenceAt.getTime() + (5 * 60 * 1000))
+    : Date.now();
+  const workedMinutes = Math.max(0, Math.round((trackedEnd - startedAt.getTime()) / 60000));
+  const requiredMinutes = Math.max(0, Math.round(Number(session.requiredHours || 0) * 60));
+  await sessionRef.update({
+    status: 'closed',
+    endedAt: admin.firestore.FieldValue.serverTimestamp(),
+    countedUntilAt: admin.firestore.Timestamp.fromMillis(trackedEnd),
+    workedMinutes,
+    metTarget: workedMinutes >= requiredMinutes,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { ok: true, workedMinutes, requiredMinutes, metTarget: workedMinutes >= requiredMinutes };
+});
+
+exports.attendanceGetWorkspace = onCall({ region: REGION }, async (request) => {
+  await ensureAdminCallable(request, 'Only active admins can view attendance');
+  const dateKey = attendanceDateKey();
+  const isSupervisor = isAttendanceSupervisor(request.auth);
+  const profileQuery = isSupervisor
+    ? db.collection('staffAttendanceProfiles').orderBy('name').get()
+    : db.collection('staffAttendanceProfiles').doc(request.auth.uid).get();
+  const sessionQuery = isSupervisor
+    ? db.collection('staffAttendanceSessions').where('dateKey', '==', dateKey).get()
+    : db.collection('staffAttendanceSessions').doc(attendanceSessionId(request.auth.uid, dateKey)).get();
+  const [profileResult, sessionResult] = await Promise.all([profileQuery, sessionQuery]);
+  const profiles = isSupervisor
+    ? profileResult.docs.map((item) => ({ id: item.id, ...item.data() }))
+    : (profileResult.exists ? [{ id: profileResult.id, ...profileResult.data() }] : []);
+  const sessions = isSupervisor
+    ? sessionResult.docs.map((item) => ({ id: item.id, ...item.data() }))
+    : (sessionResult.exists ? [{ id: sessionResult.id, ...sessionResult.data() }] : []);
+  return { ok: true, dateKey, isSupervisor, profiles, sessions };
+});
+
+async function writeManagementTaskNotification(recipientUid, payload) {
+  const uid = String(recipientUid || '').trim();
+  if (!uid) return;
+  const notification = {
+    ...payload,
+    read: false,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  await db.collection('managementNotifications').doc(uid).collection('items').doc().set(notification);
+  const profileSnap = await db.collection('admins').doc(uid).get();
+  await sendPushToUser('admin', uid, profileSnap.data() || {}, notification);
+}
+
+async function notifyAttendanceSupervisors(payload) {
+  const supervisors = await Promise.all([...ATTENDANCE_SUPERVISOR_EMAILS].map(async (email) => {
+    const user = await admin.auth().getUserByEmail(email).catch(() => null);
+    return user?.uid || '';
+  }));
+  await Promise.all(supervisors.filter(Boolean).map((uid) => writeManagementTaskNotification(uid, payload)));
+}
+
+exports.manageTaskAction = onCall({ region: REGION }, async (request) => {
+  await ensureAdminCallable(request, 'Only active admins can manage tasks');
+  const action = String(request.data?.action || '').trim();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  if (action === 'create') {
+    const input = request.data?.task || {};
+    const title = String(input.title || '').trim().slice(0, 180);
+    const assigneeUid = String(input.assigneeUid || '').trim();
+    const dueDate = String(input.dueDate || '').trim();
+    const dueTime = normalizeClockTime(input.dueTime, '17:00');
+    if (!title || !assigneeUid || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+      throw new HttpsError('invalid-argument', 'Task title, assignee, and due date are required');
+    }
+    const assigneeAccess = await getAdminAccessProfileByUid(assigneeUid);
+    if (!assigneeAccess.allowed) {
+      throw new HttpsError('failed-precondition', 'The selected assignee is not an active admin');
+    }
+    const assigneeUser = await admin.auth().getUser(assigneeUid);
+    const taskRef = db.collection('managementTasks').doc();
+    const task = {
+      id: taskRef.id,
+      title,
+      projectId: String(input.projectId || '').trim(),
+      assigneeUid,
+      assigneeEmail: String(assigneeUser.email || '').toLowerCase().trim(),
+      assignee: String(assigneeUser.displayName || assigneeUser.email || assigneeUid),
+      priority: ['critical', 'high', 'medium', 'low'].includes(input.priority) ? input.priority : 'medium',
+      status: 'todo',
+      dueDate,
+      dueTime,
+      description: String(input.description || '').trim().slice(0, 1500),
+      approvalStatus: 'not_submitted',
+      createdByUid: request.auth.uid,
+      createdByEmail: String(request.auth.token?.email || '').toLowerCase().trim(),
+      lastEditedBy: String(request.auth.token?.email || '').toLowerCase().trim(),
+      createdAt: now,
+      updatedAt: now,
+    };
+    await taskRef.set(task);
+    await writeManagementTaskNotification(assigneeUid, {
+      type: 'task_assigned',
+      title: 'مهمة جديدة مسندة إليك',
+      body: `${title} - الاستحقاق ${dueDate} ${dueTime}`,
+      taskId: taskRef.id,
+      source: 'management-dashboard',
+      tone: task.priority === 'critical' ? 'urgent' : 'normal',
+    });
+    return { ok: true, taskId: taskRef.id };
+  }
+
+  const taskId = String(request.data?.taskId || '').trim();
+  const taskRef = db.collection('managementTasks').doc(taskId);
+  const taskSnap = await taskRef.get();
+  if (!taskSnap.exists) throw new HttpsError('not-found', 'Task not found');
+  const task = taskSnap.data() || {};
+  const isSupervisor = isAttendanceSupervisor(request.auth);
+
+  if (action === 'start') {
+    if (task.assigneeUid !== request.auth.uid && !isSupervisor) {
+      throw new HttpsError('permission-denied', 'Only the assignee can start this task');
+    }
+    await taskRef.update({ status: 'in_progress', approvalStatus: 'not_submitted', lastEditedBy: request.auth.token?.email || '', updatedAt: now });
+    return { ok: true };
+  }
+
+  if (action === 'submit_review') {
+    if (task.assigneeUid !== request.auth.uid && !isSupervisor) {
+      throw new HttpsError('permission-denied', 'Only the assignee can submit this task for review');
+    }
+    await taskRef.update({ status: 'review', approvalStatus: 'pending', submittedAt: now, lastEditedBy: request.auth.token?.email || '', updatedAt: now });
+    await notifyAttendanceSupervisors({
+      type: 'task_review_requested',
+      title: 'مهمة بانتظار اعتمادك',
+      body: `${task.title || 'مهمة'} - ${task.assignee || ''}`,
+      taskId,
+      source: 'management-dashboard',
+      tone: 'normal',
+    });
+    return { ok: true };
+  }
+
+  if (action === 'approve' || action === 'return') {
+    if (!isSupervisor) throw new HttpsError('permission-denied', 'Only supervisors can review tasks');
+    const approved = action === 'approve';
+    await taskRef.update({
+      status: approved ? 'done' : 'in_progress',
+      approvalStatus: approved ? 'approved' : 'returned',
+      reviewedByUid: request.auth.uid,
+      reviewedByEmail: request.auth.token?.email || '',
+      reviewedAt: now,
+      lastEditedBy: request.auth.token?.email || '',
+      updatedAt: now,
+    });
+    await writeManagementTaskNotification(String(task.assigneeUid || ''), {
+      type: approved ? 'task_approved' : 'task_returned',
+      title: approved ? 'تم اعتماد المهمة' : 'أُعيدت المهمة للمتابعة',
+      body: String(task.title || 'مهمة'),
+      taskId,
+      source: 'management-dashboard',
+      tone: approved ? 'normal' : 'urgent',
+    });
+    return { ok: true };
+  }
+
+  throw new HttpsError('invalid-argument', 'Unsupported task action');
+});
+
 async function countActiveOrdersForRestaurant(restaurantId) {
   const rid = String(restaurantId || '').trim();
   if (!rid) return 0;
@@ -4677,6 +5822,16 @@ const OPS_RUNTIME_REMOTE_PARAMETER_DEFAULTS = Object.freeze(
       ops_notifications_enabled: { value: 'true', valueType: 'BOOLEAN' },
       ops_ringtone_enabled: { value: 'true', valueType: 'BOOLEAN' },
       ops_ringtone_volume: { value: '1', valueType: 'NUMBER' },
+      client_phone_signin_enabled_sudan: { value: 'true', valueType: 'BOOLEAN' },
+      client_phone_otp_enabled: { value: 'true', valueType: 'BOOLEAN' },
+      client_phone_otp_ttl_minutes: { value: '10', valueType: 'NUMBER' },
+      client_phone_otp_resend_seconds: { value: '60', valueType: 'NUMBER' },
+      client_phone_otp_max_requests_per_hour: { value: '6', valueType: 'NUMBER' },
+      client_phone_otp_max_attempts: { value: '5', valueType: 'NUMBER' },
+      client_phone_otp_whatsapp_template: { value: CLIENT_PHONE_OTP_DEFAULT_TEMPLATE_NAME, valueType: 'STRING' },
+      client_phone_otp_whatsapp_language: { value: CLIENT_PHONE_OTP_DEFAULT_TEMPLATE_LANGUAGE, valueType: 'STRING' },
+      client_phone_otp_button_code_enabled: { value: 'true', valueType: 'BOOLEAN' },
+      client_phone_otp_debug_code_enabled: { value: 'false', valueType: 'BOOLEAN' },
       client_feature_business_filters: { value: 'false', valueType: 'BOOLEAN' },
       client_feature_parcel_delivery: { value: 'false', valueType: 'BOOLEAN' },
       courier_pickup_delay_reminder_minutes: { value: '10', valueType: 'NUMBER' },
@@ -4769,6 +5924,26 @@ async function loadPricingConfigFromRemoteConfig() {
       deliveryPlatformMinMargin: parseRemoteNumberParam(
         parameters.pricing_delivery_platform_min_margin,
         DEFAULT_PRICING_CONFIG.deliveryPlatformMinMargin
+      ),
+      batchMaxStopsPerTrip: parseRemoteNumberParam(
+        parameters.store_batch_max_stops_per_trip,
+        DEFAULT_PRICING_CONFIG.batchMaxStopsPerTrip
+      ),
+      batchSingleTripMaxStops: parseRemoteNumberParam(
+        parameters.store_batch_single_trip_max_stops,
+        DEFAULT_PRICING_CONFIG.batchSingleTripMaxStops
+      ),
+      batchSingleTripMaxRouteKm: parseRemoteNumberParam(
+        parameters.store_batch_single_trip_max_route_km,
+        DEFAULT_PRICING_CONFIG.batchSingleTripMaxRouteKm
+      ),
+      batchMaxRouteKmPerTrip: parseRemoteNumberParam(
+        parameters.store_batch_max_route_km_per_trip,
+        DEFAULT_PRICING_CONFIG.batchMaxRouteKmPerTrip
+      ),
+      batchGroupUnclusteredZones: parseRemoteBooleanParam(
+        parameters.store_batch_group_unclustered_zones,
+        DEFAULT_PRICING_CONFIG.batchGroupUnclusteredZones
       ),
     };
 
@@ -5192,22 +6367,33 @@ function isGoogleMapsUrl(value) {
   }
 }
 
+function decodeGoogleMapsUrlLayers(value) {
+  let decoded = String(value || '').trim();
+  for (let index = 0; index < 3; index += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch (_) {
+      break;
+    }
+  }
+  return decoded;
+}
+
 function coordinatesFromGoogleMapsText(value) {
   const rawText = String(value || '');
-  let decodedText = rawText;
-  try {
-    decodedText = decodeURIComponent(rawText);
-  } catch (_) {
-    // Google page markup can contain literal percent signs outside URL encoding.
-  }
+  const decodedText = decodeGoogleMapsUrlLayers(rawText);
   const text = decodedText
     .replaceAll('+', ' ')
     .replaceAll('\\u0026', '&')
     .replaceAll('\\x26', '&');
   const patterns = [
-    /(?:[?&](?:q|query|ll|destination|location|center|origin)=|@)(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)/i,
+    /[?&](?:q|query|ll|destination|location)=(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)/i,
     /!3d(-?\d{1,2}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/i,
     /\/(?:maps\/(?:place|search)|place|search)\/(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)/i,
+    /@(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)/i,
+    /[?&](?:center|origin)=(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)/i,
     /^\s*(-?\d{1,2}(?:\.\d+)?)[, ]+(-?\d{1,3}(?:\.\d+)?)\s*$/,
   ];
   for (const pattern of patterns) {
@@ -5234,11 +6420,23 @@ function googleMapsSearchText(value) {
   }
 }
 
+function safeGoogleMapsRedirect(location, baseUrl) {
+  try {
+    const redirectedUrl = new URL(location, baseUrl);
+    if (!['http:', 'https:'].includes(redirectedUrl.protocol) || !isGoogleMapsUrl(redirectedUrl.toString())) {
+      return null;
+    }
+    return redirectedUrl.toString();
+  } catch (_) {
+    return null;
+  }
+}
+
 exports.resolveGoogleMapsLocation = onCall(
   { region: REGION, timeoutSeconds: 20, memory: '256MiB' },
   async (request) => {
     if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Authentication is required');
-    const mapUrl = String(request.data?.mapUrl || '').trim();
+    const mapUrl = decodeGoogleMapsUrlLayers(request.data?.mapUrl);
     if (!mapUrl || mapUrl.length > 2000 || !isGoogleMapsUrl(mapUrl)) {
       throw new HttpsError('invalid-argument', 'A valid Google Maps URL is required');
     }
@@ -5257,8 +6455,11 @@ exports.resolveGoogleMapsLocation = onCall(
       });
       const location = response.headers.get('location');
       if (location && response.status >= 300 && response.status < 400) {
-        currentUrl = new URL(location, currentUrl).toString();
-        continue;
+        const redirectedUrl = safeGoogleMapsRedirect(location, currentUrl);
+        if (redirectedUrl) {
+          currentUrl = redirectedUrl;
+          continue;
+        }
       }
       const body = await response.text();
       const bodyCoordinates = coordinatesFromGoogleMapsText(body);
@@ -6352,7 +7553,7 @@ exports.syncRestaurantClosuresFromWorkingHours = onSchedule({
   });
 });
 
-exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
+exports.courierRespondToOffer = onCall({ region: REGION, secrets: [WHATSAPP_ACCESS_TOKEN] }, async (request) => {
   const { orderId, driverId, decision } = request.data || {};
   const pricingConfig = await getPricingConfigCached();
   if (!orderId || !driverId || !decision) {
@@ -6401,7 +7602,8 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
         throw new HttpsError('failed-precondition', 'Driver is not available to accept now');
       }
 
-      const driverName = String(driverData.name || driverData.displayName || '').trim();
+      const driverContact = publicDriverContactFromDriverData(driverData);
+      const driverName = driverContact.name;
       const waitingStoreApproval = order.storeApprovalPending === true;
       tx.set(driverRef, {
         activeOrderId: String(orderId),
@@ -6415,6 +7617,8 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
           status: 'store_pending',
           assignedDriverId: driverId,
           assignedDriverName: driverName,
+          assignedDriverPhone: driverContact.phone || admin.firestore.FieldValue.delete(),
+          assignedDriverWhatsappPhone: driverContact.phone || admin.firestore.FieldValue.delete(),
           deliveryFeeForDriver: driverFee,
           driverShare: driverFee,
           courierFee: driverFee,
@@ -6438,6 +7642,8 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
         status: 'courier_assigned',
         assignedDriverId: driverId,
         assignedDriverName: driverName,
+        assignedDriverPhone: driverContact.phone || admin.firestore.FieldValue.delete(),
+        assignedDriverWhatsappPhone: driverContact.phone || admin.firestore.FieldValue.delete(),
         deliveryFeeForDriver: driverFee,
         driverShare: driverFee,
         courierFee: driverFee,
@@ -6491,6 +7697,12 @@ exports.courierRespondToOffer = onCall({ region: REGION }, async (request) => {
 
     tx.update(orderRef, patch);
   });
+
+  if (decision === 'accept') {
+    const acceptedSnap = await orderRef.get();
+    const acceptedOrder = acceptedSnap.data() || {};
+    await sendWhatsAppTrackingLinksForAssignedOrder(orderId, acceptedOrder);
+  }
 
   if (decision === 'reject' || decision === 'timeout') {
     await assignNextCourier(orderRef);
@@ -6564,7 +7776,7 @@ exports.courierUpdateOrderStage = onCall({ region: REGION }, async (request) => 
 
     tx.update(orderRef, {
       ...config.patch,
-      ...(normalizedStage === 'delivered' ? { proofImageUrl: normalizedProofImageUrl } : {}),
+      ...(normalizedStage === 'delivered' ? { deliveryProofImageUrl: normalizedProofImageUrl } : {}),
       courierLastStage: normalizedStage,
       courierLastStageAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -6767,6 +7979,16 @@ function extractStoreDeliveryWalletBalance(data) {
     const pricingConfig = await getPricingConfigCached();
     const distanceKm = haversineKm(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng);
     const deliveryFee = Math.round(calculateDistanceBasedClientDeliveryFee(distanceKm, pricingConfig));
+    logger.info('Parcel delivery preview calculated', {
+      clientId: request.auth.uid,
+      pickup: { lat: Number(pickup.lat.toFixed(5)), lng: Number(pickup.lng.toFixed(5)) },
+      dropoff: { lat: Number(dropoff.lat.toFixed(5)), lng: Number(dropoff.lng.toFixed(5)) },
+      distanceKm: Number(distanceKm.toFixed(2)),
+      deliveryFee,
+      baseFee: pricingConfig.clientDeliveryBaseFee,
+      baseDistanceKm: pricingConfig.clientDeliveryBaseDistanceKm,
+      extraPerKm: pricingConfig.clientDeliveryExtraPerKm,
+    });
     const clientSnap = await db.collection('clients').doc(request.auth.uid).get();
     const walletBalance = Math.round(extractClientWalletBalance(clientSnap.data() || {}));
     return {
@@ -6796,6 +8018,12 @@ function extractStoreDeliveryWalletBalance(data) {
       const client = clientSnap.data() || {};
       const distanceKm = haversineKm(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng);
       const deliveryFee = Math.round(calculateDistanceBasedClientDeliveryFee(distanceKm, pricingConfig));
+      logger.info('Parcel delivery created with deferred payment', {
+        clientId: request.auth.uid,
+        orderId: orderRef.id,
+        distanceKm: Number(distanceKm.toFixed(2)),
+        deliveryFee,
+      });
       const now = admin.firestore.FieldValue.serverTimestamp();
       const orderCode = `PAR-${Date.now().toString().slice(-8)}-${orderRef.id.slice(-4).toUpperCase()}`;
       await orderRef.set({
@@ -6825,6 +8053,12 @@ function extractStoreDeliveryWalletBalance(data) {
       const client = clientSnap.data() || {};
       const distanceKm = haversineKm(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng);
       deliveryFee = Math.round(calculateDistanceBasedClientDeliveryFee(distanceKm, pricingConfig));
+      logger.info('Parcel delivery created with wallet payment', {
+        clientId: request.auth.uid,
+        orderId: orderRef.id,
+        distanceKm: Number(distanceKm.toFixed(2)),
+        deliveryFee,
+      });
       const balanceBefore = Math.round(extractClientWalletBalance(client));
       if (balanceBefore < deliveryFee) throw new HttpsError('failed-precondition', 'Insufficient wallet balance');
       balanceAfter = balanceBefore - deliveryFee;
@@ -6908,6 +8142,998 @@ exports.autoDispatchPaidParcelDelivery = onDocumentUpdated(
     return { ok: true, orderId, refundAmount };
   });
 
+  const BATCH_DELIVERY_MAX_STOPS = 30;
+  const BATCH_DELIVERY_MAX_STOPS_PER_TRIP = 8;
+  const BATCH_DELIVERY_STOP_PAYOUT = 1000;
+  const BATCH_TRACKING_BASE_URL = process.env.BATCH_TRACKING_BASE_URL ||
+    `https://${REGION}-${process.env.GCLOUD_PROJECT || 'speedstar-app'}.cloudfunctions.net/trackBatchStop?token=`;
+
+  function normalizeBatchStop(raw, index) {
+    const clientName = String(raw?.clientName || raw?.name || '').trim();
+    const clientPhone = String(raw?.clientPhone || raw?.phone || '').trim();
+    const clientWhatsappPhone = String(raw?.clientWhatsappPhone || raw?.whatsappPhone || raw?.waPhone || '').trim();
+    const zoneId = String(raw?.zoneId || '').trim();
+    const zoneName = String(raw?.zoneName || raw?.zone || '').trim();
+    const addressText = String(raw?.addressText || raw?.address || '').trim();
+    const packageDescription = String(raw?.packageDescription || raw?.description || '').trim();
+    const clientMapUrl = String(raw?.clientMapUrl || raw?.mapUrl || '').trim();
+    const lat = toNumberOrNull(raw?.clientLat ?? raw?.lat);
+    const lng = toNumberOrNull(raw?.clientLng ?? raw?.lng);
+    const codAmount = Math.max(0, Math.round(toSafeNumber(raw?.codAmount ?? raw?.cashOnDeliveryAmount, 0)));
+
+    if (!clientName || !clientPhone) {
+      throw new HttpsError('invalid-argument', `Stop ${index + 1}: client name and phone are required`);
+    }
+    if (!zoneId && !zoneName && (lat == null || lng == null)) {
+      throw new HttpsError('invalid-argument', `Stop ${index + 1}: zone or valid coordinates are required`);
+    }
+    if ((lat != null || lng != null) && (lat == null || lng == null || Math.abs(lat) > 90 || Math.abs(lng) > 180)) {
+      throw new HttpsError('invalid-argument', `Stop ${index + 1}: valid coordinates are required`);
+    }
+    if (packageDescription.length > 500 || clientMapUrl.length > 2000 || addressText.length > 500) {
+      throw new HttpsError('invalid-argument', `Stop ${index + 1}: details are too long`);
+    }
+
+    return {
+      clientName,
+      clientPhone,
+      clientWhatsappPhone,
+      zoneId,
+      zoneName,
+      addressText,
+      packageDescription,
+      clientMapUrl,
+      clientLat: lat,
+      clientLng: lng,
+      codAmount,
+      inputIndex: index,
+    };
+  }
+
+  async function loadActiveDeliveryZones() {
+    const snap = await db.collection('deliveryZones').where('active', '==', true).limit(1000).get();
+    const byId = new Map();
+    const byName = new Map();
+    for (const doc of snap.docs) {
+      const data = doc.data() || {};
+      const zone = {
+        id: doc.id,
+        name: String(data.name || doc.id).trim(),
+        clusterId: String(data.clusterId || data.groupId || data.deliveryClusterId || '').trim(),
+        fixedDeliveryFee: Math.max(0, Math.round(toSafeNumber(data.fixedDeliveryFee ?? data.deliveryFee, 0))),
+        driverPayout: Math.max(0, Math.round(toSafeNumber(data.driverPayout ?? data.driverFee, 0))),
+        centerLat: toNumberOrNull(data.centerLat ?? data.lat),
+        centerLng: toNumberOrNull(data.centerLng ?? data.lng),
+        radiusKm: Math.max(0, toSafeNumber(data.radiusKm, 0)),
+      };
+      byId.set(zone.id, zone);
+      if (zone.name) byName.set(zone.name.toLowerCase(), zone);
+    }
+    return { byId, byName, all: Array.from(byId.values()) };
+  }
+
+  function resolveBatchStopZone(stop, zones) {
+    if (stop.zoneId && zones.byId.has(stop.zoneId)) return zones.byId.get(stop.zoneId);
+    if (stop.zoneName && zones.byName.has(stop.zoneName.toLowerCase())) {
+      return zones.byName.get(stop.zoneName.toLowerCase());
+    }
+    if (stop.clientLat != null && stop.clientLng != null) {
+      let best = null;
+      for (const zone of zones.all) {
+        if (zone.centerLat == null || zone.centerLng == null) continue;
+        const distanceKm = haversineKm(stop.clientLat, stop.clientLng, zone.centerLat, zone.centerLng);
+        const withinRadius = !zone.radiusKm || distanceKm <= zone.radiusKm;
+        if (!withinRadius) continue;
+        if (!best || distanceKm < best.distanceKm) best = { zone, distanceKm };
+      }
+      if (best) return best.zone;
+    }
+    return null;
+  }
+
+  function routeSortedStops(origin, stops) {
+    const pending = stops.map((stop) => ({ ...stop }));
+    const sorted = [];
+    let current = origin;
+    while (pending.length) {
+      let bestIndex = 0;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < pending.length; i += 1) {
+        const stop = pending[i];
+        if (!current || stop.clientLat == null || stop.clientLng == null) continue;
+        const distanceKm = haversineKm(current.lat, current.lng, stop.clientLat, stop.clientLng);
+        if (distanceKm < bestDistance) {
+          bestDistance = distanceKm;
+          bestIndex = i;
+        }
+      }
+      const [next] = pending.splice(bestIndex, 1);
+      sorted.push(next);
+      if (next.clientLat != null && next.clientLng != null) {
+        current = { lat: next.clientLat, lng: next.clientLng };
+      }
+    }
+    return sorted;
+  }
+
+  function estimateBatchRouteDistanceKm(origin, stops) {
+    if (!origin) return 0;
+    let total = 0;
+    let current = origin;
+    for (const stop of stops) {
+      if (stop.clientLat == null || stop.clientLng == null) continue;
+      total += haversineKm(current.lat, current.lng, stop.clientLat, stop.clientLng);
+      current = { lat: stop.clientLat, lng: stop.clientLng };
+    }
+    return total;
+  }
+
+  function clampBatchInteger(value, fallback, min, max) {
+    const parsed = Math.floor(toSafeNumber(value, fallback));
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(min, Math.min(max, parsed));
+  }
+
+  function clampBatchNumber(value, fallback, min, max) {
+    const parsed = toSafeNumber(value, fallback);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(min, Math.min(max, parsed));
+  }
+
+  function buildBatchTrip(clusterId, origin, stops, pricingConfig) {
+    const routeDistanceKm = estimateBatchRouteDistanceKm(origin, stops);
+    const deliveryFee = stops.reduce((sum, stop) => sum + Math.round(stop.deliveryFee || 0), 0);
+    const configuredPayout = stops.reduce((sum, stop) => sum + Math.round(stop.zoneDriverPayout || 0), 0);
+    const distancePayout = Math.round(calculateDistanceBasedDriverFee(routeDistanceKm, pricingConfig)) +
+      (stops.length * BATCH_DELIVERY_STOP_PAYOUT);
+    const driverShare = Math.max(configuredPayout, distancePayout);
+    return {
+      clusterId,
+      stops: stops.map((stop, sequence) => ({
+        ...stop,
+        sequence: sequence + 1,
+        status: 'pending',
+      })),
+      stopCount: stops.length,
+      routeDistanceKm: Number(routeDistanceKm.toFixed(2)),
+      deliveryFee,
+      driverShare,
+      platformMargin: Math.max(0, deliveryFee - driverShare),
+    };
+  }
+
+  function splitBatchStopsByRoute({ clusterId, origin, stops, pricingConfig, maxStopsPerTrip, maxRouteKmPerTrip }) {
+    const ordered = routeSortedStops(origin, stops);
+    const trips = [];
+    let current = [];
+    for (const stop of ordered) {
+      const candidate = [...current, stop];
+      const candidateDistanceKm = estimateBatchRouteDistanceKm(origin, candidate);
+      const exceedsStops = candidate.length > maxStopsPerTrip;
+      const exceedsDistance = current.length > 0 && candidateDistanceKm > maxRouteKmPerTrip;
+      if (exceedsStops || exceedsDistance) {
+        trips.push(buildBatchTrip(clusterId, origin, current, pricingConfig));
+        current = [stop];
+      } else {
+        current = candidate;
+      }
+    }
+    if (current.length) {
+      trips.push(buildBatchTrip(clusterId, origin, current, pricingConfig));
+    }
+    return trips;
+  }
+
+  function buildBatchTrips({ origin, stops, zones, pricingConfig }) {
+    const maxStopsPerTrip = clampBatchInteger(
+      pricingConfig?.batchMaxStopsPerTrip,
+      BATCH_DELIVERY_MAX_STOPS_PER_TRIP,
+      1,
+      BATCH_DELIVERY_MAX_STOPS_PER_TRIP
+    );
+    const singleTripMaxStops = clampBatchInteger(
+      pricingConfig?.batchSingleTripMaxStops,
+      DEFAULT_PRICING_CONFIG.batchSingleTripMaxStops,
+      2,
+      BATCH_DELIVERY_MAX_STOPS
+    );
+    const singleTripMaxRouteKm = clampBatchNumber(
+      pricingConfig?.batchSingleTripMaxRouteKm,
+      DEFAULT_PRICING_CONFIG.batchSingleTripMaxRouteKm,
+      1,
+      200
+    );
+    const maxRouteKmPerTrip = clampBatchNumber(
+      pricingConfig?.batchMaxRouteKmPerTrip,
+      DEFAULT_PRICING_CONFIG.batchMaxRouteKmPerTrip,
+      1,
+      250
+    );
+    const groupUnclusteredZones = pricingConfig?.batchGroupUnclusteredZones !== false;
+
+    const enrichedStops = stops.map((stop) => {
+      const zone = resolveBatchStopZone(stop, zones);
+      const distanceKm = origin && stop.clientLat != null && stop.clientLng != null
+        ? haversineKm(origin.lat, origin.lng, stop.clientLat, stop.clientLng)
+        : 0;
+      const deliveryFee = zone?.fixedDeliveryFee > 0
+        ? zone.fixedDeliveryFee
+        : Math.round(calculateDistanceBasedClientDeliveryFee(distanceKm, pricingConfig));
+      const zoneName = zone?.name || stop.zoneName || stop.zoneId || 'غير محدد';
+      const clusterId = zone?.clusterId ||
+        (groupUnclusteredZones ? 'auto_unclustered' : (zone?.id || stop.zoneId || stop.zoneName || 'unassigned'));
+      return {
+        ...stop,
+        zoneId: zone?.id || stop.zoneId || '',
+        zoneName,
+        clusterId,
+        deliveryFee,
+        zoneDriverPayout: zone?.driverPayout || 0,
+      };
+    });
+
+    const orderedAllStops = routeSortedStops(origin, enrichedStops);
+    const fullRouteDistanceKm = estimateBatchRouteDistanceKm(origin, orderedAllStops);
+    if (enrichedStops.length <= singleTripMaxStops && fullRouteDistanceKm <= singleTripMaxRouteKm) {
+      return [buildBatchTrip('single_trip', origin, orderedAllStops, pricingConfig)];
+    }
+
+    const grouped = new Map();
+    for (const stop of enrichedStops) {
+      const key = String(stop.clusterId || 'unassigned');
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(stop);
+    }
+
+    const trips = [];
+    for (const [clusterId, clusterStops] of grouped.entries()) {
+      trips.push(...splitBatchStopsByRoute({
+        clusterId,
+        origin,
+        stops: clusterStops,
+        pricingConfig,
+        maxStopsPerTrip,
+        maxRouteKmPerTrip,
+      }));
+    }
+    return trips;
+  }
+
+  function publicTrackingToken() {
+    return crypto.randomBytes(12).toString('base64url');
+  }
+
+  function publicTrackingUrl(token) {
+    const base = String(BATCH_TRACKING_BASE_URL || '').trim();
+    if (!base) return token;
+    if (base.includes('{token}')) return base.replace('{token}', encodeURIComponent(token));
+    if (base.endsWith('/') || base.endsWith('=')) return `${base}${encodeURIComponent(token)}`;
+    return `${base}/${encodeURIComponent(token)}`;
+  }
+
+  function batchShortCodeSeed() {
+    const now = new Date();
+    const day = String(now.getUTCDate()).padStart(2, '0');
+    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const random = crypto.randomBytes(1).toString('hex').toUpperCase();
+    return `${day}${month}${random}`;
+  }
+
+  function buildBatchTripCode(seed, tripIndex) {
+    return `BT-${seed}-${tripIndex}`;
+  }
+
+  function buildBatchStopCode(seed, tripIndex, stopIndex) {
+    return `S-${seed}-${tripIndex}${String(stopIndex).padStart(2, '0')}`;
+  }
+
+  exports.previewStoreBatchDelivery = onCall({ region: REGION }, async (request) => {
+    const restaurantId = String(request.data?.restaurantId || '').trim();
+    const rawStops = Array.isArray(request.data?.stops) ? request.data.stops : [];
+    if (!restaurantId) throw new HttpsError('invalid-argument', 'restaurantId is required');
+    if (rawStops.length < 2 || rawStops.length > BATCH_DELIVERY_MAX_STOPS) {
+      throw new HttpsError('invalid-argument', `Batch delivery requires 2-${BATCH_DELIVERY_MAX_STOPS} stops`);
+    }
+    const { restaurant } = await ensureStoreOwner(request, restaurantId);
+    const origin = resolveRestaurantCoords(restaurant);
+    if (!origin) throw new HttpsError('failed-precondition', 'Store location is incomplete');
+    const stops = rawStops.map(normalizeBatchStop);
+    const pricingConfig = await getPricingConfigCached();
+    const zones = await loadActiveDeliveryZones();
+    const trips = buildBatchTrips({ origin, stops, zones, pricingConfig });
+    const walletBalance = Math.round(extractStoreDeliveryWalletBalance(restaurant));
+    const totalDeliveryFee = trips.reduce((sum, trip) => sum + trip.deliveryFee, 0);
+    const totalDriverShare = trips.reduce((sum, trip) => sum + trip.driverShare, 0);
+    return {
+      trips: trips.map((trip, index) => ({
+        index,
+        clusterId: trip.clusterId,
+        stopCount: trip.stopCount,
+        routeDistanceKm: trip.routeDistanceKm,
+        deliveryFee: trip.deliveryFee,
+        driverShare: trip.driverShare,
+        platformMargin: trip.platformMargin,
+        zones: Array.from(new Set(trip.stops.map((stop) => stop.zoneName).filter(Boolean))),
+        stops: trip.stops.map((stop) => ({
+          clientName: stop.clientName,
+          clientPhone: stop.clientPhone,
+          clientLat: stop.clientLat,
+          clientLng: stop.clientLng,
+          clientMapUrl: stop.clientMapUrl,
+          zoneId: stop.zoneId,
+          zoneName: stop.zoneName,
+          deliveryFee: stop.deliveryFee,
+          sequence: stop.sequence,
+        })),
+      })),
+      totalStops: stops.length,
+      totalTrips: trips.length,
+      totalDeliveryFee,
+      totalDriverShare,
+      walletBalance,
+      walletBalanceAfterDebit: walletBalance - totalDeliveryFee,
+    };
+  });
+
+  exports.createStoreBatchDelivery = onCall({ region: REGION }, async (request) => {
+    const restaurantId = String(request.data?.restaurantId || '').trim();
+    const rawStops = Array.isArray(request.data?.stops) ? request.data.stops : [];
+    const pickupTimeText = String(request.data?.pickupTimeText || '').trim();
+    if (!restaurantId) throw new HttpsError('invalid-argument', 'restaurantId is required');
+    if (rawStops.length < 2 || rawStops.length > BATCH_DELIVERY_MAX_STOPS) {
+      throw new HttpsError('invalid-argument', `Batch delivery requires 2-${BATCH_DELIVERY_MAX_STOPS} stops`);
+    }
+
+    const { restaurantRef, restaurant } = await ensureStoreOwner(request, restaurantId);
+    const origin = resolveRestaurantCoords(restaurant);
+    if (!origin) throw new HttpsError('failed-precondition', 'Store location is incomplete');
+    const stops = rawStops.map(normalizeBatchStop);
+    const pricingConfig = await getPricingConfigCached();
+    const zones = await loadActiveDeliveryZones();
+    const trips = buildBatchTrips({ origin, stops, zones, pricingConfig });
+    const totalDeliveryFee = trips.reduce((sum, trip) => sum + trip.deliveryFee, 0);
+    const totalDriverShare = trips.reduce((sum, trip) => sum + trip.driverShare, 0);
+    const orderRefs = trips.map(() => db.collection('orders').doc());
+    const batchGroupId = `BATCH-${Date.now().toString().slice(-8)}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const batchCodeSeed = batchShortCodeSeed();
+    let walletBalanceAfter = 0;
+    const createdTrackingLinks = [];
+
+    await db.runTransaction(async (tx) => {
+      createdTrackingLinks.length = 0;
+      const restaurantSnap = await tx.get(restaurantRef);
+      if (!restaurantSnap.exists) throw new HttpsError('not-found', 'Store not found');
+      const liveRestaurant = restaurantSnap.data() || {};
+      if (liveRestaurant.approvalStatus !== 'approved' || liveRestaurant.isApproved !== true || liveRestaurant.temporarilyClosed === true) {
+        throw new HttpsError('failed-precondition', 'Store is not available for batch delivery');
+      }
+      const walletBalanceBefore = Math.round(extractStoreDeliveryWalletBalance(liveRestaurant));
+      walletBalanceAfter = walletBalanceBefore - totalDeliveryFee;
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      tx.set(restaurantRef, {
+        storeDeliveryWalletBalance: walletBalanceAfter,
+        deliveryWalletBalance: walletBalanceAfter,
+        storeBatchDeliveryDebitedTotal: admin.firestore.FieldValue.increment(totalDeliveryFee),
+        updatedAt: now,
+      }, { merge: true });
+      tx.set(restaurantRef.collection('walletTransactions').doc(), {
+        type: 'store_batch_delivery_fee',
+        batchGroupId,
+        amount: -totalDeliveryFee,
+        driverShareTotal: totalDriverShare,
+        tripCount: trips.length,
+        stopCount: stops.length,
+        balanceBefore: walletBalanceBefore,
+        balanceAfter: walletBalanceAfter,
+        createdAt: now,
+      });
+
+      trips.forEach((trip, index) => {
+        const orderRef = orderRefs[index];
+        const orderCode = `${batchGroupId}-${String(index + 1).padStart(2, '0')}`;
+        const batchCode = buildBatchTripCode(batchCodeSeed, index + 1);
+        const trackingStops = trip.stops.map((stop, stopIndex) => {
+          const token = publicTrackingToken();
+          const trackingUrl = publicTrackingUrl(token);
+          const stopCode = buildBatchStopCode(batchCodeSeed, index + 1, stopIndex + 1);
+          createdTrackingLinks.push({
+            batchCode,
+            stopCode,
+            clientName: stop.clientName,
+            clientPhone: stop.clientPhone,
+            clientWhatsappPhone: stop.clientWhatsappPhone || stop.clientPhone,
+            zoneName: stop.zoneName,
+            trackingUrl,
+          });
+          return {
+            ...stop,
+            batchCode,
+            stopCode,
+            publicStopCode: stopCode,
+            trackingToken: token,
+            trackingUrl,
+            deliveryPin: String(1000 + Math.floor(Math.random() * 9000)),
+          };
+        });
+        const firstStop = trackingStops[0] || {};
+        tx.set(orderRef, {
+          orderId: orderCode,
+          orderNumber: orderCode,
+          batchCode,
+          publicBatchCode: batchCode,
+          batchGroupId,
+          batchTripIndex: index + 1,
+          orderSource: 'store_batch_delivery',
+          fulfillmentMode: 'merchant_batch_delivery',
+          restaurantId,
+          restaurantName: String(liveRestaurant.name || liveRestaurant.restaurantName || '').trim(),
+          restaurantLat: origin.lat,
+          restaurantLng: origin.lng,
+          restaurantLocation: new admin.firestore.GeoPoint(origin.lat, origin.lng),
+          pickupTimeText,
+          clusterId: trip.clusterId,
+          batchStops: trackingStops,
+          batchTrackingTokens: trackingStops.map((stop) => stop.trackingToken),
+          batchStopCount: trip.stopCount,
+          clientName: `${trip.stopCount} عملاء`,
+          clientPhone: '',
+          clientLat: firstStop.clientLat ?? null,
+          clientLng: firstStop.clientLng ?? null,
+          ...(firstStop.clientLat != null && firstStop.clientLng != null ? {
+            clientLocation: new admin.firestore.GeoPoint(firstStop.clientLat, firstStop.clientLng),
+          } : {}),
+          clientMapUrl: String(firstStop.clientMapUrl || ''),
+          packageDescription: `رحلة توصيل مجمعة - ${trip.stopCount} توقفات`,
+          items: [],
+          distanceKm: trip.routeDistanceKm,
+          routeDistanceKm: trip.routeDistanceKm,
+          estimatedDeliveryMinutes: Math.max(20, Math.round(trip.routeDistanceKm * 4) + (trip.stopCount * 6)),
+          deliveryFee: trip.deliveryFee,
+          deliveryFeeChargedToStore: trip.deliveryFee,
+          deliveryFeeForDriver: trip.driverShare,
+          driverShare: trip.driverShare,
+          platformMargin: trip.platformMargin,
+          storeWalletBalanceAfterDebit: walletBalanceAfter,
+          paymentMethod: 'store_wallet',
+          paymentStatus: 'paid',
+          orderStatus: 'courier_searching',
+          status: 'courier_searching',
+          createdAt: now,
+          updatedAt: now,
+        });
+      });
+    });
+
+    const assignments = [];
+    for (const orderRef of orderRefs) {
+      try {
+        assignments.push(await assignNextCourier(orderRef));
+      } catch (error) {
+        logger.error('createStoreBatchDelivery assignment failed', {
+          orderId: orderRef.id,
+          restaurantId,
+          error: error?.message || String(error),
+        });
+        assignments.push({ assigned: false, reason: 'assignment-error' });
+      }
+    }
+
+    return {
+      ok: true,
+      batchGroupId,
+      orderIds: orderRefs.map((ref) => ref.id),
+      totalStops: stops.length,
+      totalTrips: trips.length,
+      totalDeliveryFee,
+      totalDriverShare,
+      walletBalanceAfter,
+      trackingLinks: createdTrackingLinks,
+      assignments,
+    };
+  });
+
+  function escapePublicHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  exports.trackBatchStop = onRequest({ region: REGION }, async (req, res) => {
+    const token = String(req.query?.token || req.path?.split('/').filter(Boolean).pop() || '').trim();
+    res.set('Cache-Control', 'private, no-store');
+    if (!token || token.length < 12) {
+      res.status(400).send('Invalid tracking link');
+      return;
+    }
+    const snap = await db.collection('orders')
+      .where('batchTrackingTokens', 'array-contains', token)
+      .limit(1)
+      .get();
+    if (snap.empty) {
+      res.status(404).send('Tracking link was not found');
+      return;
+    }
+    const orderDoc = snap.docs[0];
+    const order = orderDoc.data() || {};
+    const orderSource = String(order.orderSource || '').trim();
+    const stops = Array.isArray(order.batchStops) ? order.batchStops : [];
+    const stop = stops.find((item) => String(item?.trackingToken || '') === token) || {};
+    const isDirectTracking = orderSource === 'store_direct_delivery';
+    const statusLabels = {
+      pending: 'بانتظار بدء التوصيل',
+      courier_searching: 'جاري البحث عن مندوب',
+      courier_offer_pending: 'بانتظار قبول المندوب',
+      courier_assigned: 'تم تعيين المندوب',
+      pickup_ready: 'المندوب متجه للاستلام',
+      picked_up: 'المندوب في الطريق إليك',
+      arrived_to_client: 'المندوب وصل إلى موقعك',
+      next: 'المندوب في الطريق إليك',
+      on_the_way: 'المندوب في الطريق إليك',
+      delivered: 'تم التسليم',
+      completed: 'تم التسليم',
+      partially_completed: 'تم التسليم جزئياً',
+      delivery_failed: 'تعذر التسليم',
+      failed: 'تعذر التسليم',
+      deferred: 'سيتم إعادة تنسيق التسليم',
+      returned: 'مرتجع للمتجر',
+      removal_requested: 'قيد مراجعة المتجر',
+      removal_rejected: 'تمت إعادة الطلب للرحلة',
+      removed_by_store: 'تمت إعادة جدولة الطلب',
+    };
+    const status = String((isDirectTracking ? (order.orderStatus || order.status || stop.status) : (stop.status || order.orderStatus || order.status)) || 'pending').trim();
+    const statusText = statusLabels[status] || status;
+    const isTrackingFinished = [
+      'delivered',
+      'completed',
+      'partially_completed',
+      'delivery_failed',
+      'failed',
+      'deferred',
+      'returned',
+      'removed_by_store',
+    ].includes(status);
+    const appAndroidUrl = process.env.CLIENT_ANDROID_DOWNLOAD_URL || 'https://play.google.com/store/apps/details?id=com.aluqili.speedstar.client';
+    const appIosUrl = process.env.CLIENT_IOS_DOWNLOAD_URL || 'https://apps.apple.com/sa/app/speedstar/id6761855605?l=ar';
+    const supportPhone = process.env.SPEEDSTAR_SUPPORT_PHONE || '+249113777644';
+    const supportWhatsapp = process.env.SPEEDSTAR_SUPPORT_WHATSAPP || supportPhone.replace(/[^0-9]/g, '');
+    const driverContact = publicDriverContactFromOrder(order);
+    const driverPhone = driverContact.phone;
+    const driverWhatsapp = normalizeWhatsAppRecipientPhone(driverPhone);
+    const assignedDriverId = String(order.assignedDriverId || '').trim();
+    let driverData = {};
+    if (assignedDriverId) {
+      const driverSnap = await db.collection('drivers').doc(assignedDriverId).get().catch(() => null);
+      driverData = driverSnap?.exists ? (driverSnap.data() || {}) : {};
+    }
+    const publicBatchCode = String(order.publicBatchCode || order.batchCode || order.orderNumber || orderDoc.id).trim();
+    const publicStopCode = String(stop.publicStopCode || stop.stopCode || '').trim();
+    const mapUrl = String(stop.clientMapUrl || '').trim();
+    const driverCoords = isTrackingFinished ? null : (extractLatLng(order.driverLocation) ||
+      extractLatLng(order.driverCurrentLocation) ||
+      extractLatLng(driverData.location) ||
+      extractLatLng(driverData.currentLocation) ||
+      extractLatLng(driverData.lastLocation) ||
+      (() => {
+        const lat = toNumberOrNull(order.driverLat ?? order.latitude ?? driverData.latitude);
+        const lng = toNumberOrNull(order.driverLng ?? order.longitude ?? driverData.longitude);
+        return lat != null && lng != null ? { lat, lng } : null;
+      })());
+    const stopCoords = stop.clientLat != null && stop.clientLng != null
+      ? { lat: Number(stop.clientLat), lng: Number(stop.clientLng) }
+      : extractLatLng(order.clientLocation);
+    const driverMapUrl = driverCoords
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${driverCoords.lat},${driverCoords.lng}`)}`
+      : '';
+    const driverDirectionsUrl = driverCoords && stopCoords
+      ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(`${driverCoords.lat},${driverCoords.lng}`)}&destination=${encodeURIComponent(`${stopCoords.lat},${stopCoords.lng}`)}&travelmode=driving`
+      : '';
+    const driverDistanceKm = driverCoords && stopCoords
+      ? haversineKm(driverCoords.lat, driverCoords.lng, stopCoords.lat, stopCoords.lng)
+      : null;
+    const driverLocationUpdatedAt = order.driverLocationUpdatedAt?.toDate?.() ||
+      order.lastLocationUpdate?.toDate?.() ||
+      driverData.lastLocationUpdate?.toDate?.() ||
+      driverData.lastUpdated?.toDate?.() ||
+      null;
+    const driverLocationUpdatedAtText = driverLocationUpdatedAt
+      ? driverLocationUpdatedAt.toLocaleString('ar-EG', {
+        timeZone: 'Africa/Khartoum',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      : '';
+    const updatedAt = order.batchLastStopUpdatedAt?.toDate?.() ||
+      order.updatedAt?.toDate?.() ||
+      order.createdAt?.toDate?.() ||
+      new Date();
+    const updatedAtText = updatedAt.toLocaleString('ar-EG', {
+      timeZone: 'Africa/Khartoum',
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    res.status(200).type('html').send(`<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="refresh" content="45" />
+  <title>تتبع طلبك - SpeedStar</title>
+  <style>
+    :root{--primary:#ff6b00;--primary-soft:#fff3e8;--primary-dark:#9a3412;--text:#1a1a1a;--muted:#6b6b6b;--line:#eee1d6;--success:#10b981;--danger:#ef4444}
+    body{margin:0;font-family:Arial,Tahoma,sans-serif;background:#fff8f3;color:var(--text)}
+    .wrap{max-width:720px;margin:0 auto;padding:22px}
+    .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:14px;box-shadow:0 8px 24px rgba(26,26,26,.06)}
+    h1{font-size:24px;margin:0 0 8px}
+    h2{font-size:18px;margin:0 0 10px}
+    .status{display:inline-block;background:var(--primary-soft);color:var(--primary-dark);border:1px solid #fed7aa;border-radius:999px;padding:8px 12px;font-weight:700}
+    .muted{color:var(--muted);line-height:1.6}
+    .btn{display:inline-block;margin:6px 0 0 8px;background:var(--primary);color:#fff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700}
+    .btn.secondary{background:#1a1a1a}
+    .btn.outline{background:#fff;color:var(--primary);border:1px solid var(--primary)}
+    .grid{display:grid;gap:10px}
+    .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+    .step{border:1px solid var(--line);border-radius:8px;padding:10px;text-align:center;color:var(--muted);font-size:13px;background:#fff}
+    .step.on{border-color:var(--primary);background:var(--primary-soft);color:var(--primary-dark);font-weight:700}
+    .step.done{border-color:var(--success);background:#ecfdf5;color:#047857;font-weight:700}
+    .step.warn{border-color:var(--danger);background:#fef2f2;color:#b91c1c;font-weight:700}
+    .driver-box{border:1px solid #fed7aa;background:#fff7ed;border-radius:8px;padding:12px;margin-top:12px}
+    .feature-list{margin:10px 0 0;padding:0;list-style:none;display:grid;gap:8px}
+    .feature-list li{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px;color:#7c2d12}
+    .store-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+    .store-buttons .btn{margin:0;text-align:center}
+    @media(max-width:520px){.steps{grid-template-columns:repeat(2,1fr)}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <h1>تتبع طلبك من SpeedStar</h1>
+      <p class="status">${escapePublicHtml(statusText)}</p>
+      <div class="steps">
+        <div class="step ${['pending', 'courier_searching', 'courier_offer_pending', 'courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client', 'next', 'on_the_way', 'delivered', 'completed', 'partially_completed', 'failed', 'delivery_failed', 'deferred', 'returned'].includes(status) ? 'on' : ''}">تم إنشاء الرحلة</div>
+        <div class="step ${['courier_assigned', 'pickup_ready', 'picked_up', 'arrived_to_client', 'next', 'on_the_way', 'delivered', 'completed', 'partially_completed', 'failed', 'delivery_failed', 'deferred', 'returned'].includes(status) ? 'on' : ''}">تم تعيين المندوب</div>
+        <div class="step ${['picked_up', 'arrived_to_client', 'next', 'on_the_way', 'delivered', 'completed', 'partially_completed', 'failed', 'delivery_failed', 'deferred', 'returned'].includes(status) ? 'on' : ''}">المندوب في الطريق</div>
+        <div class="step ${['delivered', 'completed', 'partially_completed'].includes(status) ? 'done' : (['failed', 'delivery_failed', 'deferred', 'returned'].includes(status) ? 'warn' : '')}">${['failed', 'delivery_failed', 'deferred', 'returned'].includes(status) ? 'تحتاج متابعة' : 'تم التسليم'}</div>
+      </div>
+      <p class="muted">المتجر: ${escapePublicHtml(order.restaurantName || 'متجر SpeedStar')}</p>
+      <p class="muted">العميل: ${escapePublicHtml(stop.clientName || order.clientName || '')}</p>
+      <p class="muted">المنطقة: ${escapePublicHtml(stop.zoneName || '')}</p>
+      <p class="muted">رقم الرحلة: ${escapePublicHtml(publicBatchCode)}</p>
+      ${publicStopCode ? `<p class="muted">رقم الطلب داخل الرحلة: ${escapePublicHtml(publicStopCode)}</p>` : ''}
+      <p class="muted">آخر تحديث: ${escapePublicHtml(updatedAtText)}</p>
+      ${order.assignedDriverId ? `<div class="driver-box">
+        <strong>المندوب: ${escapePublicHtml(driverContact.name)}</strong>
+        ${driverPhone ? `<p class="muted">رقم المندوب: ${escapePublicHtml(driverPhone)}</p>
+        <a class="btn secondary" href="tel:${escapePublicHtml(driverPhone)}">اتصال بالمندوب</a>
+        ${driverWhatsapp ? `<a class="btn outline" href="https://wa.me/${escapePublicHtml(driverWhatsapp)}">واتساب المندوب</a>` : ''}` : `<p class="muted">سيظهر رقم المندوب هنا بعد اكتمال بياناته.</p>`}
+      </div>` : ''}
+      ${driverCoords ? `<div class="driver-box">
+        <strong>موقع المندوب متاح الآن</strong>
+        ${driverDistanceKm != null ? `<p class="muted">يبعد تقريباً ${escapePublicHtml(driverDistanceKm.toFixed(1))} كم عن موقع التسليم.</p>` : ''}
+        ${driverLocationUpdatedAtText ? `<p class="muted">آخر تحديث لموقع المندوب: ${escapePublicHtml(driverLocationUpdatedAtText)}</p>` : ''}
+        <a class="btn" href="${escapePublicHtml(driverMapUrl)}">تتبع المندوب</a>
+        ${driverDirectionsUrl ? `<a class="btn outline" href="${escapePublicHtml(driverDirectionsUrl)}">المسار إلى موقعك</a>` : ''}
+      </div>` : `<p class="muted">${isTrackingFinished ? 'انتهى تتبع المندوب لهذا الطلب بعد إغلاقه.' : 'سيظهر تتبع المندوب هنا بعد أن يبدأ المندوب الرحلة ويرسل موقعه.'}</p>`}
+      ${mapUrl ? `<a class="btn secondary" href="${escapePublicHtml(mapUrl)}">فتح موقع التسليم</a>` : ''}
+    </section>
+    <section class="card">
+      <h2>الدعم والتواصل</h2>
+      <p class="muted">لأي استفسار تواصل معنا مباشرة.</p>
+      <a class="btn secondary" href="tel:${escapePublicHtml(supportPhone)}">اتصال بالدعم</a>
+      <a class="btn secondary" href="https://wa.me/${escapePublicHtml(supportWhatsapp)}">واتساب</a>
+    </section>
+    <section class="card">
+      <h2>حمّل تطبيق SpeedStar</h2>
+      <p class="muted">في التطبيق تحصل على تجربة أسرع من الرابط، وتقدر تتابع طلباتك القادمة مباشرة.</p>
+      <ul class="feature-list">
+        <li>تتبع الطلبات والمندوب من داخل التطبيق.</li>
+        <li>حفظ عناوينك وطلب أسرع في المرات القادمة.</li>
+        <li>عروض وتنبيهات وخدمات توصيل مباشرة من SpeedStar.</li>
+      </ul>
+      <div class="store-buttons">
+        <a class="btn" href="${escapePublicHtml(appAndroidUrl)}">Google Play</a>
+        <a class="btn outline" href="${escapePublicHtml(appIosUrl)}">App Store</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>`);
+  });
+
+  exports.courierUpdateBatchStop = onCall({ region: REGION }, async (request) => {
+    const orderId = String(request.data?.orderId || '').trim();
+    const driverId = String(request.data?.driverId || '').trim();
+    const stopIndex = Math.floor(toSafeNumber(request.data?.stopIndex, -1));
+    const nextStatus = String(request.data?.status || '').trim();
+    const pin = String(request.data?.pin || '').trim();
+    const failureReason = String(request.data?.failureReason || '').trim();
+    const proofImageUrl = String(request.data?.proofImageUrl || '').trim();
+    const allowedStatuses = new Set(['pending', 'next', 'on_the_way', 'delivered', 'failed', 'deferred', 'returned']);
+
+    if (!orderId || !driverId || stopIndex < 0 || !allowedStatuses.has(nextStatus)) {
+      throw new HttpsError('invalid-argument', 'orderId, driverId, stopIndex and a valid status are required');
+    }
+    await ensureAuthenticatedDriver(request, driverId);
+
+    const orderRef = db.collection('orders').doc(orderId);
+    await db.runTransaction(async (tx) => {
+      const orderSnap = await tx.get(orderRef);
+      if (!orderSnap.exists) throw new HttpsError('not-found', 'Batch trip was not found');
+      const order = orderSnap.data() || {};
+      if (String(order.orderSource || '') !== 'store_batch_delivery') {
+        throw new HttpsError('failed-precondition', 'This order is not a batch delivery trip');
+      }
+      if (String(order.assignedDriverId || '') !== driverId) {
+        throw new HttpsError('permission-denied', 'This batch trip is not assigned to this driver');
+      }
+      if (['delivered', 'partially_completed', 'delivery_failed', 'completed'].includes(getStatus(order))) {
+        throw new HttpsError('failed-precondition', 'This batch trip has already been completed');
+      }
+      const stops = Array.isArray(order.batchStops) ? order.batchStops.slice() : [];
+      if (stopIndex >= stops.length) {
+        throw new HttpsError('invalid-argument', 'stopIndex is out of range');
+      }
+      const stop = { ...(stops[stopIndex] || {}) };
+      if (nextStatus === 'delivered') {
+        const expectedPin = String(stop.deliveryPin || '').trim();
+        if (expectedPin && pin !== expectedPin) {
+          throw new HttpsError('failed-precondition', 'Delivery PIN is incorrect');
+        }
+      }
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      stops[stopIndex] = {
+        ...stop,
+        status: nextStatus,
+        ...(nextStatus === 'delivered' ? {
+          deliveredAt: now,
+          deliveryVerifiedByPin: Boolean(String(stop.deliveryPin || '').trim()),
+          deliveryProofImageUrl: proofImageUrl,
+          proofImageUrl,
+        } : {}),
+        ...(nextStatus === 'failed' ? {
+          failedAt: now,
+          failureReason,
+        } : {}),
+        ...(nextStatus === 'deferred' ? {
+          deferredAt: now,
+          failureReason,
+        } : {}),
+        ...(nextStatus === 'returned' ? { returnedAt: now } : {}),
+        ...(nextStatus === 'pending' ? {
+          restoredAt: now,
+          failureReason: '',
+        } : {}),
+        updatedAt: now,
+      };
+
+      const deliveredCount = stops.filter((item) => String(item?.status || '') === 'delivered').length;
+      const failedCount = stops.filter((item) => ['failed', 'returned'].includes(String(item?.status || ''))).length;
+      const deferredCount = stops.filter((item) => String(item?.status || '') === 'deferred').length;
+      const orderPatch = {
+        batchStops: stops,
+        batchDeliveredCount: deliveredCount,
+        batchFailedCount: failedCount,
+        batchDeferredCount: deferredCount,
+        batchLastStopUpdatedAt: now,
+        updatedAt: now,
+      };
+      if (['courier_assigned', 'pickup_ready'].includes(getStatus(order))) {
+        orderPatch.orderStatus = 'picked_up';
+        orderPatch.status = 'picked_up';
+        orderPatch.pickedUpAt = now;
+      }
+      tx.update(orderRef, orderPatch);
+    });
+
+    return { ok: true, orderId, stopIndex, status: nextStatus };
+  });
+
+  exports.courierRequestRemoveBatchStop = onCall({ region: REGION }, async (request) => {
+    const orderId = String(request.data?.orderId || '').trim();
+    const driverId = String(request.data?.driverId || '').trim();
+    const stopIndex = Math.floor(toSafeNumber(request.data?.stopIndex, -1));
+    const reason = String(request.data?.reason || '').trim();
+    if (!orderId || !driverId || stopIndex < 0 || !reason) {
+      throw new HttpsError('invalid-argument', 'orderId, driverId, stopIndex and reason are required');
+    }
+    await ensureAuthenticatedDriver(request, driverId);
+
+    const orderRef = db.collection('orders').doc(orderId);
+    await db.runTransaction(async (tx) => {
+      const orderSnap = await tx.get(orderRef);
+      if (!orderSnap.exists) throw new HttpsError('not-found', 'Batch trip was not found');
+      const order = orderSnap.data() || {};
+      if (String(order.orderSource || '') !== 'store_batch_delivery') {
+        throw new HttpsError('failed-precondition', 'This order is not a batch delivery trip');
+      }
+      if (String(order.assignedDriverId || '') !== driverId) {
+        throw new HttpsError('permission-denied', 'This batch trip is not assigned to this driver');
+      }
+      const status = getStatus(order);
+      if (!['courier_assigned', 'pickup_ready', 'courier_offer_pending'].includes(status)) {
+        throw new HttpsError('failed-precondition', 'Stops can only be removed before pickup');
+      }
+      const stops = Array.isArray(order.batchStops) ? order.batchStops.slice() : [];
+      if (stopIndex >= stops.length) {
+        throw new HttpsError('invalid-argument', 'stopIndex is out of range');
+      }
+      const stop = { ...(stops[stopIndex] || {}) };
+      const stopStatus = String(stop.status || 'pending');
+      if (!['pending', 'next', 'removal_rejected'].includes(stopStatus)) {
+        throw new HttpsError('failed-precondition', 'This stop is already in progress or finished');
+      }
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      stops[stopIndex] = {
+        ...stop,
+        status: 'removal_requested',
+        removalRequested: true,
+        removalRequestStatus: 'pending',
+        removalRequestedBy: driverId,
+        removalReason: reason,
+        removalRequestedAt: now,
+        updatedAt: now,
+      };
+      tx.update(orderRef, {
+        batchStops: stops,
+        batchRemovalRequestCount: admin.firestore.FieldValue.increment(1),
+        batchLastStopUpdatedAt: now,
+        updatedAt: now,
+      });
+    });
+
+    return { ok: true, orderId, stopIndex, status: 'removal_requested' };
+  });
+
+  exports.storeRespondBatchStopRemoval = onCall({ region: REGION }, async (request) => {
+    const orderId = String(request.data?.orderId || '').trim();
+    const restaurantId = String(request.data?.restaurantId || '').trim();
+    const stopIndex = Math.floor(toSafeNumber(request.data?.stopIndex, -1));
+    const decision = String(request.data?.decision || '').trim();
+    const note = String(request.data?.note || '').trim();
+    if (!orderId || !restaurantId || stopIndex < 0 || !['approve', 'reject'].includes(decision)) {
+      throw new HttpsError('invalid-argument', 'orderId, restaurantId, stopIndex and decision are required');
+    }
+    await ensureStoreOwner(request, restaurantId);
+
+    const orderRef = db.collection('orders').doc(orderId);
+    let removedStop = null;
+    await db.runTransaction(async (tx) => {
+      const orderSnap = await tx.get(orderRef);
+      if (!orderSnap.exists) throw new HttpsError('not-found', 'Batch trip was not found');
+      const order = orderSnap.data() || {};
+      if (String(order.orderSource || '') !== 'store_batch_delivery') {
+        throw new HttpsError('failed-precondition', 'This order is not a batch delivery trip');
+      }
+      if (String(order.restaurantId || '') !== restaurantId) {
+        throw new HttpsError('permission-denied', 'This batch trip does not belong to this store');
+      }
+      const status = getStatus(order);
+      if (!['courier_assigned', 'pickup_ready', 'courier_offer_pending'].includes(status)) {
+        throw new HttpsError('failed-precondition', 'Removal can only be reviewed before pickup');
+      }
+      const stops = Array.isArray(order.batchStops) ? order.batchStops.slice() : [];
+      if (stopIndex >= stops.length) {
+        throw new HttpsError('invalid-argument', 'stopIndex is out of range');
+      }
+      const stop = { ...(stops[stopIndex] || {}) };
+      if (String(stop.status || '') !== 'removal_requested' || String(stop.removalRequestStatus || '') !== 'pending') {
+        throw new HttpsError('failed-precondition', 'This stop has no pending removal request');
+      }
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      if (decision === 'approve') {
+        removedStop = {
+          ...stop,
+          status: 'removed_by_store',
+          removalRequestStatus: 'approved',
+          removalRespondedAt: now,
+          removalResponseNote: note,
+        };
+        stops.splice(stopIndex, 1);
+        const resequencedStops = stops.map((item, index) => ({
+          ...item,
+          sequence: index + 1,
+        }));
+        tx.update(orderRef, {
+          batchStops: resequencedStops,
+          removedBatchStops: admin.firestore.FieldValue.arrayUnion(removedStop),
+          batchStopCount: resequencedStops.length,
+          clientName: `${resequencedStops.length} عملاء`,
+          packageDescription: `رحلة توصيل مجمعة - ${resequencedStops.length} توقفات`,
+          batchLastStopUpdatedAt: now,
+          updatedAt: now,
+        });
+      } else {
+        stops[stopIndex] = {
+          ...stop,
+          status: 'removal_rejected',
+          removalRequestStatus: 'rejected',
+          removalRespondedAt: now,
+          removalResponseNote: note,
+          updatedAt: now,
+        };
+        tx.update(orderRef, {
+          batchStops: stops,
+          batchLastStopUpdatedAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+
+    return { ok: true, orderId, stopIndex, decision };
+  });
+
+  exports.courierCompleteBatchTrip = onCall({ region: REGION }, async (request) => {
+    const orderId = String(request.data?.orderId || '').trim();
+    const driverId = String(request.data?.driverId || '').trim();
+    if (!orderId || !driverId) {
+      throw new HttpsError('invalid-argument', 'orderId and driverId are required');
+    }
+    await ensureAuthenticatedDriver(request, driverId);
+
+    const orderRef = db.collection('orders').doc(orderId);
+    const driverRef = db.collection('drivers').doc(driverId);
+    let finalStatus = '';
+
+    await db.runTransaction(async (tx) => {
+      const orderSnap = await tx.get(orderRef);
+      const driverSnap = await tx.get(driverRef);
+      if (!orderSnap.exists) throw new HttpsError('not-found', 'Batch trip was not found');
+      const order = orderSnap.data() || {};
+      if (String(order.orderSource || '') !== 'store_batch_delivery') {
+        throw new HttpsError('failed-precondition', 'This order is not a batch delivery trip');
+      }
+      if (String(order.assignedDriverId || '') !== driverId) {
+        throw new HttpsError('permission-denied', 'This batch trip is not assigned to this driver');
+      }
+
+      const stops = Array.isArray(order.batchStops) ? order.batchStops : [];
+      if (!stops.length) {
+        throw new HttpsError('failed-precondition', 'This batch trip has no stops');
+      }
+
+      const activeStatuses = new Set(['pending', 'next', 'on_the_way']);
+      const activeCount = stops.filter((item) => activeStatuses.has(String(item?.status || 'pending'))).length;
+      if (activeCount > 0) {
+        throw new HttpsError('failed-precondition', 'Move every active stop to delivered, deferred, failed or returned before ending the trip');
+      }
+
+      const deliveredCount = stops.filter((item) => String(item?.status || '') === 'delivered').length;
+      const failedCount = stops.filter((item) => ['failed', 'returned'].includes(String(item?.status || ''))).length;
+      const deferredCount = stops.filter((item) => String(item?.status || '') === 'deferred').length;
+      finalStatus = deliveredCount === stops.length
+        ? 'delivered'
+        : (deliveredCount > 0 ? 'partially_completed' : 'delivery_failed');
+      const now = admin.firestore.FieldValue.serverTimestamp();
+
+      tx.update(orderRef, {
+        orderStatus: finalStatus,
+        status: finalStatus,
+        batchDeliveredCount: deliveredCount,
+        batchFailedCount: failedCount,
+        batchDeferredCount: deferredCount,
+        batchCompletedByDriver: true,
+        completedAt: now,
+        updatedAt: now,
+      });
+
+      if (driverSnap.exists && String((driverSnap.data() || {}).activeOrderId || '').trim() === orderId) {
+        tx.update(driverRef, {
+          activeOrderId: admin.firestore.FieldValue.delete(),
+          activeOrderLockedAt: admin.firestore.FieldValue.delete(),
+          updatedAt: now,
+        });
+      }
+    });
+
+    return { ok: true, orderId, status: finalStatus };
+  });
+
   exports.previewStoreDirectDelivery = onCall({ region: REGION }, async (request) => {
     const restaurantId = String(request.data?.restaurantId || '').trim();
     if (!restaurantId) throw new HttpsError('invalid-argument', 'restaurantId is required');
@@ -6933,6 +9159,7 @@ exports.autoDispatchPaidParcelDelivery = onDocumentUpdated(
     const restaurantId = String(request.data?.restaurantId || '').trim();
     const clientName = String(request.data?.clientName || '').trim();
     const clientPhone = String(request.data?.clientPhone || '').trim();
+    const clientWhatsappPhone = String(request.data?.clientWhatsappPhone || request.data?.whatsappPhone || '').trim();
     const packageDescription = String(request.data?.packageDescription || '').trim();
     const clientMapUrl = String(request.data?.clientMapUrl || '').trim();
     if (!restaurantId || !clientName || !clientPhone) {
@@ -6948,6 +9175,8 @@ exports.autoDispatchPaidParcelDelivery = onDocumentUpdated(
     let deliveryFee = 0;
     let walletBalanceBefore = 0;
     let walletBalanceAfter = 0;
+    const trackingToken = publicTrackingToken();
+    const trackingUrl = publicTrackingUrl(trackingToken);
 
     await db.runTransaction(async (tx) => {
       const restaurantSnap = await tx.get(restaurantRef);
@@ -6968,6 +9197,25 @@ exports.autoDispatchPaidParcelDelivery = onDocumentUpdated(
       walletBalanceAfter = walletBalanceBefore - deliveryFee;
       const orderCode = `DIR-${Date.now().toString().slice(-8)}-${orderRef.id.slice(-4).toUpperCase()}`;
       const now = admin.firestore.FieldValue.serverTimestamp();
+      const trackingStop = {
+        clientName,
+        clientPhone,
+        clientWhatsappPhone: clientWhatsappPhone || clientPhone,
+        zoneId: '',
+        zoneName: '',
+        addressText: '',
+        packageDescription,
+        clientMapUrl,
+        clientLat: destination.lat,
+        clientLng: destination.lng,
+        codAmount: 0,
+        inputIndex: 0,
+        sequence: 1,
+        status: 'pending',
+        trackingToken,
+        trackingUrl,
+        deliveryPin: String(1000 + Math.floor(Math.random() * 9000)),
+      };
 
       tx.set(restaurantRef, {
         storeDeliveryWalletBalance: walletBalanceAfter,
@@ -7000,11 +9248,18 @@ exports.autoDispatchPaidParcelDelivery = onDocumentUpdated(
         } : {}),
         clientName,
         clientPhone,
+        clientWhatsappPhone,
         clientLat: destination.lat,
         clientLng: destination.lng,
         clientLocation: new admin.firestore.GeoPoint(destination.lat, destination.lng),
         clientMapUrl,
         packageDescription,
+        batchStops: [trackingStop],
+        batchTrackingTokens: [trackingToken],
+        publicTrackingToken: trackingToken,
+        publicTrackingUrl: trackingUrl,
+        trackingUrl,
+        batchStopCount: 1,
         items: [],
         distanceKm: Number(distanceKm.toFixed(2)),
         routeDistanceKm: Number(distanceKm.toFixed(2)),
@@ -7048,6 +9303,16 @@ exports.autoDispatchPaidParcelDelivery = onDocumentUpdated(
       walletBalanceAfter,
       courierOfferSent: assignment.assigned === true,
       assignmentReason: assignment.reason || '',
+      trackingUrl,
+      trackingLinks: [{
+        batchCode: '',
+        stopCode: '',
+        clientName,
+        clientPhone,
+        clientWhatsappPhone: clientWhatsappPhone || clientPhone,
+        zoneName: '',
+        trackingUrl,
+      }],
     };
   });
 
@@ -8124,11 +10389,14 @@ exports.adminManageOrder = onCall({ region: REGION }, async (request) => {
 
     const pricingConfig = await getPricingConfigCached();
     const driverFee = calculateDriverFeeFromOrder(order, pricingConfig);
-    const assignedDriverName = String(driverData.name || driverData.displayName || '').trim();
+    const driverContact = publicDriverContactFromDriverData(driverData);
+    const assignedDriverName = driverContact.name;
     await orderRef.set({
       ...adminPatch,
       assignedDriverId: nextDriverId,
       assignedDriverName,
+      assignedDriverPhone: driverContact.phone || admin.firestore.FieldValue.delete(),
+      assignedDriverWhatsappPhone: driverContact.phone || admin.firestore.FieldValue.delete(),
       offeredDriverId: admin.firestore.FieldValue.delete(),
       offerDriverIds: admin.firestore.FieldValue.delete(),
       offerDriverOwnerUids: admin.firestore.FieldValue.delete(),
@@ -8811,6 +11079,9 @@ exports.submitRestaurantApplication = onCall({ region: REGION }, async (request)
   const name = String(data.name || '').trim();
   const businessType = String(data.businessType || 'restaurant').trim().toLowerCase();
   const phone = String(data.phone || '').trim();
+  const ownerPhone = String(data.ownerPhone || phone).trim();
+  const cashierPhone = String(data.cashierPhone || '').trim();
+  const whatsappPhone = String(data.whatsappPhone || data.contactWhatsapp || '').trim();
   const commercialRecordNumber = String(data.commercialRecordNumber || '').trim();
   const commercialRecordImageUrl = String(data.commercialRecordImageUrl || '').trim();
   const pharmacyLicenseNumber = String(data.pharmacyLicenseNumber || '').trim();
@@ -8823,7 +11094,7 @@ exports.submitRestaurantApplication = onCall({ region: REGION }, async (request)
   if (!authenticatedUid && password.length < 6) {
     throw new HttpsError('invalid-argument', 'Password must be at least 6 characters');
   }
-  if (!name || !phone || !commercialRecordNumber || !commercialRecordImageUrl) {
+  if (!name || !commercialRecordNumber || !commercialRecordImageUrl) {
     throw new HttpsError('invalid-argument', 'Missing required application fields');
   }
   if (!allowedBusinessTypes.has(businessType)) {
@@ -8869,6 +11140,9 @@ exports.submitRestaurantApplication = onCall({ region: REGION }, async (request)
     name,
     businessType,
     phone,
+    ownerPhone,
+    cashierPhone,
+    whatsappPhone,
     commercialRecordNumber,
     commercialRecordImageUrl,
     pharmacyLicenseNumber,
@@ -8900,6 +11174,7 @@ exports.submitCourierApplication = onCall({ region: REGION }, async (request) =>
   const password = String(data.password || '');
   const name = String(data.name || '').trim();
   const phone = String(data.phone || '').trim();
+  const whatsappPhone = String(data.whatsappPhone || data.driverWhatsappPhone || '').trim();
   const vehicleType = String(data.vehicleType || '').trim();
   const vehiclePlate = String(data.vehiclePlate || '').trim();
   const nationalIdNumber = String(data.nationalIdNumber || '').trim();
@@ -8931,7 +11206,7 @@ exports.submitCourierApplication = onCall({ region: REGION }, async (request) =>
   if (password.length < 6) {
     throw new HttpsError('invalid-argument', 'Password must be at least 6 characters');
   }
-  if (!name || !phone || !vehicleType || !vehiclePlate || !nationalIdNumber || !idImageUrl) {
+  if (!name || !vehicleType || !nationalIdNumber || !idImageUrl) {
     throw new HttpsError('invalid-argument', 'Missing required application fields');
   }
 
@@ -8964,6 +11239,7 @@ exports.submitCourierApplication = onCall({ region: REGION }, async (request) =>
   await db.collection('courierApplications').doc(ownerUid).set({
     name,
     phone,
+    whatsappPhone,
     vehicleType,
     vehiclePlate,
     nationalIdNumber,
@@ -9219,6 +11495,9 @@ exports.approveRestaurantApplication = onCall({ region: REGION }, async (request
       ? String(appData.businessType).trim()
       : 'restaurant',
     phone: String(appData.phone || '').trim(),
+    ownerPhone: String(appData.ownerPhone || appData.phone || '').trim(),
+    cashierPhone: String(appData.cashierPhone || '').trim(),
+    whatsappPhone: String(appData.whatsappPhone || '').trim(),
     email: appEmail,
     commercialRecordNumber: String(appData.commercialRecordNumber || '').trim(),
     commercialRecordImageUrl: String(appData.commercialRecordImageUrl || '').trim(),
@@ -9317,6 +11596,7 @@ exports.approveCourierApplication = onCall({ region: REGION }, async (request) =
   await db.collection('drivers').doc(driverId).set({
     name: String(appData.name || '').trim(),
     phone: String(appData.phone || '').trim(),
+    whatsappPhone: String(appData.whatsappPhone || '').trim(),
     email: appEmail,
     vehicleType: String(appData.vehicleType || '').trim(),
     vehiclePlate: String(appData.vehiclePlate || '').trim(),

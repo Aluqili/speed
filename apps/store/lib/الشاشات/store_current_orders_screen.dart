@@ -184,6 +184,10 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
     final status = _getOrderStatus(data);
     final receivable = _storeReceivable(data);
     final hasStoreDiscount = _storeDiscountAmount(data) > 0;
+    final isDirectDelivery = data['orderSource'] == 'store_direct_delivery';
+    final deliveryFee = _safeNum(data['deliveryFeeChargedToStore'] ?? data['deliveryFee']);
+    final packageDescription =
+        (data['packageDescription'] ?? '').toString().trim();
     final unifiedOrderCode = formatUnifiedOrderCode(
       orderNumber: data['orderNumber'],
       orderId: data['orderId'],
@@ -232,7 +236,12 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child:
-                        Icon(Icons.receipt_long, color: _statusColor(status)),
+                        Icon(
+                          isDirectDelivery
+                              ? Icons.local_shipping_outlined
+                              : Icons.receipt_long,
+                          color: _statusColor(status),
+                        ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -248,9 +257,11 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          hasStoreDiscount
-                              ? 'صافي المتجر بعد الخصم'
-                              : 'مستحق المتجر من هذا الطلب',
+                          isDirectDelivery
+                              ? 'وصّلها من المتجر - ${packageDescription.isEmpty ? 'إرسالية مباشرة' : packageDescription}'
+                              : hasStoreDiscount
+                                  ? 'صافي المتجر بعد الخصم'
+                                  : 'مستحق المتجر من هذا الطلب',
                           style: const TextStyle(
                               color: AppThemeArabic.storeTextSecondary),
                         ),
@@ -287,7 +298,9 @@ class StoreCurrentOrdersScreen extends StatelessWidget {
                   children: [
                     const Icon(Icons.payments_outlined, size: 18),
                     const SizedBox(width: 8),
-                    Text('المستحق ${_formatAmount(receivable)} ج.س'),
+                    Text(isDirectDelivery
+                        ? 'رسوم التوصيل ${_formatAmount(deliveryFee)} ج.س'
+                        : 'المستحق ${_formatAmount(receivable)} ج.س'),
                     const Spacer(),
                     const Icon(Icons.chevron_left),
                   ],

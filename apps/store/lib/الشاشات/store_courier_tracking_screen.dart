@@ -52,6 +52,23 @@ class _StoreCourierTrackingScreenState
     return null;
   }
 
+  bool _isTrackingFinished(String status) {
+    return {
+      'delivered',
+      'completed',
+      'partially_completed',
+      'delivery_failed',
+      'failed',
+      'deferred',
+      'returned',
+      'cancelled',
+      'store_rejected',
+      'rejected_by_store',
+      'تم التوصيل',
+      'ملغي',
+    }.contains(status.trim());
+  }
+
   void _listenToOrder() {
     _orderSubscription = FirebaseFirestore.instance
         .collection('orders')
@@ -61,15 +78,19 @@ class _StoreCourierTrackingScreenState
       final data = snapshot.data();
       if (data == null) return;
       final driverId = (data['assignedDriverId'] ?? '').toString().trim();
+      final status = (data['orderStatus'] ?? data['status'] ?? '').toString();
+      final trackingFinished = _isTrackingFinished(status);
       setState(() {
-        _status = (data['orderStatus'] ?? data['status'] ?? '').toString();
+        _status = status;
         _storeLocation = _readLocation(data['restaurantLocation']) ??
             _readLocation(data['pickupLocation']) ??
             _readLocation(data['restaurantGeoPoint']) ??
             _storeLocation;
-        _driverLocation = _readLocation(data['driverLocation']) ??
-            _readLocation(data['driverCurrentLocation']) ??
-            _driverLocation;
+        _driverLocation = trackingFinished
+            ? null
+            : (_readLocation(data['driverLocation']) ??
+                _readLocation(data['driverCurrentLocation']) ??
+                _driverLocation);
       });
       final restaurantId = (data['restaurantId'] ?? '').toString().trim();
       if (_storeLocation == null &&
@@ -77,7 +98,11 @@ class _StoreCourierTrackingScreenState
           restaurantId != _loadedRestaurantId) {
         _loadStoreLocation(restaurantId);
       }
-      if (driverId.isNotEmpty && driverId != _listeningDriverId) {
+      if (trackingFinished) {
+        _driverSubscription?.cancel();
+        _driverSubscription = null;
+        _listeningDriverId = null;
+      } else if (driverId.isNotEmpty && driverId != _listeningDriverId) {
         _listenToDriver(driverId);
       }
       _focusMap();
@@ -156,8 +181,14 @@ class _StoreCourierTrackingScreenState
       case 'picked_up':
       case 'قيد التوصيل':
         return 'المندوب في طريقه إلى العميل';
+      case 'delivered':
+      case 'completed':
+      case 'تم التوصيل':
+        return 'تم تسليم الطلب وانتهى التتبع';
       default:
-        return 'يتم تحديث موقع المندوب مباشرة';
+        return _isTrackingFinished(_status)
+            ? 'انتهى الطلب وتم إيقاف التتبع'
+            : 'يتم تحديث موقع المندوب مباشرة';
     }
   }
 

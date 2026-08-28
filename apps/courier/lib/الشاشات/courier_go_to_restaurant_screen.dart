@@ -1,8 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:getwidget/getwidget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:getwidget/getwidget.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -12,6 +11,7 @@ import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
 import '../helpers/courier_runtime_helpers.dart';
 
 import 'courier_client_contact_card.dart';
+import 'courier_batch_trip_screen.dart';
 import 'courier_go_to_client_screen.dart';
 import 'courier_ui.dart';
 
@@ -24,19 +24,6 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
     required this.orderId,
     required this.driverId,
   });
-
-  Future<void> _openGoogleMaps(BuildContext context, LatLng location) async {
-    final Uri url = Uri.parse(
-        'https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}&travelmode=driving');
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-      return;
-    }
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تعذر فتح خرائط Google على هذا الجهاز')),
-    );
-  }
 
   void _fitCameraToPoints(GoogleMapController controller, List<LatLng> points) {
     if (points.isEmpty) return;
@@ -72,12 +59,60 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
     );
   }
 
-  Future<bool> _confirmPickup(BuildContext context) async {
+  List<Map<String, dynamic>> _batchStops(Map<String, dynamic> data) {
+    return (data['batchStops'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  LatLng? _batchStopLocation(Map<String, dynamic> stop) {
+    final lat = courierToDouble(stop['clientLat'] ?? stop['lat']);
+    final lng = courierToDouble(stop['clientLng'] ?? stop['lng']);
+    if (lat == 0 || lng == 0) return null;
+    return LatLng(lat, lng);
+  }
+
+  Set<Marker> _buildBatchPickupMarkers({
+    required LatLng pickupLocation,
+    required List<Map<String, dynamic>> stops,
+    required String pickupTitle,
+  }) {
+    final markers = <Marker>{
+      Marker(
+        markerId: const MarkerId('batch-pickup'),
+        position: pickupLocation,
+        infoWindow: InfoWindow(title: pickupTitle, snippet: 'نقطة الاستلام'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      ),
+    };
+    for (var i = 0; i < stops.length; i += 1) {
+      final location = _batchStopLocation(stops[i]);
+      if (location == null) continue;
+      markers.add(
+        Marker(
+          markerId: MarkerId('batch-client-$i'),
+          position: location,
+          infoWindow: InfoWindow(
+            title: '${i + 1}. ${stops[i]['clientName'] ?? 'عميل'}',
+            snippet: (stops[i]['zoneName'] ?? '').toString(),
+          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        ),
+      );
+    }
+    return markers;
+  }
+
+  Future<bool> _confirmPickup(
+    BuildContext context, {
+    String pickupTitle = 'المطعم',
+  }) async {
     final approved = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('تأكيد الاستلام'),
-        content: const Text('هل أنت متأكد أنك استلمت الطلب من المطعم؟'),
+        content: Text('هل أنت متأكد أنك استلمت الطلب من $pickupTitle؟'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -348,6 +383,21 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
     final paymentMethod = (orderData['paymentMethod'] ?? 'غير محدد').toString();
     final totalWithDelivery =
         (orderData['totalWithDelivery'] ?? orderData['total'] ?? 0).toString();
+    final orderSource = (orderData['orderSource'] ?? '').toString();
+    final isParcelDelivery = orderSource == 'client_parcel_delivery';
+    final isStoreDirectDelivery = orderSource == 'store_direct_delivery';
+    final pickupLabel = isParcelDelivery
+        ? 'نقطة الاستلام'
+        : isStoreDirectDelivery
+            ? 'المتجر'
+            : 'المطعم';
+    final pickupName = isParcelDelivery
+        ? 'نقطة الاستلام من العميل'
+        : (orderData['restaurantName'] ?? 'نقطة الاستلام').toString();
+    final packageDescription =
+        (orderData['itemDescription'] ?? orderData['packageDescription'] ?? '')
+            .toString()
+            .trim();
 
     return Card(
       child: ExpansionTile(
@@ -371,22 +421,29 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
             ),
           ),
           _detailRow(
-              'العميل', (orderData['clientName'] ?? 'غير معروف').toString()),
-          _detailRow('المطعم',
-              (orderData['restaurantName'] ?? 'غير معروف').toString()),
+              'العميل', (orderData['clientName'] ?? 'العميل').toString()),
+          _detailRow(pickupLabel, pickupName),
           _detailRow('طريقة الدفع', paymentMethod),
           _detailRow('الإجمالي', '$totalWithDelivery ج.س'),
           const SizedBox(height: 8),
-          const Align(
+          Align(
             alignment: Alignment.centerRight,
             child: Text(
-              'العناصر',
-              style:
-                  TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+              isParcelDelivery || isStoreDirectDelivery ? 'الإرسالية' : 'العناصر',
+              style: const TextStyle(
+                  fontWeight: FontWeight.bold, color: Colors.black87),
             ),
           ),
           const SizedBox(height: 6),
-          if (items.isEmpty)
+          if (isParcelDelivery || isStoreDirectDelivery)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                packageDescription.isEmpty ? 'إرسالية توصيل' : packageDescription,
+                style: const TextStyle(color: Colors.black87),
+              ),
+            )
+          else if (items.isEmpty)
             const Align(
               alignment: Alignment.centerRight,
               child: Text(
@@ -464,7 +521,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: buildCourierAppBar('الذهاب إلى المطعم'),
+      appBar: buildCourierAppBar('الذهاب إلى نقطة الاستلام'),
       body: CourierPageBackground(
         child: FutureBuilder<Map<String, dynamic>?>(
           future: _fetchOrderData(),
@@ -496,15 +553,39 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
             }
 
             final orderData = snapshot.data!;
+            final orderSource = (orderData['orderSource'] ?? '').toString();
+            final isParcelDelivery = orderSource == 'client_parcel_delivery';
+            final isStoreDirectDelivery = orderSource == 'store_direct_delivery';
+            final isStoreBatchDelivery = orderSource == 'store_batch_delivery';
+            final List<Map<String, dynamic>> batchStops =
+                isStoreBatchDelivery ? _batchStops(orderData) : const [];
+            final pickupTitle = isParcelDelivery
+                ? 'نقطة الاستلام'
+                : isStoreDirectDelivery
+                    ? 'المتجر'
+                    : isStoreBatchDelivery
+                        ? 'المتجر'
+                        : 'المطعم';
             final String restaurantName =
-                (orderData['restaurantName'] ?? '').toString().trim().isNotEmpty
+                isParcelDelivery
+                    ? ((orderData['pickupAddress'] ?? orderData['pickupMapUrl'] ?? '')
+                            .toString()
+                            .trim()
+                            .isNotEmpty
+                        ? 'نقطة الاستلام من العميل'
+                        : 'نقطة الاستلام')
+                    : (orderData['restaurantName'] ?? '').toString().trim().isNotEmpty
                     ? orderData['restaurantName'].toString().trim()
-                    : 'اسم غير معروف';
+                    : 'نقطة الاستلام';
 
-            final restaurantLocationRaw = orderData['restaurantLocation'];
+            final restaurantLocationRaw = isParcelDelivery
+                ? (orderData['pickupLocation'] ?? orderData['restaurantLocation'])
+                : orderData['restaurantLocation'];
             final clientLocationRaw = orderData['clientLocation'];
 
-            final double? restaurantLat = (orderData['restaurantLat'] as num?)
+            final double? restaurantLat = ((isParcelDelivery
+                        ? orderData['pickupLat']
+                        : orderData['restaurantLat']) as num?)
                     ?.toDouble() ??
                 (restaurantLocationRaw is GeoPoint
                     ? restaurantLocationRaw.latitude
@@ -513,7 +594,9 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                             (restaurantLocationRaw['latitude'] as num?)
                                 ?.toDouble()
                         : null));
-            final double? restaurantLng = (orderData['restaurantLng'] as num?)
+            final double? restaurantLng = ((isParcelDelivery
+                        ? orderData['pickupLng']
+                        : orderData['restaurantLng']) as num?)
                     ?.toDouble() ??
                 (restaurantLocationRaw is GeoPoint
                     ? restaurantLocationRaw.longitude
@@ -549,6 +632,9 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                 : null;
             final LatLng? clientLocation =
                 hasClientLocation ? LatLng(clientLat, clientLng) : null;
+            final batchClientLocations =
+                batchStops.map(_batchStopLocation).whereType<LatLng>().toList();
+            final batchHasClientLocations = batchClientLocations.isNotEmpty;
             final double? driverLat =
                 (orderData['driverLat'] as num?)?.toDouble();
             final double? driverLng =
@@ -575,21 +661,69 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               children: [
                 _buildJourneyHeader(
-                  title: 'المرحلة 1 من 3 · التوجه للمطعم',
-                  subtitle:
-                      'عند وصولك للمطعم واستلام الطلب اضغط «استلام الطلب»',
-                  icon: Icons.store_mall_directory_outlined,
+                  title: isStoreBatchDelivery
+                      ? 'المرحلة 1 من 2 · استلام رحلة مجمعة'
+                      : 'المرحلة 1 من 3 · التوجه إلى $pickupTitle',
+                  subtitle: isStoreBatchDelivery
+                      ? 'استلم كل الطلبيات من $pickupTitle مرة واحدة، ثم انتقل لشاشة العملاء.'
+                      : 'عند وصولك إلى $pickupTitle واستلام الطلب اضغط «استلام الطلب»',
+                  icon: isParcelDelivery
+                      ? Icons.call_received_rounded
+                      : Icons.store_mall_directory_outlined,
                 ),
                 const SizedBox(height: 12),
                 _buildOrderDetails(orderData),
                 const SizedBox(height: 12),
-                CourierClientContactCard(
-                  orderData: orderData,
-                  orderId: orderId,
-                  driverId: driverId,
-                  showPhone: true,
-                ),
-                const SizedBox(height: 12),
+                if (isStoreBatchDelivery) ...[
+                  CourierSectionCard(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'عملاء الرحلة',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${batchStops.length} طلبات داخل رحلة واحدة من نفس نقطة الاستلام.',
+                          style: const TextStyle(
+                            color: AppThemeArabic.courierTextSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: batchStops.take(8).map((stop) {
+                            final zone =
+                                (stop['zoneName'] ?? 'منطقة غير محددة')
+                                    .toString();
+                            return Chip(
+                              label: Text(zone),
+                              avatar: const Icon(
+                                Icons.person_pin_circle_outlined,
+                                size: 18,
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ] else ...[
+                  CourierClientContactCard(
+                    orderData: orderData,
+                    orderId: orderId,
+                    driverId: driverId,
+                    showPhone: true,
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -615,28 +749,42 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                Row(
                   children: [
-                    if (driverToRestaurantKm != null)
-                      Chip(
-                        label: Text(
-                          'يبعد المطعم عنك: ${courierFormatDistance(driverToRestaurantKm)}',
-                        ),
+                    Expanded(
+                      child: CourierCompactMetric(
+                        icon: Icons.my_location_rounded,
+                        label: '$pickupTitle عنك',
+                        value: driverToRestaurantKm == null
+                            ? 'غير متاح'
+                            : courierFormatDistance(driverToRestaurantKm),
                       ),
-                    if (restaurantToClientKm != null)
-                      Chip(
-                        label: Text(
-                          'يبعد العميل عن المطعم: ${courierFormatDistance(restaurantToClientKm)}',
-                        ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: CourierCompactMetric(
+                        icon: Icons.person_pin_circle_outlined,
+                        label: isStoreBatchDelivery
+                            ? 'عملاء الرحلة'
+                            : 'العميل عن $pickupTitle',
+                        value: isStoreBatchDelivery
+                            ? '${batchStops.length} طلب'
+                            : restaurantToClientKm == null
+                                ? 'غير متاح'
+                                : courierFormatDistance(restaurantToClientKm),
+                        tone: AppThemeArabic.courierAccent,
                       ),
-                    if (driverFee > 0)
-                      Chip(
-                        label: Text(
-                          'رسوم التوصيل: ${courierFormatMoney(driverFee)} ج.س',
-                        ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: CourierCompactMetric(
+                        icon: Icons.payments_outlined,
+                        label: 'رسومك',
+                        value: driverFee <= 0
+                            ? 'غير متاح'
+                            : '${courierFormatMoney(driverFee)} ج.س',
                       ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -651,31 +799,59 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                           return GoogleMap(
                             initialCameraPosition: CameraPosition(
                               target: restaurantLocation!,
-                              zoom: hasClientLocation ? 12 : 15,
+                              zoom: (isStoreBatchDelivery
+                                          ? batchHasClientLocations
+                                          : hasClientLocation)
+                                      ? 12
+                                      : 15,
                             ),
-                            markers: buildCourierTripMarkers(
-                              restaurantLocation: restaurantLocation,
-                              clientLocation: clientLocation,
-                              icons: iconSnap.data,
-                            ),
-                            polylines: clientLocation == null
-                                ? const {}
-                                : {
-                                    Polyline(
-                                      polylineId:
-                                          const PolylineId('restaurant_client'),
-                                      points: [
-                                        restaurantLocation,
-                                        clientLocation
-                                      ],
-                                      color: AppThemeArabic.courierPrimary,
-                                      width: 6,
-                                    ),
-                                  },
+                            markers: isStoreBatchDelivery
+                                ? _buildBatchPickupMarkers(
+                                    pickupLocation: restaurantLocation,
+                                    stops: batchStops,
+                                    pickupTitle: pickupTitle,
+                                  )
+                                : buildCourierTripMarkers(
+                                    restaurantLocation: restaurantLocation,
+                                    clientLocation: clientLocation,
+                                    icons: iconSnap.data,
+                                    pickupLabel: pickupTitle,
+                                  ),
+                            polylines: isStoreBatchDelivery
+                                ? {
+                                    if (batchClientLocations.isNotEmpty)
+                                      Polyline(
+                                        polylineId:
+                                            const PolylineId('batch_route'),
+                                        points: [
+                                          restaurantLocation,
+                                          ...batchClientLocations,
+                                        ],
+                                        color: AppThemeArabic.courierPrimary,
+                                        width: 6,
+                                      ),
+                                  }
+                                : clientLocation == null
+                                    ? const {}
+                                    : {
+                                        Polyline(
+                                          polylineId: const PolylineId(
+                                              'restaurant_client'),
+                                          points: [
+                                            restaurantLocation,
+                                            clientLocation
+                                          ],
+                                          color: AppThemeArabic.courierPrimary,
+                                          width: 6,
+                                        ),
+                                      },
                             onMapCreated: (controller) {
                               final points = <LatLng>[
                                 restaurantLocation,
-                                if (clientLocation != null) clientLocation,
+                                if (isStoreBatchDelivery)
+                                  ...batchClientLocations
+                                else if (clientLocation != null)
+                                  clientLocation,
                               ];
                               WidgetsBinding.instance.addPostFrameCallback((_) {
                                 _fitCameraToPoints(controller, points);
@@ -711,12 +887,14 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                               .withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(999),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.storefront_rounded, size: 16),
                             SizedBox(width: 6),
-                            Text('المطعم'),
+                            Text(isStoreBatchDelivery
+                                ? 'نقطة الاستلام'
+                                : pickupTitle),
                           ],
                         ),
                       ),
@@ -728,37 +906,18 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                               .withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(999),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.person_rounded, size: 16),
-                            SizedBox(width: 6),
-                            Text('العميل'),
+                            const Icon(Icons.person_rounded, size: 16),
+                            const SizedBox(width: 6),
+                            Text(isStoreBatchDelivery
+                                ? 'عملاء الرحلة'
+                                : 'العميل'),
                           ],
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 20),
-                  Align(
-                    alignment: Alignment.center,
-                    child: Material(
-                      color: AppThemeArabic.courierPrimary,
-                      shape: const CircleBorder(),
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: () =>
-                            _openGoogleMaps(context, restaurantLocation!),
-                        child: const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Icon(
-                            Icons.navigation_rounded,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                      ),
-                    ),
                   ),
                 ] else ...[
                   Container(
@@ -767,8 +926,8 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                       color: Colors.orange.shade50,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Text(
-                      'لا توجد إحداثيات للمطعم في الطلب، لذلك لا يمكن عرض الخريطة حالياً.',
+                    child: Text(
+                      'لا توجد إحداثيات لـ $pickupTitle في الطلب، لذلك لا يمكن عرض الخريطة حالياً.',
                       style: TextStyle(color: Colors.black87),
                     ),
                   ),
@@ -782,7 +941,9 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                   clientLng: clientLng,
                   restaurantLat: restaurantLat,
                   restaurantLng: restaurantLng,
-                  confirmPickup: _confirmPickup,
+                  isBatchDelivery: isStoreBatchDelivery,
+                  confirmPickup: (context) =>
+                      _confirmPickup(context, pickupTitle: pickupTitle),
                   saveNextStage: () => _saveCurrentStage('going_to_client'),
                 ),
               ],
@@ -803,6 +964,7 @@ class _PickupFromRestaurantButton extends StatefulWidget {
     required this.clientLng,
     required this.restaurantLat,
     required this.restaurantLng,
+    required this.isBatchDelivery,
     required this.confirmPickup,
     required this.saveNextStage,
   });
@@ -814,6 +976,7 @@ class _PickupFromRestaurantButton extends StatefulWidget {
   final double? clientLng;
   final double? restaurantLat;
   final double? restaurantLng;
+  final bool isBatchDelivery;
   final Future<bool> Function(BuildContext context) confirmPickup;
   final Future<void> Function() saveNextStage;
 
@@ -847,11 +1010,16 @@ class _PickupFromRestaurantButtonState
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => CourierGoToClientScreen(
-            orderId: widget.orderId,
-            clientLocation: widget.clientLocation,
-            driverId: widget.driverId,
-          ),
+          builder: (_) => widget.isBatchDelivery
+              ? CourierBatchTripScreen(
+                  orderId: widget.orderId,
+                  driverId: widget.driverId,
+                )
+              : CourierGoToClientScreen(
+                  orderId: widget.orderId,
+                  clientLocation: widget.clientLocation,
+                  driverId: widget.driverId,
+                ),
         ),
       );
     } catch (e) {
@@ -874,9 +1042,10 @@ class _PickupFromRestaurantButtonState
 
   @override
   Widget build(BuildContext context) {
+    final readyText = widget.isBatchDelivery ? 'استلام الرحلة' : 'استلام الطلب';
     return GFButton(
       onPressed: _handlePickup,
-      text: _confirmingPickup ? 'جاري الاستلام...' : 'استلام الطلب',
+      text: _confirmingPickup ? 'جاري الاستلام...' : readyText,
       icon: _confirmingPickup
           ? const SizedBox(
               width: 18,

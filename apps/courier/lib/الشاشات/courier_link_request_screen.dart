@@ -1,4 +1,5 @@
 ﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -28,11 +29,13 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _whatsappPhoneController = TextEditingController();
   final _vehicleTypeController = TextEditingController();
   final _vehiclePlateController = TextEditingController();
   final _nationalIdController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
 
   File? _idImage;
   bool _submitting = false;
@@ -106,11 +109,13 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _whatsappPhoneController.dispose();
     _vehicleTypeController.dispose();
     _vehiclePlateController.dispose();
     _nationalIdController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -146,6 +151,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
     required String password,
     required String name,
     required String phone,
+    required String whatsappPhone,
     required String vehicleType,
     required String vehiclePlate,
     required String nationalIdNumber,
@@ -165,6 +171,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
           'password': password,
           'name': name,
           'phone': phone,
+          'whatsappPhone': whatsappPhone,
           'vehicleType': vehicleType,
           'vehiclePlate': vehiclePlate,
           'nationalIdNumber': nationalIdNumber,
@@ -201,7 +208,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
     final workArea = _workAreaPayload;
     if (_idImage == null) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('الرجاء رفع صورة الهوية/الرخصة')),
+        const SnackBar(content: Text('الرجاء رفع صورة إثبات الشخصية')),
       );
       return;
     }
@@ -213,7 +220,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
       if (idImageUrl == null) {
         setState(() => _submitting = false);
         messenger.showSnackBar(
-          const SnackBar(content: Text('فشل رفع صورة الهوية/الرخصة')),
+          const SnackBar(content: Text('فشل رفع صورة إثبات الشخصية')),
         );
         return;
       }
@@ -226,11 +233,19 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
       } else {
         final email = _emailController.text.trim().toLowerCase();
         final password = _passwordController.text;
+        final confirmPassword = _confirmPasswordController.text;
         if (email.isEmpty || password.length < 6) {
           setState(() => _submitting = false);
           messenger.showSnackBar(
             const SnackBar(
                 content: Text('أدخل بريدًا صحيحًا وكلمة مرور 6 أحرف فأكثر')),
+          );
+          return;
+        }
+        if (password != confirmPassword) {
+          setState(() => _submitting = false);
+          messenger.showSnackBar(
+            const SnackBar(content: Text('كلمتا المرور غير متطابقتين')),
           );
           return;
         }
@@ -246,6 +261,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
             'password': password,
             'name': _nameController.text.trim(),
             'phone': _phoneController.text.trim(),
+            'whatsappPhone': _whatsappPhoneController.text.trim(),
             'vehicleType': _vehicleTypeController.text.trim(),
             'vehiclePlate': _vehiclePlateController.text.trim(),
             'nationalIdNumber': _nationalIdController.text.trim(),
@@ -267,6 +283,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
             password: password,
             name: _nameController.text.trim(),
             phone: _phoneController.text.trim(),
+            whatsappPhone: _whatsappPhoneController.text.trim(),
             vehicleType: _vehicleTypeController.text.trim(),
             vehiclePlate: _vehiclePlateController.text.trim(),
             nationalIdNumber: _nationalIdController.text.trim(),
@@ -285,6 +302,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
       final payload = {
         'name': _nameController.text.trim(),
         'phone': _phoneController.text.trim(),
+        'whatsappPhone': _whatsappPhoneController.text.trim(),
         'vehicleType': _vehicleTypeController.text.trim(),
         'vehiclePlate': _vehiclePlateController.text.trim(),
         'nationalIdNumber': _nationalIdController.text.trim(),
@@ -360,10 +378,15 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'رقم الجوال'),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'الرجاء إدخال رقم الجوال'
-                      : null,
+                  decoration:
+                      const InputDecoration(labelText: 'رقم الهاتف (اختياري)'),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _whatsappPhoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration:
+                      const InputDecoration(labelText: 'رقم واتساب (اختياري)'),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -376,18 +399,18 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _vehiclePlateController,
-                  decoration: const InputDecoration(labelText: 'رقم اللوحة'),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'الرجاء إدخال رقم اللوحة'
-                      : null,
+                  decoration:
+                      const InputDecoration(labelText: 'رقم اللوحة (اختياري)'),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _nationalIdController,
-                  decoration:
-                      const InputDecoration(labelText: 'رقم الهوية/الرخصة'),
+                  decoration: const InputDecoration(
+                    labelText: 'رقم إثبات الشخصية',
+                    hintText: 'مثال: رقم وطني، جواز سفر، إثبات شخصية',
+                  ),
                   validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'الرجاء إدخال رقم الهوية/الرخصة'
+                      ? 'الرجاء إدخال رقم إثبات الشخصية'
                       : null,
                 ),
                 const SizedBox(height: 12),
@@ -413,6 +436,19 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                     validator: (v) {
                       if (v == null || v.length < 6) {
                         return 'الحد الأدنى لطول كلمة المرور 6 أحرف';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    obscureText: true,
+                    decoration:
+                        const InputDecoration(labelText: 'تأكيد كلمة المرور'),
+                    validator: (v) {
+                      if (v != _passwordController.text) {
+                        return 'كلمتا المرور غير متطابقتين';
                       }
                       return null;
                     },
@@ -467,7 +503,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                 ),
                 const SizedBox(height: 12),
                 _idImage == null
-                    ? const Text('لم يتم رفع صورة الهوية/الرخصة بعد')
+                    ? const Text('لم يتم رفع صورة إثبات الشخصية بعد')
                     : ClipRRect(
                         borderRadius: BorderRadius.circular(10),
                         child: Image.file(_idImage!,
@@ -477,7 +513,7 @@ class _CourierLinkRequestScreenState extends State<CourierLinkRequestScreen> {
                 ElevatedButton.icon(
                   onPressed: _pickIdImage,
                   icon: const Icon(Icons.badge),
-                  label: const Text('رفع صورة الهوية/الرخصة'),
+                  label: const Text('رفع صورة إثبات الشخصية'),
                 ),
                 const SizedBox(height: 20),
                 ElevatedButton(

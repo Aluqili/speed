@@ -21,6 +21,22 @@ service cloud.firestore {
         );
     }
 
+    function isAttendanceSupervisor() {
+      return isSignedIn()
+        && (
+          request.auth.token.get('email', '') == 'aluqili7@gmail.com'
+          || request.auth.token.get('email', '') == 'speedstarapp0@gmail.com'
+        );
+    }
+
+    function isAdminSupervisor() {
+      return isSignedIn()
+        && (
+          request.auth.token.get('email', '') == 'aluqili7@gmail.com'
+          || request.auth.token.get('email', '') == 'speedstarapp0@gmail.com'
+        );
+    }
+
     function isApprovedRestaurantOwner(restaurantId) {
       return isSignedIn()
         && exists(/databases/$(database)/documents/restaurants/$(restaurantId))
@@ -122,7 +138,9 @@ service cloud.firestore {
         && request.resource.data.clientId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'orderStatus', 'paymentStatus', 'paymentMethod',
-          'proofImageUrl', 'transactionReference', 'paymentReviewDecision',
+          'proofImageUrl', 'paymentReceiptUrl', 'transactionReference',
+          'paymentReceiptPrecheck', 'paymentReceiptValidationStatus',
+          'paymentReviewDecision',
           'paymentReviewRequired', 'paymentReviewReason', 'walletAutoConfirmedAt',
           'paidAt', 'walletRequestedAmount', 'walletBalanceBeforePayment',
           'walletBalanceAfterPreview', 'amountDueAfterWallet', 'externalPaidAmount',
@@ -201,7 +219,7 @@ service cloud.firestore {
 
     match /admins/{uid} {
       allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isAdminSupervisor();
     }
 
     match /managementProjects/{docId} {
@@ -230,6 +248,20 @@ service cloud.firestore {
 
     match /managementFollowups/{docId} {
       allow read, write: if isAdmin();
+    }
+
+    // Attendance is written and summarized only by trusted Cloud Functions.
+    match /staffAttendanceProfiles/{uid} {
+      allow read, write: if false;
+    }
+
+    match /staffAttendanceSessions/{sessionId} {
+      allow read, write: if false;
+    }
+
+    match /managementNotifications/{uid}/items/{notificationId} {
+      allow read: if isAdmin() && (request.auth.uid == uid || isAttendanceSupervisor());
+      allow create, update, delete: if false;
     }
 
     match /supportTickets/{ticketId} {
@@ -351,6 +383,16 @@ service cloud.firestore {
         allow create: if isOrderClient(get(/databases/$(database)/documents/orders/$(orderId)).data);
         allow update, delete: if isAdmin();
       }
+    }
+
+    match /deliveryZones/{zoneId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /deliveryZoneClusters/{clusterId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     match /restaurants/{restaurantId} {

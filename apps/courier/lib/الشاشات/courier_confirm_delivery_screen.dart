@@ -10,6 +10,7 @@ import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 import 'package:speedstar_core/speedstar_core.dart'
     show formatUnifiedOrderCode, OrderStatusPalette;
 import '../helpers/courier_runtime_helpers.dart';
+import '../الخدمات/location_service.dart';
 import 'chat_screen.dart';
 import 'courier_ui.dart';
 
@@ -169,6 +170,8 @@ class _CourierConfirmDeliveryScreenState
       // ✅ إزالة الطلب من التخزين المحلي
       final box = GetStorage();
       box.remove('current_order');
+      await LocationService.instance
+          .stopAfterOrderCompletionIfIdle(widget.driverId);
 
       setState(() => _uploading = false);
 

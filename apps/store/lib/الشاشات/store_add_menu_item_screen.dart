@@ -37,6 +37,8 @@ class StoreAddMenuItemScreen extends StatefulWidget {
 }
 
 class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
+  static const String _customCategoryOption = 'فئة مخصصة';
+
   static const List<String> _categoryOptions = [
     'وجبات رئيسية',
     'وجبات سريعة',
@@ -88,6 +90,57 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
     'أخرى',
   ];
 
+  static const List<String> _groceryCategoryOptions = [
+    'خضروات وفواكه',
+    'ألبان وبيض',
+    'مخبوزات',
+    'لحوم ودواجن',
+    'مجمدات',
+    'أرز ومكرونة وحبوب',
+    'معلبات وصلصات',
+    'زيوت وسكر وبهارات',
+    'مشروبات ومياه',
+    'شاي وقهوة',
+    'تسالي وحلويات',
+    'منظفات',
+    'عناية شخصية',
+    'مستلزمات منزلية',
+    'أخرى',
+  ];
+
+  static const List<String> _pharmacyCategoryOptions = [
+    'أدوية بدون وصفة',
+    'أدوية بوصفة',
+    'فيتامينات ومكملات',
+    'أم وطفل',
+    'عناية شخصية',
+    'عناية بالبشرة',
+    'عناية بالشعر',
+    'أجهزة طبية',
+    'إسعافات أولية',
+    'مستلزمات صحية',
+    'كمامات ومعقمات',
+    'أخرى',
+  ];
+
+  static const List<String> _commerceCategoryOptions = [
+    'إلكترونيات',
+    'جوالات وإكسسوارات',
+    'كمبيوتر وأجهزة مكتبية',
+    'أزياء رجالية',
+    'أزياء نسائية',
+    'أحذية وشنط',
+    'عطور وتجميل',
+    'ساعات وإكسسوارات',
+    'أجهزة منزلية',
+    'أدوات منزلية',
+    'أثاث وديكور',
+    'ألعاب وهدايا',
+    'قرطاسية ومكتبات',
+    'رياضة ولياقة',
+    'أخرى',
+  ];
+
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _itemNameController = TextEditingController();
   final TextEditingController _itemPriceController = TextEditingController();
@@ -97,11 +150,14 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
   final TextEditingController _skuController = TextEditingController();
   final TextEditingController _stockQuantityController =
       TextEditingController();
+  final TextEditingController _customCategoryController =
+      TextEditingController();
   String? _selectedCategory;
   File? _imageFile;
   String? _existingImageUrl;
   bool _isLoading = false;
   bool _requiresPrescription = false;
+  bool _usesCustomCategory = false;
   String _businessType = 'restaurant';
 
   bool get _isRestaurant => _businessType == 'restaurant';
@@ -110,6 +166,28 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
       _businessType == 'brand' ||
       _businessType == 'ecommerce';
   bool get _isPharmacy => _businessType == 'pharmacy';
+
+  List<String> get _categoryOptionsForBusinessType {
+    final base = switch (_businessType) {
+      'grocery' => _groceryCategoryOptions,
+      'pharmacy' => _pharmacyCategoryOptions,
+      'brand' || 'ecommerce' => _commerceCategoryOptions,
+      _ => _categoryOptions,
+    };
+    final selected = _selectedCategory?.trim();
+    if (selected == null || selected.isEmpty || base.contains(selected)) {
+      return base;
+    }
+    return [...base, selected];
+  }
+
+  List<String> get _categoryDropdownOptions => [
+        ..._categoryOptionsForBusinessType,
+        _customCategoryOption,
+      ];
+
+  String? get _categoryDropdownValue =>
+      _usesCustomCategory ? _customCategoryOption : _selectedCategory;
 
   @override
   void initState() {
@@ -175,6 +253,7 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
     _largePriceController.dispose();
     _skuController.dispose();
     _stockQuantityController.dispose();
+    _customCategoryController.dispose();
     super.dispose();
   }
 
@@ -273,7 +352,9 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
     final rawSmall = _smallPriceController.text.trim().replaceAll(',', '.');
     final rawMedium = _mediumPriceController.text.trim().replaceAll(',', '.');
     final rawLarge = _largePriceController.text.trim().replaceAll(',', '.');
-    final category = _selectedCategory?.trim() ?? '';
+    final category = _usesCustomCategory
+        ? _customCategoryController.text.trim()
+        : (_selectedCategory?.trim() ?? '');
     final sku = _skuController.text.trim();
     final stockQuantity = int.tryParse(_stockQuantityController.text.trim());
 
@@ -443,6 +524,8 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
         _mediumPriceController.clear();
         _largePriceController.clear();
         _selectedCategory = null;
+        _customCategoryController.clear();
+        _usesCustomCategory = false;
         _imageFile = null;
         _existingImageUrl = null;
       });
@@ -572,9 +655,9 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: _selectedCategory,
+                    value: _categoryDropdownValue,
                     decoration: const InputDecoration(labelText: 'فئة الصنف'),
-                    items: _categoryOptions
+                    items: _categoryDropdownOptions
                         .map(
                           (category) => DropdownMenuItem<String>(
                             value: category,
@@ -583,7 +666,14 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
                         )
                         .toList(),
                     onChanged: (value) {
-                      setState(() => _selectedCategory = value);
+                      setState(() {
+                        _usesCustomCategory = value == _customCategoryOption;
+                        _selectedCategory =
+                            _usesCustomCategory ? null : value;
+                        if (!_usesCustomCategory) {
+                          _customCategoryController.clear();
+                        }
+                      });
                     },
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
@@ -592,6 +682,23 @@ class _StoreAddMenuItemScreenState extends State<StoreAddMenuItemScreen> {
                       return null;
                     },
                   ),
+                  if (_usesCustomCategory) ...[
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _customCategoryController,
+                      decoration: const InputDecoration(
+                        labelText: 'اكتب اسم الفئة',
+                        hintText: 'مثال: مستلزمات مدارس',
+                      ),
+                      validator: (value) {
+                        if (!_usesCustomCategory) return null;
+                        if (value == null || value.trim().isEmpty) {
+                          return 'الرجاء كتابة اسم الفئة';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
                 ],
               ),
               _buildSectionCard(

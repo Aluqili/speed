@@ -1,12 +1,14 @@
 ﻿import 'package:flutter/material.dart';
 import '../الثيم/client_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/services.dart';
 import 'package:getwidget/getwidget.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:provider/provider.dart';
 import 'package:speedstar_core/speedstar_core.dart' show formatUnifiedOrderCode;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../الخدمات/payment_app_launcher.dart';
 import '../الخدمات/promocode_service.dart';
@@ -24,7 +26,7 @@ class PaymentScreen extends StatefulWidget {
     this.orderId,
     this.draftOrderData,
     this.clearCartOnSubmit = false,
-  })  : assert(orderId != null || draftOrderData != null);
+  }) : assert(orderId != null || draftOrderData != null);
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
@@ -49,6 +51,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Map<String, dynamic>? _promoData;
   String? _promoError;
   num _discount = 0;
+  bool _checkingPromo = false;
 
   static const List<String> _defaultPaymentMethods = [
     'bankk',
@@ -74,7 +77,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
       case 'max-usage-per-user':
         return 'تم تجاوز الحد المسموح لك لاستخدام هذا الرمز.';
       case 'new-orders-only':
-        return 'هذا الرمز مخصص للطلبات الجديدة فقط.';
+      case 'first-order-only':
+        return 'هذا الرمز مخصص لأول طلب لك فقط.';
+      case 'returning-customers-only':
+        return 'هذا الرمز متاح من الطلب الثاني للعميل العائد.';
+      case 'specific-order-only':
+        return 'هذا الرمز مخصص لرقم طلب مختلف في حسابك.';
       case 'item-mismatch':
         return 'هذا الرمز مرتبط بصنف غير موجود في الطلب.';
       default:
@@ -130,6 +138,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
               'bankkOpenUrl': '',
               'ocashOpenUrl': '',
               'fawryOpenUrl': '',
+              'commercialRegistryImageUrl': '',
+              'commercialRegistryLinkUrl': '',
             };
         final methods = _resolveAvailableMethods(_settings!);
         _selectedMethod ??= methods.isNotEmpty ? methods.first : null;
@@ -160,6 +170,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
           'bankkOpenUrl': '',
           'ocashOpenUrl': '',
           'fawryOpenUrl': '',
+          'commercialRegistryImageUrl': '',
+          'commercialRegistryLinkUrl': '',
         };
         final methods = _resolveAvailableMethods(_settings!);
         _selectedMethod ??= methods.isNotEmpty ? methods.first : null;
@@ -211,6 +223,140 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return (_settings?['${method}OpenUrlIos'] ?? '').toString().trim();
   }
 
+  bool _remoteBool(String key, bool fallback) {
+    try {
+      return FirebaseRemoteConfig.instance.getBool(key);
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  int _remoteInt(String key, int fallback) {
+    try {
+      final value = FirebaseRemoteConfig.instance.getInt(key);
+      return value == 0 ? fallback : value;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  String _remoteString(String key, String fallback) {
+    try {
+      final value = FirebaseRemoteConfig.instance.getString(key).trim();
+      return value.isEmpty ? fallback : value;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  String get _receiptPrecheckMode {
+    if (!_remoteBool('payment_receipt_precheck_enabled', true)) return 'off';
+    final mode =
+        _remoteString('payment_receipt_precheck_mode', 'block').toLowerCase();
+    return ['off', 'warn', 'block'].contains(mode) ? mode : 'block';
+  }
+
+  String get _receiptRequirementsMessage => _remoteString(
+        'payment_receipt_requirements_message',
+        'ارفع إيصالاً واضحاً يظهر فيه رقم العملية والمبلغ والحساب المحوّل إليه، ثم أدخل رقم العملية كاملاً.',
+      );
+
+  List<String> _receiptPrecheckIssues({
+    required String transactionReference,
+    required String? proofUrl,
+    required double amountDueAfterWallet,
+  }) {
+    if (_receiptPrecheckMode == 'off') return const [];
+    final issues = <String>[];
+    final requireImage =
+        _remoteBool('payment_receipt_require_image', true);
+    final requireReference =
+        _remoteBool('payment_receipt_require_reference', true);
+    final minDigits =
+        _remoteInt('payment_receipt_min_reference_digits', 8);
+    final digitsOnly = transactionReference.replaceAll(RegExp(r'\D'), '');
+
+    if (requireImage && (proofUrl == null || proofUrl.trim().isEmpty)) {
+      issues.add(_remoteString(
+        'payment_receipt_missing_image_message',
+        'ارفع صورة إيصال واضحة قبل إرسال الطلب.',
+      ));
+    }
+    if (requireReference && transactionReference.trim().isEmpty) {
+      issues.add(_remoteString(
+        'payment_receipt_missing_reference_message',
+        'أدخل رقم العملية كاملاً كما يظهر في الإيصال.',
+      ));
+    } else if (transactionReference.trim().isNotEmpty &&
+        digitsOnly.length < minDigits) {
+      issues.add(_remoteString(
+        'payment_receipt_short_reference_message',
+        'رقم العملية يبدو ناقصاً. تأكد من إدخاله كاملاً من الإيصال.',
+      ));
+    }
+    if (amountDueAfterWallet <= 0) {
+      issues.add(_remoteString(
+        'payment_receipt_invalid_amount_message',
+        'مبلغ الدفع غير واضح. أعد المحاولة أو تواصل مع الدعم.',
+      ));
+    }
+    return issues;
+  }
+
+  Map<String, dynamic> _receiptPrecheckPayload({
+    required String mode,
+    required List<String> issues,
+    required String transactionReference,
+    required double amountDueAfterWallet,
+  }) {
+    return {
+      'enabled': mode != 'off',
+      'mode': mode,
+      'passed': issues.isEmpty,
+      'issues': issues,
+      'checkedAtClientIso': DateTime.now().toIso8601String(),
+      'minReferenceDigits':
+          _remoteInt('payment_receipt_min_reference_digits', 8),
+      'requireImage': _remoteBool('payment_receipt_require_image', true),
+      'requireReference':
+          _remoteBool('payment_receipt_require_reference', true),
+      'referenceDigitsCount':
+          transactionReference.replaceAll(RegExp(r'\D'), '').length,
+      'expectedAmount': amountDueAfterWallet,
+      'method': _selectedMethod,
+      'source': 'client_local_precheck',
+    };
+  }
+
+  Future<bool> _confirmReceiptPrecheckWarning(List<String> issues) async {
+    if (!mounted) return false;
+    final message = [
+      _remoteString(
+        'payment_receipt_warning_title',
+        'راجع بيانات الإيصال قبل المتابعة',
+      ),
+      ...issues.map((issue) => '- $issue'),
+    ].join('\n');
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('تنبيه الإيصال'),
+            content: Text(message, textAlign: TextAlign.right),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('تعديل'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('متابعة'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   Future<void> _launchPaymentApp(String method) async {
     await launchPaymentApp(
       context,
@@ -234,6 +380,72 @@ class _PaymentScreenState extends State<PaymentScreen> {
     await Clipboard.setData(ClipboardData(text: account));
     if (!mounted) return;
     GFToast.showToast('تم نسخ رقم الحساب.', context);
+  }
+
+  String get _commercialRegistryImageUrl =>
+      (_settings?['commercialRegistryImageUrl'] ?? '')
+          .toString()
+          .trim();
+
+  String get _commercialRegistryLinkUrl =>
+      (_settings?['commercialRegistryLinkUrl'] ?? '')
+          .toString()
+          .trim();
+
+  Future<void> _openCommercialRegistry() async {
+    final link = _commercialRegistryLinkUrl;
+    if (link.isNotEmpty) {
+      final uri = Uri.tryParse(link);
+      if (uri != null && await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        return;
+      }
+    }
+    final imageUrl = _commercialRegistryImageUrl;
+    if (imageUrl.isNotEmpty) {
+      _showImagePreview(imageUrl, title: 'السجل التجاري');
+    }
+  }
+
+  void _showImagePreview(String url, {String title = 'الصورة'}) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.all(18),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: InteractiveViewer(
+                  child: Image.network(url, fit: BoxFit.contain),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showQrPreview(String method, String qrUrl) {
@@ -711,6 +923,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final largeOrderFee =
           (orderData['largeOrderFee'] as num?)?.toDouble() ?? 0.0;
       final restaurantId = (orderData['restaurantId'] ?? '').toString();
+      final orderSource = (orderData['orderSource'] ?? '').toString();
       final clientId = (orderData['clientId'] ?? '').toString().trim();
       final items =
           List<Map<String, dynamic>>.from(orderData['items'] ?? const []);
@@ -718,8 +931,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           (subtotal + deliveryFee + largeOrderFee);
       final autoOfferId = (orderData['autoOfferId'] ?? '').toString();
       final autoOfferTitle = (orderData['autoOfferTitle'] ?? '').toString();
-      final autoOfferSummary =
-          (orderData['autoOfferSummary'] ?? '').toString();
+      final autoOfferSummary = (orderData['autoOfferSummary'] ?? '').toString();
       // يُحسب فقط للطلب الجديد (غير المنشأ بعد)، فالطلب القائم بالفعل
       // لديه الخصم مطبقًا بالفعل ضمن totalWithDelivery
       final autoOfferDiscountAmount = widget.orderId == null
@@ -743,6 +955,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           items: items,
           orderReference: widget.orderId ?? generatedOrderCode,
           isNewOrder: widget.orderId == null,
+          orderSource: orderSource,
         );
 
         if (redeem['ok'] != true) {
@@ -808,6 +1021,39 @@ class _PaymentScreenState extends State<PaymentScreen> {
         return;
       }
 
+      final receiptPrecheckMode = isWalletOnly ? 'off' : _receiptPrecheckMode;
+      final receiptPrecheckIssues = isWalletOnly
+          ? <String>[]
+          : _receiptPrecheckIssues(
+              transactionReference: transactionReference,
+              proofUrl: _proofUrl,
+              amountDueAfterWallet: amountDueAfterWallet,
+            );
+      if (receiptPrecheckIssues.isNotEmpty &&
+          receiptPrecheckMode == 'block') {
+        if (!mounted) return;
+        setState(() => _submitting = false);
+        GFToast.showToast(receiptPrecheckIssues.first, context);
+        return;
+      }
+      if (receiptPrecheckIssues.isNotEmpty &&
+          receiptPrecheckMode == 'warn') {
+        final shouldContinue =
+            await _confirmReceiptPrecheckWarning(receiptPrecheckIssues);
+        if (!shouldContinue) {
+          if (!mounted) return;
+          setState(() => _submitting = false);
+          return;
+        }
+      }
+
+      final receiptPrecheck = _receiptPrecheckPayload(
+        mode: receiptPrecheckMode,
+        issues: receiptPrecheckIssues,
+        transactionReference: transactionReference,
+        amountDueAfterWallet: amountDueAfterWallet,
+      );
+
       final transactionReferenceToStore = isWalletOnly
           ? 'wallet-auto-${DateTime.now().millisecondsSinceEpoch}'
           : transactionReference;
@@ -828,7 +1074,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
         draft['paymentReviewReason'] =
             isWalletOnly ? 'wallet_auto_paid' : 'awaiting_admin_review';
         if (!isWalletOnly) {
+          draft['paymentReceiptUrl'] = _proofUrl;
           draft['proofImageUrl'] = _proofUrl;
+          draft['paymentReceiptPrecheck'] = receiptPrecheck;
+          draft['paymentReceiptValidationStatus'] =
+              receiptPrecheckIssues.isEmpty ? 'passed_local' : 'warning_local';
         }
         if (isWalletOnly) {
           draft['paidAt'] = FieldValue.serverTimestamp();
@@ -876,8 +1126,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
           .doc();
       await paymentRef.set({
         'method': _selectedMethod,
+        'paymentReceiptUrl': _proofUrl,
         'proofImageUrl': _proofUrl,
         'transactionReference': transactionReferenceToStore,
+        'receiptPrecheck': receiptPrecheck,
         'submittedAt': FieldValue.serverTimestamp(),
         'status': isWalletOnly ? 'paid' : 'under_review',
         'walletRequestedAmount': walletRequestedAmount,
@@ -899,8 +1151,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
         'orderStatus': isWalletOnly ? 'store_pending' : 'payment_review',
         'paymentStatus': isWalletOnly ? 'paid' : _paymentReviewStatus,
         'paymentMethod': _selectedMethod,
+        'paymentReceiptUrl': isWalletOnly ? FieldValue.delete() : _proofUrl,
         'proofImageUrl': isWalletOnly ? FieldValue.delete() : _proofUrl,
         'transactionReference': transactionReferenceToStore,
+        'paymentReceiptPrecheck':
+            isWalletOnly ? FieldValue.delete() : receiptPrecheck,
+        'paymentReceiptValidationStatus': isWalletOnly
+            ? FieldValue.delete()
+            : (receiptPrecheckIssues.isEmpty
+                ? 'passed_local'
+                : 'warning_local'),
         'paymentReviewDecision': isWalletOnly ? 'approved' : 'pending',
         'paymentReviewRequired': !isWalletOnly,
         'paymentReviewReason':
@@ -934,11 +1194,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
               (orderData['totalWithDelivery'] as num?)?.toDouble() ?? 0,
           'totalWithDelivery':
               (((orderData['totalWithDelivery'] as num?)?.toDouble() ?? 0) -
-                      autoOfferDiscountAmount) <
-                  0
-              ? 0
-              : (((orderData['totalWithDelivery'] as num?)?.toDouble() ?? 0) -
-                  autoOfferDiscountAmount),
+                          autoOfferDiscountAmount) <
+                      0
+                  ? 0
+                  : (((orderData['totalWithDelivery'] as num?)?.toDouble() ??
+                          0) -
+                      autoOfferDiscountAmount),
         },
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -1035,20 +1296,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ),
       child: Column(
         children: [
-          _summaryRow(
-              'قيمة الأصناف', '${subtotal.toStringAsFixed(2)} ج.س'),
-          _summaryRow(
-              'رسوم التوصيل', '${deliveryFee.toStringAsFixed(2)} ج.س'),
+          _summaryRow('قيمة الأصناف', '${subtotal.toStringAsFixed(2)} ج.س'),
+          _summaryRow('رسوم التوصيل', '${deliveryFee.toStringAsFixed(2)} ج.س'),
           if (largeOrderFee > 0)
-            _summaryRow('رسوم الخدمة',
-                '${largeOrderFee.toStringAsFixed(2)} ج.س'),
+            _summaryRow(
+                'رسوم الخدمة', '${largeOrderFee.toStringAsFixed(2)} ج.س'),
           if (discount > 0)
             _summaryRow(discountLabel ?? 'خصم الرمز الترويجي',
                 '-${discount.toString()} ج.س',
                 valueColor: Colors.green),
           if (walletRequestedAmount > 0)
-            _summaryRow(
-                'خصم المحفظة',
+            _summaryRow('خصم المحفظة',
                 '-${walletRequestedAmount.toStringAsFixed(2)} ج.س',
                 valueColor: Colors.green),
           const Padding(
@@ -1056,9 +1314,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             child: Divider(height: 1),
           ),
           _summaryRow(
-            walletRequestedAmount > 0
-                ? 'المبلغ المتبقي للدفع'
-                : 'الإجمالي',
+            walletRequestedAmount > 0 ? 'المبلغ المتبقي للدفع' : 'الإجمالي',
             '${(walletRequestedAmount > 0 ? amountDueAfterWallet : totalWithDelivery).toStringAsFixed(2)} ج.س',
             valueColor: primaryColor,
             bold: true,
@@ -1069,6 +1325,74 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 
+  Widget _commercialRegistryCard() {
+    final imageUrl = _commercialRegistryImageUrl;
+    if (imageUrl.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: InkWell(
+        onTap: _openCommercialRegistry,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.network(
+                  imageUrl,
+                  width: 58,
+                  height: 58,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 58,
+                    height: 58,
+                    color: const Color(0xFFFFF7ED),
+                    child: const Icon(Icons.verified_outlined,
+                        color: primaryColor),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'تحقق من بيانات الشركة',
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'اضغط للاطلاع على السجل التجاري قبل الدفع.',
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 12,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.open_in_new_rounded,
+                  color: primaryColor, size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1096,8 +1420,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             ? 0.0
             : ((data['autoOfferDiscountAmount'] as num?)?.toDouble() ?? 0.0);
         final autoOfferTitle = (data['autoOfferTitle'] ?? '').toString();
-        final effectiveDiscount =
-            _discount > 0 ? _discount : autoOfferDiscount;
+        final effectiveDiscount = _discount > 0 ? _discount : autoOfferDiscount;
         num totalWithDelivery = (data['totalWithDelivery'] as num).toDouble();
         if (effectiveDiscount > 0) {
           totalWithDelivery -= effectiveDiscount;
@@ -1136,7 +1459,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             return Directionality(
               textDirection: TextDirection.rtl,
               child: Scaffold(
-                backgroundColor: backgroundColor,
+                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
                 appBar: AppBar(
                   backgroundColor: Theme.of(context).colorScheme.surface,
                   elevation: 1,
@@ -1177,6 +1500,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         walletBalance: walletBalance,
                         amountDueAfterWallet: amountDueAfterWallet,
                       ),
+                      _commercialRegistryCard(),
                       const SizedBox(height: 6),
                       // تفاصيل الأصناف (أسدال)
                       Theme(
@@ -1282,58 +1606,92 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               ),
                             ),
                             GestureDetector(
-                              onTap: () async {
-                                final messenger =
-                                    ScaffoldMessenger.of(context);
-                                setState(() {
-                                  _promoError = null;
-                                  _promoData = null;
-                                  _discount = 0;
-                                });
-                                final code =
-                                    _promocodeController.text.trim();
-                                if (code.isEmpty) return;
-                                final restaurantId =
-                                    (data['restaurantId'] ?? '').toString();
-                                final promo = await _promocodeService!
-                                    .validatePromocode(
-                                  code: code,
-                                  subtotal: subtotal,
-                                  deliveryFee: deliveryFee,
-                                  largeOrderFee: largeOrderFee,
-                                  restaurantId: restaurantId,
-                                  items: items,
-                                  isNewOrder: widget.orderId == null,
-                                );
-                                if (!mounted) return;
-                                if (promo == null || promo['ok'] != true) {
-                                  setState(() {
-                                    _promoError = _promoReasonMessage(promo ==
-                                            null
-                                        ? 'invalid-code'
-                                        : promo['reason']?.toString());
-                                    _promoData = null;
-                                    _discount = 0;
-                                  });
-                                  messenger.showSnackBar(SnackBar(
-                                    content: Text(_promoError!),
-                                    backgroundColor: Colors.red,
-                                  ));
-                                } else {
-                                  final discount =
-                                      (promo['discountAmount'] as num?) ?? 0;
-                                  setState(() {
-                                    _promoData = promo;
-                                    _discount = discount;
-                                    _promoError = null;
-                                  });
-                                  messenger.showSnackBar(SnackBar(
-                                    content: Text(
-                                        'تم تطبيق الخصم: -${discount.toString()} ج.س'),
-                                    backgroundColor: Colors.green,
-                                  ));
-                                }
-                              },
+                              onTap: _checkingPromo
+                                  ? null
+                                  : () async {
+                                      final messenger =
+                                          ScaffoldMessenger.of(context);
+                                      setState(() {
+                                        _checkingPromo = true;
+                                        _promoError = null;
+                                        _promoData = null;
+                                        _discount = 0;
+                                      });
+                                      final code =
+                                          _promocodeController.text.trim();
+                                      if (code.isEmpty) {
+                                        setState(() => _checkingPromo = false);
+                                        return;
+                                      }
+                                      final restaurantId =
+                                          (data['restaurantId'] ?? '')
+                                              .toString();
+                                      final orderSource =
+                                          (data['orderSource'] ?? '')
+                                              .toString();
+                                      try {
+                                        final promo = await _promocodeService!
+                                            .validatePromocode(
+                                          code: code,
+                                          subtotal: subtotal,
+                                          deliveryFee: deliveryFee,
+                                          largeOrderFee: largeOrderFee,
+                                          restaurantId: restaurantId,
+                                          items: items,
+                                          isNewOrder: widget.orderId == null,
+                                          orderSource: orderSource,
+                                        );
+                                        if (!mounted) return;
+                                        if (promo == null ||
+                                            promo['ok'] != true) {
+                                          setState(() {
+                                            _promoError = _promoReasonMessage(
+                                                promo == null
+                                                    ? 'invalid-code'
+                                                    : promo['reason']
+                                                        ?.toString());
+                                            _promoData = null;
+                                            _discount = 0;
+                                          });
+                                          messenger.showSnackBar(SnackBar(
+                                            content: Text(_promoError!),
+                                            backgroundColor: Colors.red,
+                                          ));
+                                        } else {
+                                          final discount =
+                                              (promo['discountAmount']
+                                                      as num?) ??
+                                                  0;
+                                          setState(() {
+                                            _promoData = promo;
+                                            _discount = discount;
+                                            _promoError = null;
+                                          });
+                                          messenger.showSnackBar(SnackBar(
+                                            content: Text(
+                                                'تم تطبيق الخصم: -${discount.toString()} ج.س'),
+                                            backgroundColor: Colors.green,
+                                          ));
+                                        }
+                                      } catch (_) {
+                                        if (!mounted) return;
+                                        setState(() {
+                                          _promoError =
+                                              'تعذر فحص الرمز حالياً. حاول مرة أخرى.';
+                                          _promoData = null;
+                                          _discount = 0;
+                                        });
+                                        messenger.showSnackBar(SnackBar(
+                                          content: Text(_promoError!),
+                                          backgroundColor: Colors.red,
+                                        ));
+                                      } finally {
+                                        if (mounted) {
+                                          setState(
+                                              () => _checkingPromo = false);
+                                        }
+                                      }
+                                    },
                               child: Container(
                                 margin: const EdgeInsets.all(6),
                                 padding: const EdgeInsets.symmetric(
@@ -1342,14 +1700,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   color: primaryColor,
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                child: const Text(
-                                  'تطبيق',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14,
-                                  ),
-                                ),
+                                child: _checkingPromo
+                                    ? const SizedBox.square(
+                                        dimension: 18,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2.4,
+                                        ),
+                                      )
+                                    : const Text(
+                                        'تطبيق',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
+                                        ),
+                                      ),
                               ),
                             ),
                           ],
@@ -1389,18 +1755,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             final m = methods[idx];
                             final selected = _selectedMethod == m;
                             return GestureDetector(
-                              onTap: () =>
-                                  setState(() => _selectedMethod = m),
+                              onTap: () => setState(() => _selectedMethod = m),
                               child: AnimatedContainer(
-                                duration:
-                                    const Duration(milliseconds: 180),
+                                duration: const Duration(milliseconds: 180),
                                 width: 100,
                                 decoration: BoxDecoration(
-                                  color: selected
-                                      ? primaryColor
-                                      : cardColor,
-                                  borderRadius:
-                                      BorderRadius.circular(16),
+                                  color: selected ? primaryColor : cardColor,
+                                  borderRadius: BorderRadius.circular(16),
                                   border: Border.all(
                                     color: selected
                                         ? primaryColor
@@ -1410,8 +1771,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   boxShadow: selected
                                       ? [
                                           BoxShadow(
-                                            color: primaryColor
-                                                .withValues(alpha: 0.25),
+                                            color: primaryColor.withValues(
+                                                alpha: 0.25),
                                             blurRadius: 12,
                                             offset: const Offset(0, 4),
                                           ),
@@ -1419,8 +1780,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                       : [],
                                 ),
                                 child: Column(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.center,
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Icon(
                                       _paymentMethodIcon(m),
@@ -1506,12 +1866,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                     ),
                                   )
                                 : Column(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Icon(Icons.cloud_upload_rounded,
-                                          size: 36,
-                                          color: Colors.grey[400]),
+                                          size: 36, color: Colors.grey[400]),
                                       const SizedBox(height: 8),
                                       Text(
                                         'اضغط لرفع صورة الإيصال',
@@ -1537,6 +1895,37 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             ),
                           ),
                         const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF7ED),
+                            borderRadius: BorderRadius.circular(14),
+                            border:
+                                Border.all(color: const Color(0xFFFED7AA)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.info_outline_rounded,
+                                  color: Color(0xFFEA580C), size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _receiptRequirementsMessage,
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(
+                                    color: Color(0xFF9A3412),
+                                    fontSize: 12.5,
+                                    height: 1.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
                         TextField(
                           controller: _transactionRefController,
                           textAlign: TextAlign.right,
@@ -1553,8 +1942,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(14),
-                              borderSide: const BorderSide(
-                                  color: Color(0xFFE5E7EB)),
+                              borderSide:
+                                  const BorderSide(color: Color(0xFFE5E7EB)),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(14),
@@ -1569,8 +1958,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           decoration: BoxDecoration(
                             color: const Color(0xFFE8F5E9),
                             borderRadius: BorderRadius.circular(14),
-                            border:
-                                Border.all(color: Colors.green.shade200),
+                            border: Border.all(color: Colors.green.shade200),
                           ),
                           child: Row(
                             children: [

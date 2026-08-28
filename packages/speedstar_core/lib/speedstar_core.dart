@@ -23,6 +23,7 @@ export 'src/config/sections_service_ar.dart';
 export 'src/config/remote_helpers.dart';
 export 'src/config/ops_runtime_config.dart';
 export 'src/config/app_update_config.dart';
+export 'src/config/business_type_config.dart';
 export 'src/orders/order_workflow_models_ar.dart';
 export 'src/orders/order_workflow_service_ar.dart';
 export 'src/orders/order_code_formatter.dart';

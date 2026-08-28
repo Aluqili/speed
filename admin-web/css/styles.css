@@ -2062,6 +2062,73 @@ textarea { resize: vertical; min-height: 88px; }
   text-transform: uppercase;
 }
 
+.batch-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.batch-summary-grid--compact {
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 6px;
+}
+
+.batch-summary-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.batch-summary-pill b {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.batch-stop-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: 0;
+}
+
+.batch-stop-row--delivered td { background: rgba(16, 185, 129, 0.07); }
+.batch-stop-row--issue td { background: rgba(239, 68, 68, 0.07); }
+.batch-stop-row--removal td { background: rgba(245, 158, 11, 0.09); }
+
+.batch-removed-box {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.map-batch-summary {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+}
+
+.map-batch-summary ul {
+  margin: 8px 0 0;
+  padding-inline-start: 18px;
+}
+
+.map-batch-summary li {
+  margin-bottom: 4px;
+}
+
 .order-actions-row { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .order-timeline { display: grid; gap: 8px; }
@@ -2733,6 +2800,8 @@ textarea { resize: vertical; min-height: 88px; }
   justify-content: flex-end;
   gap: 8px;
 }
+
+.support-mobile-back-btn { display: none; }
 
 .support-summary .chip {
   border: 1px solid var(--border);
@@ -3496,12 +3565,24 @@ body[data-active-portal="pending"]      { --active-portal-accent:#ca8a04; --acti
   }
 
   .support-sidebar {
-    height: 240px;
-    min-height: 240px;
+    height: 100%;
+    min-height: 0;
     border-right: none;
-    border-bottom: 1px solid var(--border);
+    border-bottom: none;
   }
-  .support-main { min-height: 0; }
+  .support-main { display: none; min-height: 0; }
+  .support-root.support-mobile-thread .support-sidebar { display: none; }
+  .support-root.support-mobile-thread .support-main { display: grid; }
+  .support-mobile-back-btn { display: inline-flex; }
+
+  .support-item {
+    min-height: 122px;
+    padding: 11px;
+    gap: 5px;
+  }
+
+  .support-item-route,
+  .support-item-conversation { display: none; }
 
   .login-shell { grid-template-columns: 1fr; }
   .login-shell-copy { display: none; }

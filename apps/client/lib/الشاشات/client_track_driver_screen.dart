@@ -317,6 +317,12 @@ class _ClientTrackDriverScreenState extends State<ClientTrackDriverScreen>
 
             const finished = {
               'delivered',
+              'completed',
+              'partially_completed',
+              'delivery_failed',
+              'failed',
+              'deferred',
+              'returned',
               'cancelled',
               'store_rejected',
               'rejected_by_store'

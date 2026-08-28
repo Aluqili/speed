@@ -6,6 +6,7 @@ import '../helpers/courier_runtime_helpers.dart';
 
 import 'courier_client_contact_card.dart';
 import 'courier_confirm_delivery_screen.dart';
+import 'courier_batch_trip_screen.dart';
 import 'courier_order_details_screen.dart';
 import 'courier_ui.dart';
 
@@ -27,6 +28,8 @@ class _CourierActiveOrdersScreenState extends State<CourierActiveOrdersScreen> {
     'pickup_ready',
     'picked_up',
     'arrived_to_client',
+    'partially_completed',
+    'delivery_failed',
     'جاهز للتوصيل',
     'قيد التوصيل',
     'وصل إلى العميل',
@@ -125,6 +128,8 @@ class _CourierActiveOrdersScreenState extends State<CourierActiveOrdersScreen> {
                   final orderId = doc.id;
                   final status =
                       (data['orderStatus'] ?? data['status'] ?? '').toString();
+                  final isBatchDelivery =
+                      data['orderSource'] == 'store_batch_delivery';
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -190,7 +195,27 @@ class _CourierActiveOrdersScreenState extends State<CourierActiveOrdersScreen> {
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(height: 14),
-                          _buildActionButton(context, status, orderId),
+                          if (isBatchDelivery)
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => CourierBatchTripScreen(
+                                        orderId: orderId,
+                                        driverId: widget.driverId,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.route_outlined),
+                                label: const Text('تنفيذ الرحلة المجمعة'),
+                              ),
+                            )
+                          else
+                            _buildActionButton(context, status, orderId),
                           const SizedBox(height: 10),
                           OutlinedButton.icon(
                             onPressed: () {

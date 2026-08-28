@@ -6,6 +6,8 @@ import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
+import 'package:speedstar_core/speedstar_core.dart'
+    show SpeedstarBusinessTypeConfig;
 import 'package:speedstar_core/src/auth/login_screen_ar.dart';
 
 import 'address_selection_screen.dart';
@@ -33,6 +35,8 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
   String? _coverImageUrl;
   String? _logoImageUrl;
   bool _autoAcceptOrders = false;
+  SpeedstarBusinessTypeConfig _businessConfig =
+      SpeedstarBusinessTypeConfig.restaurant;
   double? _latitude;
   double? _longitude;
   bool _isDeletingAccount = false;
@@ -63,6 +67,8 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
       _coverImageUrl = data['coverImageUrl'];
       _logoImageUrl = data['logoImageUrl'];
       _autoAcceptOrders = data['autoAcceptOrders'] ?? false;
+      _businessConfig =
+          SpeedstarBusinessTypeConfig.resolve(data['businessType']);
       final loc = data['location'];
       if (loc is GeoPoint) {
         _latitude = loc.latitude;
@@ -268,8 +274,8 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
       child: Scaffold(
         backgroundColor: backgroundColor,
         appBar: AppBar(
-          title: const Text(
-            'إعدادات المطعم',
+          title: Text(
+            'إعدادات ${_businessConfig.placeLabel}',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontFamily: 'Tajawal',
@@ -337,7 +343,7 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                 title: 'البيانات الأساسية',
                 icon: Icons.badge_outlined,
                 children: [
-                  _buildLabel('📛 اسم المطعم'),
+                  _buildLabel('📛 اسم ${_businessConfig.placeLabel}'),
                   _buildTextField(_nameController),
                   _buildLabel('📱 رقم الهاتف'),
                   _buildTextField(_phoneController,
@@ -411,7 +417,7 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                 title: 'الشعار',
                 icon: Icons.image_outlined,
                 children: [
-                  _buildLabel('🏷️ شعار المطعم'),
+                  _buildLabel('🏷️ شعار ${_businessConfig.placeLabel}'),
                   _logoImageUrl != null
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(12),

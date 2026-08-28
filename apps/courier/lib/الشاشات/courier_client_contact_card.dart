@@ -191,7 +191,6 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
     final phone = normalizeCourierPhone(_clientPhone);
     final shouldShowPhone = widget.showPhone;
     final hasPhone = phone.isNotEmpty;
-
     return Container(
       padding: EdgeInsets.all(widget.compact ? 12 : 16),
       decoration: BoxDecoration(
@@ -246,32 +245,41 @@ class _CourierClientContactCardState extends State<CourierClientContactCard> {
             ],
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          Row(
             children: [
               if (shouldShowPhone) ...[
-                FilledButton.icon(
-                  onPressed: hasPhone
-                      ? () => launchCourierPhoneCall(context, _clientPhone)
-                      : null,
-                  icon: const Icon(Icons.call_rounded, size: 18),
-                  label: const Text('اتصال'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppThemeArabic.courierAccent,
-                    foregroundColor: Colors.white,
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: hasPhone
+                        ? () => launchCourierPhoneCall(context, _clientPhone)
+                        : null,
+                    icon: const Icon(Icons.call_rounded, size: 18),
+                    label: const Text('اتصال'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppThemeArabic.courierAccent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                    ),
                   ),
                 ),
-                OutlinedButton.icon(
+                const SizedBox(width: 8),
+                IconButton.outlined(
+                  tooltip: 'نسخ الرقم',
                   onPressed: hasPhone ? _copyPhone : null,
                   icon: const Icon(Icons.copy_rounded, size: 18),
-                  label: const Text('نسخ الرقم'),
                 ),
+                const SizedBox(width: 8),
               ],
-              OutlinedButton.icon(
-                onPressed: _clientId.isEmpty ? null : _openChat,
-                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-                label: const Text('دردشة'),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _clientId.isEmpty ? null : _openChat,
+                  icon:
+                      const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                  label: const Text('دردشة'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                  ),
+                ),
               ),
             ],
           ),

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -34,11 +35,14 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _cashierPhoneController = TextEditingController();
+  final _whatsappPhoneController = TextEditingController();
   final _recordNumberController = TextEditingController();
   final _pharmacyLicenseController = TextEditingController();
   final _returnPolicyDaysController = TextEditingController(text: '14');
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
 
   File? _recordImage;
   File? _pharmacyLicenseImage;
@@ -62,11 +66,14 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _cashierPhoneController.dispose();
+    _whatsappPhoneController.dispose();
     _recordNumberController.dispose();
     _pharmacyLicenseController.dispose();
     _returnPolicyDaysController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -157,6 +164,9 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
         'businessType': _businessType,
         'businessTypeLabel': _businessTypes[_businessType],
         'phone': _phoneController.text.trim(),
+        'ownerPhone': _phoneController.text.trim(),
+        'cashierPhone': _cashierPhoneController.text.trim(),
+        'whatsappPhone': _whatsappPhoneController.text.trim(),
         'commercialRecordNumber': _recordNumberController.text.trim(),
         'commercialRecordImageUrl': recordImageUrl,
         'pharmacyLicenseNumber': _pharmacyLicenseController.text.trim(),
@@ -182,12 +192,20 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
       }
       if (!_isAuthenticatedSubmit) {
         final password = _passwordController.text;
+        final confirmPassword = _confirmPasswordController.text;
         if (password.length < 6) {
           setState(() => _submitting = false);
           messenger.showSnackBar(
             const SnackBar(
               content: Text('الحد الأدنى لطول كلمة المرور 6 أحرف'),
             ),
+          );
+          return;
+        }
+        if (password != confirmPassword) {
+          setState(() => _submitting = false);
+          messenger.showSnackBar(
+            const SnackBar(content: Text('كلمتا المرور غير متطابقتين')),
           );
           return;
         }
@@ -200,6 +218,9 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
         'name': payload['name'],
         'businessType': payload['businessType'],
         'phone': payload['phone'],
+        'ownerPhone': payload['ownerPhone'],
+        'cashierPhone': payload['cashierPhone'],
+        'whatsappPhone': payload['whatsappPhone'],
         'commercialRecordNumber': payload['commercialRecordNumber'],
         'commercialRecordImageUrl': payload['commercialRecordImageUrl'],
         'pharmacyLicenseNumber': payload['pharmacyLicenseNumber'],
@@ -344,10 +365,21 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   decoration:
-                      const InputDecoration(labelText: 'رقم جوال المنشأة'),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'الرجاء إدخال رقم الجوال'
-                      : null,
+                      const InputDecoration(labelText: 'رقم صاحب العمل (اختياري)'),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _cashierPhoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration:
+                      const InputDecoration(labelText: 'رقم الكاشير (اختياري)'),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _whatsappPhoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration:
+                      const InputDecoration(labelText: 'رقم واتساب (اختياري)'),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -425,6 +457,19 @@ class _StoreLinkRequestScreenState extends State<StoreLinkRequestScreen> {
                     validator: (v) {
                       if (v == null || v.length < 6) {
                         return 'الحد الأدنى لطول كلمة المرور 6 أحرف';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    obscureText: true,
+                    decoration:
+                        const InputDecoration(labelText: 'تأكيد كلمة المرور'),
+                    validator: (v) {
+                      if (v != _passwordController.text) {
+                        return 'كلمتا المرور غير متطابقتين';
                       }
                       return null;
                     },

@@ -4,18 +4,24 @@ import 'package:package_info_plus/package_info_plus.dart';
 class AppUpdateRuntimeValues {
   const AppUpdateRuntimeValues({
     required this.forceUpdateRequired,
+    required this.optionalUpdateAvailable,
     required this.isOutdated,
     required this.currentBuildNumber,
     required this.minBuildNumber,
+    required this.recommendedBuildNumber,
     required this.message,
+    required this.optionalMessage,
     required this.updateUrl,
   });
 
   final bool forceUpdateRequired;
+  final bool optionalUpdateAvailable;
   final bool isOutdated;
   final int currentBuildNumber;
   final int minBuildNumber;
+  final int recommendedBuildNumber;
   final String message;
+  final String optionalMessage;
   final String updateUrl;
 }
 
@@ -36,6 +42,10 @@ class AppUpdateConfig {
       '${appKey}_min_build_android': 0,
       '${appKey}_update_message': updateMessage,
       '${appKey}_update_url_android': '',
+      '${appKey}_optional_update_enabled': false,
+      '${appKey}_recommended_build_android': 0,
+      '${appKey}_optional_update_message':
+          'يتوفر إصدار جديد من التطبيق. ننصحك بالتحديث للحصول على أفضل تجربة.',
     };
   }
 
@@ -54,6 +64,8 @@ class AppUpdateConfig {
 
     final globalForceEnabled = rc.getBool('ops_force_update_enabled');
     final appForceEnabled = rc.getBool('${appKey}_force_update_enabled');
+    final optionalEnabled = rc.getBool('${appKey}_optional_update_enabled');
+    final recommendedBuild = rc.getInt('${appKey}_recommended_build_android');
 
     final globalMessage = rc.getString('ops_update_message').trim();
     final appMessage = rc.getString('${appKey}_update_message').trim();
@@ -67,14 +79,24 @@ class AppUpdateConfig {
 
     final isOutdated = minBuild > 0 && currentBuild < minBuild;
     final forceUpdateRequired =
-        globalForceEnabled && appForceEnabled && isOutdated;
+        isOutdated && (appForceEnabled || (globalForceEnabled && appMinBuild <= 0));
+    final optionalUpdateAvailable = !forceUpdateRequired &&
+        optionalEnabled &&
+        recommendedBuild > 0 &&
+        currentBuild < recommendedBuild;
+    final optionalMessage =
+        rc.getString('${appKey}_optional_update_message').trim();
 
     return AppUpdateRuntimeValues(
       forceUpdateRequired: forceUpdateRequired,
+      optionalUpdateAvailable: optionalUpdateAvailable,
       isOutdated: isOutdated,
       currentBuildNumber: currentBuild,
       minBuildNumber: minBuild,
+      recommendedBuildNumber: recommendedBuild,
       message: message,
+      optionalMessage:
+          optionalMessage.isNotEmpty ? optionalMessage : fallbackMessage,
       updateUrl: updateUrl,
     );
   }
