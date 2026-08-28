@@ -137,8 +137,10 @@ const fawryOpenUrlIosInput = document.getElementById('fawryOpenUrlIosInput');
 const bankkOpenUrlInput = document.getElementById('bankkOpenUrlInput');
 const ocashOpenUrlInput = document.getElementById('ocashOpenUrlInput');
 const fawryOpenUrlInput = document.getElementById('fawryOpenUrlInput');
+const commercialRegistryFileInput = document.getElementById('commercialRegistryFileInput');
 const commercialRegistryImageUrlInput = document.getElementById('commercialRegistryImageUrlInput');
 const commercialRegistryLinkUrlInput = document.getElementById('commercialRegistryLinkUrlInput');
+const commercialRegistryPreview = document.getElementById('commercialRegistryPreview');
 const savePaymentSettingsBtn = document.getElementById('savePaymentSettingsBtn');
 const paymentSettingsResult = document.getElementById('paymentSettingsResult');
 const shiftAccountForm = document.getElementById('shiftAccountForm');
@@ -4322,6 +4324,7 @@ function mountFinance() {
   bindQrFilePreview(bankkQrFileInput, bankkQrPreview);
   bindQrFilePreview(ocashQrFileInput, ocashQrPreview);
   bindQrFilePreview(fawryQrFileInput, fawryQrPreview);
+  bindQrFilePreview(commercialRegistryFileInput, commercialRegistryPreview);
 
   // Skeletons while waiting for snapshots
   if (financeOrdersTable) setHtml(financeOrdersTable, skeletonTable(['رقم الطلب', 'الدفع', 'إجمالي الطلب', 'حصة المطعم', 'حصة المندوب', 'حصة المنصة', 'الخصم', 'تتبع']));
@@ -4445,6 +4448,7 @@ function mountFinance() {
     if (ocashOpenUrlInput) ocashOpenUrlInput.value = String(data.ocashOpenUrl || '');
     if (fawryOpenUrlInput) fawryOpenUrlInput.value = String(data.fawryOpenUrl || '');
     if (commercialRegistryImageUrlInput) commercialRegistryImageUrlInput.value = String(data.commercialRegistryImageUrl || '');
+    setQrPreview(commercialRegistryPreview, String(data.commercialRegistryImageUrl || ''));
     if (commercialRegistryLinkUrlInput) commercialRegistryLinkUrlInput.value = String(data.commercialRegistryLinkUrl || '');
   };
 
@@ -4687,14 +4691,20 @@ function mountFinance() {
       let bankkQrUrl = String(bankkQrUrlInput?.value || '').trim();
       let ocashQrUrl = String(ocashQrUrlInput?.value || '').trim();
       let fawryQrUrl = String(fawryQrUrlInput?.value || '').trim();
+      let commercialRegistryImageUrl = String(commercialRegistryImageUrlInput?.value || '').trim();
 
       if (savePaymentSettingsBtn) savePaymentSettingsBtn.disabled = true;
-      if (paymentSettingsResult) paymentSettingsResult.textContent = 'جارٍ رفع صور QR إن وجدت...';
+      if (paymentSettingsResult) paymentSettingsResult.textContent = 'جارٍ رفع الصور إن وجدت...';
 
       try {
         bankkQrUrl = await resolveUploadedQrUrl({ fileInput: bankkQrFileInput, currentUrl: bankkQrUrl, label: 'بنكك' });
         ocashQrUrl = await resolveUploadedQrUrl({ fileInput: ocashQrFileInput, currentUrl: ocashQrUrl, label: 'أوكاش' });
         fawryQrUrl = await resolveUploadedQrUrl({ fileInput: fawryQrFileInput, currentUrl: fawryQrUrl, label: 'فوري' });
+        commercialRegistryImageUrl = await resolveUploadedQrUrl({
+          fileInput: commercialRegistryFileInput,
+          currentUrl: commercialRegistryImageUrl,
+          label: 'السجل التجاري',
+        });
 
         const payload = {
           enabledMethods,
@@ -4719,7 +4729,7 @@ function mountFinance() {
           bankkOpenUrl: String(bankkOpenUrlInput?.value || '').trim(),
           ocashOpenUrl: String(ocashOpenUrlInput?.value || '').trim(),
           fawryOpenUrl: String(fawryOpenUrlInput?.value || '').trim(),
-          commercialRegistryImageUrl: String(commercialRegistryImageUrlInput?.value || '').trim(),
+          commercialRegistryImageUrl,
           commercialRegistryLinkUrl: String(commercialRegistryLinkUrlInput?.value || '').trim(),
           updatedAt: serverTimestamp(),
           updatedByAdminUid: currentAdminUid,
@@ -4749,9 +4759,12 @@ function mountFinance() {
         setQrPreview(bankkQrPreview, bankkQrUrl);
         setQrPreview(ocashQrPreview, ocashQrUrl);
         setQrPreview(fawryQrPreview, fawryQrUrl);
+        if (commercialRegistryImageUrlInput) commercialRegistryImageUrlInput.value = commercialRegistryImageUrl;
+        setQrPreview(commercialRegistryPreview, commercialRegistryImageUrl);
         if (bankkQrFileInput) bankkQrFileInput.value = '';
         if (ocashQrFileInput) ocashQrFileInput.value = '';
         if (fawryQrFileInput) fawryQrFileInput.value = '';
+        if (commercialRegistryFileInput) commercialRegistryFileInput.value = '';
         if (paymentSettingsResult) {
           paymentSettingsResult.textContent = activeShiftOn && activeOwnerUid === currentAdminUid
             ? '✅ تم حفظ إعداداتك وتحديث حسابات الدفع المعروضة للعملاء.'

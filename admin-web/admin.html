@@ -482,7 +482,13 @@
                         <label>رابط فتح فوري iOS<input id="fawryOpenUrlIosInput" type="text" placeholder="fawry://" /></label>
                         <label>رابط بديل فوري<input id="fawryOpenUrlInput" type="text" placeholder="رابط متجر أو موقع" /></label>
 
-                        <label>رابط صورة السجل التجاري<input id="commercialRegistryImageUrlInput" type="url" placeholder="https://..." /></label>
+                        <label>
+                          رفع صورة السجل التجاري
+                          <input id="commercialRegistryFileInput" type="file" accept="image/*" />
+                          <span class="field-hint">اختر صورة واضحة، وسيتم إنشاء الرابط تلقائيًا عند الحفظ.</span>
+                          <img id="commercialRegistryPreview" class="qr-preview" alt="معاينة السجل التجاري" hidden />
+                        </label>
+                        <label>رابط صورة السجل التجاري المحفوظ<input id="commercialRegistryImageUrlInput" type="url" placeholder="يتم تعبئته تلقائيًا بعد رفع الصورة" readonly /></label>
                         <label>رابط فتح السجل التجاري<input id="commercialRegistryLinkUrlInput" type="url" placeholder="اختياري: رابط صفحة أو ملف رسمي" /></label>
 
                         <button id="savePaymentSettingsBtn" type="submit" class="btn primary">حفظ إعدادات الدفع</button>
