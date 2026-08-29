@@ -313,3 +313,40 @@ Future<bool> launchCourierPhoneCall(
   );
   return false;
 }
+
+Future<bool> launchCourierNavigation(
+  BuildContext context,
+  LatLng destination, {
+  String? label,
+}) async {
+  final destinationText =
+      '${destination.latitude.toStringAsFixed(6)},${destination.longitude.toStringAsFixed(6)}';
+  final candidates = <Uri>[
+    Uri.parse('google.navigation:q=$destinationText&mode=d'),
+    Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$destinationText&travelmode=driving',
+    ),
+    Uri.parse('geo:${destination.latitude},${destination.longitude}?q=$destinationText'),
+  ];
+
+  for (final uri in candidates) {
+    try {
+      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        return true;
+      }
+    } catch (_) {}
+  }
+
+  if (!context.mounted) return false;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      backgroundColor: AppThemeArabic.courierTextPrimary,
+      content: Text(
+        label == null || label.trim().isEmpty
+            ? 'تعذر فتح تطبيق الخرائط'
+            : 'تعذر فتح الملاحة إلى $label',
+      ),
+    ),
+  );
+  return false;
+}

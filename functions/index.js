@@ -3604,13 +3604,19 @@ async function sendWhatsAppTrackingLinksForAssignedOrder(orderId, order) {
       return { acquired: false, reason: 'unsupported-order-source', orderSource };
     }
     const lastAttemptMs = getTimestampMillis(current.whatsappTrackingLastAttemptAt);
+    const assignedDriverId = String(current.assignedDriverId || '').trim();
+    const lastSentDriverId = String(current.whatsappTrackingDriverId || '').trim();
+    const trackingAlreadySentForThisDriver =
+      Boolean(current.whatsappTrackingSentAt) &&
+      assignedDriverId &&
+      lastSentDriverId === assignedDriverId;
     const inProgressIsFresh = current.whatsappTrackingSendInProgress === true &&
       lastAttemptMs > 0 &&
       Date.now() - lastAttemptMs < 2 * 60 * 1000;
-    if (current.whatsappTrackingSentAt || inProgressIsFresh) {
+    if (trackingAlreadySentForThisDriver || inProgressIsFresh) {
       return {
         acquired: false,
-        reason: current.whatsappTrackingSentAt ? 'already-sent' : 'send-in-progress',
+        reason: trackingAlreadySentForThisDriver ? 'already-sent-for-driver' : 'send-in-progress',
       };
     }
     const stops = Array.isArray(current.batchStops) ? current.batchStops : [];
@@ -3706,6 +3712,7 @@ async function sendWhatsAppTrackingLinksForAssignedOrder(orderId, order) {
     })),
     whatsappTrackingDriverName: driverContact.name,
     whatsappTrackingDriverPhone: driverContact.phone,
+    whatsappTrackingDriverId: String(lockedOrder.assignedDriverId || '').trim(),
     whatsappTrackingPhoneNumberId: WHATSAPP_PHONE_NUMBER_ID,
     whatsappTrackingWabaId: WHATSAPP_WABA_ID,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -4722,6 +4729,26 @@ exports.syncCourierWalletOnOrderUpdate = onDocumentUpdated(
 
     const driverIds = Array.from(new Set([beforeDriverId, afterDriverId].filter(Boolean)));
     await Promise.all(driverIds.map((driverId) => syncCourierWalletSummary(driverId)));
+  }
+);
+
+exports.resendWhatsAppTrackingOnCourierChange = onDocumentUpdated(
+  {
+    region: REGION,
+    document: 'orders/{orderId}',
+    secrets: [WHATSAPP_ACCESS_TOKEN],
+  },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+    const beforeDriverId = String(before.assignedDriverId || '').trim();
+    const afterDriverId = String(after.assignedDriverId || '').trim();
+    const orderSource = String(after.orderSource || '').trim();
+
+    if (beforeDriverId === afterDriverId || !afterDriverId) return;
+    if (!['store_batch_delivery', 'store_direct_delivery'].includes(orderSource)) return;
+
+    await sendWhatsAppTrackingLinksForAssignedOrder(event.params.orderId, after);
   }
 );
 
@@ -5822,6 +5849,12 @@ const OPS_RUNTIME_REMOTE_PARAMETER_DEFAULTS = Object.freeze(
       ops_notifications_enabled: { value: 'true', valueType: 'BOOLEAN' },
       ops_ringtone_enabled: { value: 'true', valueType: 'BOOLEAN' },
       ops_ringtone_volume: { value: '1', valueType: 'NUMBER' },
+      client_maintenance_mode: { value: 'false', valueType: 'BOOLEAN' },
+      client_maintenance_message: { value: 'التطبيق تحت الصيانة مؤقتًا. نعمل على تحسين الخدمة الآن، يرجى المحاولة بعد قليل.', valueType: 'STRING' },
+      courier_maintenance_mode: { value: 'false', valueType: 'BOOLEAN' },
+      courier_maintenance_message: { value: 'تطبيق المندوب تحت الصيانة مؤقتًا. نعمل على تحسين الخدمة الآن، يرجى المحاولة بعد قليل.', valueType: 'STRING' },
+      store_maintenance_mode: { value: 'false', valueType: 'BOOLEAN' },
+      store_maintenance_message: { value: 'تطبيق المتجر تحت الصيانة مؤقتًا. نعمل على تحسين الخدمة الآن، يرجى المحاولة بعد قليل.', valueType: 'STRING' },
       client_phone_signin_enabled_sudan: { value: 'true', valueType: 'BOOLEAN' },
       client_phone_otp_enabled: { value: 'true', valueType: 'BOOLEAN' },
       client_phone_otp_ttl_minutes: { value: '10', valueType: 'NUMBER' },

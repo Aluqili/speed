@@ -15,7 +15,7 @@ import 'courier_batch_trip_screen.dart';
 import 'courier_go_to_client_screen.dart';
 import 'courier_ui.dart';
 
-class CourierGoToRestaurantScreen extends StatelessWidget {
+class CourierGoToRestaurantScreen extends StatefulWidget {
   final String orderId;
   final String driverId;
 
@@ -24,6 +24,27 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
     required this.orderId,
     required this.driverId,
   });
+
+  @override
+  State<CourierGoToRestaurantScreen> createState() =>
+      _CourierGoToRestaurantScreenState();
+}
+
+class _CourierGoToRestaurantScreenState
+    extends State<CourierGoToRestaurantScreen> {
+  late final Future<Map<String, dynamic>?> _orderFuture;
+  late final Future<CourierMarkerIcons> _markerIconsFuture;
+
+  String get orderId => widget.orderId;
+  String get driverId => widget.driverId;
+
+  @override
+  void initState() {
+    super.initState();
+    _orderFuture = _fetchOrderData();
+    _markerIconsFuture = loadCourierMarkerIcons();
+    _saveCurrentStage('going_to_restaurant');
+  }
 
   void _fitCameraToPoints(GoogleMapController controller, List<LatLng> points) {
     if (points.isEmpty) return;
@@ -524,7 +545,7 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
       appBar: buildCourierAppBar('الذهاب إلى نقطة الاستلام'),
       body: CourierPageBackground(
         child: FutureBuilder<Map<String, dynamic>?>(
-          future: _fetchOrderData(),
+          future: _orderFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -654,8 +675,6 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
             final driverFee = courierToDouble(
               orderData['deliveryFeeForDriver'] ?? orderData['deliveryFee'],
             );
-
-            _saveCurrentStage('going_to_restaurant');
 
             return ListView(
               padding: const EdgeInsets.all(16),
@@ -794,81 +813,108 @@ class CourierGoToRestaurantScreen extends StatelessWidget {
                     child: SizedBox(
                       height: 260,
                       child: FutureBuilder<CourierMarkerIcons>(
-                        future: loadCourierMarkerIcons(),
+                        future: _markerIconsFuture,
                         builder: (context, iconSnap) {
-                          return GoogleMap(
-                            initialCameraPosition: CameraPosition(
-                              target: restaurantLocation!,
-                              zoom: (isStoreBatchDelivery
-                                          ? batchHasClientLocations
-                                          : hasClientLocation)
-                                      ? 12
-                                      : 15,
-                            ),
-                            markers: isStoreBatchDelivery
-                                ? _buildBatchPickupMarkers(
-                                    pickupLocation: restaurantLocation,
-                                    stops: batchStops,
-                                    pickupTitle: pickupTitle,
-                                  )
-                                : buildCourierTripMarkers(
-                                    restaurantLocation: restaurantLocation,
-                                    clientLocation: clientLocation,
-                                    icons: iconSnap.data,
-                                    pickupLabel: pickupTitle,
+                          return Stack(
+                            children: [
+                              Positioned.fill(
+                                child: GoogleMap(
+                                  initialCameraPosition: CameraPosition(
+                                    target: restaurantLocation!,
+                                    zoom: (isStoreBatchDelivery
+                                                ? batchHasClientLocations
+                                                : hasClientLocation)
+                                            ? 12
+                                            : 15,
                                   ),
-                            polylines: isStoreBatchDelivery
-                                ? {
-                                    if (batchClientLocations.isNotEmpty)
-                                      Polyline(
-                                        polylineId:
-                                            const PolylineId('batch_route'),
-                                        points: [
-                                          restaurantLocation,
-                                          ...batchClientLocations,
-                                        ],
-                                        color: AppThemeArabic.courierPrimary,
-                                        width: 6,
-                                      ),
-                                  }
-                                : clientLocation == null
-                                    ? const {}
-                                    : {
-                                        Polyline(
-                                          polylineId: const PolylineId(
-                                              'restaurant_client'),
-                                          points: [
-                                            restaurantLocation,
-                                            clientLocation
-                                          ],
-                                          color: AppThemeArabic.courierPrimary,
-                                          width: 6,
+                                  markers: isStoreBatchDelivery
+                                      ? _buildBatchPickupMarkers(
+                                          pickupLocation: restaurantLocation,
+                                          stops: batchStops,
+                                          pickupTitle: pickupTitle,
+                                        )
+                                      : buildCourierTripMarkers(
+                                          restaurantLocation:
+                                              restaurantLocation,
+                                          clientLocation: clientLocation,
+                                          icons: iconSnap.data,
+                                          pickupLabel: pickupTitle,
                                         ),
-                                      },
-                            onMapCreated: (controller) {
-                              final points = <LatLng>[
-                                restaurantLocation,
-                                if (isStoreBatchDelivery)
-                                  ...batchClientLocations
-                                else if (clientLocation != null)
-                                  clientLocation,
-                              ];
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                _fitCameraToPoints(controller, points);
-                              });
-                            },
-                            zoomControlsEnabled: true,
-                            myLocationEnabled: true,
-                            myLocationButtonEnabled: true,
-                            compassEnabled: true,
-                            rotateGesturesEnabled: true,
-                            tiltGesturesEnabled: true,
-                            mapToolbarEnabled: false,
-                            gestureRecognizers: <Factory<
-                                OneSequenceGestureRecognizer>>{
-                              Factory<OneSequenceGestureRecognizer>(
-                                  () => EagerGestureRecognizer()),
-                            },
+                                  polylines: isStoreBatchDelivery
+                                      ? {
+                                          if (batchClientLocations.isNotEmpty)
+                                            Polyline(
+                                              polylineId: const PolylineId(
+                                                  'batch_route'),
+                                              points: [
+                                                restaurantLocation,
+                                                ...batchClientLocations,
+                                              ],
+                                              color:
+                                                  AppThemeArabic.courierPrimary,
+                                              width: 6,
+                                            ),
+                                        }
+                                      : clientLocation == null
+                                          ? const {}
+                                          : {
+                                              Polyline(
+                                                polylineId: const PolylineId(
+                                                    'restaurant_client'),
+                                                points: [
+                                                  restaurantLocation,
+                                                  clientLocation
+                                                ],
+                                                color: AppThemeArabic
+                                                    .courierPrimary,
+                                                width: 6,
+                                              ),
+                                            },
+                                  onMapCreated: (controller) {
+                                    final points = <LatLng>[
+                                      restaurantLocation,
+                                      if (isStoreBatchDelivery)
+                                        ...batchClientLocations
+                                      else if (clientLocation != null)
+                                        clientLocation,
+                                    ];
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback((_) {
+                                      _fitCameraToPoints(controller, points);
+                                    });
+                                  },
+                                  zoomControlsEnabled: true,
+                                  myLocationEnabled: true,
+                                  myLocationButtonEnabled: true,
+                                  compassEnabled: true,
+                                  rotateGesturesEnabled: true,
+                                  tiltGesturesEnabled: true,
+                                  mapToolbarEnabled: false,
+                                  gestureRecognizers: <Factory<
+                                      OneSequenceGestureRecognizer>>{
+                                    Factory<OneSequenceGestureRecognizer>(
+                                        () => EagerGestureRecognizer()),
+                                  },
+                                ),
+                              ),
+                              Positioned(
+                                top: 12,
+                                right: 12,
+                                child: FloatingActionButton.small(
+                                  heroTag: 'pickup-navigation-$orderId',
+                                  tooltip: 'فتح الملاحة إلى $pickupTitle',
+                                  backgroundColor:
+                                      AppThemeArabic.courierPrimary,
+                                  foregroundColor: Colors.white,
+                                  onPressed: () => launchCourierNavigation(
+                                    context,
+                                    restaurantLocation!,
+                                    label: pickupTitle,
+                                  ),
+                                  child: const Icon(Icons.navigation_rounded),
+                                ),
+                              ),
+                            ],
                           );
                         },
                       ),

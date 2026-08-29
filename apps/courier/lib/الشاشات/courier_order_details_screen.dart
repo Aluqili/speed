@@ -8,6 +8,7 @@ import 'package:speedstar_core/speedstar_core.dart'
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../helpers/courier_runtime_helpers.dart';
 
+import 'courier_batch_trip_screen.dart';
 import 'courier_client_contact_card.dart';
 import 'courier_go_to_restaurant_screen.dart';
 import 'courier_go_to_client_screen.dart';
@@ -559,9 +560,188 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     return 'طلب توصيل';
   }
 
+  List<Map<String, dynamic>> _batchStops(Map<String, dynamic> data) {
+    return ((data['batchStops'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList()
+      ..sort((a, b) {
+        final sequenceA = (a['sequence'] as num?)?.toInt() ?? 0;
+        final sequenceB = (b['sequence'] as num?)?.toInt() ?? 0;
+        return sequenceA.compareTo(sequenceB);
+      });
+  }
+
+  LatLng? _batchStopPoint(Map<String, dynamic> stop) {
+    final lat = courierToDouble(stop['clientLat'] ?? stop['lat']);
+    final lng = courierToDouble(stop['clientLng'] ?? stop['lng']);
+    if (lat == 0 || lng == 0) return null;
+    return LatLng(lat, lng);
+  }
+
+  void _fitBatchMapBounds(List<LatLng> points) {
+    final controller = _orderMapController;
+    if (controller == null || points.isEmpty) return;
+    if (points.length == 1) {
+      controller.animateCamera(CameraUpdate.newLatLngZoom(points.first, 15));
+      return;
+    }
+    var minLat = points.first.latitude;
+    var maxLat = points.first.latitude;
+    var minLng = points.first.longitude;
+    var maxLng = points.first.longitude;
+    for (final point in points.skip(1)) {
+      minLat = min(minLat, point.latitude);
+      maxLat = max(maxLat, point.latitude);
+      minLng = min(minLng, point.longitude);
+      maxLng = max(maxLng, point.longitude);
+    }
+    controller.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        64,
+      ),
+    );
+  }
+
+  Widget _buildBatchOfferPreviewMap(
+    Map<String, dynamic> data,
+    List<Map<String, dynamic>> stops,
+  ) {
+    final pickupLocation = _pickupPointForOrder(data);
+    final stopPoints = stops.map(_batchStopPoint).whereType<LatLng>().toList();
+    final points = <LatLng>[
+      if (pickupLocation != null) pickupLocation,
+      ...stopPoints,
+    ];
+    if (points.isEmpty) {
+      return const Text('لا توجد بيانات موقع كافية لعرض خط سير الرحلة.');
+    }
+
+    final markers = <Marker>{
+      if (pickupLocation != null)
+        Marker(
+          markerId: const MarkerId('batch-pickup'),
+          position: pickupLocation,
+          icon: _markerIcons?.restaurant ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: InfoWindow(
+            title: (data['restaurantName'] ?? 'نقطة الاستلام').toString(),
+          ),
+        ),
+      for (var i = 0; i < stops.length; i += 1)
+        if (_batchStopPoint(stops[i]) != null)
+          Marker(
+            markerId: MarkerId('batch-stop-$i'),
+            position: _batchStopPoint(stops[i])!,
+            icon: _markerIcons?.client ??
+                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+            infoWindow: InfoWindow(
+              title: '${i + 1}. ${stops[i]['clientName'] ?? 'عميل'}',
+              snippet: (stops[i]['zoneName'] ?? '').toString(),
+            ),
+          ),
+    };
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        height: 300,
+        child: GoogleMap(
+          initialCameraPosition: CameraPosition(target: points.first, zoom: 12),
+          onMapCreated: (controller) {
+            _orderMapController = controller;
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _fitBatchMapBounds(points),
+            );
+          },
+          markers: markers,
+          polylines: points.length < 2
+              ? const <Polyline>{}
+              : {
+                  Polyline(
+                    polylineId: const PolylineId('batch-preview-route'),
+                    points: points,
+                    color: AppThemeArabic.courierPrimary,
+                    width: 5,
+                    startCap: Cap.roundCap,
+                    endCap: Cap.roundCap,
+                    jointType: JointType.round,
+                  ),
+                },
+          zoomControlsEnabled: true,
+          myLocationEnabled: true,
+          myLocationButtonEnabled: true,
+          compassEnabled: true,
+          mapToolbarEnabled: false,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBatchStopsPreview(List<Map<String, dynamic>> stops) {
+    if (stops.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'العملاء في خط السير',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: AppThemeArabic.courierTextPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...stops.asMap().entries.map((entry) {
+          final stop = entry.value;
+          final name = (stop['clientName'] ?? 'عميل').toString();
+          final zone = (stop['zoneName'] ?? '').toString();
+          final phone = (stop['clientPhone'] ?? '').toString();
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 14,
+                  backgroundColor: AppThemeArabic.courierPrimary
+                      .withValues(alpha: 0.12),
+                  child: Text(
+                    '${entry.key + 1}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      color: AppThemeArabic.courierPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    [
+                      name,
+                      if (zone.trim().isNotEmpty) zone,
+                      if (phone.trim().isNotEmpty) phone,
+                    ].join(' - '),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   Future<void> _openProfessionalFlow() async {
     if (orderData == null || !mounted) return;
     final status = _getOrderStatus(orderData!);
+    final isBatchDelivery =
+        (orderData!['orderSource'] ?? '').toString() == 'store_batch_delivery';
     final clientLoc = _dropoffPointForOrder(orderData!);
 
     if (status == 'courier_assigned' ||
@@ -579,6 +759,18 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
     }
 
     if (status == 'picked_up' || status == 'قيد التوصيل') {
+      if (isBatchDelivery) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => CourierBatchTripScreen(
+              orderId: widget.orderId,
+              driverId: widget.driverId,
+            ),
+          ),
+        );
+        return;
+      }
+
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => CourierGoToClientScreen(
@@ -799,6 +991,8 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                 final businessConfig = _businessConfigForOrder(data);
                 final isDirectDelivery =
                     data['orderSource'] == 'store_direct_delivery';
+                final isBatchDelivery =
+                    data['orderSource'] == 'store_batch_delivery';
                 final isParcelDelivery =
                     data['orderSource'] == 'client_parcel_delivery';
                 final serviceLabel = _serviceLabelForOrder(data);
@@ -861,6 +1055,8 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                 final total = (data['totalWithDelivery'] ?? data['total'] ?? 0)
                     .toString();
                 final itemsCount = (data['items'] as List?)?.length ?? 0;
+                final batchStops =
+                    isBatchDelivery ? _batchStops(data) : const <Map<String, dynamic>>[];
                 final restaurantName =
                     _pickupNameForOrder(data);
                 final packageDescription =
@@ -1042,7 +1238,11 @@ class _CourierOrderDetailsScreenState extends State<CourierOrderDetailsScreen> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          if (restaurantLocation != null ||
+                          if (isBatchDelivery) ...[
+                            _buildBatchOfferPreviewMap(data, batchStops),
+                            const SizedBox(height: 12),
+                            _buildBatchStopsPreview(batchStops),
+                          ] else if (restaurantLocation != null ||
                               clientLocation != null)
                             ClipRRect(
                               borderRadius: BorderRadius.circular(14),

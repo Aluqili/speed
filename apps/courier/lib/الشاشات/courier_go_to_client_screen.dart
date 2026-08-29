@@ -39,10 +39,12 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
   String _routeKey = '';
   bool _fetchingRoute = false;
   bool _confirmingArrival = false;
+  late final Future<Map<String, dynamic>?> _orderFuture;
 
   @override
   void initState() {
     super.initState();
+    _orderFuture = _fetchOrderData();
     loadCourierMarkerIcons().then((icons) {
       if (!mounted) return;
       setState(() {
@@ -452,7 +454,7 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
       appBar: buildCourierAppBar('الذهاب إلى العميل'),
       body: CourierPageBackground(
         child: FutureBuilder<Map<String, dynamic>?>(
-          future: _fetchOrderData(),
+          future: _orderFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -604,53 +606,76 @@ class _CourierGoToClientScreenState extends State<CourierGoToClientScreen> {
                     borderRadius: BorderRadius.circular(14),
                     child: SizedBox(
                       height: 260,
-                      child: GoogleMap(
-                        initialCameraPosition: CameraPosition(
-                          target: clientLocation,
-                          zoom: restaurantLocation == null ? 15 : 12,
-                        ),
-                        markers: buildCourierTripMarkers(
-                          restaurantLocation: restaurantLocation,
-                          clientLocation: clientLocation,
-                          icons: _markerIcons,
-                          pickupLabel: pickupLabel,
-                        ),
-                        polylines: restaurantLocation == null
-                            ? const {}
-                            : {
-                                Polyline(
-                                  polylineId:
-                                      const PolylineId('restaurant_client'),
-                                  points: routePoints,
-                                  color: AppThemeArabic.courierPrimary,
-                                  width: 6,
-                                  jointType: JointType.round,
-                                  startCap: Cap.roundCap,
-                                  endCap: Cap.roundCap,
-                                ),
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: GoogleMap(
+                              initialCameraPosition: CameraPosition(
+                                target: clientLocation,
+                                zoom: restaurantLocation == null ? 15 : 12,
+                              ),
+                              markers: buildCourierTripMarkers(
+                                restaurantLocation: restaurantLocation,
+                                clientLocation: clientLocation,
+                                icons: _markerIcons,
+                                pickupLabel: pickupLabel,
+                              ),
+                              polylines: restaurantLocation == null
+                                  ? const {}
+                                  : {
+                                      Polyline(
+                                        polylineId:
+                                            const PolylineId('restaurant_client'),
+                                        points: routePoints,
+                                        color: AppThemeArabic.courierPrimary,
+                                        width: 6,
+                                        jointType: JointType.round,
+                                        startCap: Cap.roundCap,
+                                        endCap: Cap.roundCap,
+                                      ),
+                                    },
+                              onMapCreated: (controller) {
+                                _mapController = controller;
+                                final points = <LatLng>[
+                                  clientLocation,
+                                  if (restaurantLocation != null)
+                                    restaurantLocation,
+                                ];
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  _fitCameraToPoints(points);
+                                });
                               },
-                        onMapCreated: (controller) {
-                          _mapController = controller;
-                          final points = <LatLng>[
-                            clientLocation,
-                            if (restaurantLocation != null) restaurantLocation,
-                          ];
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            _fitCameraToPoints(points);
-                          });
-                        },
-                        zoomControlsEnabled: true,
-                        myLocationEnabled: true,
-                        myLocationButtonEnabled: true,
-                        compassEnabled: true,
-                        rotateGesturesEnabled: true,
-                        tiltGesturesEnabled: true,
-                        mapToolbarEnabled: false,
-                        gestureRecognizers: <Factory<
-                            OneSequenceGestureRecognizer>>{
-                          Factory<OneSequenceGestureRecognizer>(
-                              () => EagerGestureRecognizer()),
-                        },
+                              zoomControlsEnabled: true,
+                              myLocationEnabled: true,
+                              myLocationButtonEnabled: true,
+                              compassEnabled: true,
+                              rotateGesturesEnabled: true,
+                              tiltGesturesEnabled: true,
+                              mapToolbarEnabled: false,
+                              gestureRecognizers: <Factory<
+                                  OneSequenceGestureRecognizer>>{
+                                Factory<OneSequenceGestureRecognizer>(
+                                    () => EagerGestureRecognizer()),
+                              },
+                            ),
+                          ),
+                          Positioned(
+                            top: 12,
+                            right: 12,
+                            child: FloatingActionButton.small(
+                              heroTag: 'client-navigation-${widget.orderId}',
+                              tooltip: 'فتح الملاحة إلى العميل',
+                              backgroundColor: AppThemeArabic.courierPrimary,
+                              foregroundColor: Colors.white,
+                              onPressed: () => launchCourierNavigation(
+                                context,
+                                clientLocation,
+                                label: 'العميل',
+                              ),
+                              child: const Icon(Icons.navigation_rounded),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   )

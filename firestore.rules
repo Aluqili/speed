@@ -150,16 +150,21 @@ service cloud.firestore {
     }
 
     function canUpdateAssignedDriverLocation() {
-      return isSignedIn()
-        && resource.data.assignedDriverId == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'driverLocation',
-          'driverCurrentLocation',
-          'driverLat',
-          'driverLng',
-          'driverLocationUpdatedAt',
-          'lastLocationUpdate'
-        ]);
+      return false;
+    }
+
+    function activeOrderIdChangeIsSafe(driverId) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['activeOrderId'])
+        || !('activeOrderId' in request.resource.data)
+        || (
+          request.resource.data.activeOrderId is string
+          && exists(/databases/$(database)/documents/orders/$(request.resource.data.activeOrderId))
+          && (
+            get(/databases/$(database)/documents/orders/$(request.resource.data.activeOrderId)).data.assignedDriverId == driverId
+            || get(/databases/$(database)/documents/orders/$(request.resource.data.activeOrderId)).data.assignedDriverId == request.auth.uid
+            || isDriverOwner(get(/databases/$(database)/documents/orders/$(request.resource.data.activeOrderId)).data.assignedDriverId)
+          )
+        );
     }
 
     function hasNoProtectedClientFields(data) {
@@ -195,7 +200,6 @@ service cloud.firestore {
           'wallet',
           'walletBalance',
           'balance',
-          'activeOrderId',
           'approvalStatus',
           'isApproved',
           'role',
@@ -205,7 +209,8 @@ service cloud.firestore {
           'ownerId',
           'userId',
           'uid'
-        ]);
+        ])
+        && activeOrderIdChangeIsSafe(driverId);
     }
 
     // Allows a signed-in driver to self-link their auth uid to a legacy driver

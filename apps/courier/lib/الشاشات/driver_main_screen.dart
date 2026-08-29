@@ -76,6 +76,8 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen>
   Set<Circle> _restaurantHeatCircles = const <Circle>{};
   Map<String, LatLng> _openRestaurantLocations = const <String, LatLng>{};
   Map<String, int> _recentRestaurantOrderCounts = const <String, int>{};
+  bool _openingOrderProcess = false;
+  String? _activeOrderProcessKey;
 
   String _todayAvailabilityKey([DateTime? value]) {
     final now = value ?? DateTime.now();
@@ -376,12 +378,10 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen>
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => CourierOrderProcessScreen(
-              orderId: orderId,
-              stage: stage,
-            ),
+        unawaited(
+          _openOrderProcess(
+            orderId: orderId,
+            stage: stage,
           ),
         );
       });
@@ -390,17 +390,48 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen>
 
     final currentOrder = box.read('current_order');
     if (currentOrder != null && mounted && currentOrder['orderId'] != null) {
+      final orderId = currentOrder['orderId'].toString();
+      final stage = (currentOrder['stage'] ?? 'going_to_restaurant').toString();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => CourierOrderProcessScreen(
-              orderId: currentOrder['orderId'],
-              stage: currentOrder['stage'] ?? 'going_to_restaurant',
-            ),
+        unawaited(
+          _openOrderProcess(
+            orderId: orderId,
+            stage: stage,
           ),
         );
       });
+    }
+  }
+
+  Future<void> _openOrderProcess({
+    required String orderId,
+    required String stage,
+    bool closeDrawer = false,
+  }) async {
+    if (!mounted || orderId.isEmpty) return;
+    final key = '$orderId:$stage';
+    if (_openingOrderProcess || _activeOrderProcessKey == key) return;
+    _openingOrderProcess = true;
+    _activeOrderProcessKey = key;
+
+    try {
+      if (closeDrawer && Navigator.of(context).canPop()) {
+        Navigator.pop(context);
+      }
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => CourierOrderProcessScreen(
+            orderId: orderId,
+            stage: stage,
+          ),
+        ),
+      );
+    } finally {
+      _openingOrderProcess = false;
+      if (_activeOrderProcessKey == key) {
+        _activeOrderProcessKey = null;
+      }
     }
   }
 
@@ -656,14 +687,10 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen>
 
     if (!mounted) return;
     if (orderId != null && orderId.isNotEmpty) {
-      Navigator.pop(context);
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => CourierOrderProcessScreen(
-            orderId: orderId!,
-            stage: stage,
-          ),
-        ),
+      await _openOrderProcess(
+        orderId: orderId,
+        stage: stage,
+        closeDrawer: true,
       );
       return;
     }
@@ -1159,14 +1186,10 @@ class _CourierDashboardScreenState extends State<CourierDashboardScreen>
 
                       if (!mounted) return;
                       if (orderId != null && orderId.isNotEmpty) {
-                        Navigator.pop(context);
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => CourierOrderProcessScreen(
-                              orderId: orderId!,
-                              stage: stage,
-                            ),
-                          ),
+                        await _openOrderProcess(
+                          orderId: orderId,
+                          stage: stage,
+                          closeDrawer: true,
                         );
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(

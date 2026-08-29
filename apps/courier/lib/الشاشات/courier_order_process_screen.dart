@@ -6,6 +6,7 @@ import 'package:speedstar_core/speedstar_core.dart' show OrderStatusPalette;
 import 'package:speedstar_core/الثيم/ثيم_التطبيق.dart';
 
 import 'courier_confirm_delivery_screen.dart';
+import 'courier_batch_trip_screen.dart';
 import 'courier_go_to_client_screen.dart';
 import 'courier_go_to_restaurant_screen.dart';
 import 'courier_ui.dart';
@@ -147,6 +148,8 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
   void _goToStage(Map<String, dynamic> data, String stage) {
     if (_navigated || !mounted) return;
     _navigated = true;
+    final isBatchDelivery =
+        (data['orderSource'] ?? '').toString() == 'store_batch_delivery';
 
     final box = GetStorage();
     box.write('current_order', {
@@ -167,6 +170,18 @@ class _CourierOrderProcessScreenState extends State<CourierOrderProcessScreen> {
     }
 
     if (stage == 'going_to_client') {
+      if (isBatchDelivery) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => CourierBatchTripScreen(
+              orderId: widget.orderId,
+              driverId: (data['assignedDriverId'] ?? '').toString(),
+            ),
+          ),
+        );
+        return;
+      }
+
       final clientLocationRaw = data['clientLocation'];
       final clientLat = (data['clientLat'] as num?)?.toDouble() ??
           (clientLocationRaw is GeoPoint

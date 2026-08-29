@@ -22,6 +22,7 @@ class LocationService {
   double? _lastLng;
   DateTime? _lastWriteAt;
   bool _hadActiveOrder = false;
+  String? _lastOrderPositionWriteOrderId;
   static const double _minimumWriteDistanceMeters = 20;
   static const Duration _minimumWriteInterval = Duration(seconds: 20);
 
@@ -110,6 +111,7 @@ class LocationService {
 
       if (activeDocs.isEmpty) {
         _activeOrderId = null;
+        _lastOrderPositionWriteOrderId = null;
         if (_hadActiveOrder) {
           unawaited(_clearDriverActiveOrder(driverId));
           unawaited(stopLocationUpdates());
@@ -118,10 +120,15 @@ class LocationService {
       }
 
       _hadActiveOrder = true;
+      final previousActiveOrderId = _activeOrderId;
       _activeOrderId = activeDocs.first.id;
       final activeOrderId = _activeOrderId;
       final lastPosition = _lastPosition;
-      if (activeOrderId != null && lastPosition != null) {
+      if (activeOrderId != null &&
+          lastPosition != null &&
+          (activeOrderId != previousActiveOrderId ||
+              activeOrderId != _lastOrderPositionWriteOrderId)) {
+        _lastOrderPositionWriteOrderId = activeOrderId;
         unawaited(_writeOrderPosition(activeOrderId, lastPosition));
       }
     });
@@ -279,6 +286,7 @@ class LocationService {
     _lastLat = null;
     _lastLng = null;
     _lastWriteAt = null;
+    _lastOrderPositionWriteOrderId = null;
     _hadActiveOrder = false;
   }
 }

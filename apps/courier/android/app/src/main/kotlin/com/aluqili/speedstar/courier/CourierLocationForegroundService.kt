@@ -36,6 +36,7 @@ class CourierLocationForegroundService : Service() {
     private var lastLng: Double? = null
     private var lastWriteMs: Long = 0L
     private var hadActiveOrder: Boolean = false
+    private var lastOrderLocationWriteOrderId: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -72,6 +73,7 @@ class CourierLocationForegroundService : Service() {
         locationCallback = null
         activeOrdersListener?.remove()
         activeOrdersListener = null
+        lastOrderLocationWriteOrderId = null
         super.onDestroy()
     }
 
@@ -124,6 +126,7 @@ class CourierLocationForegroundService : Service() {
                 val nextActiveOrderId = active.firstOrNull()?.id
                 if (nextActiveOrderId == null) {
                     activeOrderId = null
+                    lastOrderLocationWriteOrderId = null
                     if (hadActiveOrder) {
                         clearDriverActiveOrder()
                         clearStoredDriverId()
@@ -133,8 +136,17 @@ class CourierLocationForegroundService : Service() {
                 }
 
                 hadActiveOrder = true
+                val previousActiveOrderId = activeOrderId
                 activeOrderId = nextActiveOrderId
-                lastKnownLocation?.let { writeOrderLocation(nextActiveOrderId, it) }
+                lastKnownLocation?.let {
+                    if (
+                        nextActiveOrderId != previousActiveOrderId ||
+                        nextActiveOrderId != lastOrderLocationWriteOrderId
+                    ) {
+                        lastOrderLocationWriteOrderId = nextActiveOrderId
+                        writeOrderLocation(nextActiveOrderId, it)
+                    }
+                }
             }
     }
 

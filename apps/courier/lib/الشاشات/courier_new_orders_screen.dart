@@ -202,6 +202,8 @@ class _CourierNewOrdersScreenState extends State<CourierNewOrdersScreen> {
                       data['orderSource'] == 'store_direct_delivery';
                   final isBatchDelivery =
                       data['orderSource'] == 'store_batch_delivery';
+                  final shouldReviewDetailsFirst =
+                      isDirectDelivery || isBatchDelivery;
                   final itemsCount = (data['items'] as List?)?.length ?? 0;
                   final batchStopCount =
                       (data['batchStopCount'] as num?)?.toInt() ??
@@ -400,6 +402,7 @@ class _CourierNewOrdersScreenState extends State<CourierNewOrdersScreen> {
                                         label: const Text('التفاصيل'),
                                       ),
                                     ),
+                                    if (!shouldReviewDetailsFirst) ...[
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: ElevatedButton.icon(
@@ -424,6 +427,7 @@ class _CourierNewOrdersScreenState extends State<CourierNewOrdersScreen> {
                                         ),
                                       ),
                                     ),
+                                    ],
                                   ],
                                 ),
                               ],
